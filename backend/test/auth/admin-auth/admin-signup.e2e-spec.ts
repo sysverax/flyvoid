@@ -19,6 +19,8 @@ import { TestCaseMeta } from "../../shared/interfaces/test-case.interface";
 
 const SIGNUP_ENDPOINT = "/api/v1/auth/admin/signup";
 const hundredChars = "A".repeat(100);
+const buildUniqueEmailLocalPart = (prefix: string): string =>
+  `${prefix}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`;
 
 describe("Admin Signup API", () => {
   let app: INestApplication;
@@ -301,8 +303,9 @@ describe("Admin Signup API", () => {
   });
 
   it("TC_AUTH_ADMIN_SIGNUP_017 - should normalize email to lowercase", async () => {
+    const localPart = buildUniqueEmailLocalPart("upper.case");
     const payload = adminFactory.buildAdminSignupPayload({
-      email: "UPPER.CASE@FLYVOID.TEST",
+      email: `${localPart.toUpperCase()}@FLYVOID.TEST`,
     });
     await expectSignupSuccess(
       {
@@ -311,13 +314,14 @@ describe("Admin Signup API", () => {
         expectedStatus: 201,
       },
       payload,
-      "upper.case@flyvoid.test",
+      `${localPart}@flyvoid.test`,
     );
   });
 
   it("TC_AUTH_ADMIN_SIGNUP_018 - should signup with leading and trailing spaces in email", async () => {
+    const localPart = buildUniqueEmailLocalPart("spaced.email");
     const payload = adminFactory.buildAdminSignupPayload({
-      email: "  spaced.email@flyvoid.test  ",
+      email: `  ${localPart}@flyvoid.test  `,
     });
     await expectSignupSuccess(
       {
@@ -326,7 +330,7 @@ describe("Admin Signup API", () => {
         expectedStatus: 201,
       },
       payload,
-      "spaced.email@flyvoid.test",
+      `${localPart}@flyvoid.test`,
     );
   });
 
