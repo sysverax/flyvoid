@@ -1,0 +1,94 @@
+import * as dotenv from "dotenv";
+
+const envFileByCommand: Record<string, string> = {
+  dev: "local.env",
+  "start:dev": "dev.env",
+  "start:test": "test.env",
+  "start:e2e": "automation_test.env",
+  "test:e2e": "automation_test.env",
+  "test:e2e:auth": "automation_test.env",
+  "test:e2e:admin-auth": "automation_test.env",
+  start: "prod.env",
+  "start:prod": "prod.env",
+};
+
+const lifecycleEvent = process.env.npm_lifecycle_event ?? "";
+const selectedEnvFile = envFileByCommand[lifecycleEvent] ?? ".env";
+
+dotenv.config({ path: selectedEnvFile, quiet: true });
+
+export const config = {
+  app: {
+    port: parseInt(process.env.APP_PORT ?? "3000", 10),
+    name: process.env.APP_NAME ?? "backend",
+    env: process.env.NODE_ENV ?? "development",
+  },
+  db: {
+    host: process.env.DB_HOST ?? "localhost",
+    port: parseInt(process.env.DB_PORT ?? "5432", 10),
+    username: process.env.DB_USERNAME ?? "postgres",
+    password: process.env.DB_PASSWORD ?? "postgres",
+    name: process.env.DB_NAME ?? "my_backend_db",
+    simulate: process.env.DB_SIMULATE === "true",
+    synchronize: process.env.DB_SYNCHRONIZE === "true",
+    logging: process.env.DB_LOGGING === "true",
+  },
+  log: {
+    level: process.env.LOG_LEVEL ?? "debug",
+  },
+  swagger: {
+    enabled: process.env.SWAGGER_ENABLED === "true",
+    path: process.env.SWAGGER_PATH ?? "docs",
+    title: process.env.SWAGGER_TITLE ?? "API",
+    description: process.env.SWAGGER_DESCRIPTION ?? "API documentation",
+    version: process.env.SWAGGER_VERSION ?? "1.0",
+  },
+  jwt: {
+    accessSecret: process.env.JWT_ACCESS_SECRET ?? "",
+    refreshSecret: process.env.JWT_REFRESH_SECRET ?? "",
+    accessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? "15m",
+    refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? "7d",
+  },
+  auth: {
+    adminForgotPasswordOtpStatic:
+      process.env.ADMIN_FORGOT_PASSWORD_OTP_STATIC ?? "444444",
+    adminForgotPasswordOtpExpiryMinutes: parseInt(
+      process.env.ADMIN_FORGOT_PASSWORD_OTP_EXPIRY_MINUTES ?? "2",
+      10,
+    ),
+    adminForgotPasswordOtpMaxAttempts: parseInt(
+      process.env.ADMIN_FORGOT_PASSWORD_OTP_MAX_ATTEMPTS ?? "5",
+      10,
+    ),
+    adminForgotPasswordOtpSendLimit: parseInt(
+      process.env.ADMIN_FORGOT_PASSWORD_OTP_SEND_LIMIT ?? "3",
+      10,
+    ),
+    adminForgotPasswordOtpSendWindowMinutes: parseInt(
+      process.env.ADMIN_FORGOT_PASSWORD_OTP_SEND_WINDOW_MINUTES ?? "10",
+      10,
+    ),
+    adminForgotPasswordResetTokenExpiresIn:
+      process.env.ADMIN_FORGOT_PASSWORD_RESET_TOKEN_EXPIRES_IN ?? "1h",
+    adminInitialPasswordResetTokenExpiresIn:
+      process.env.ADMIN_INITIAL_PASSWORD_RESET_TOKEN_EXPIRES_IN ?? "15m",
+    twoFactorIssuer: process.env.TWO_FACTOR_ISSUER ?? "Flyvoid Admin",
+    twoFactorChallengeTokenExpiresIn:
+      process.env.TWO_FACTOR_CHALLENGE_TOKEN_EXPIRES_IN ?? "5m",
+    twoFactorEncryptionKey:
+      process.env.TWO_FACTOR_ENCRYPTION_KEY ??
+      "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    twoFactorOtpWindow: parseInt(process.env.TWO_FACTOR_OTP_WINDOW ?? "1", 10),
+    airlineAdminInviteExpiresIn:
+      process.env.AIRLINE_ADMIN_INVITE_EXPIRES_IN ?? "48h",
+    airlineAdminOnboardingBaseUrl:
+      process.env.AIRLINE_ADMIN_ONBOARDING_BASE_URL ??
+      "http://localhost:3000/airline/onboard",
+  },
+  ses: {
+    region: process.env.AWS_REGION ?? "ap-south-1",
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID ?? "",
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? "",
+    fromEmail: process.env.AWS_SES_FROM_EMAIL ?? "noreply@example.com",
+  },
+} as const;

@@ -1,0 +1,12 @@
+.env
+local.env
+dev.env
+test.env
+automation_test.env
+prod.env
+dist/*
+node_modules/*
+logs/*
+coverage/*
+*.log
+*.tsbuildinfo

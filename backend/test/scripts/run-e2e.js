@@ -1,0 +1,73 @@
+const readline = require("node:readline");
+const { spawn } = require("node:child_process");
+
+const DEFAULT_URL = "http://127.0.0.1:8080";
+
+const askServerUrl = () =>
+    new Promise((resolve) => {
+        const rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout,
+        });
+
+        rl.question(`Enter backend server URL (${DEFAULT_URL}): `, (input) => {
+            rl.close();
+            const value = (input || "").trim();
+            resolve(value || DEFAULT_URL);
+        });
+    });
+
+const isValidHttpUrl = (value) => {
+    try {
+        const parsed = new URL(value);
+        return parsed.protocol === "http:" || parsed.protocol === "https:";
+    } catch {
+        return false;
+    }
+};
+
+const run = async () => {
+    const targetPath = process.argv[2];
+    const baseUrl = await askServerUrl();
+
+    if (!isValidHttpUrl(baseUrl)) {
+        console.error(`[FAILED] Invalid URL: ${baseUrl}`);
+        process.exit(1);
+    }
+
+    const jestArgs = ["./node_modules/jest/bin/jest.js", "--runInBand"];
+
+    if (targetPath) {
+        jestArgs.push(targetPath);
+    }
+
+    jestArgs.push("--config", "./test/jest-e2e.json");
+
+    console.log(`[SUITE] Running E2E against ${baseUrl}`);
+
+    const runner = spawn(process.execPath, jestArgs, {
+        stdio: "inherit",
+        shell: false,
+        env: {
+            ...process.env,
+            E2E_USE_RUNNING_APP: "true",
+            E2E_BASE_URL: baseUrl,
+        },
+    });
+
+    runner.on("exit", (code, signal) => {
+        if (signal) {
+            process.kill(process.pid, signal);
+            return;
+        }
+
+        process.exit(code ?? 1);
+    });
+
+    runner.on("error", (error) => {
+        console.error(`[FAILED] Unable to start Jest: ${error.message}`);
+        process.exit(1);
+    });
+};
+
+void run();

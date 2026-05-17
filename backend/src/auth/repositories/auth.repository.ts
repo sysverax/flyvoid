@@ -1,0 +1,1107 @@
+import { Injectable } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { MoreThan, Repository } from "typeorm";
+import { AdminEntity } from "../../admin/entities/admin.entity";
+import { PlatformAccessControlEntity } from "../../admin/entities/platform-access-control.entity";
+import { AirlineAccessControlEntity } from "../../airline/entities/airline-access-control.entity";
+import { AirlineEntity } from "../../airline/entities/airline.entity";
+import { AirlineUserEntity } from "../../airline/entities/airline-user.entity";
+import { AirlineRole } from "../../common/constants/user.constants";
+import {
+  AccessAction,
+  UserAccessControlEntry,
+} from "../../common/constants/access-control.constants";
+import { LoggerService } from "../../common/logger/logger.service";
+import { AirlineAdminInviteEntity } from "../entities/airline-admin-invite.entity";
+import { AirlinePasswordResetOtpEntity } from "../entities/airline-password-reset-otp.entity";
+import { AirlineRefreshTokenEntity } from "../entities/airline-refresh-token.entity";
+import { AdminPasswordResetOtpEntity } from "../entities/admin-password-reset-otp.entity";
+import { RefreshTokenEntity } from "../entities/refresh-token.entity";
+
+@Injectable()
+export class AuthRepository {
+  constructor(
+    @InjectRepository(AdminEntity)
+    private readonly adminRepository: Repository<AdminEntity>,
+    @InjectRepository(RefreshTokenEntity)
+    private readonly refreshTokenRepository: Repository<RefreshTokenEntity>,
+    @InjectRepository(AdminPasswordResetOtpEntity)
+    private readonly adminPasswordResetOtpRepository: Repository<AdminPasswordResetOtpEntity>,
+    @InjectRepository(AirlineRefreshTokenEntity)
+    private readonly airlineRefreshTokenRepository: Repository<AirlineRefreshTokenEntity>,
+    @InjectRepository(AirlinePasswordResetOtpEntity)
+    private readonly airlinePasswordResetOtpRepository: Repository<AirlinePasswordResetOtpEntity>,
+    @InjectRepository(AirlineEntity)
+    private readonly airlineRepository: Repository<AirlineEntity>,
+    @InjectRepository(AirlineUserEntity)
+    private readonly airlineUserRepository: Repository<AirlineUserEntity>,
+    @InjectRepository(AirlineAdminInviteEntity)
+    private readonly airlineAdminInviteRepository: Repository<AirlineAdminInviteEntity>,
+    @InjectRepository(PlatformAccessControlEntity)
+    private readonly platformAccessControlRepository: Repository<PlatformAccessControlEntity>,
+    @InjectRepository(AirlineAccessControlEntity)
+    private readonly airlineAccessControlRepository: Repository<AirlineAccessControlEntity>,
+    private readonly logger: LoggerService,
+  ) {}
+
+  async findPlatformAccessControlsByAdminId(
+    adminId: number,
+    requestId: string,
+  ): Promise<UserAccessControlEntry[]> {
+    this.logger.debug(
+      "Finding platform access controls by admin id",
+      "AuthRepository",
+      requestId,
+      { adminId },
+    );
+
+    const rows = await this.platformAccessControlRepository.find({
+      where: { adminId },
+    });
+
+    return this.groupAccessControlRows(
+      rows.map((row) => ({
+        asset: row.asset,
+        action: row.accessAction,
+      })),
+    );
+  }
+
+  async findAirlineAccessControlsByAirlineUserId(
+    airlineUserId: number,
+    requestId: string,
+  ): Promise<UserAccessControlEntry[]> {
+    this.logger.debug(
+      "Finding airline access controls by airline user id",
+      "AuthRepository",
+      requestId,
+      { airlineUserId },
+    );
+
+    const rows = await this.airlineAccessControlRepository.find({
+      where: { airlineUserId },
+    });
+
+    return this.groupAccessControlRows(
+      rows.map((row) => ({
+        asset: row.asset,
+        action: row.accessAction,
+      })),
+    );
+  }
+
+  private groupAccessControlRows(
+    rows: Array<{ asset: string; action: AccessAction }>,
+  ): UserAccessControlEntry[] {
+    const grouped = new Map<string, Set<AccessAction>>();
+
+    for (const row of rows) {
+      const existing = grouped.get(row.asset);
+      if (existing) {
+        existing.add(row.action);
+      } else {
+        grouped.set(row.asset, new Set([row.action]));
+      }
+    }
+
+    return Array.from(grouped.entries()).map(([moduleKey, actions]) => ({
+      moduleKey,
+      permissions: Array.from(actions),
+    }));
+  }
+
+  async findAdminByEmail(
+    email: string,
+    requestId: string,
+  ): Promise<AdminEntity | null> {
+    this.logger.debug("Finding admin by email", "AuthRepository", requestId, {
+      email,
+    });
+
+    return this.adminRepository.findOne({ where: { email } });
+  }
+
+  async findAdminById(
+    id: number,
+    requestId: string,
+  ): Promise<AdminEntity | null> {
+    this.logger.debug("Finding admin by id", "AuthRepository", requestId, {
+      adminId: id,
+    });
+
+    return this.adminRepository.findOne({ where: { id } });
+  }
+
+  async createAdmin(
+    payload: Pick<
+      AdminEntity,
+      | "firstName"
+      | "lastName"
+      | "email"
+      | "passwordHash"
+      | "role"
+      | "isActive"
+      | "requirePasswordReset"
+    >,
+    requestId: string,
+  ): Promise<AdminEntity> {
+    this.logger.debug("Creating admin", "AuthRepository", requestId, {
+      email: payload.email,
+      role: payload.role,
+    });
+
+    const admin = this.adminRepository.create(payload);
+    return this.adminRepository.save(admin);
+  }
+
+  async saveRefreshToken(
+    adminId: number,
+    tokenHash: string,
+    expiresAt: Date,
+    requestId: string,
+  ): Promise<RefreshTokenEntity> {
+    this.logger.debug("Saving refresh token", "AuthRepository", requestId, {
+      adminId,
+      expiresAt: expiresAt.toISOString(),
+    });
+
+    const refreshToken = this.refreshTokenRepository.create({
+      adminId,
+      tokenHash,
+      expiresAt,
+      isRevoked: false,
+    });
+
+    return this.refreshTokenRepository.save(refreshToken);
+  }
+
+  async findActiveRefreshTokenByAdminId(
+    adminId: number,
+    requestId: string,
+  ): Promise<RefreshTokenEntity | null> {
+    this.logger.debug(
+      "Finding active refresh token by admin id",
+      "AuthRepository",
+      requestId,
+      { adminId },
+    );
+
+    return this.refreshTokenRepository.findOne({
+      where: {
+        adminId,
+        isRevoked: false,
+        expiresAt: MoreThan(new Date()),
+      },
+      order: {
+        createdAt: "DESC",
+      },
+    });
+  }
+
+  async revokeRefreshToken(id: number, requestId: string): Promise<void> {
+    this.logger.debug("Revoking refresh token", "AuthRepository", requestId, {
+      refreshTokenId: id,
+    });
+
+    await this.refreshTokenRepository.update({ id }, { isRevoked: true });
+  }
+
+  async revokeActiveRefreshTokensByAdminId(
+    adminId: number,
+    requestId: string,
+  ): Promise<void> {
+    this.logger.debug(
+      "Revoking active refresh tokens by admin id",
+      "AuthRepository",
+      requestId,
+      { adminId },
+    );
+
+    await this.refreshTokenRepository.update(
+      { adminId, isRevoked: false },
+      { isRevoked: true },
+    );
+  }
+
+  async updateLastLogin(
+    adminId: number,
+    lastLoginAt: Date,
+    requestId: string,
+  ): Promise<void> {
+    this.logger.debug(
+      "Updating admin last login",
+      "AuthRepository",
+      requestId,
+      {
+        adminId,
+        lastLoginAt: lastLoginAt.toISOString(),
+      },
+    );
+
+    await this.adminRepository.update({ id: adminId }, { lastLoginAt });
+  }
+
+  async countRecentAdminForgotPasswordOtps(
+    adminId: number,
+    since: Date,
+    requestId: string,
+  ): Promise<number> {
+    this.logger.debug(
+      "Counting recent admin forgot password OTP requests",
+      "AuthRepository",
+      requestId,
+      {
+        adminId,
+        since: since.toISOString(),
+      },
+    );
+
+    return this.adminPasswordResetOtpRepository.count({
+      where: {
+        adminId,
+        createdAt: MoreThan(since),
+      },
+    });
+  }
+
+  async invalidateActiveAdminForgotPasswordOtpsByAdminId(
+    adminId: number,
+    requestId: string,
+  ): Promise<void> {
+    this.logger.debug(
+      "Invalidating active admin forgot password OTPs",
+      "AuthRepository",
+      requestId,
+      { adminId },
+    );
+
+    await this.adminPasswordResetOtpRepository.update(
+      {
+        adminId,
+        isUsed: false,
+        expiresAt: MoreThan(new Date()),
+      },
+      {
+        isUsed: true,
+      },
+    );
+  }
+
+  async saveAdminForgotPasswordOtp(
+    adminId: number,
+    otpHash: string,
+    expiresAt: Date,
+    requestId: string,
+  ): Promise<AdminPasswordResetOtpEntity> {
+    this.logger.debug(
+      "Saving admin forgot password OTP",
+      "AuthRepository",
+      requestId,
+      {
+        adminId,
+        expiresAt: expiresAt.toISOString(),
+      },
+    );
+
+    const otpRecord = this.adminPasswordResetOtpRepository.create({
+      adminId,
+      otpHash,
+      expiresAt,
+      attemptCount: 0,
+      isVerified: false,
+      isUsed: false,
+    });
+
+    return this.adminPasswordResetOtpRepository.save(otpRecord);
+  }
+
+  async findActiveAdminForgotPasswordOtpByAdminId(
+    adminId: number,
+    requestId: string,
+  ): Promise<AdminPasswordResetOtpEntity | null> {
+    this.logger.debug(
+      "Finding active admin forgot password OTP",
+      "AuthRepository",
+      requestId,
+      { adminId },
+    );
+
+    return this.adminPasswordResetOtpRepository.findOne({
+      where: {
+        adminId,
+        isUsed: false,
+        expiresAt: MoreThan(new Date()),
+      },
+      order: {
+        createdAt: "DESC",
+      },
+    });
+  }
+
+  async findAdminForgotPasswordOtpById(
+    otpId: number,
+    requestId: string,
+  ): Promise<AdminPasswordResetOtpEntity | null> {
+    this.logger.debug(
+      "Finding admin forgot password OTP by id",
+      "AuthRepository",
+      requestId,
+      { otpId },
+    );
+
+    return this.adminPasswordResetOtpRepository.findOne({
+      where: { id: otpId },
+    });
+  }
+
+  async incrementAdminForgotPasswordOtpAttempts(
+    otpId: number,
+    currentAttemptCount: number,
+    requestId: string,
+  ): Promise<void> {
+    this.logger.debug(
+      "Incrementing admin forgot password OTP attempts",
+      "AuthRepository",
+      requestId,
+      {
+        otpId,
+        nextAttemptCount: currentAttemptCount + 1,
+      },
+    );
+
+    await this.adminPasswordResetOtpRepository.update(
+      { id: otpId },
+      {
+        attemptCount: currentAttemptCount + 1,
+      },
+    );
+  }
+
+  async markAdminForgotPasswordOtpVerified(
+    otpId: number,
+    requestId: string,
+  ): Promise<void> {
+    this.logger.debug(
+      "Marking admin forgot password OTP verified",
+      "AuthRepository",
+      requestId,
+      { otpId },
+    );
+
+    await this.adminPasswordResetOtpRepository.update(
+      { id: otpId },
+      { isVerified: true },
+    );
+  }
+
+  async markAdminForgotPasswordOtpUsed(
+    otpId: number,
+    requestId: string,
+  ): Promise<void> {
+    this.logger.debug(
+      "Marking admin forgot password OTP used",
+      "AuthRepository",
+      requestId,
+      { otpId },
+    );
+
+    await this.adminPasswordResetOtpRepository.update(
+      { id: otpId },
+      { isUsed: true },
+    );
+  }
+
+  async updateAdminPasswordHash(
+    adminId: number,
+    passwordHash: string,
+    requestId: string,
+  ): Promise<void> {
+    this.logger.debug(
+      "Updating admin password hash",
+      "AuthRepository",
+      requestId,
+      {
+        adminId,
+      },
+    );
+
+    await this.adminRepository.update(
+      { id: adminId },
+      { passwordHash, requirePasswordReset: false },
+    );
+  }
+
+  async saveAdminTwoFactorTempSecret(
+    adminId: number,
+    tempSecretEncrypted: string,
+    requestId: string,
+  ): Promise<void> {
+    this.logger.debug(
+      "Saving admin 2FA temporary secret",
+      "AuthRepository",
+      requestId,
+      { adminId },
+    );
+
+    await this.adminRepository.update(
+      { id: adminId },
+      { twoFactorTempSecretEncrypted: tempSecretEncrypted },
+    );
+  }
+
+  async enableAdminTwoFactor(
+    adminId: number,
+    secretEncrypted: string,
+    recoveryCodeHashes: string[],
+    requestId: string,
+  ): Promise<void> {
+    this.logger.debug("Enabling admin 2FA", "AuthRepository", requestId, {
+      adminId,
+    });
+
+    await this.adminRepository.update(
+      { id: adminId },
+      {
+        twoFactorEnabled: true,
+        twoFactorSecretEncrypted: secretEncrypted,
+        twoFactorTempSecretEncrypted: null,
+        twoFactorRecoveryCodeHashes: recoveryCodeHashes,
+      },
+    );
+  }
+
+  async disableAdminTwoFactor(
+    adminId: number,
+    requestId: string,
+  ): Promise<void> {
+    this.logger.debug("Disabling admin 2FA", "AuthRepository", requestId, {
+      adminId,
+    });
+
+    await this.adminRepository.update(
+      { id: adminId },
+      {
+        twoFactorEnabled: false,
+        twoFactorSecretEncrypted: null,
+        twoFactorTempSecretEncrypted: null,
+        twoFactorRecoveryCodeHashes: null,
+      },
+    );
+  }
+
+  async updateAdminTwoFactorRecoveryCodeHashes(
+    adminId: number,
+    recoveryCodeHashes: string[],
+    requestId: string,
+  ): Promise<void> {
+    this.logger.debug(
+      "Updating admin 2FA recovery code hashes",
+      "AuthRepository",
+      requestId,
+      { adminId, codeCount: recoveryCodeHashes.length },
+    );
+
+    await this.adminRepository.update(
+      { id: adminId },
+      { twoFactorRecoveryCodeHashes: recoveryCodeHashes },
+    );
+  }
+
+  async findAirlineByCode(
+    code: string,
+    requestId: string,
+  ): Promise<AirlineEntity | null> {
+    this.logger.debug("Finding airline by code", "AuthRepository", requestId, {
+      code,
+    });
+
+    return this.airlineRepository.findOne({ where: { code } });
+  }
+
+  async findAirlineUserByEmail(
+    email: string,
+    requestId: string,
+  ): Promise<AirlineUserEntity | null> {
+    this.logger.debug(
+      "Finding airline user by email",
+      "AuthRepository",
+      requestId,
+      { email },
+    );
+
+    return this.airlineUserRepository.findOne({ where: { email } });
+  }
+
+  async findAirlineUserById(
+    id: number,
+    requestId: string,
+  ): Promise<AirlineUserEntity | null> {
+    this.logger.debug(
+      "Finding airline user by id",
+      "AuthRepository",
+      requestId,
+      {
+        airlineUserId: id,
+      },
+    );
+
+    return this.airlineUserRepository.findOne({ where: { id } });
+  }
+
+  async findAirlineById(
+    id: number,
+    requestId: string,
+  ): Promise<AirlineEntity | null> {
+    this.logger.debug("Finding airline by id", "AuthRepository", requestId, {
+      airlineId: id,
+    });
+
+    return this.airlineRepository.findOne({ where: { id } });
+  }
+
+  async saveAirlineRefreshToken(
+    airlineUserId: number,
+    tokenHash: string,
+    expiresAt: Date,
+    requestId: string,
+  ): Promise<AirlineRefreshTokenEntity> {
+    this.logger.debug(
+      "Saving airline refresh token",
+      "AuthRepository",
+      requestId,
+      {
+        airlineUserId,
+        expiresAt: expiresAt.toISOString(),
+      },
+    );
+
+    const refreshToken = this.airlineRefreshTokenRepository.create({
+      airlineUserId,
+      tokenHash,
+      expiresAt,
+      isRevoked: false,
+    });
+
+    return this.airlineRefreshTokenRepository.save(refreshToken);
+  }
+
+  async findActiveAirlineRefreshTokenByAirlineUserId(
+    airlineUserId: number,
+    requestId: string,
+  ): Promise<AirlineRefreshTokenEntity | null> {
+    this.logger.debug(
+      "Finding active airline refresh token by airline user id",
+      "AuthRepository",
+      requestId,
+      { airlineUserId },
+    );
+
+    return this.airlineRefreshTokenRepository.findOne({
+      where: {
+        airlineUserId,
+        isRevoked: false,
+        expiresAt: MoreThan(new Date()),
+      },
+      order: {
+        createdAt: "DESC",
+      },
+    });
+  }
+
+  async revokeAirlineRefreshToken(
+    id: number,
+    requestId: string,
+  ): Promise<void> {
+    this.logger.debug(
+      "Revoking airline refresh token",
+      "AuthRepository",
+      requestId,
+      { airlineRefreshTokenId: id },
+    );
+
+    await this.airlineRefreshTokenRepository.update(
+      { id },
+      { isRevoked: true },
+    );
+  }
+
+  async revokeActiveAirlineRefreshTokensByAirlineUserId(
+    airlineUserId: number,
+    requestId: string,
+  ): Promise<void> {
+    this.logger.debug(
+      "Revoking active airline refresh tokens by airline user id",
+      "AuthRepository",
+      requestId,
+      { airlineUserId },
+    );
+
+    await this.airlineRefreshTokenRepository.update(
+      { airlineUserId, isRevoked: false },
+      { isRevoked: true },
+    );
+  }
+
+  async updateAirlineUserLastLogin(
+    airlineUserId: number,
+    lastLoginAt: Date,
+    requestId: string,
+  ): Promise<void> {
+    this.logger.debug(
+      "Updating airline user last login",
+      "AuthRepository",
+      requestId,
+      {
+        airlineUserId,
+        lastLoginAt: lastLoginAt.toISOString(),
+      },
+    );
+
+    await this.airlineUserRepository.update(
+      { id: airlineUserId },
+      { lastLoginAt },
+    );
+  }
+
+  async countRecentAirlineForgotPasswordOtps(
+    airlineUserId: number,
+    since: Date,
+    requestId: string,
+  ): Promise<number> {
+    this.logger.debug(
+      "Counting recent airline forgot password OTP requests",
+      "AuthRepository",
+      requestId,
+      {
+        airlineUserId,
+        since: since.toISOString(),
+      },
+    );
+
+    return this.airlinePasswordResetOtpRepository.count({
+      where: {
+        airlineUserId,
+        createdAt: MoreThan(since),
+      },
+    });
+  }
+
+  async invalidateActiveAirlineForgotPasswordOtpsByAirlineUserId(
+    airlineUserId: number,
+    requestId: string,
+  ): Promise<void> {
+    this.logger.debug(
+      "Invalidating active airline forgot password OTPs",
+      "AuthRepository",
+      requestId,
+      { airlineUserId },
+    );
+
+    await this.airlinePasswordResetOtpRepository.update(
+      {
+        airlineUserId,
+        isUsed: false,
+        expiresAt: MoreThan(new Date()),
+      },
+      { isUsed: true },
+    );
+  }
+
+  async saveAirlineForgotPasswordOtp(
+    airlineUserId: number,
+    otpHash: string,
+    expiresAt: Date,
+    requestId: string,
+  ): Promise<AirlinePasswordResetOtpEntity> {
+    this.logger.debug(
+      "Saving airline forgot password OTP",
+      "AuthRepository",
+      requestId,
+      {
+        airlineUserId,
+        expiresAt: expiresAt.toISOString(),
+      },
+    );
+
+    const otpRecord = this.airlinePasswordResetOtpRepository.create({
+      airlineUserId,
+      otpHash,
+      expiresAt,
+      attemptCount: 0,
+      isVerified: false,
+      isUsed: false,
+    });
+
+    return this.airlinePasswordResetOtpRepository.save(otpRecord);
+  }
+
+  async findActiveAirlineForgotPasswordOtpByAirlineUserId(
+    airlineUserId: number,
+    requestId: string,
+  ): Promise<AirlinePasswordResetOtpEntity | null> {
+    this.logger.debug(
+      "Finding active airline forgot password OTP",
+      "AuthRepository",
+      requestId,
+      { airlineUserId },
+    );
+
+    return this.airlinePasswordResetOtpRepository.findOne({
+      where: {
+        airlineUserId,
+        isUsed: false,
+        expiresAt: MoreThan(new Date()),
+      },
+      order: {
+        createdAt: "DESC",
+      },
+    });
+  }
+
+  async findAirlineForgotPasswordOtpById(
+    otpId: number,
+    requestId: string,
+  ): Promise<AirlinePasswordResetOtpEntity | null> {
+    this.logger.debug(
+      "Finding airline forgot password OTP by id",
+      "AuthRepository",
+      requestId,
+      { otpId },
+    );
+
+    return this.airlinePasswordResetOtpRepository.findOne({
+      where: { id: otpId },
+    });
+  }
+
+  async incrementAirlineForgotPasswordOtpAttempts(
+    otpId: number,
+    currentAttemptCount: number,
+    requestId: string,
+  ): Promise<void> {
+    this.logger.debug(
+      "Incrementing airline forgot password OTP attempts",
+      "AuthRepository",
+      requestId,
+      {
+        otpId,
+        nextAttemptCount: currentAttemptCount + 1,
+      },
+    );
+
+    await this.airlinePasswordResetOtpRepository.update(
+      { id: otpId },
+      {
+        attemptCount: currentAttemptCount + 1,
+      },
+    );
+  }
+
+  async markAirlineForgotPasswordOtpVerified(
+    otpId: number,
+    requestId: string,
+  ): Promise<void> {
+    this.logger.debug(
+      "Marking airline forgot password OTP verified",
+      "AuthRepository",
+      requestId,
+      { otpId },
+    );
+
+    await this.airlinePasswordResetOtpRepository.update(
+      { id: otpId },
+      { isVerified: true },
+    );
+  }
+
+  async markAirlineForgotPasswordOtpUsed(
+    otpId: number,
+    requestId: string,
+  ): Promise<void> {
+    this.logger.debug(
+      "Marking airline forgot password OTP used",
+      "AuthRepository",
+      requestId,
+      { otpId },
+    );
+
+    await this.airlinePasswordResetOtpRepository.update(
+      { id: otpId },
+      { isUsed: true },
+    );
+  }
+
+  async updateAirlineUserPasswordHash(
+    airlineUserId: number,
+    passwordHash: string,
+    requestId: string,
+  ): Promise<void> {
+    this.logger.debug(
+      "Updating airline user password hash",
+      "AuthRepository",
+      requestId,
+      {
+        airlineUserId,
+      },
+    );
+
+    await this.airlineUserRepository.update(
+      { id: airlineUserId },
+      { passwordHash },
+    );
+  }
+
+  async saveAirlineTwoFactorTempSecret(
+    airlineUserId: number,
+    tempSecretEncrypted: string,
+    requestId: string,
+  ): Promise<void> {
+    this.logger.debug(
+      "Saving airline 2FA temporary secret",
+      "AuthRepository",
+      requestId,
+      { airlineUserId },
+    );
+
+    await this.airlineUserRepository.update(
+      { id: airlineUserId },
+      { twoFactorTempSecretEncrypted: tempSecretEncrypted },
+    );
+  }
+
+  async enableAirlineTwoFactor(
+    airlineUserId: number,
+    secretEncrypted: string,
+    recoveryCodeHashes: string[],
+    requestId: string,
+  ): Promise<void> {
+    this.logger.debug("Enabling airline 2FA", "AuthRepository", requestId, {
+      airlineUserId,
+    });
+
+    await this.airlineUserRepository.update(
+      { id: airlineUserId },
+      {
+        twoFactorEnabled: true,
+        twoFactorSecretEncrypted: secretEncrypted,
+        twoFactorTempSecretEncrypted: null,
+        twoFactorRecoveryCodeHashes: recoveryCodeHashes,
+      },
+    );
+  }
+
+  async disableAirlineTwoFactor(
+    airlineUserId: number,
+    requestId: string,
+  ): Promise<void> {
+    this.logger.debug("Disabling airline 2FA", "AuthRepository", requestId, {
+      airlineUserId,
+    });
+
+    await this.airlineUserRepository.update(
+      { id: airlineUserId },
+      {
+        twoFactorEnabled: false,
+        twoFactorSecretEncrypted: null,
+        twoFactorTempSecretEncrypted: null,
+        twoFactorRecoveryCodeHashes: null,
+      },
+    );
+  }
+
+  async createAirline(
+    payload: Pick<
+      AirlineEntity,
+      | "name"
+      | "code"
+      | "countryCode"
+      | "contactEmail"
+      | "contactPhone"
+      | "isActive"
+    >,
+    requestId: string,
+  ): Promise<AirlineEntity> {
+    this.logger.debug("Creating airline", "AuthRepository", requestId, {
+      code: payload.code,
+      name: payload.name,
+    });
+
+    const airline = this.airlineRepository.create(payload);
+    return this.airlineRepository.save(airline);
+  }
+
+  async createAirlineAdminInvite(
+    payload: Pick<
+      AirlineAdminInviteEntity,
+      | "airlineId"
+      | "invitedByAdminId"
+      | "firstName"
+      | "lastName"
+      | "email"
+      | "tokenLookup"
+      | "tokenHash"
+      | "expiresAt"
+      | "isAccepted"
+    >,
+    requestId: string,
+  ): Promise<AirlineAdminInviteEntity> {
+    this.logger.debug(
+      "Creating airline admin invite",
+      "AuthRepository",
+      requestId,
+      {
+        airlineId: payload.airlineId,
+        email: payload.email,
+      },
+    );
+
+    const invite = this.airlineAdminInviteRepository.create(payload);
+    return this.airlineAdminInviteRepository.save(invite);
+  }
+
+  async findActiveAirlineAdminInviteByEmail(
+    email: string,
+    requestId: string,
+  ): Promise<AirlineAdminInviteEntity | null> {
+    this.logger.debug(
+      "Finding active airline admin invite by email",
+      "AuthRepository",
+      requestId,
+      { email },
+    );
+
+    return this.airlineAdminInviteRepository.findOne({
+      where: {
+        email,
+        isAccepted: false,
+        expiresAt: MoreThan(new Date()),
+      },
+      order: {
+        createdAt: "DESC",
+      },
+    });
+  }
+
+  async findActiveAirlineAdminInviteByAirlineId(
+    airlineId: number,
+    requestId: string,
+  ): Promise<AirlineAdminInviteEntity | null> {
+    this.logger.debug(
+      "Finding active airline admin invite by airline id",
+      "AuthRepository",
+      requestId,
+      { airlineId },
+    );
+
+    return this.airlineAdminInviteRepository.findOne({
+      where: {
+        airlineId,
+        isAccepted: false,
+        expiresAt: MoreThan(new Date()),
+      },
+      order: {
+        createdAt: "DESC",
+      },
+    });
+  }
+
+  async findPendingAirlineAdminInviteById(
+    inviteId: number,
+    requestId: string,
+  ): Promise<AirlineAdminInviteEntity | null> {
+    this.logger.debug(
+      "Finding pending airline admin invite by id",
+      "AuthRepository",
+      requestId,
+      { inviteId },
+    );
+
+    return this.airlineAdminInviteRepository.findOne({
+      where: {
+        id: inviteId,
+        isAccepted: false,
+        expiresAt: MoreThan(new Date()),
+      },
+    });
+  }
+
+  async findPendingAirlineAdminInviteByLookup(
+    tokenLookup: string,
+    requestId: string,
+  ): Promise<AirlineAdminInviteEntity | null> {
+    this.logger.debug(
+      "Finding pending airline admin invite by token lookup",
+      "AuthRepository",
+      requestId,
+      { tokenLookup },
+    );
+
+    return this.airlineAdminInviteRepository.findOne({
+      where: {
+        tokenLookup,
+        isAccepted: false,
+        expiresAt: MoreThan(new Date()),
+      },
+    });
+  }
+
+  async countAirlineAdminsByAirlineId(
+    airlineId: number,
+    requestId: string,
+  ): Promise<number> {
+    this.logger.debug(
+      "Counting airline admins by airline id",
+      "AuthRepository",
+      requestId,
+      { airlineId },
+    );
+
+    return this.airlineUserRepository.count({
+      where: {
+        airlineId,
+        role: AirlineRole.AIRLINE_ADMIN,
+        isActive: true,
+      },
+    });
+  }
+
+  async createAirlineUser(
+    payload: Pick<
+      AirlineUserEntity,
+      | "airlineId"
+      | "firstName"
+      | "lastName"
+      | "email"
+      | "passwordHash"
+      | "role"
+      | "isActive"
+    >,
+    requestId: string,
+  ): Promise<AirlineUserEntity> {
+    this.logger.debug("Creating airline user", "AuthRepository", requestId, {
+      airlineId: payload.airlineId,
+      email: payload.email,
+      role: payload.role,
+    });
+
+    const user = this.airlineUserRepository.create(payload);
+    return this.airlineUserRepository.save(user);
+  }
+
+  async markAirlineAdminInviteAccepted(
+    inviteId: number,
+    requestId: string,
+  ): Promise<void> {
+    this.logger.debug(
+      "Marking airline admin invite accepted",
+      "AuthRepository",
+      requestId,
+      { inviteId },
+    );
+
+    await this.airlineAdminInviteRepository.update(
+      { id: inviteId },
+      { isAccepted: true },
+    );
+  }
+}
