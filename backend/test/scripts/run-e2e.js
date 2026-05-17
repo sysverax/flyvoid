@@ -3,6 +3,32 @@ const { spawn } = require("node:child_process");
 
 const DEFAULT_URL = "http://127.0.0.1:8080";
 
+const looksLikeRegexPattern = (value) => /[|()[\]^$*+?]/.test(value);
+
+const normalizeTargetPath = (value) => {
+    const input = (value || "").trim().replace(/^['\"]|['\"]$/g, "");
+
+    // Keep explicit Jest patterns unchanged.
+    if (!input || looksLikeRegexPattern(input)) {
+        return input;
+    }
+
+    let normalized = input.replace(/\\/g, "/").replace(/^\.\//, "");
+
+    // If caller passes backend-relative paths (test/...), rebase to Jest rootDir (test).
+    if (/^test\//i.test(normalized)) {
+        normalized = normalized.slice(5);
+    }
+
+    // If caller passes absolute paths, keep only the segment under /test/.
+    const testSegmentIndex = normalized.toLowerCase().lastIndexOf("/test/");
+    if (testSegmentIndex >= 0) {
+        normalized = normalized.slice(testSegmentIndex + "/test/".length);
+    }
+
+    return normalized;
+};
+
 const askServerUrl = () =>
     new Promise((resolve) => {
         const rl = readline.createInterface({
@@ -38,7 +64,7 @@ const run = async () => {
     const jestArgs = ["./node_modules/jest/bin/jest.js", "--runInBand"];
 
     if (targetPath) {
-        jestArgs.push(targetPath);
+        jestArgs.push(normalizeTargetPath(targetPath));
     }
 
     jestArgs.push("--config", "./test/jest-e2e.json");
