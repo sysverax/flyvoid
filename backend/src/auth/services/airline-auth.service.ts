@@ -35,6 +35,7 @@ import {
 } from "../dto";
 import { JwtAccessPayload } from "../interfaces/jwt-access-payload.interface";
 import { JwtRefreshPayload } from "../interfaces/jwt-refresh-payload.interface";
+import { AuthenticatedUser } from "../interfaces/authenticated-request.interface";
 import { AuthRepository } from "../repositories/auth.repository";
 
 @Injectable()
@@ -206,7 +207,7 @@ export class AirlineAuthService {
   }
 
   async setupTwoFactor(
-    authenticatedUser: JwtAccessPayload,
+    authenticatedUser: AuthenticatedUser,
     requestId: string,
   ): Promise<AirlineTwoFactorSetupResponseDto> {
     const user = await this.requireAirlineUser(authenticatedUser, requestId);
@@ -240,7 +241,7 @@ export class AirlineAuthService {
   }
 
   async enableTwoFactor(
-    authenticatedUser: JwtAccessPayload,
+    authenticatedUser: AuthenticatedUser,
     dto: AirlineTwoFactorEnableRequestDto,
     requestId: string,
   ): Promise<AirlineTwoFactorEnableResponseDto> {
@@ -278,7 +279,7 @@ export class AirlineAuthService {
   }
 
   async disableTwoFactor(
-    authenticatedUser: JwtAccessPayload,
+    authenticatedUser: AuthenticatedUser,
     dto: AirlineTwoFactorDisableRequestDto,
     requestId: string,
   ): Promise<void> {
@@ -566,7 +567,7 @@ export class AirlineAuthService {
   }
 
   async signout(
-    authenticatedUser: JwtAccessPayload,
+    authenticatedUser: AuthenticatedUser,
     dto: SignoutRequestDto,
     requestId: string,
   ): Promise<void> {
@@ -662,7 +663,7 @@ export class AirlineAuthService {
   }
 
   private async requireAirlineUser(
-    authenticatedUser: JwtAccessPayload,
+    authenticatedUser: AuthenticatedUser,
     requestId: string,
   ): Promise<AirlineUserEntity> {
     if (authenticatedUser.userType !== UserType.AIRLINE) {
@@ -895,7 +896,9 @@ export class AirlineAuthService {
   }
 
   private isOtpRestrictedEnvironment(): boolean {
-    return ["dev", "development", "local", "test", "automation_test"].includes(config.app.env);
+    return ["dev", "development", "local", "test", "automation_test"].includes(
+      config.app.env,
+    );
   }
 
   private generateSixDigitOtp(): string {

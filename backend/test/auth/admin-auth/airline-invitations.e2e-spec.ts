@@ -157,7 +157,6 @@ const expectInviteSuccess = async (
 
 describe("Admin Airline Invitation API", () => {
   let app: INestApplication;
-  let accessToken: string;
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -219,19 +218,18 @@ describe("Admin Airline Invitation API", () => {
     const accessToken = await createInactiveSuperAdminAccessToken(app);
     const payload = airlineFactory.buildInvitePayload();
 
-    const { body } = await expectInviteSuccess(
+    await expectInviteError(
       app,
       {
         id: "TC_AUTH_ADMIN_AIRLINE_INVITE_003",
         description:
-          "Airline admin invitation by inactive admin success with valid payload",
-        expectedStatus: 401,
+          "Airline admin invitation by inactive admin should fail with valid payload",
+        expectedStatus: 403,
       },
       accessToken,
       payload,
+      403,
     );
-
-    expect(body.data.email).toBe(payload.adminEmail.toLowerCase());
   });
 
   it("TC_AUTH_ADMIN_AIRLINE_INVITE_004 - Invitation without access token", async () => {

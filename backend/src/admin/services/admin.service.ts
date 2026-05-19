@@ -12,7 +12,7 @@ import {
 } from "../../common/constants/access-control.constants";
 import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
 import { LoggerService } from "../../common/logger/logger.service";
-import { JwtAccessPayload } from "../../auth/interfaces/jwt-access-payload.interface";
+import { AuthenticatedUser } from "../../auth/interfaces/authenticated-request.interface";
 import { AdminRole } from "../../common/constants/user.constants";
 import {
   AdminProfileDto,
@@ -34,7 +34,7 @@ export class AdminService {
   ) {}
 
   async getLoggedInAdminProfile(
-    authenticatedUser: JwtAccessPayload,
+    authenticatedUser: AuthenticatedUser,
     requestId: string,
   ): Promise<AdminProfileDto> {
     const adminId = authenticatedUser.sub;
@@ -89,7 +89,7 @@ export class AdminService {
   }
 
   async inviteAdminUser(
-    authenticatedUser: JwtAccessPayload,
+    authenticatedUser: AuthenticatedUser,
     dto: InviteAdminUserRequestDto,
     requestId: string,
   ): Promise<InviteAdminUserResponseDto> {
@@ -143,7 +143,7 @@ export class AdminService {
   }
 
   async updateAdminUser(
-    authenticatedUser: JwtAccessPayload,
+    authenticatedUser: AuthenticatedUser,
     adminId: number,
     dto: UpdateAdminUserRequestDto,
     requestId: string,
@@ -213,7 +213,7 @@ export class AdminService {
   }
 
   async deleteAdminUser(
-    authenticatedUser: JwtAccessPayload,
+    authenticatedUser: AuthenticatedUser,
     adminId: number,
     requestId: string,
   ): Promise<void> {
@@ -236,7 +236,7 @@ export class AdminService {
   }
 
   async listAdminUsers(
-    authenticatedUser: JwtAccessPayload,
+    authenticatedUser: AuthenticatedUser,
     pagination: PaginationQueryDto,
     requestId: string,
   ): Promise<AdminUserListResponseDto> {
@@ -256,7 +256,7 @@ export class AdminService {
   }
 
   private async ensureSuperAdmin(
-    authenticatedUser: JwtAccessPayload,
+    authenticatedUser: AuthenticatedUser,
     requestId: string,
   ) {
     const actor = await this.adminRepository.findById(

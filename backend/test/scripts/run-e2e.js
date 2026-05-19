@@ -5,11 +5,12 @@ const DEFAULT_URL = "http://127.0.0.1:8080";
 
 const looksLikeRegexPattern = (value) => /[|()[\]^$*+?]/.test(value);
 
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 const normalizeTargetPath = (value) => {
     const input = (value || "").trim().replace(/^['\"]|['\"]$/g, "");
 
-    // Keep explicit Jest patterns unchanged.
-    if (!input || looksLikeRegexPattern(input)) {
+    if (!input) {
         return input;
     }
 
@@ -27,6 +28,36 @@ const normalizeTargetPath = (value) => {
     }
 
     return normalized;
+};
+
+const resolveTestTargetPattern = (targetPath) => {
+    const rawInput = (targetPath || "").trim().replace(/^['\"]|['\"]$/g, "");
+    const normalized = normalizeTargetPath(targetPath);
+
+    if (!normalized) {
+        return "";
+    }
+
+    // Keep explicit regex-like patterns unchanged.
+    if (looksLikeRegexPattern(rawInput) && !rawInput.includes("*") && !/[\\/]/.test(rawInput)) {
+        return rawInput;
+    }
+
+    // If an explicit spec file is provided, match exactly that file.
+    if (/\.e2e-spec\.ts$/i.test(normalized)) {
+        return `${escapeRegex(normalized)}$`;
+    }
+
+    // Interpret wildcard/folder input as recursive folder matcher.
+    let folder = normalized
+        .replace(/\*+/g, "")
+        .replace(/\/+$/, "");
+
+    if (!folder) {
+        return ".*\\.e2e-spec\\.ts$";
+    }
+
+    return `${escapeRegex(folder)}\/.*\\.e2e-spec\\.ts$`;
 };
 
 const askServerUrl = () =>
@@ -65,7 +96,7 @@ const run = async () => {
     const jestArgs = ["./node_modules/jest/bin/jest.js", "--runInBand"];
 
     if (targetPath) {
-        jestArgs.push(normalizeTargetPath(targetPath));
+        jestArgs.push("--testPathPatterns", resolveTestTargetPattern(targetPath));
     }
 
     jestArgs.push("--config", "./test/jest-e2e.json");

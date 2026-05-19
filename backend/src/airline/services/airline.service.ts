@@ -1,7 +1,7 @@
 import { Injectable, UnauthorizedException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
-import { JwtAccessPayload } from "../../auth/interfaces/jwt-access-payload.interface";
+import { AuthenticatedUser } from "../../auth/interfaces/authenticated-request.interface";
 import { UserType } from "../../common/constants/user.constants";
 import { LoggerService } from "../../common/logger/logger.service";
 import {
@@ -24,7 +24,7 @@ export class AirlineService {
   ) {}
 
   async getUserProfile(
-    authenticatedUser: JwtAccessPayload,
+    authenticatedUser: AuthenticatedUser,
     requestId: string,
   ): Promise<AirlineUserProfileResponseDto> {
     const user = await this.requireAirlineUser(authenticatedUser, requestId);
@@ -40,7 +40,7 @@ export class AirlineService {
   }
 
   async getAirlineProfile(
-    authenticatedUser: JwtAccessPayload,
+    authenticatedUser: AuthenticatedUser,
     requestId: string,
   ): Promise<AirlineProfileResponseDto> {
     const user = await this.requireAirlineUser(authenticatedUser, requestId);
@@ -64,7 +64,7 @@ export class AirlineService {
   }
 
   private async requireAirlineUser(
-    authenticatedUser: JwtAccessPayload,
+    authenticatedUser: AuthenticatedUser,
     requestId: string,
   ): Promise<AirlineUserEntity> {
     if (authenticatedUser.userType !== UserType.AIRLINE) {

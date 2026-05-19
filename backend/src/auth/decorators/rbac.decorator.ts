@@ -18,8 +18,5 @@ export const RequireUserTypes = (...userTypes: UserType[]) =>
 export const RequireUserRoles = (...roles: UserRoleRequirement[]) =>
   SetMetadata(RBAC_ROLES_KEY, roles);
 
-export const RequireRoles = (...roles: UserRoleRequirement[]) =>
-  RequireUserRoles(...roles);
-
 export const RequireAccessControl = (rule: AccessControlRequirement) =>
   SetMetadata(RBAC_ACCESS_CONTROL_KEY, rule);

@@ -39,6 +39,7 @@ import {
 } from "../dto";
 import { JwtAccessPayload } from "../interfaces/jwt-access-payload.interface";
 import { JwtRefreshPayload } from "../interfaces/jwt-refresh-payload.interface";
+import { AuthenticatedUser } from "../interfaces/authenticated-request.interface";
 import { AuthRepository } from "../repositories/auth.repository";
 import {
   AccessAction,
@@ -96,19 +97,20 @@ export class AuthService {
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
-    const createdAdmin = await this.authRepository.createAdminWithPlatformAccessControls(
-      {
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-        email: normalizedEmail,
-        passwordHash,
-        role: AdminRole.SUPER_ADMIN,
-        isActive: true,
-        requirePasswordReset: false,
-      },
-      this.buildSuperAdminAccessControls(),
-      requestId,
-    );
+    const createdAdmin =
+      await this.authRepository.createAdminWithPlatformAccessControls(
+        {
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          email: normalizedEmail,
+          passwordHash,
+          role: AdminRole.SUPER_ADMIN,
+          isActive: true,
+          requirePasswordReset: false,
+        },
+        this.buildSuperAdminAccessControls(),
+        requestId,
+      );
 
     this.logger.info("Admin signup success", this.context, requestId, {
       adminId: createdAdmin.id,
@@ -291,7 +293,7 @@ export class AuthService {
   }
 
   async setupAdminTwoFactor(
-    authenticatedUser: JwtAccessPayload,
+    authenticatedUser: AuthenticatedUser,
     requestId: string,
   ): Promise<AdminTwoFactorSetupResponseDto> {
     const admin = await this.authRepository.findAdminById(
@@ -332,7 +334,7 @@ export class AuthService {
   }
 
   async enableAdminTwoFactor(
-    authenticatedUser: JwtAccessPayload,
+    authenticatedUser: AuthenticatedUser,
     dto: AdminTwoFactorEnableRequestDto,
     requestId: string,
   ): Promise<AdminTwoFactorEnableResponseDto> {
@@ -377,7 +379,7 @@ export class AuthService {
   }
 
   async disableAdminTwoFactor(
-    authenticatedUser: JwtAccessPayload,
+    authenticatedUser: AuthenticatedUser,
     dto: AdminTwoFactorDisableRequestDto,
     requestId: string,
   ): Promise<void> {
@@ -462,7 +464,7 @@ export class AuthService {
   }
 
   async inviteAirlineAdmin(
-    authenticatedUser: JwtAccessPayload,
+    authenticatedUser: AuthenticatedUser,
     dto: AdminInviteAirlineAdminRequestDto,
     requestId: string,
   ): Promise<AdminInviteAirlineAdminResponseDto> {
@@ -735,7 +737,7 @@ export class AuthService {
   }
 
   async signout(
-    authenticatedUser: JwtAccessPayload,
+    authenticatedUser: AuthenticatedUser,
     dto: SignoutRequestDto,
     requestId: string,
   ): Promise<void> {
@@ -1339,7 +1341,9 @@ export class AuthService {
   }
 
   private isOtpRestrictedEnvironment(): boolean {
-    return ["dev", "development", "local", "test", "automation_test"].includes(config.app.env);
+    return ["dev", "development", "local", "test", "automation_test"].includes(
+      config.app.env,
+    );
   }
 
   private generateSixDigitOtp(): string {

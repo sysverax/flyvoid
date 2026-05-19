@@ -114,13 +114,13 @@ Notes:
 
 Test cases:
 
-- `TC_AUTH_ADMIN_AIRLINE_INVITE_001`: Airline admin invitation success with valid payload, expected `201`
-- `TC_AUTH_ADMIN_AIRLINE_INVITE_002`: Invitation without access token, expected `401`
-- `TC_AUTH_ADMIN_AIRLINE_INVITE_003`: Invitation with invalid access token, expected `401`
-- `TC_AUTH_ADMIN_AIRLINE_INVITE_004`: Invitation with expired access token, expected `401`
-- `TC_AUTH_ADMIN_AIRLINE_INVITE_005`: Invitation by unauthorized role user, expected `403`
-- `TC_AUTH_ADMIN_AIRLINE_INVITE_006`: Invitation by SUPPORT_AGENT role, expected `403`
-- `TC_AUTH_ADMIN_AIRLINE_INVITE_007`: Invitation by OPERATIONS_MANAGER role, expected `403`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_001`: Airline admin invitation by SuperAdmin success with valid payload, expected `201`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_002`: Airline admin invitation by Staff admin success with valid payload, expected `201`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_003`: Airline admin invitation by inactive admin should fail with valid payload, expected `403`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_004`: Invitation without access token, expected `401`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_005`: Invitation with invalid access token, expected `401`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_006`: Invitation with expired access token, expected `401`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_007`: Invitation by unauthorized role user, expected `403`
 - `TC_AUTH_ADMIN_AIRLINE_INVITE_008`: Duplicate airline code, expected `409`
 - `TC_AUTH_ADMIN_AIRLINE_INVITE_009`: Duplicate admin email, expected `409`
 - `TC_AUTH_ADMIN_AIRLINE_INVITE_010`: Active invitation already exists for admin email, expected `409`
@@ -172,7 +172,7 @@ Test cases:
 
 Notes:
 
-- `TC_AUTH_ADMIN_AIRLINE_INVITE_006` and `TC_AUTH_ADMIN_AIRLINE_INVITE_007` are compatibility placeholders because those legacy platform roles are not present in the current role model.
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_003` verifies inactive-admin access should be denied after DB-backed guard hydration.
 - `TC_AUTH_ADMIN_AIRLINE_INVITE_050` may be skipped in external mode because invite expiry mutation requires in-process DB access.
 
 ## Admin Forgot Password API

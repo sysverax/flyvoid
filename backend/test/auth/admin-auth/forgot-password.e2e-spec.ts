@@ -377,7 +377,8 @@ describe("Admin Forgot Password API", () => {
       expectedStatus: 200,
     };
 
-    const seeded = await adminAuthSeeder.seedAdminSet(app);
+    const seededInactiveAdmin =
+      await adminAuthSeeder.seedInactiveSuperAdmin(app);
     if (isExternalMode()) {
       loggerHelper.pass(
         meta,
@@ -389,7 +390,7 @@ describe("Admin Forgot Password API", () => {
 
     await expectSuccess<null>(
       meta,
-      () => sendOtp(app, seeded.inactiveAdmin.email),
+      () => sendOtp(app, seededInactiveAdmin.email),
       200,
     );
   });
