@@ -8,6 +8,7 @@ import {
 } from "typeorm";
 import { AdminRole } from "../../common/constants/user.constants";
 import { RefreshTokenEntity } from "../../auth/entities/refresh-token.entity";
+import { PlatformAccessControlEntity } from "./platform-access-control.entity";
 
 @Entity("admins")
 export class AdminEntity {
@@ -75,4 +76,10 @@ export class AdminEntity {
 
   @OneToMany(() => RefreshTokenEntity, (refreshToken) => refreshToken.admin)
   refreshTokens!: RefreshTokenEntity[];
+
+  @OneToMany(
+    () => PlatformAccessControlEntity,
+    (platformAccessControl) => platformAccessControl.admin,
+  )
+  platformAccessControls!: PlatformAccessControlEntity[];
 }

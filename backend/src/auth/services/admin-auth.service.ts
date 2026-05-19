@@ -40,6 +40,10 @@ import {
 import { JwtAccessPayload } from "../interfaces/jwt-access-payload.interface";
 import { JwtRefreshPayload } from "../interfaces/jwt-refresh-payload.interface";
 import { AuthRepository } from "../repositories/auth.repository";
+import {
+  AccessAction,
+  PlatformAsset,
+} from "../../common/constants/access-control.constants";
 
 @Injectable()
 export class AuthService {
@@ -92,7 +96,7 @@ export class AuthService {
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
-    const createdAdmin = await this.authRepository.createAdmin(
+    const createdAdmin = await this.authRepository.createAdminWithPlatformAccessControls(
       {
         firstName: dto.firstName,
         lastName: dto.lastName,
@@ -102,6 +106,7 @@ export class AuthService {
         isActive: true,
         requirePasswordReset: false,
       },
+      this.buildSuperAdminAccessControls(),
       requestId,
     );
 
@@ -1196,6 +1201,18 @@ export class AuthService {
       role: admin.role,
       accessControls: [],
     };
+  }
+
+  private buildSuperAdminAccessControls(): Array<{
+    asset: PlatformAsset;
+    access: AccessAction[];
+  }> {
+    const allActions = Object.values(AccessAction);
+
+    return Object.values(PlatformAsset).map((asset) => ({
+      asset,
+      access: allActions,
+    }));
   }
 
   private async buildInitialPasswordResetChallenge(

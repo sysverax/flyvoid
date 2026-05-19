@@ -9,6 +9,7 @@ import { AirlineUserEntity } from "../../airline/entities/airline-user.entity";
 import { AirlineRole } from "../../common/constants/user.constants";
 import {
   AccessAction,
+  PlatformAsset,
   UserAccessControlEntry,
 } from "../../common/constants/access-control.constants";
 import { LoggerService } from "../../common/logger/logger.service";
@@ -152,6 +153,65 @@ export class AuthRepository {
 
     const admin = this.adminRepository.create(payload);
     return this.adminRepository.save(admin);
+  }
+
+  async createAdminWithPlatformAccessControls(
+    payload: Pick<
+      AdminEntity,
+      | "firstName"
+      | "lastName"
+      | "email"
+      | "passwordHash"
+      | "role"
+      | "isActive"
+      | "requirePasswordReset"
+    >,
+    controls: Array<{ asset: PlatformAsset; access: AccessAction[] }>,
+    requestId: string,
+  ): Promise<AdminEntity> {
+    this.logger.debug(
+      "Creating admin with platform access controls",
+      "AuthRepository",
+      requestId,
+      {
+        email: payload.email,
+        role: payload.role,
+        controlCount: controls.length,
+      },
+    );
+
+    return this.adminRepository.manager.transaction(async (entityManager) => {
+      const adminRepository = entityManager.getRepository(AdminEntity);
+      const platformAccessControlRepository = entityManager.getRepository(
+        PlatformAccessControlEntity,
+      );
+
+      const admin = await adminRepository.save(adminRepository.create(payload));
+      const flattened = controls.flatMap((control) =>
+        control.access.map((accessAction) => ({
+          adminId: admin.id,
+          asset: control.asset,
+          accessAction,
+        })),
+      );
+
+      if (flattened.length > 0) {
+        const deduped = Array.from(
+          new Map(
+            flattened.map((entry) => [
+              `${entry.adminId}:${entry.asset}:${entry.accessAction}`,
+              entry,
+            ]),
+          ).values(),
+        );
+
+        await platformAccessControlRepository.save(
+          platformAccessControlRepository.create(deduped),
+        );
+      }
+
+      return admin;
+    });
   }
 
   async saveRefreshToken(

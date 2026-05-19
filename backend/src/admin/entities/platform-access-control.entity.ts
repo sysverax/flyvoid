@@ -30,7 +30,9 @@ export class PlatformAccessControlEntity {
   @Column({ name: "admin_id", type: "integer" })
   adminId!: number;
 
-  @ManyToOne(() => AdminEntity, { onDelete: "CASCADE" })
+  @ManyToOne(() => AdminEntity, (admin) => admin.platformAccessControls, {
+    onDelete: "CASCADE",
+  })
   @JoinColumn({ name: "admin_id" })
   admin!: AdminEntity;
 
