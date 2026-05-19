@@ -10,7 +10,6 @@ import {
 } from "@jest/globals";
 import request from "supertest";
 import { createTestApp } from "../../setup/test-app";
-import { loggerHelper } from "../../helpers/logger.helper";
 import { requestHelper } from "../../helpers/request.helper";
 import { responseHelper } from "../../helpers/response.helper";
 import { adminFactory } from "../../factories/admin.factory";
