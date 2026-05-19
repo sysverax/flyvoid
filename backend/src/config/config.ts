@@ -34,6 +34,7 @@ export const config = {
     logging: process.env.DB_LOGGING === "true",
   },
   log: {
+    logging: process.env.APP_LOGGING === "true",
     level: process.env.LOG_LEVEL ?? "debug",
   },
   swagger: {

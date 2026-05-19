@@ -110,13 +110,17 @@ export class LoggerService {
     this.logger = createLogger({
       level: config.log.level,
       transports: [
-        new transports.Console({
-          format: format.combine(
-            format.timestamp({ format: () => new Date().toISOString() }),
-            format.errors({ stack: true }),
-            format.printf((log) => buildLogLine(log, true)),
-          ),
-        }),
+        ...(config.log.logging
+          ? [
+              new transports.Console({
+                format: format.combine(
+                  format.timestamp({ format: () => new Date().toISOString() }),
+                  format.errors({ stack: true }),
+                  format.printf((log) => buildLogLine(log, true)),
+                ),
+              }),
+            ]
+          : []),
         new transports.File({
           filename: logFilePath,
           format: format.combine(
