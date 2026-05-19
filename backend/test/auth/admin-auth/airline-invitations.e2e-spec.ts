@@ -44,12 +44,37 @@ const getResponseMessage = (
 const createSuperAdminAccessToken = async (
   app: INestApplication,
 ): Promise<string> => {
-  const seeded = await adminAuthSeeder.seedAdminSet(app);
+  const seeded = await adminAuthSeeder.seedSuperAdmin(app);
   const session = await authHelper.signinAdmin(app, {
-    email: seeded.superAdmin.email,
-    password: seeded.superAdmin.password,
+    email: seeded.email,
+    password: seeded.password,
   });
 
+  return session.accessToken;
+};
+
+const createStaffAdminAccessToken = async (
+  app: INestApplication,
+): Promise<string> => {
+  const seeded = await adminAuthSeeder.seedStaffAdmin(app);
+  const session = await authHelper.signinAdmin(app, {
+    email: seeded.email,
+    password: seeded.password,
+  });
+
+  return session.accessToken;
+};
+
+const createInactiveSuperAdminAccessToken = async (
+  app: INestApplication,
+): Promise<string> => {
+  const seededAdmin = await adminAuthSeeder.seedSuperAdmin(app);
+  const session = await authHelper.signinAdmin(app, {
+    email: seededAdmin.email,
+    password: seededAdmin.password,
+  });
+
+  await adminAuthSeeder.updateAdmin(app, seededAdmin.id, { isActive: false });
   return session.accessToken;
 };
 
@@ -132,6 +157,7 @@ const expectInviteSuccess = async (
 
 describe("Admin Airline Invitation API", () => {
   let app: INestApplication;
+  let accessToken: string;
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -139,18 +165,19 @@ describe("Admin Airline Invitation API", () => {
   });
 
   beforeEach(async () => {
-    await seedGlobalTestData(app);
+    // await seedGlobalTestData(app);
+    // accessToken = await createSuperAdminAccessToken(app);
   });
 
   afterEach(async () => {
-    await seedGlobalTestData(app);
+    // await seedGlobalTestData(app);
   });
 
   afterAll(async () => {
     await app.close();
   });
 
-  it("TC_AUTH_ADMIN_AIRLINE_INVITE_001 - Airline admin invitation success with valid payload", async () => {
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_001 - Airline admin invitation by SuperAdmin success with valid payload", async () => {
     const accessToken = await createSuperAdminAccessToken(app);
     const payload = airlineFactory.buildInvitePayload();
 
@@ -158,7 +185,8 @@ describe("Admin Airline Invitation API", () => {
       app,
       {
         id: "TC_AUTH_ADMIN_AIRLINE_INVITE_001",
-        description: "Airline admin invitation success with valid payload",
+        description:
+          "Airline admin invitation by SuperAdmin success with valid payload",
         expectedStatus: 201,
       },
       accessToken,
@@ -168,7 +196,45 @@ describe("Admin Airline Invitation API", () => {
     expect(body.data.email).toBe(payload.adminEmail.toLowerCase());
   });
 
-  it("TC_AUTH_ADMIN_AIRLINE_INVITE_002 - Invitation without access token", async () => {
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_002 - Airline admin invitation by Staff admin success with valid payload", async () => {
+    const accessToken = await createStaffAdminAccessToken(app);
+    const payload = airlineFactory.buildInvitePayload();
+
+    const { body } = await expectInviteSuccess(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_002",
+        description:
+          "Airline admin invitation by Staff admin success with valid payload",
+        expectedStatus: 201,
+      },
+      accessToken,
+      payload,
+    );
+
+    expect(body.data.email).toBe(payload.adminEmail.toLowerCase());
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_003 - Airline admin invitation by inactive admin success with valid payload", async () => {
+    const accessToken = await createInactiveSuperAdminAccessToken(app);
+    const payload = airlineFactory.buildInvitePayload();
+
+    const { body } = await expectInviteSuccess(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_003",
+        description:
+          "Airline admin invitation by inactive admin success with valid payload",
+        expectedStatus: 401,
+      },
+      accessToken,
+      payload,
+    );
+
+    expect(body.data.email).toBe(payload.adminEmail.toLowerCase());
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_004 - Invitation without access token", async () => {
     const response = await requestHelper.post(
       app,
       INVITE_ENDPOINT,
@@ -178,7 +244,7 @@ describe("Admin Airline Invitation API", () => {
     responseHelper.expectError(response, 401);
     loggerHelper.pass(
       {
-        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_002",
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_004",
         description: "Invitation without access token",
         expectedStatus: 401,
       },
@@ -187,11 +253,11 @@ describe("Admin Airline Invitation API", () => {
     );
   });
 
-  it("TC_AUTH_ADMIN_AIRLINE_INVITE_003 - Invitation with invalid access token", async () => {
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_005 - Invitation with invalid access token", async () => {
     await expectInviteError(
       app,
       {
-        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_003",
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_005",
         description: "Invitation with invalid access token",
         expectedStatus: 401,
       },
@@ -201,13 +267,13 @@ describe("Admin Airline Invitation API", () => {
     );
   });
 
-  it("TC_AUTH_ADMIN_AIRLINE_INVITE_004 - Invitation with expired access token", async () => {
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_006 - Invitation with expired access token", async () => {
     const expired = await tokenHelper.expiredAdminAccess();
 
     await expectInviteError(
       app,
       {
-        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_004",
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_006",
         description: "Invitation with expired access token",
         expectedStatus: 401,
       },
@@ -217,7 +283,7 @@ describe("Admin Airline Invitation API", () => {
     );
   });
 
-  it("TC_AUTH_ADMIN_AIRLINE_INVITE_005 - Invitation by unauthorized role user", async () => {
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_007 - Invitation by unauthorized role user", async () => {
     const airline = await adminAuthSeeder.seedOnboardedAirlineAdmin(app);
     const airlineSession = await authHelper.signinAirline(app, {
       email: airline.email,
@@ -227,37 +293,13 @@ describe("Admin Airline Invitation API", () => {
     await expectInviteError(
       app,
       {
-        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_005",
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_007",
         description: "Invitation by unauthorized role user",
         expectedStatus: 403,
       },
       airlineSession.accessToken,
       airlineFactory.buildInvitePayload(),
       403,
-    );
-  });
-
-  it("TC_AUTH_ADMIN_AIRLINE_INVITE_006 - Invitation by SUPPORT_AGENT role", async () => {
-    loggerHelper.pass(
-      {
-        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_006",
-        description: "Invitation by SUPPORT_AGENT role",
-        expectedStatus: 403,
-      },
-      200,
-      "Skipped: SUPPORT_AGENT role is not present in current role model",
-    );
-  });
-
-  it("TC_AUTH_ADMIN_AIRLINE_INVITE_007 - Invitation by OPERATIONS_MANAGER role", async () => {
-    loggerHelper.pass(
-      {
-        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_007",
-        description: "Invitation by OPERATIONS_MANAGER role",
-        expectedStatus: 403,
-      },
-      200,
-      "Skipped: OPERATIONS_MANAGER role is not present in current role model",
     );
   });
 

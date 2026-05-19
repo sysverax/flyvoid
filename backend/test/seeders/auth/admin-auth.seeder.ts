@@ -1,5 +1,4 @@
 import { INestApplication } from "@nestjs/common";
-import { AdminEntity } from "../../../src/admin/entities/admin.entity";
 import { AirlineUserEntity } from "../../../src/airline/entities/airline-user.entity";
 import { AdminRole } from "../../../src/common/constants/user.constants";
 import { adminFactory } from "../../factories/admin.factory";
@@ -8,6 +7,7 @@ import { authHelper } from "../../helpers/auth.helper";
 import { requestHelper } from "../../helpers/request.helper";
 import { responseHelper } from "../../helpers/response.helper";
 import { testDbHelper } from "../../database/db.helper";
+import { directSqlHelper } from "../../database/direct-sql.helper";
 
 export interface SeededAdminSet {
   superAdmin: {
@@ -32,6 +32,35 @@ export interface SeededAdminSet {
   };
 }
 
+// const createAdmin = async (
+//   app: INestApplication,
+//   role: AdminRole,
+//   isInactive = false,
+// ): Promise<{ id: number; email: string; password: string }> => {
+//   const payload = adminFactory.buildAdminSignupPayload();
+//   const created = await authHelper.signupAdmin(app, payload);
+
+//   const updates: Partial<AdminEntity> = {};
+
+//   if (role !== AdminRole.SUPER_ADMIN) {
+//     updates.role = role;
+//   }
+
+//   if (isInactive) {
+//     updates.isActive = false;
+//   }
+
+//   if (Object.keys(updates).length > 0) {
+//     await testDbHelper.update(app, AdminEntity, { id: created.id }, updates);
+//   }
+
+//   return {
+//     id: created.id,
+//     email: created.email,
+//     password: payload.password,
+//   };
+// };
+
 const createAdmin = async (
   app: INestApplication,
   role: AdminRole,
@@ -40,7 +69,7 @@ const createAdmin = async (
   const payload = adminFactory.buildAdminSignupPayload();
   const created = await authHelper.signupAdmin(app, payload);
 
-  const updates: Partial<AdminEntity> = {};
+  const updates: { role?: AdminRole; isActive?: boolean } = {};
 
   if (role !== AdminRole.SUPER_ADMIN) {
     updates.role = role;
@@ -51,7 +80,30 @@ const createAdmin = async (
   }
 
   if (Object.keys(updates).length > 0) {
-    await testDbHelper.update(app, AdminEntity, { id: created.id }, updates);
+    const dataSource = directSqlHelper.getDataSource(app);
+    const usePostgresParams = dataSource.options.type === "postgres";
+    const parameter = (index: number): string =>
+      usePostgresParams ? `$${index + 1}` : "?";
+
+    const setClauses: string[] = [];
+    const values: unknown[] = [];
+
+    if (typeof updates.role === "string") {
+      setClauses.push(`role = ${parameter(values.length)}`);
+      values.push(updates.role);
+    }
+
+    if (typeof updates.isActive === "boolean") {
+      setClauses.push(`is_active = ${parameter(values.length)}`);
+      values.push(updates.isActive);
+    }
+
+    if (setClauses.length > 0) {
+      const whereIdToken = parameter(values.length);
+      const sql = `UPDATE admins SET ${setClauses.join(", ")} WHERE id = ${whereIdToken}`;
+      values.push(created.id);
+      await directSqlHelper.execute(app, sql, values);
+    }
   }
 
   return {
@@ -98,6 +150,60 @@ export const adminAuthSeeder = {
     app: INestApplication,
   ): Promise<{ id: number; email: string; password: string }> {
     return await createAdmin(app, AdminRole.STAFF, true);
+  },
+
+  async updateAdmin(
+    app: INestApplication,
+    adminId: number,
+    updates: Partial<{
+      email: string;
+      password: string;
+      role: AdminRole;
+      isActive: boolean;
+    }>,
+  ): Promise<void> {
+    const dataSource = directSqlHelper.getDataSource(app);
+    const usePostgresParams = dataSource.options.type === "postgres";
+    const parameter = (index: number): string =>
+      usePostgresParams ? `$${index + 1}` : "?";
+
+    const setClauses: string[] = [];
+    const values: unknown[] = [];
+
+    if (updates.email) {
+      setClauses.push(`email = ${parameter(values.length)}`);
+      values.push(updates.email);
+    }
+
+    if (updates.role) {
+      setClauses.push(`role = ${parameter(values.length)}`);
+      values.push(updates.role);
+    }
+
+    if (typeof updates.isActive === "boolean") {
+      setClauses.push(`is_active = ${parameter(values.length)}`);
+      values.push(updates.isActive);
+    }
+
+    if (setClauses.length > 0) {
+      const whereIdToken = parameter(values.length);
+      const sql = `UPDATE admins SET ${setClauses.join(", ")} WHERE id = ${whereIdToken}`;
+      values.push(adminId);
+      await directSqlHelper.execute(app, sql, values);
+
+      const selectIdToken = usePostgresParams ? "$1" : "?";
+      const updatedAdmin = await directSqlHelper.first<{
+        id: number;
+        email: string;
+        role: string;
+        is_active: boolean;
+      }>(
+        app,
+        `SELECT id, email, role, is_active FROM admins WHERE id = ${selectIdToken}`,
+        [adminId],
+      );
+      console.log("Updated admin row:", updatedAdmin);
+    }
   },
 
   async seedAirlineInvite(app: INestApplication): Promise<{
