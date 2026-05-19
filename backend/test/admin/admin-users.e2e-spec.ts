@@ -13,6 +13,7 @@ import { createTestApp } from "../setup/test-app";
 import { loggerHelper } from "../helpers/logger.helper";
 import { requestHelper } from "../helpers/request.helper";
 import { responseHelper } from "../helpers/response.helper";
+import { adminAuthSeeder } from "../seeders/auth/admin-auth.seeder";
 import { seedGlobalTestData } from "../seeders/global/global-test-data.seeder";
 import { TestCaseMeta } from "../shared/interfaces/test-case.interface";
 import { authHelper } from "../helpers/auth.helper";
@@ -20,37 +21,6 @@ import { authHelper } from "../helpers/auth.helper";
 const uniqueEmail = (prefix: string): string => {
   const id = randomUUID().replace(/-/g, "").slice(0, 10);
   return `${prefix}.${Date.now()}.${id}@flyvoid.test`;
-};
-
-const createSuperAdminSession = async (
-  app: INestApplication,
-): Promise<{ accessToken: string; adminId: number; email: string }> => {
-  const email = uniqueEmail("admin-users");
-  const password = "Password@123";
-
-  const signupResponse = await requestHelper.post(
-    app,
-    "/api/v1/auth/admin/signup",
-    {
-      firstName: "Super",
-      lastName: "Admin",
-      email,
-      password,
-    },
-  );
-
-  responseHelper.expectSuccess<{ id: number; email: string; role: string }>(
-    signupResponse,
-    201,
-  );
-
-  const session = await authHelper.signinAdmin(app, { email, password });
-
-  return {
-    accessToken: session.accessToken,
-    adminId: session.adminId,
-    email: session.email,
-  };
 };
 
 describe("Admin Users APIs", () => {
@@ -82,7 +52,11 @@ describe("Admin Users APIs", () => {
 
     let actualStatus = 0;
     try {
-      const session = await createSuperAdminSession(app);
+      const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
+      const session = await authHelper.signinAdmin(app, {
+        email: seededSuperAdmin.email,
+        password: seededSuperAdmin.password,
+      });
       const invitePayload = {
         firstName: "Staff",
         lastName: "Member",
@@ -134,7 +108,11 @@ describe("Admin Users APIs", () => {
 
     let actualStatus = 0;
     try {
-      const session = await createSuperAdminSession(app);
+      const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
+      const session = await authHelper.signinAdmin(app, {
+        email: seededSuperAdmin.email,
+        password: seededSuperAdmin.password,
+      });
       const response = await requestHelper.authorizedPost(
         app,
         "/api/v1/admin/users",
@@ -173,7 +151,11 @@ describe("Admin Users APIs", () => {
 
     let actualStatus = 0;
     try {
-      const session = await createSuperAdminSession(app);
+      const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
+      const session = await authHelper.signinAdmin(app, {
+        email: seededSuperAdmin.email,
+        password: seededSuperAdmin.password,
+      });
       const response = await requestHelper.authorizedPatch(
         app,
         `/api/v1/admin/users/${session.adminId}`,
@@ -220,7 +202,11 @@ describe("Admin Users APIs", () => {
 
     let actualStatus = 0;
     try {
-      const session = await createSuperAdminSession(app);
+      const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
+      const session = await authHelper.signinAdmin(app, {
+        email: seededSuperAdmin.email,
+        password: seededSuperAdmin.password,
+      });
       const response = await requestHelper.authorizedGet(
         app,
         "/api/v1/admin/users?page=1&limit=2",

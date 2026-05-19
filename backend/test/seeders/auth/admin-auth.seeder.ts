@@ -16,12 +16,7 @@ export interface SeededAdminSet {
     email: string;
     password: string;
   };
-  platformAdmin: {
-    id: number;
-    email: string;
-    password: string;
-  };
-  managerAdmin: {
+  staffAdmin: {
     id: number;
     email: string;
     password: string;
@@ -69,29 +64,43 @@ const createAdmin = async (
 
 export const adminAuthSeeder = {
   async seedAdminSet(app: INestApplication): Promise<SeededAdminSet> {
-    const superAdmin = await createAdmin(app, AdminRole.SUPER_ADMIN);
-    const platformAdmin = await createAdmin(app, AdminRole.STAFF);
-    const managerAdmin = await createAdmin(app, AdminRole.STAFF);
-    const inactiveAdmin = await createAdmin(app, AdminRole.STAFF, true);
+    const superAdmin = await this.seedSuperAdmin(app);
+    const staffAdmin = await this.seedStaffAdmin(app);
+    const inactiveAdmin = await this.seedInactiveAdmin(app);
 
     return {
       superAdmin,
-      platformAdmin,
-      managerAdmin,
+      staffAdmin,
       inactiveAdmin,
     };
+  },
+
+  async seedSuperAdmin(
+    app: INestApplication,
+  ): Promise<{ id: number; email: string; password: string }> {
+    return await createAdmin(app, AdminRole.SUPER_ADMIN);
+  },
+
+  async seedStaffAdmin(
+    app: INestApplication,
+  ): Promise<{ id: number; email: string; password: string }> {
+    return await createAdmin(app, AdminRole.STAFF);
+  },
+
+  async seedInactiveAdmin(
+    app: INestApplication,
+  ): Promise<{ id: number; email: string; password: string }> {
+    return await createAdmin(app, AdminRole.STAFF, true);
   },
 
   async seedAirlineInvite(app: INestApplication): Promise<{
     invitationToken: string;
     invitedAdminEmail: string;
   }> {
-    const inviterPayload = adminFactory.buildAdminSignupPayload();
-
-    const inviter = await authHelper.signupAdmin(app, inviterPayload);
+    const inviter = await this.seedSuperAdmin(app);
     const inviterSession = await authHelper.signinAdmin(app, {
       email: inviter.email,
-      password: inviterPayload.password,
+      password: inviter.password,
     });
 
     const invitePayload = airlineFactory.buildInvitePayload();

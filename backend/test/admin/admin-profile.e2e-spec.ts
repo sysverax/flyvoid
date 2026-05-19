@@ -46,10 +46,10 @@ describe("Admin Profile API", () => {
 
     let actualStatus = 0;
     try {
-      const seeded = await adminAuthSeeder.seedAdminSet(app);
+      const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
       const session = await authHelper.signinAdmin(app, {
-        email: seeded.superAdmin.email,
-        password: seeded.superAdmin.password,
+        email: seededSuperAdmin.email,
+        password: seededSuperAdmin.password,
       });
 
       const response = await requestHelper.authorizedGet(
@@ -66,7 +66,7 @@ describe("Admin Profile API", () => {
       }>(response, 200);
 
       expect(body.data.id).toBeDefined();
-      expect(body.data.email).toBe(seeded.superAdmin.email);
+      expect(body.data.email).toBe(seededSuperAdmin.email);
       expect(body.data.role).toBeDefined();
       loggerHelper.pass(meta, actualStatus, body.message);
     } catch (error) {
