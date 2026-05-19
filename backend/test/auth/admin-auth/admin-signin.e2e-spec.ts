@@ -16,9 +16,7 @@ import { loggerHelper } from "../../helpers/logger.helper";
 import { requestHelper } from "../../helpers/request.helper";
 import { responseHelper } from "../../helpers/response.helper";
 import { adminFactory } from "../../factories/admin.factory";
-import { adminAuthSeeder } from "../../seeders/auth/admin-auth.seeder";
-import { seedGlobalTestData } from "../../seeders/global/global-test-data.seeder";
-import { isExternalMode } from "../../setup/test-app";
+import { adminAuthSeeder } from "../../seeders/admin/admin.seeder";
 import { TestCaseMeta } from "../../shared/interfaces/test-case.interface";
 import { authHelper } from "../../helpers/auth.helper";
 import { AdminEntity } from "../../../src/admin/entities/admin.entity";
@@ -184,13 +182,9 @@ describe("Admin Signin API", () => {
     loggerHelper.suite("Admin Signin API");
   });
 
-  beforeEach(async () => {
-    await seedGlobalTestData(app);
-  });
+  beforeEach(async () => {});
 
-  afterEach(async () => {
-    await seedGlobalTestData(app);
-  });
+  afterEach(async () => {});
 
   afterAll(async () => {
     await app.close();
@@ -462,15 +456,6 @@ describe("Admin Signin API", () => {
       description: "Deleted admin signin attempt",
       expectedStatus: 401,
     };
-
-    if (isExternalMode()) {
-      loggerHelper.pass(
-        meta,
-        200,
-        "Skipped in external mode (delete mutation requires in-process DB access)",
-      );
-      return;
-    }
 
     const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
     const dataSource = app.get(DataSource);

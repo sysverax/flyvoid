@@ -17,7 +17,7 @@ import { loggerHelper } from "../../helpers/logger.helper";
 import { requestHelper } from "../../helpers/request.helper";
 import { responseHelper } from "../../helpers/response.helper";
 import { authFactory } from "../../factories/auth.factory";
-import { adminAuthSeeder } from "../../seeders/auth/admin-auth.seeder";
+import { adminAuthSeeder } from "../../seeders/admin/admin.seeder";
 import { seedGlobalTestData } from "../../seeders/global/global-test-data.seeder";
 import { TestCaseMeta } from "../../shared/interfaces/test-case.interface";
 import { authHelper } from "../../helpers/auth.helper";

@@ -9,65 +9,19 @@ import { responseHelper } from "../../helpers/response.helper";
 import { testDbHelper } from "../../database/db.helper";
 import { directSqlHelper } from "../../database/direct-sql.helper";
 
-export interface SeededAdminSet {
-  superAdmin: {
-    id: number;
-    email: string;
-    password: string;
-  };
-  staffAdmin: {
-    id: number;
-    email: string;
-    password: string;
-  };
-  inactiveSuperAdmin: {
-    id: number;
-    email: string;
-    password: string;
-  };
-  inactiveStaffAdmin: {
-    id: number;
-    email: string;
-    password: string;
-  };
-}
-
-// const createAdmin = async (
-//   app: INestApplication,
-//   role: AdminRole,
-//   isInactive = false,
-// ): Promise<{ id: number; email: string; password: string }> => {
-//   const payload = adminFactory.buildAdminSignupPayload();
-//   const created = await authHelper.signupAdmin(app, payload);
-
-//   const updates: Partial<AdminEntity> = {};
-
-//   if (role !== AdminRole.SUPER_ADMIN) {
-//     updates.role = role;
-//   }
-
-//   if (isInactive) {
-//     updates.isActive = false;
-//   }
-
-//   if (Object.keys(updates).length > 0) {
-//     await testDbHelper.update(app, AdminEntity, { id: created.id }, updates);
-//   }
-
-//   return {
-//     id: created.id,
-//     email: created.email,
-//     password: payload.password,
-//   };
-// };
-
 const createAdmin = async (
   app: INestApplication,
   role: AdminRole,
   isInactive = false,
 ): Promise<{ id: number; email: string; password: string }> => {
   const payload = adminFactory.buildAdminSignupPayload();
-  const created = await authHelper.signupAdmin(app, payload);
+  const response = await requestHelper.post(
+    app,
+    "/api/v1/auth/admin/signup",
+    payload,
+  );
+
+  const created = response.body.data;
 
   await adminAuthSeeder.updateAdmin(app, created.id, {
     role: role !== AdminRole.SUPER_ADMIN ? role : undefined,
