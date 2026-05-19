@@ -50,13 +50,13 @@ const getResponseMessage = (
 };
 
 const createSuperAdminSession = async (app: INestApplication) => {
-  const seeded = await adminAuthSeeder.seedAdminSet(app);
+  const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
   const session = await authHelper.signinAdmin(app, {
-    email: seeded.superAdmin.email,
-    password: seeded.superAdmin.password,
+    email: seededSuperAdmin.email,
+    password: seededSuperAdmin.password,
   });
 
-  return { seeded, session };
+  return { seededSuperAdmin, session };
 };
 
 const refreshWithToken = async (app: INestApplication, refreshToken: unknown) =>
@@ -461,10 +461,10 @@ describe("Admin Refresh Token API", () => {
       expectedStatus: 401,
     };
 
-    const { seeded, session } = await createSuperAdminSession(app);
+    const { seededSuperAdmin, session } = await createSuperAdminSession(app);
     const resetToken = await issueResetPasswordToken(
       app,
-      seeded.superAdmin.email,
+      seededSuperAdmin.email,
     );
     if (!resetToken) {
       loggerHelper.pass(
@@ -944,12 +944,12 @@ describe("Admin Refresh Token API", () => {
   });
 
   it("TC_AUTH_ADMIN_REFRESH_TOKEN_036: Refresh token response contains correct admin email", async () => {
-    const { seeded, session } = await createSuperAdminSession(app);
+    const { seededSuperAdmin, session } = await createSuperAdminSession(app);
     const response = await refreshWithToken(app, session.refreshToken);
     const body = responseHelper.expectSuccess<{
       admin: { email: string };
     }>(response, 200);
-    expect(body.data.admin.email).toBe(seeded.superAdmin.email);
+    expect(body.data.admin.email).toBe(seededSuperAdmin.email);
     loggerHelper.pass(
       {
         id: "TC_AUTH_ADMIN_REFRESH_TOKEN_036",
@@ -980,10 +980,10 @@ describe("Admin Refresh Token API", () => {
   });
 
   it("TC_AUTH_ADMIN_REFRESH_TOKEN_038: Refresh token response maintains admin access permissions", async () => {
-    const { seeded, session } = await createSuperAdminSession(app);
+    const { seededSuperAdmin, session } = await createSuperAdminSession(app);
     const signin = await requestHelper.post(app, "/api/v1/auth/admin/signin", {
       email: session.email,
-      password: seeded.superAdmin.password,
+      password: seededSuperAdmin.password,
     });
     const signinBody = responseHelper.expectSuccess<{
       admin: { accessControls: unknown[] };

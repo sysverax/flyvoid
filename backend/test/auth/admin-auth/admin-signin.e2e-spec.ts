@@ -59,10 +59,10 @@ const expectSigninStatus = async (
 };
 
 const createSigninSuccessResponse = async (app: INestApplication) => {
-  const seeded = await adminAuthSeeder.seedAdminSet(app);
+  const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
   const payload = adminFactory.buildAdminSigninPayload(
-    seeded.superAdmin.email,
-    seeded.superAdmin.password,
+    seededSuperAdmin.email,
+    seededSuperAdmin.password,
   );
 
   const response = await requestHelper.post(app, SIGNIN_ENDPOINT, payload);
@@ -82,14 +82,14 @@ const createSigninSuccessResponse = async (app: INestApplication) => {
     };
   }>(response, 200);
 
-  return { seeded, payload, response, body };
+  return { seededSuperAdmin, payload, response, body };
 };
 
 const createTwoFactorSigninChallenge = async (app: INestApplication) => {
-  const seeded = await adminAuthSeeder.seedAdminSet(app);
+  const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
   const session = await authHelper.signinAdmin(app, {
-    email: seeded.superAdmin.email,
-    password: seeded.superAdmin.password,
+    email: seededSuperAdmin.email,
+    password: seededSuperAdmin.password,
   });
 
   const setupResponse = await requestHelper.authorizedPost(
@@ -117,8 +117,8 @@ const createTwoFactorSigninChallenge = async (app: INestApplication) => {
   responseHelper.expectSuccess(enableResponse, 200);
 
   const signinResponse = await requestHelper.post(app, SIGNIN_ENDPOINT, {
-    email: seeded.superAdmin.email,
-    password: seeded.superAdmin.password,
+    email: seededSuperAdmin.email,
+    password: seededSuperAdmin.password,
   });
 
   const signinBody = responseHelper.expectSuccess<{
@@ -132,10 +132,10 @@ const createTwoFactorSigninChallenge = async (app: INestApplication) => {
 };
 
 const createPasswordResetChallenge = async (app: INestApplication) => {
-  const seeded = await adminAuthSeeder.seedAdminSet(app);
+  const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
   const session = await authHelper.signinAdmin(app, {
-    email: seeded.superAdmin.email,
-    password: seeded.superAdmin.password,
+    email: seededSuperAdmin.email,
+    password: seededSuperAdmin.password,
   });
 
   const inviteResponse = await requestHelper.authorizedPost(
@@ -785,7 +785,7 @@ describe("Admin Signin API", () => {
   });
 
   it("TC_AUTH_ADMIN_SIGNIN_040 - Script injection attempt in password field", async () => {
-    const seeded = await adminAuthSeeder.seedAdminSet(app);
+    const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
     await expectSigninStatus(
       app,
       {
@@ -794,7 +794,7 @@ describe("Admin Signin API", () => {
         expectedStatus: 401,
       },
       {
-        email: seeded.superAdmin.email,
+        email: seededSuperAdmin.email,
         password: "<script>alert('x')</script>",
       },
       401,
@@ -808,8 +808,8 @@ describe("Admin Signin API", () => {
       expectedStatus: 200,
     };
 
-    const { seeded, body } = await createSigninSuccessResponse(app);
-    expect(body.data.admin.email).toBe(seeded.superAdmin.email);
+    const { seededSuperAdmin, body } = await createSigninSuccessResponse(app);
+    expect(body.data.admin.email).toBe(seededSuperAdmin.email);
     loggerHelper.pass(meta, 200, body.message);
   });
 
@@ -859,10 +859,10 @@ describe("Admin Signin API", () => {
 
     let actualStatus = 0;
     try {
-      const seeded = await adminAuthSeeder.seedAdminSet(app);
+      const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
       const payload = {
-        email: seeded.superAdmin.email,
-        password: seeded.superAdmin.password,
+        email: seededSuperAdmin.email,
+        password: seededSuperAdmin.password,
       };
 
       const [first, second] = await Promise.all([

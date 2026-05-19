@@ -59,12 +59,12 @@ const signoutWith = async (
   );
 
 const createSuperAdminSession = async (app: INestApplication) => {
-  const seeded = await adminAuthSeeder.seedAdminSet(app);
+  const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
   const session = await authHelper.signinAdmin(app, {
-    email: seeded.superAdmin.email,
-    password: seeded.superAdmin.password,
+    email: seededSuperAdmin.email,
+    password: seededSuperAdmin.password,
   });
-  return { seeded, session };
+  return { seededSuperAdmin, session };
 };
 
 const jwt = new JwtService();

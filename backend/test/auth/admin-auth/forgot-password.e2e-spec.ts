@@ -185,14 +185,14 @@ describe("Admin Forgot Password API", () => {
   });
 
   it("TC_AUTH_ADMIN_FORGOT_PASSWORD_SEND_OTP_001: Send OTP with valid registered email", async () => {
-    const seeded = await adminAuthSeeder.seedAdminSet(app);
+    const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
     const body = await expectSuccess<null>(
       {
         id: "TC_AUTH_ADMIN_FORGOT_PASSWORD_SEND_OTP_001",
         description: "Send OTP with valid registered email",
         expectedStatus: 200,
       },
-      () => sendOtp(app, seeded.superAdmin.email),
+      () => sendOtp(app, seededSuperAdmin.email),
       200,
     );
     expect(body.data).toBeNull();
@@ -273,27 +273,27 @@ describe("Admin Forgot Password API", () => {
   });
 
   it("TC_AUTH_ADMIN_FORGOT_PASSWORD_SEND_OTP_008: Send OTP with uppercase email normalization", async () => {
-    const seeded = await adminAuthSeeder.seedAdminSet(app);
+    const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
     await expectSuccess<null>(
       {
         id: "TC_AUTH_ADMIN_FORGOT_PASSWORD_SEND_OTP_008",
         description: "Send OTP with uppercase email normalization",
         expectedStatus: 200,
       },
-      () => sendOtp(app, seeded.superAdmin.email.toUpperCase()),
+      () => sendOtp(app, seededSuperAdmin.email.toUpperCase()),
       200,
     );
   });
 
   it("TC_AUTH_ADMIN_FORGOT_PASSWORD_SEND_OTP_009: Send OTP with leading/trailing spaces in email", async () => {
-    const seeded = await adminAuthSeeder.seedAdminSet(app);
+    const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
     await expectSuccess<null>(
       {
         id: "TC_AUTH_ADMIN_FORGOT_PASSWORD_SEND_OTP_009",
         description: "Send OTP with leading/trailing spaces in email",
         expectedStatus: 200,
       },
-      () => sendOtp(app, `  ${seeded.superAdmin.email}  `),
+      () => sendOtp(app, `  ${seededSuperAdmin.email}  `),
       200,
     );
   });
@@ -306,8 +306,8 @@ describe("Admin Forgot Password API", () => {
       expectedStatus: 429,
     };
 
-    const seeded = await adminAuthSeeder.seedAdminSet(app);
-    const email = seeded.superAdmin.email;
+    const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
+    const email = seededSuperAdmin.email;
 
     await sendOtp(app, email);
     await sendOtp(app, email);
@@ -347,8 +347,8 @@ describe("Admin Forgot Password API", () => {
       return;
     }
 
-    const seeded = await adminAuthSeeder.seedAdminSet(app);
-    const email = seeded.superAdmin.email;
+    const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
+    const email = seededSuperAdmin.email;
     await sendOtp(app, email);
 
     const latestOtp = await findLatestOtpByEmail(app, email);
@@ -443,9 +443,9 @@ describe("Admin Forgot Password API", () => {
   });
 
   it("TC_AUTH_ADMIN_FORGOT_PASSWORD_SEND_OTP_016: Send OTP response should not expose account existence", async () => {
-    const seeded = await adminAuthSeeder.seedAdminSet(app);
+    const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
 
-    const existing = await sendOtp(app, seeded.superAdmin.email);
+    const existing = await sendOtp(app, seededSuperAdmin.email);
     const nonExisting = await sendOtp(app, `ghost-${Date.now()}@flyvoid.test`);
 
     const existingBody = responseHelper.expectSuccess<null>(existing, 200);
@@ -477,13 +477,13 @@ describe("Admin Forgot Password API", () => {
       expectedStatus: 200,
     };
 
-    const seeded = await adminAuthSeeder.seedAdminSet(app);
-    const send = await sendOtp(app, seeded.superAdmin.email);
+    const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
+    const send = await sendOtp(app, seededSuperAdmin.email);
     responseHelper.expectSuccess(send, 200);
 
     const verify = await verifyOtp(
       app,
-      seeded.superAdmin.email,
+      seededSuperAdmin.email,
       config.auth.adminForgotPasswordOtpStatic,
     );
 
@@ -504,7 +504,7 @@ describe("Admin Forgot Password API", () => {
   });
 
   it("TC_AUTH_ADMIN_FORGOT_PASSWORD_SEND_OTP_018: Send OTP in production environment generates random 6-digit OTP", async () => {
-    const seeded = await adminAuthSeeder.seedAdminSet(app);
+    const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
     await expectSuccess<null>(
       {
         id: "TC_AUTH_ADMIN_FORGOT_PASSWORD_SEND_OTP_018",
@@ -512,7 +512,7 @@ describe("Admin Forgot Password API", () => {
           "Send OTP in production environment generates random 6-digit OTP",
         expectedStatus: 200,
       },
-      () => sendOtp(app, seeded.superAdmin.email),
+      () => sendOtp(app, seededSuperAdmin.email),
       200,
     );
   });
@@ -563,11 +563,11 @@ describe("Admin Forgot Password API", () => {
       expectedStatus: 200,
     };
 
-    const seeded = await adminAuthSeeder.seedAdminSet(app);
-    await sendOtp(app, seeded.superAdmin.email);
+    const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
+    await sendOtp(app, seededSuperAdmin.email);
     const verify = await verifyOtp(
       app,
-      seeded.superAdmin.email,
+      seededSuperAdmin.email,
       config.auth.adminForgotPasswordOtpStatic,
     );
 
@@ -588,15 +588,15 @@ describe("Admin Forgot Password API", () => {
   });
 
   it("TC_AUTH_ADMIN_FORGOT_PASSWORD_VERIFY_OTP_002: Verify OTP with invalid OTP", async () => {
-    const seeded = await adminAuthSeeder.seedAdminSet(app);
-    await sendOtp(app, seeded.superAdmin.email);
+    const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
+    await sendOtp(app, seededSuperAdmin.email);
     await expectError(
       {
         id: "TC_AUTH_ADMIN_FORGOT_PASSWORD_VERIFY_OTP_002",
         description: "Verify OTP with invalid OTP",
         expectedStatus: 401,
       },
-      () => verifyOtp(app, seeded.superAdmin.email, "000000"),
+      () => verifyOtp(app, seededSuperAdmin.email, "000000"),
       401,
     );
   });
@@ -608,8 +608,8 @@ describe("Admin Forgot Password API", () => {
       expectedStatus: 401,
     };
 
-    const seeded = await adminAuthSeeder.seedAdminSet(app);
-    await sendOtp(app, seeded.superAdmin.email);
+    const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
+    await sendOtp(app, seededSuperAdmin.email);
 
     if (isExternalMode()) {
       loggerHelper.pass(
@@ -620,7 +620,7 @@ describe("Admin Forgot Password API", () => {
       return;
     }
 
-    const latestOtp = await findLatestOtpByEmail(app, seeded.superAdmin.email);
+    const latestOtp = await findLatestOtpByEmail(app, seededSuperAdmin.email);
     expect(latestOtp).not.toBeNull();
 
     const dataSource = app.get(DataSource);
@@ -636,7 +636,7 @@ describe("Admin Forgot Password API", () => {
       () =>
         verifyOtp(
           app,
-          seeded.superAdmin.email,
+          seededSuperAdmin.email,
           config.auth.adminForgotPasswordOtpStatic,
         ),
       401,
@@ -779,15 +779,15 @@ describe("Admin Forgot Password API", () => {
   });
 
   it("TC_AUTH_ADMIN_FORGOT_PASSWORD_VERIFY_OTP_015: Verify OTP after maximum 5 failed attempts", async () => {
-    const seeded = await adminAuthSeeder.seedAdminSet(app);
-    await sendOtp(app, seeded.superAdmin.email);
+    const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
+    await sendOtp(app, seededSuperAdmin.email);
 
     for (
       let attempt = 0;
       attempt < config.auth.adminForgotPasswordOtpMaxAttempts;
       attempt += 1
     ) {
-      const response = await verifyOtp(app, seeded.superAdmin.email, "000000");
+      const response = await verifyOtp(app, seededSuperAdmin.email, "000000");
       responseHelper.expectError(response, 401);
     }
 
@@ -800,7 +800,7 @@ describe("Admin Forgot Password API", () => {
       () =>
         verifyOtp(
           app,
-          seeded.superAdmin.email,
+          seededSuperAdmin.email,
           config.auth.adminForgotPasswordOtpStatic,
         ),
       401,
@@ -808,15 +808,15 @@ describe("Admin Forgot Password API", () => {
   });
 
   it("TC_AUTH_ADMIN_FORGOT_PASSWORD_VERIFY_OTP_016: Verify OTP after OTP invalidation due to failed attempts", async () => {
-    const seeded = await adminAuthSeeder.seedAdminSet(app);
-    await sendOtp(app, seeded.superAdmin.email);
+    const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
+    await sendOtp(app, seededSuperAdmin.email);
 
     for (
       let attempt = 0;
       attempt < config.auth.adminForgotPasswordOtpMaxAttempts + 1;
       attempt += 1
     ) {
-      const response = await verifyOtp(app, seeded.superAdmin.email, "000000");
+      const response = await verifyOtp(app, seededSuperAdmin.email, "000000");
       responseHelper.expectError(response, 401);
     }
 
@@ -829,7 +829,7 @@ describe("Admin Forgot Password API", () => {
       () =>
         verifyOtp(
           app,
-          seeded.superAdmin.email,
+          seededSuperAdmin.email,
           config.auth.adminForgotPasswordOtpStatic,
         ),
       401,
@@ -837,12 +837,12 @@ describe("Admin Forgot Password API", () => {
   });
 
   it("TC_AUTH_ADMIN_FORGOT_PASSWORD_VERIFY_OTP_017: Verify OTP response contains resetPasswordToken", async () => {
-    const seeded = await adminAuthSeeder.seedAdminSet(app);
-    await sendOtp(app, seeded.superAdmin.email);
+    const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
+    await sendOtp(app, seededSuperAdmin.email);
 
     const verify = await verifyOtp(
       app,
-      seeded.superAdmin.email,
+      seededSuperAdmin.email,
       config.auth.adminForgotPasswordOtpStatic,
     );
 
@@ -876,12 +876,12 @@ describe("Admin Forgot Password API", () => {
   });
 
   it("TC_AUTH_ADMIN_FORGOT_PASSWORD_VERIFY_OTP_018: Verify OTP response contains resetPasswordTokenExpiresIn", async () => {
-    const seeded = await adminAuthSeeder.seedAdminSet(app);
-    await sendOtp(app, seeded.superAdmin.email);
+    const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
+    await sendOtp(app, seededSuperAdmin.email);
 
     const verify = await verifyOtp(
       app,
-      seeded.superAdmin.email,
+      seededSuperAdmin.email,
       config.auth.adminForgotPasswordOtpStatic,
     );
 
@@ -915,12 +915,12 @@ describe("Admin Forgot Password API", () => {
   });
 
   it("TC_AUTH_ADMIN_FORGOT_PASSWORD_VERIFY_OTP_019: Verify OTP response token should not be empty", async () => {
-    const seeded = await adminAuthSeeder.seedAdminSet(app);
-    await sendOtp(app, seeded.superAdmin.email);
+    const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
+    await sendOtp(app, seededSuperAdmin.email);
 
     const verify = await verifyOtp(
       app,
-      seeded.superAdmin.email,
+      seededSuperAdmin.email,
       config.auth.adminForgotPasswordOtpStatic,
     );
 
@@ -1007,12 +1007,12 @@ describe("Admin Forgot Password API", () => {
       expectedStatus: 200,
     };
 
-    const seeded = await adminAuthSeeder.seedAdminSet(app);
-    await sendOtp(app, seeded.superAdmin.email);
+    const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
+    await sendOtp(app, seededSuperAdmin.email);
 
     const verify = await verifyOtp(
       app,
-      seeded.superAdmin.email,
+      seededSuperAdmin.email,
       config.auth.adminForgotPasswordOtpStatic,
     );
 
@@ -1045,10 +1045,10 @@ describe("Admin Forgot Password API", () => {
   });
 
   it("TC_AUTH_ADMIN_FORGOT_PASSWORD_RESET_001: Reset password with valid resetPasswordToken and valid newPassword", async () => {
-    const seeded = await adminAuthSeeder.seedAdminSet(app);
+    const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
     const resetToken = await issueResetPasswordToken(
       app,
-      seeded.superAdmin.email,
+      seededSuperAdmin.email,
     );
     if (!resetToken) {
       loggerHelper.pass(
@@ -1095,10 +1095,10 @@ describe("Admin Forgot Password API", () => {
       expectedStatus: 401,
     };
 
-    const seeded = await adminAuthSeeder.seedAdminSet(app);
+    const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
     const resetToken = await issueResetPasswordToken(
       app,
-      seeded.superAdmin.email,
+      seededSuperAdmin.email,
     );
 
     if (!resetToken) {
@@ -1119,7 +1119,7 @@ describe("Admin Forgot Password API", () => {
       return;
     }
 
-    const latestOtp = await findLatestOtpByEmail(app, seeded.superAdmin.email);
+    const latestOtp = await findLatestOtpByEmail(app, seededSuperAdmin.email);
     expect(latestOtp).not.toBeNull();
 
     const dataSource = app.get(DataSource);
@@ -1288,11 +1288,11 @@ describe("Admin Forgot Password API", () => {
   });
 
   it("TC_AUTH_ADMIN_FORGOT_PASSWORD_RESET_016: Reset password success should allow signin with new password", async () => {
-    const seeded = await adminAuthSeeder.seedAdminSet(app);
+    const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
     const newPassword = "PassFresh@123";
     const resetToken = await issueResetPasswordToken(
       app,
-      seeded.superAdmin.email,
+      seededSuperAdmin.email,
     );
 
     if (!resetToken) {
@@ -1313,7 +1313,7 @@ describe("Admin Forgot Password API", () => {
     responseHelper.expectSuccess(resetResponse, 200);
 
     const signin = await requestHelper.post(app, "/api/v1/auth/admin/signin", {
-      email: seeded.superAdmin.email,
+      email: seededSuperAdmin.email,
       password: newPassword,
     });
     responseHelper.expectSuccess(signin, 200);
@@ -1331,12 +1331,12 @@ describe("Admin Forgot Password API", () => {
   });
 
   it("TC_AUTH_ADMIN_FORGOT_PASSWORD_RESET_017: Reset password success should reject old password signin", async () => {
-    const seeded = await adminAuthSeeder.seedAdminSet(app);
+    const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
     const newPassword = "PassFresh@123";
-    const oldPassword = seeded.superAdmin.password;
+    const oldPassword = seededSuperAdmin.password;
     const resetToken = await issueResetPasswordToken(
       app,
-      seeded.superAdmin.email,
+      seededSuperAdmin.email,
     );
 
     if (!resetToken) {
@@ -1364,7 +1364,7 @@ describe("Admin Forgot Password API", () => {
       },
       () =>
         requestHelper.post(app, "/api/v1/auth/admin/signin", {
-          email: seeded.superAdmin.email,
+          email: seededSuperAdmin.email,
           password: oldPassword,
         }),
       401,
@@ -1372,10 +1372,10 @@ describe("Admin Forgot Password API", () => {
   });
 
   it("TC_AUTH_ADMIN_FORGOT_PASSWORD_RESET_018: Reset password token reuse attempt after successful reset", async () => {
-    const seeded = await adminAuthSeeder.seedAdminSet(app);
+    const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
     const resetToken = await issueResetPasswordToken(
       app,
-      seeded.superAdmin.email,
+      seededSuperAdmin.email,
     );
 
     if (!resetToken) {
@@ -1466,10 +1466,10 @@ describe("Admin Forgot Password API", () => {
   });
 
   it("TC_AUTH_ADMIN_FORGOT_PASSWORD_RESET_023: Reset password response should not expose sensitive information", async () => {
-    const seeded = await adminAuthSeeder.seedAdminSet(app);
+    const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
     const resetToken = await issueResetPasswordToken(
       app,
-      seeded.superAdmin.email,
+      seededSuperAdmin.email,
     );
 
     if (!resetToken) {
@@ -1506,15 +1506,15 @@ describe("Admin Forgot Password API", () => {
   });
 
   it("TC_AUTH_ADMIN_FORGOT_PASSWORD_RESET_024: Reset password should invalidate existing active sessions", async () => {
-    const seeded = await adminAuthSeeder.seedAdminSet(app);
+    const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
     const session = await authHelper.signinAdmin(app, {
-      email: seeded.superAdmin.email,
-      password: seeded.superAdmin.password,
+      email: seededSuperAdmin.email,
+      password: seededSuperAdmin.password,
     });
 
     const resetToken = await issueResetPasswordToken(
       app,
-      seeded.superAdmin.email,
+      seededSuperAdmin.email,
     );
     if (!resetToken) {
       loggerHelper.pass(
@@ -1549,10 +1549,10 @@ describe("Admin Forgot Password API", () => {
   });
 
   it("TC_AUTH_ADMIN_FORGOT_PASSWORD_RESET_025: Reset password with Unicode password characters", async () => {
-    const seeded = await adminAuthSeeder.seedAdminSet(app);
+    const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
     const resetToken = await issueResetPasswordToken(
       app,
-      seeded.superAdmin.email,
+      seededSuperAdmin.email,
     );
 
     if (!resetToken) {

@@ -69,42 +69,10 @@ const createAdmin = async (
   const payload = adminFactory.buildAdminSignupPayload();
   const created = await authHelper.signupAdmin(app, payload);
 
-  const updates: { role?: AdminRole; isActive?: boolean } = {};
-
-  if (role !== AdminRole.SUPER_ADMIN) {
-    updates.role = role;
-  }
-
-  if (isInactive) {
-    updates.isActive = false;
-  }
-
-  if (Object.keys(updates).length > 0) {
-    const dataSource = directSqlHelper.getDataSource(app);
-    const usePostgresParams = dataSource.options.type === "postgres";
-    const parameter = (index: number): string =>
-      usePostgresParams ? `$${index + 1}` : "?";
-
-    const setClauses: string[] = [];
-    const values: unknown[] = [];
-
-    if (typeof updates.role === "string") {
-      setClauses.push(`role = ${parameter(values.length)}`);
-      values.push(updates.role);
-    }
-
-    if (typeof updates.isActive === "boolean") {
-      setClauses.push(`is_active = ${parameter(values.length)}`);
-      values.push(updates.isActive);
-    }
-
-    if (setClauses.length > 0) {
-      const whereIdToken = parameter(values.length);
-      const sql = `UPDATE admins SET ${setClauses.join(", ")} WHERE id = ${whereIdToken}`;
-      values.push(created.id);
-      await directSqlHelper.execute(app, sql, values);
-    }
-  }
+  await adminAuthSeeder.updateAdmin(app, created.id, {
+    role: role !== AdminRole.SUPER_ADMIN ? role : undefined,
+    isActive: isInactive ? false : undefined,
+  });
 
   return {
     id: created.id,
@@ -114,20 +82,6 @@ const createAdmin = async (
 };
 
 export const adminAuthSeeder = {
-  async seedAdminSet(app: INestApplication): Promise<SeededAdminSet> {
-    const superAdmin = await this.seedSuperAdmin(app);
-    const staffAdmin = await this.seedStaffAdmin(app);
-    const inactiveSuperAdmin = await this.seedInactiveSuperAdmin(app);
-    const inactiveStaffAdmin = await this.seedInactiveStaffAdmin(app);
-
-    return {
-      superAdmin,
-      staffAdmin,
-      inactiveSuperAdmin,
-      inactiveStaffAdmin,
-    };
-  },
-
   async seedSuperAdmin(
     app: INestApplication,
   ): Promise<{ id: number; email: string; password: string }> {
@@ -157,7 +111,6 @@ export const adminAuthSeeder = {
     adminId: number,
     updates: Partial<{
       email: string;
-      password: string;
       role: AdminRole;
       isActive: boolean;
     }>,
@@ -191,18 +144,17 @@ export const adminAuthSeeder = {
       values.push(adminId);
       await directSqlHelper.execute(app, sql, values);
 
-      const selectIdToken = usePostgresParams ? "$1" : "?";
-      const updatedAdmin = await directSqlHelper.first<{
-        id: number;
-        email: string;
-        role: string;
-        is_active: boolean;
-      }>(
-        app,
-        `SELECT id, email, role, is_active FROM admins WHERE id = ${selectIdToken}`,
-        [adminId],
-      );
-      console.log("Updated admin row:", updatedAdmin);
+      // const selectIdToken = usePostgresParams ? "$1" : "?";
+      // const updatedAdmin = await directSqlHelper.first<{
+      //   id: number;
+      //   email: string;
+      //   role: string;
+      //   is_active: boolean;
+      // }>(
+      //   app,
+      //   `SELECT id, email, role, is_active FROM admins WHERE id = ${selectIdToken}`,
+      //   [adminId],
+      // );
     }
   },
 
