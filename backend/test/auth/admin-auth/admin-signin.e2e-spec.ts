@@ -196,7 +196,7 @@ describe("Admin Signin API", () => {
     await app.close();
   });
 
-  it("TC_AUTH_ADMIN_SIGNIN_001 - Admin signin success with valid credentials", async () => {
+  it("TC_AUTH_ADMIN_SIGNIN_001 - Super Admin signin success with valid credentials", async () => {
     const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
     await expectSigninStatus(
       app,
@@ -213,12 +213,29 @@ describe("Admin Signin API", () => {
     );
   });
 
-  it("TC_AUTH_ADMIN_SIGNIN_002 - Signin with invalid email", async () => {
-    await adminAuthSeeder.seedSuperAdmin(app);
+  it("TC_AUTH_ADMIN_SIGNIN_002 - Staff Admin signin success with valid credentials", async () => {
+    const seededStaffAdmin = await adminAuthSeeder.seedStaffAdmin(app);
     await expectSigninStatus(
       app,
       {
         id: "TC_AUTH_ADMIN_SIGNIN_002",
+        description: "Staff Admin signin success with valid credentials",
+        expectedStatus: 200,
+      },
+      {
+        email: seededStaffAdmin.email,
+        password: seededStaffAdmin.password,
+      },
+      200,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_SIGNIN_003 - Signin with invalid email", async () => {
+    await adminAuthSeeder.seedSuperAdmin(app);
+    await expectSigninStatus(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_SIGNIN_003",
         description: "Signin with invalid email",
         expectedStatus: 401,
       },
@@ -227,12 +244,12 @@ describe("Admin Signin API", () => {
     );
   });
 
-  it("TC_AUTH_ADMIN_SIGNIN_003 - Signin with invalid password", async () => {
+  it("TC_AUTH_ADMIN_SIGNIN_004 - Signin with invalid password", async () => {
     const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
     await expectSigninStatus(
       app,
       {
-        id: "TC_AUTH_ADMIN_SIGNIN_003",
+        id: "TC_AUTH_ADMIN_SIGNIN_004",
         description: "Signin with invalid password",
         expectedStatus: 401,
       },
@@ -241,12 +258,12 @@ describe("Admin Signin API", () => {
     );
   });
 
-  it("TC_AUTH_ADMIN_SIGNIN_004 - Signin with non-existing email", async () => {
+  it("TC_AUTH_ADMIN_SIGNIN_005 - Signin with non-existing email", async () => {
     await adminAuthSeeder.seedSuperAdmin(app);
     await expectSigninStatus(
       app,
       {
-        id: "TC_AUTH_ADMIN_SIGNIN_004",
+        id: "TC_AUTH_ADMIN_SIGNIN_005",
         description: "Signin with non-existing email",
         expectedStatus: 401,
       },
@@ -255,11 +272,11 @@ describe("Admin Signin API", () => {
     );
   });
 
-  it("TC_AUTH_ADMIN_SIGNIN_005 - Signin with invalid email format", async () => {
+  it("TC_AUTH_ADMIN_SIGNIN_006 - Signin with invalid email format", async () => {
     await expectSigninStatus(
       app,
       {
-        id: "TC_AUTH_ADMIN_SIGNIN_005",
+        id: "TC_AUTH_ADMIN_SIGNIN_006",
         description: "Signin with invalid email format",
         expectedStatus: 400,
       },
@@ -268,11 +285,11 @@ describe("Admin Signin API", () => {
     );
   });
 
-  it("TC_AUTH_ADMIN_SIGNIN_006 - Password shorter than 8 characters", async () => {
+  it("TC_AUTH_ADMIN_SIGNIN_007 - Password shorter than 8 characters", async () => {
     await expectSigninStatus(
       app,
       {
-        id: "TC_AUTH_ADMIN_SIGNIN_006",
+        id: "TC_AUTH_ADMIN_SIGNIN_007",
         description: "Password shorter than 8 characters",
         expectedStatus: 400,
       },
@@ -281,11 +298,11 @@ describe("Admin Signin API", () => {
     );
   });
 
-  it("TC_AUTH_ADMIN_SIGNIN_007 - Missing email field", async () => {
+  it("TC_AUTH_ADMIN_SIGNIN_008 - Missing email field", async () => {
     await expectSigninStatus(
       app,
       {
-        id: "TC_AUTH_ADMIN_SIGNIN_007",
+        id: "TC_AUTH_ADMIN_SIGNIN_008",
         description: "Missing email field",
         expectedStatus: 400,
       },
@@ -294,11 +311,11 @@ describe("Admin Signin API", () => {
     );
   });
 
-  it("TC_AUTH_ADMIN_SIGNIN_008 - Missing password field", async () => {
+  it("TC_AUTH_ADMIN_SIGNIN_009 - Missing password field", async () => {
     await expectSigninStatus(
       app,
       {
-        id: "TC_AUTH_ADMIN_SIGNIN_008",
+        id: "TC_AUTH_ADMIN_SIGNIN_009",
         description: "Missing password field",
         expectedStatus: 400,
       },
@@ -307,11 +324,11 @@ describe("Admin Signin API", () => {
     );
   });
 
-  it("TC_AUTH_ADMIN_SIGNIN_009 - Empty email string", async () => {
+  it("TC_AUTH_ADMIN_SIGNIN_010 - Empty email string", async () => {
     await expectSigninStatus(
       app,
       {
-        id: "TC_AUTH_ADMIN_SIGNIN_009",
+        id: "TC_AUTH_ADMIN_SIGNIN_010",
         description: "Empty email string",
         expectedStatus: 400,
       },
@@ -320,11 +337,11 @@ describe("Admin Signin API", () => {
     );
   });
 
-  it("TC_AUTH_ADMIN_SIGNIN_010 - Empty password string", async () => {
+  it("TC_AUTH_ADMIN_SIGNIN_011 - Empty password string", async () => {
     await expectSigninStatus(
       app,
       {
-        id: "TC_AUTH_ADMIN_SIGNIN_010",
+        id: "TC_AUTH_ADMIN_SIGNIN_011",
         description: "Empty password string",
         expectedStatus: 400,
       },
@@ -333,11 +350,11 @@ describe("Admin Signin API", () => {
     );
   });
 
-  it("TC_AUTH_ADMIN_SIGNIN_011 - Null email value", async () => {
+  it("TC_AUTH_ADMIN_SIGNIN_012 - Null email value", async () => {
     await expectSigninStatus(
       app,
       {
-        id: "TC_AUTH_ADMIN_SIGNIN_011",
+        id: "TC_AUTH_ADMIN_SIGNIN_012",
         description: "Null email value",
         expectedStatus: 400,
       },
@@ -349,11 +366,11 @@ describe("Admin Signin API", () => {
     );
   });
 
-  it("TC_AUTH_ADMIN_SIGNIN_012 - Null password value", async () => {
+  it("TC_AUTH_ADMIN_SIGNIN_013 - Null password value", async () => {
     await expectSigninStatus(
       app,
       {
-        id: "TC_AUTH_ADMIN_SIGNIN_012",
+        id: "TC_AUTH_ADMIN_SIGNIN_013",
         description: "Null password value",
         expectedStatus: 400,
       },
@@ -365,12 +382,12 @@ describe("Admin Signin API", () => {
     );
   });
 
-  it("TC_AUTH_ADMIN_SIGNIN_013 - Signin with uppercase email should normalize and succeed", async () => {
+  it("TC_AUTH_ADMIN_SIGNIN_014 - Signin with uppercase email should normalize and succeed", async () => {
     const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
     await expectSigninStatus(
       app,
       {
-        id: "TC_AUTH_ADMIN_SIGNIN_013",
+        id: "TC_AUTH_ADMIN_SIGNIN_014",
         description: "Signin with uppercase email should normalize and succeed",
         expectedStatus: 200,
       },
@@ -382,12 +399,12 @@ describe("Admin Signin API", () => {
     );
   });
 
-  it("TC_AUTH_ADMIN_SIGNIN_014 - Signin with leading and trailing spaces in email", async () => {
+  it("TC_AUTH_ADMIN_SIGNIN_015 - Signin with leading and trailing spaces in email", async () => {
     const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
     await expectSigninStatus(
       app,
       {
-        id: "TC_AUTH_ADMIN_SIGNIN_014",
+        id: "TC_AUTH_ADMIN_SIGNIN_015",
         description: "Signin with leading/trailing spaces in email",
         expectedStatus: 200,
       },
@@ -399,37 +416,49 @@ describe("Admin Signin API", () => {
     );
   });
 
-  it("TC_AUTH_ADMIN_SIGNIN_015 - Inactive admin signin attempt", async () => {
+  it("TC_AUTH_ADMIN_SIGNIN_016 - Inactive admin signin attempt", async () => {
     const meta: TestCaseMeta = {
-      id: "TC_AUTH_ADMIN_SIGNIN_015",
+      id: "TC_AUTH_ADMIN_SIGNIN_016",
       description: "Inactive admin signin attempt",
       expectedStatus: 401,
     };
 
-    if (isExternalMode()) {
-      loggerHelper.pass(
-        meta,
-        200,
-        "Skipped in external mode (inactive seeding requires in-process DB access)",
-      );
-      return;
-    }
-
-    const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
+    const seededInactiveSuperAdmin =
+      await adminAuthSeeder.seedInactiveSuperAdmin(app);
     await expectSigninStatus(
       app,
       meta,
       {
-        email: seededSuperAdmin.email,
-        password: seededSuperAdmin.password,
+        email: seededInactiveSuperAdmin.email,
+        password: seededInactiveSuperAdmin.password,
       },
       401,
     );
   });
 
-  it("TC_AUTH_ADMIN_SIGNIN_017 - Deleted admin signin attempt", async () => {
+  it("TC_AUTH_ADMIN_SIGNIN_017 - Inactive staff admin signin attempt", async () => {
     const meta: TestCaseMeta = {
       id: "TC_AUTH_ADMIN_SIGNIN_017",
+      description: "Inactive staff admin signin attempt",
+      expectedStatus: 401,
+    };
+
+    const seededInactiveStaffAdmin =
+      await adminAuthSeeder.seedInactiveStaffAdmin(app);
+    await expectSigninStatus(
+      app,
+      meta,
+      {
+        email: seededInactiveStaffAdmin.email,
+        password: seededInactiveStaffAdmin.password,
+      },
+      401,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_SIGNIN_018 - Deleted admin signin attempt", async () => {
+    const meta: TestCaseMeta = {
+      id: "TC_AUTH_ADMIN_SIGNIN_018",
       description: "Deleted admin signin attempt",
       expectedStatus: 401,
     };
@@ -460,9 +489,9 @@ describe("Admin Signin API", () => {
     );
   });
 
-  it("TC_AUTH_ADMIN_SIGNIN_018 - Multiple failed signin attempts handling", async () => {
+  it("TC_AUTH_ADMIN_SIGNIN_019 - Multiple failed signin attempts handling", async () => {
     const meta: TestCaseMeta = {
-      id: "TC_AUTH_ADMIN_SIGNIN_018",
+      id: "TC_AUTH_ADMIN_SIGNIN_019",
       description: "Multiple failed signin attempts handling",
       expectedStatus: 401,
     };
@@ -492,9 +521,9 @@ describe("Admin Signin API", () => {
     }
   });
 
-  it("TC_AUTH_ADMIN_SIGNIN_019 - Successful SUPER_ADMIN signin returns complete response with tokens and profile data", async () => {
+  it("TC_AUTH_ADMIN_SIGNIN_020 - Successful SUPER_ADMIN signin returns complete response with tokens and profile data", async () => {
     const meta: TestCaseMeta = {
-      id: "TC_AUTH_ADMIN_SIGNIN_019",
+      id: "TC_AUTH_ADMIN_SIGNIN_020",
       description:
         "Successful SUPER_ADMIN signin returns complete response with tokens and profile data",
       expectedStatus: 200,
@@ -540,86 +569,53 @@ describe("Admin Signin API", () => {
     loggerHelper.pass(meta, 200, body.message);
   });
 
-  // it("TC_AUTH_ADMIN_SIGNIN_026 - Successful signin for PLATFORM_ADMIN role", async () => {
-  //   const meta: TestCaseMeta = {
-  //     id: "TC_AUTH_ADMIN_SIGNIN_026",
-  //     description: "Successful signin for PLATFORM_ADMIN role",
-  //     expectedStatus: 200,
-  //   };
+  it("TC_AUTH_ADMIN_SIGNIN_021 - Successful STAFF_ADMIN signin returns complete response with tokens and profile data", async () => {
+    const meta: TestCaseMeta = {
+      id: "TC_AUTH_ADMIN_SIGNIN_021",
+      description:
+        "Successful STAFF_ADMIN signin returns complete response with tokens and profile data",
+      expectedStatus: 200,
+    };
 
-  //   const seeded = await adminAuthSeeder.seedAdminSet(app);
-  //   const response = await expectSigninStatus(
-  //     app,
-  //     meta,
-  //     {
-  //       email: seeded.platformAdmin.email,
-  //       password: seeded.platformAdmin.password,
-  //     },
-  //     200,
-  //   );
+    const seededStaffAdmin = await adminAuthSeeder.seedStaffAdmin(app);
+    const response = await requestHelper.post(app, SIGNIN_ENDPOINT, {
+      email: seededStaffAdmin.email,
+      password: seededStaffAdmin.password,
+    });
 
-  //   const body = responseHelper.expectSuccess<{
-  //     admin: { role: string };
-  //   }>(response, 200);
-  //   expect(body.data.admin.role).toBe(
-  //     isExternalMode() ? "SUPER_ADMIN" : "STAFF",
-  //   );
-  //   loggerHelper.pass(meta, 200, body.message);
-  // });
+    const body = responseHelper.expectSuccess<{
+      accessToken: string;
+      refreshToken: string;
+      accessTokenExpiresIn: string;
+      refreshTokenExpiresIn: string;
+      admin: {
+        id: number;
+        firstName: string;
+        lastName: string;
+        email: string;
+        role: string;
+        accessControls: unknown[];
+        password?: string;
+      };
+    }>(response, 200);
 
-  // it("TC_AUTH_ADMIN_SIGNIN_027 - Successful signin for OPERATIONS_MANAGER role", async () => {
-  //   const meta: TestCaseMeta = {
-  //     id: "TC_AUTH_ADMIN_SIGNIN_027",
-  //     description: "Successful signin for OPERATIONS_MANAGER role",
-  //     expectedStatus: 200,
-  //   };
+    // Verify tokens
+    expect(body.data.accessToken).toBeDefined();
+    expect(body.data.refreshToken).toBeDefined();
+    expect(typeof body.data.accessTokenExpiresIn).toBe("string");
+    expect(typeof body.data.refreshTokenExpiresIn).toBe("string");
 
-  //   const seeded = await adminAuthSeeder.seedAdminSet(app);
-  //   const response = await expectSigninStatus(
-  //     app,
-  //     meta,
-  //     {
-  //       email: seeded.managerAdmin.email,
-  //       password: seeded.managerAdmin.password,
-  //     },
-  //     200,
-  //   );
+    // Verify admin profile data
+    expect(body.data.admin.id).toBeDefined();
+    expect(typeof body.data.admin.firstName).toBe("string");
+    expect(typeof body.data.admin.lastName).toBe("string");
+    expect(Array.isArray(body.data.admin.accessControls)).toBe(true);
 
-  //   const body = responseHelper.expectSuccess<{
-  //     admin: { role: string };
-  //   }>(response, 200);
-  //   expect(body.data.admin.role).toBe(
-  //     isExternalMode() ? "SUPER_ADMIN" : "STAFF",
-  //   );
-  //   loggerHelper.pass(meta, 200, body.message);
-  // });
+    // Verify role
+    expect(body.data.admin.role).toBe("STAFF");
 
-  // it("TC_AUTH_ADMIN_SIGNIN_028 - Successful signin for SUPPORT_AGENT role", async () => {
-  //   const meta: TestCaseMeta = {
-  //     id: "TC_AUTH_ADMIN_SIGNIN_028",
-  //     description: "Successful signin for SUPPORT_AGENT role",
-  //     expectedStatus: 200,
-  //   };
-
-  //   const seeded = await adminAuthSeeder.seedAdminSet(app);
-  //   const response = await expectSigninStatus(
-  //     app,
-  //     meta,
-  //     {
-  //       email: seeded.platformAdmin.email,
-  //       password: seeded.platformAdmin.password,
-  //     },
-  //     200,
-  //   );
-
-  //   const body = responseHelper.expectSuccess<{
-  //     admin: { role: string };
-  //   }>(response, 200);
-  //   expect(body.data.admin.role).toBe(
-  //     isExternalMode() ? "SUPER_ADMIN" : "STAFF",
-  //   );
-  //   loggerHelper.pass(meta, 200, body.message);
-  // });
+    loggerHelper.pass(meta, 200, body.message);
+  });
 
   it("TC_AUTH_ADMIN_SIGNIN_029 - Signin requiring two-factor authentication challenge", async () => {
     const meta: TestCaseMeta = {

@@ -54,9 +54,10 @@ const isValidHttpUrl = (value) => {
 
 const run = async () => {
     const targetPath = process.argv[2];
-    const baseUrl = await askServerUrl();
+    const useRunningApp = process.env.E2E_USE_RUNNING_APP !== "false";
+    const baseUrl = useRunningApp ? await askServerUrl() : DEFAULT_URL;
 
-    if (!isValidHttpUrl(baseUrl)) {
+    if (useRunningApp && !isValidHttpUrl(baseUrl)) {
         console.error(`[FAILED] Invalid URL: ${baseUrl}`);
         process.exit(1);
     }
@@ -69,14 +70,18 @@ const run = async () => {
 
     jestArgs.push("--config", "./test/jest-e2e.json");
 
-    console.log(`[SUITE] Running E2E against ${baseUrl}`);
+    if (useRunningApp) {
+        console.log(`[SUITE] Running E2E against ${baseUrl}`);
+    } else {
+        console.log("[SUITE] Running E2E in internal mode (in-process Nest app)");
+    }
 
     const runner = spawn(process.execPath, jestArgs, {
         stdio: "inherit",
         shell: false,
         env: {
             ...process.env,
-            E2E_USE_RUNNING_APP: "true",
+            E2E_USE_RUNNING_APP: useRunningApp ? "true" : "false",
             E2E_BASE_URL: baseUrl,
         },
     });

@@ -59,34 +59,28 @@ Test cases:
 
 Test cases:
 
-- `TC_AUTH_ADMIN_SIGNIN_001`: Admin signin success with valid credentials, expected `200`
-- `TC_AUTH_ADMIN_SIGNIN_002`: Signin with invalid email, expected `401`
-- `TC_AUTH_ADMIN_SIGNIN_003`: Signin with invalid password, expected `401`
-- `TC_AUTH_ADMIN_SIGNIN_004`: Signin with non-existing email, expected `401`
-- `TC_AUTH_ADMIN_SIGNIN_005`: Signin with invalid email format, expected `400`
-- `TC_AUTH_ADMIN_SIGNIN_006`: Password shorter than 8 characters, expected `400`
-- `TC_AUTH_ADMIN_SIGNIN_007`: Missing email field, expected `400`
-- `TC_AUTH_ADMIN_SIGNIN_008`: Missing password field, expected `400`
-- `TC_AUTH_ADMIN_SIGNIN_009`: Empty email string, expected `400`
-- `TC_AUTH_ADMIN_SIGNIN_010`: Empty password string, expected `400`
-- `TC_AUTH_ADMIN_SIGNIN_011`: Null email value, expected `400`
-- `TC_AUTH_ADMIN_SIGNIN_012`: Null password value, expected `400`
-- `TC_AUTH_ADMIN_SIGNIN_013`: Signin with uppercase email should normalize and succeed, expected `200`
-- `TC_AUTH_ADMIN_SIGNIN_014`: Signin with leading/trailing spaces in email, expected `200`
-- `TC_AUTH_ADMIN_SIGNIN_015`: Inactive admin signin attempt, expected `401`
-- `TC_AUTH_ADMIN_SIGNIN_016`: Locked admin account signin attempt, expected `401`
-- `TC_AUTH_ADMIN_SIGNIN_017`: Deleted admin signin attempt, expected `401`
-- `TC_AUTH_ADMIN_SIGNIN_018`: Multiple failed signin attempts handling, expected `401`
-- `TC_AUTH_ADMIN_SIGNIN_019`: Successful signin returns accessToken, expected `200`
-- `TC_AUTH_ADMIN_SIGNIN_020`: Successful signin returns refreshToken, expected `200`
-- `TC_AUTH_ADMIN_SIGNIN_021`: Successful signin returns accessTokenExpiresIn, expected `200`
-- `TC_AUTH_ADMIN_SIGNIN_022`: Successful signin returns refreshTokenExpiresIn, expected `200`
-- `TC_AUTH_ADMIN_SIGNIN_023`: Successful signin returns admin profile data, expected `200`
-- `TC_AUTH_ADMIN_SIGNIN_024`: Successful signin returns admin access controls, expected `200`
-- `TC_AUTH_ADMIN_SIGNIN_025`: Successful signin for SUPER_ADMIN role, expected `200`
-- `TC_AUTH_ADMIN_SIGNIN_026`: Successful signin for PLATFORM_ADMIN role, expected `200`
-- `TC_AUTH_ADMIN_SIGNIN_027`: Successful signin for OPERATIONS_MANAGER role, expected `200`
-- `TC_AUTH_ADMIN_SIGNIN_028`: Successful signin for SUPPORT_AGENT role, expected `200`
+- `TC_AUTH_ADMIN_SIGNIN_001`: Super Admin signin success with valid credentials, expected `200`
+- `TC_AUTH_ADMIN_SIGNIN_002`: Staff Admin signin success with valid credentials, expected `200`
+- `TC_AUTH_ADMIN_SIGNIN_003`: Signin with invalid email, expected `401`
+- `TC_AUTH_ADMIN_SIGNIN_004`: Signin with invalid password, expected `401`
+- `TC_AUTH_ADMIN_SIGNIN_005`: Signin with non-existing email, expected `401`
+- `TC_AUTH_ADMIN_SIGNIN_006`: Signin with invalid email format, expected `400`
+- `TC_AUTH_ADMIN_SIGNIN_007`: Password shorter than 8 characters, expected `400`
+- `TC_AUTH_ADMIN_SIGNIN_008`: Missing email field, expected `400`
+- `TC_AUTH_ADMIN_SIGNIN_009`: Missing password field, expected `400`
+- `TC_AUTH_ADMIN_SIGNIN_010`: Empty email string, expected `400`
+- `TC_AUTH_ADMIN_SIGNIN_011`: Empty password string, expected `400`
+- `TC_AUTH_ADMIN_SIGNIN_012`: Null email value, expected `400`
+- `TC_AUTH_ADMIN_SIGNIN_013`: Null password value, expected `400`
+- `TC_AUTH_ADMIN_SIGNIN_014`: Signin with uppercase email should normalize and succeed, expected `200`
+- `TC_AUTH_ADMIN_SIGNIN_015`: Signin with leading and trailing spaces in email, expected `200`
+- `TC_AUTH_ADMIN_SIGNIN_016`: Inactive admin signin attempt, expected `401`
+- `TC_AUTH_ADMIN_SIGNIN_017`: Inactive staff admin signin attempt, expected `401`
+- `TC_AUTH_ADMIN_SIGNIN_018`: Deleted admin signin attempt, expected `401`
+- `TC_AUTH_ADMIN_SIGNIN_019`: Multiple failed signin attempts handling, expected `401`
+- `TC_AUTH_ADMIN_SIGNIN_020`: Successful SUPER_ADMIN signin returns complete response with tokens and profile data, expected `200`
+- `TC_AUTH_ADMIN_SIGNIN_020`: Successful STAFF_ADMIN signin returns complete response with tokens and profile data, expected `200`
+
 - `TC_AUTH_ADMIN_SIGNIN_029`: Signin requiring two-factor authentication challenge, expected `200`
 - `TC_AUTH_ADMIN_SIGNIN_030`: Two-factor signin response contains requiresTwoFactor=true, expected `200`
 - `TC_AUTH_ADMIN_SIGNIN_031`: Two-factor signin response contains twoFactorToken, expected `200`
@@ -110,9 +104,8 @@ Test cases:
 
 Notes:
 
-- `TC_AUTH_ADMIN_SIGNIN_015` and `TC_AUTH_ADMIN_SIGNIN_017` may be skipped in external mode because they require in-process DB mutation.
-- `TC_AUTH_ADMIN_SIGNIN_016` is a placeholder until account-lock state is implemented in the admin model.
-- `TC_AUTH_ADMIN_SIGNIN_026`, `TC_AUTH_ADMIN_SIGNIN_027`, and `TC_AUTH_ADMIN_SIGNIN_028` validate current `STAFF` role behavior as compatibility coverage for legacy role labels.
+- `TC_AUTH_ADMIN_SIGNIN_018` may be skipped in external mode because it requires in-process DB mutation (hard delete).
+- `TC_AUTH_ADMIN_SIGNIN_026`, `TC_AUTH_ADMIN_SIGNIN_027`, and `TC_AUTH_ADMIN_SIGNIN_028` are commented out pending implementation of legacy platform role labels.
 
 ## Admin Airline Invitation API
 

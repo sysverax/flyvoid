@@ -6,9 +6,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "dev": "ts-node-dev --respawn --transpile-only src/main.ts",
-    "test:e2e": "node ./test/scripts/run-e2e.js",
-    "test:e2e:auth": "node ./test/scripts/run-e2e.js test/auth",
-    "test:e2e:admin-auth": "node ./test/scripts/run-e2e.js test/auth/admin-auth",
+    "test:e2e": "cross-env E2E_USE_RUNNING_APP=false node ./test/scripts/run-e2e.js",
     "start": "node dist/main.js",
     "start:dev": "ts-node-dev --respawn --transpile-only src/main.ts",
     "start:test": "ts-node-dev --respawn --transpile-only src/main.ts",

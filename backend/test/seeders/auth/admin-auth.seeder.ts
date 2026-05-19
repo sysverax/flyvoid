@@ -1,5 +1,4 @@
 import { INestApplication } from "@nestjs/common";
-import { DataSource } from "typeorm";
 import { AdminEntity } from "../../../src/admin/entities/admin.entity";
 import { AirlineUserEntity } from "../../../src/airline/entities/airline-user.entity";
 import { AdminRole } from "../../../src/common/constants/user.constants";
@@ -8,7 +7,7 @@ import { airlineFactory } from "../../factories/airline.factory";
 import { authHelper } from "../../helpers/auth.helper";
 import { requestHelper } from "../../helpers/request.helper";
 import { responseHelper } from "../../helpers/response.helper";
-import { isExternalMode } from "../../setup/test-app";
+import { testDbHelper } from "../../database/db.helper";
 
 export interface SeededAdminSet {
   superAdmin: {
@@ -21,7 +20,12 @@ export interface SeededAdminSet {
     email: string;
     password: string;
   };
-  inactiveAdmin: {
+  inactiveSuperAdmin: {
+    id: number;
+    email: string;
+    password: string;
+  };
+  inactiveStaffAdmin: {
     id: number;
     email: string;
     password: string;
@@ -36,23 +40,18 @@ const createAdmin = async (
   const payload = adminFactory.buildAdminSignupPayload();
   const created = await authHelper.signupAdmin(app, payload);
 
-  if (!isExternalMode()) {
-    const dataSource = app.get(DataSource);
-    const updates: Partial<AdminEntity> = {};
+  const updates: Partial<AdminEntity> = {};
 
-    if (role !== AdminRole.SUPER_ADMIN) {
-      updates.role = role;
-    }
+  if (role !== AdminRole.SUPER_ADMIN) {
+    updates.role = role;
+  }
 
-    if (isInactive) {
-      updates.isActive = false;
-    }
+  if (isInactive) {
+    updates.isActive = false;
+  }
 
-    if (Object.keys(updates).length > 0) {
-      await dataSource
-        .getRepository(AdminEntity)
-        .update({ id: created.id }, updates);
-    }
+  if (Object.keys(updates).length > 0) {
+    await testDbHelper.update(app, AdminEntity, { id: created.id }, updates);
   }
 
   return {
@@ -66,12 +65,14 @@ export const adminAuthSeeder = {
   async seedAdminSet(app: INestApplication): Promise<SeededAdminSet> {
     const superAdmin = await this.seedSuperAdmin(app);
     const staffAdmin = await this.seedStaffAdmin(app);
-    const inactiveAdmin = await this.seedInactiveAdmin(app);
+    const inactiveSuperAdmin = await this.seedInactiveSuperAdmin(app);
+    const inactiveStaffAdmin = await this.seedInactiveStaffAdmin(app);
 
     return {
       superAdmin,
       staffAdmin,
-      inactiveAdmin,
+      inactiveSuperAdmin,
+      inactiveStaffAdmin,
     };
   },
 
@@ -87,7 +88,13 @@ export const adminAuthSeeder = {
     return await createAdmin(app, AdminRole.STAFF);
   },
 
-  async seedInactiveAdmin(
+  async seedInactiveSuperAdmin(
+    app: INestApplication,
+  ): Promise<{ id: number; email: string; password: string }> {
+    return await createAdmin(app, AdminRole.SUPER_ADMIN, true);
+  },
+
+  async seedInactiveStaffAdmin(
     app: INestApplication,
   ): Promise<{ id: number; email: string; password: string }> {
     return await createAdmin(app, AdminRole.STAFF, true);
@@ -154,12 +161,12 @@ export const adminAuthSeeder = {
     }>(onboardResponse, 200);
 
     if (options?.inactive) {
-      if (!isExternalMode()) {
-        const dataSource = app.get(DataSource);
-        await dataSource
-          .getRepository(AirlineUserEntity)
-          .update({ id: onboardBody.data.userId }, { isActive: false });
-      }
+      await testDbHelper.update(
+        app,
+        AirlineUserEntity,
+        { id: onboardBody.data.userId },
+        { isActive: false },
+      );
     }
 
     return {
