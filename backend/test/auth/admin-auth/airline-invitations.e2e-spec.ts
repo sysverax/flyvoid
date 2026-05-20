@@ -15,15 +15,35 @@ import { loggerHelper } from "../../helpers/logger.helper";
 import { requestHelper } from "../../helpers/request.helper";
 import { responseHelper } from "../../helpers/response.helper";
 import { adminAuthSeeder } from "../../seeders/admin/admin.seeder";
-import { seedGlobalTestData } from "../../seeders/global/global-test-data.seeder";
 import { TestCaseMeta } from "../../shared/interfaces/test-case.interface";
 import { authHelper } from "../../helpers/auth.helper";
 import { airlineFactory } from "../../factories/airline.factory";
 import { tokenHelper } from "../../helpers/token.helper";
 import { isExternalMode } from "../../setup/test-app";
-import { AirlineAdminInviteEntity } from "../../../src/auth/entities/airline-admin-invite.entity";
+import { airlineSeeder } from "../../seeders/airline/airline.seeder";
 
 const INVITE_ENDPOINT = "/api/v1/auth/admin/airline-invitations";
+
+export interface AirlineInvitationResponseData {
+  invitationId: number;
+  airlineId: number;
+  airlineName: string;
+  airlineCode: string;
+  companyRegistrationNumber: string;
+  website?: string;
+  contactEmail: string;
+  contactPhone: string;
+  timezone: string;
+  currency: string;
+  address: string;
+  logo?: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  jobTitle: string;
+  expiresIn: string;
+  onboardingLink: string | null;
+}
 
 const getResponseMessage = (
   response: { body?: { message?: unknown } },
@@ -1041,52 +1061,16 @@ describe("Admin Airline Invitation API", () => {
       firstPayload,
     );
 
-    const dataSource = app.get(DataSource);
-    await dataSource
-      .getRepository(AirlineAdminInviteEntity)
-      .update(
-        { id: first.body.data.invitationId },
-        { expiresAt: new Date(Date.now() - 60_000) },
-      );
+    await airlineSeeder.updateAirlineInvitationExpiresAt(
+      app,
+      first.body.data.invitationId,
+      new Date(Date.now() - 60_000),
+    );
 
     await expectInviteSuccess(app, meta, accessToken, {
       ...airlineFactory.buildInvitePayload(),
       adminEmail: firstPayload.adminEmail,
     });
-  });
-
-  it("TC_AUTH_ADMIN_AIRLINE_INVITE_051 - Invitation with valid optional contactEmail omitted", async () => {
-    const accessToken = await createSuperAdminAccessToken(app);
-    const payload = airlineFactory.buildInvitePayload();
-    const { contactEmail: _contactEmail, ...withoutField } = payload;
-
-    await expectInviteSuccess(
-      app,
-      {
-        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_051",
-        description: "Invitation with valid optional contactEmail omitted",
-        expectedStatus: 201,
-      },
-      accessToken,
-      withoutField,
-    );
-  });
-
-  it("TC_AUTH_ADMIN_AIRLINE_INVITE_052 - Invitation with valid optional contactPhone omitted", async () => {
-    const accessToken = await createSuperAdminAccessToken(app);
-    const payload = airlineFactory.buildInvitePayload();
-    const { contactPhone: _contactPhone, ...withoutField } = payload;
-
-    await expectInviteSuccess(
-      app,
-      {
-        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_052",
-        description: "Invitation with valid optional contactPhone omitted",
-        expectedStatus: 201,
-      },
-      accessToken,
-      withoutField,
-    );
   });
 
   it("TC_AUTH_ADMIN_AIRLINE_INVITE_053 - Invitation with whitespace-only required fields", async () => {
@@ -1152,6 +1136,903 @@ describe("Admin Airline Invitation API", () => {
       },
       accessToken,
       airlineFactory.buildInvitePayload({ contactEmail: sharedContactEmail }),
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_056 - Invitation with valid companyRegistrationNumber", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteSuccess(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_056",
+        description: "Invitation with valid companyRegistrationNumber",
+        expectedStatus: 201,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({
+        companyRegistrationNumber: "CRN-2026-0001",
+      }),
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_057 - Invitation with valid website URL", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteSuccess(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_057",
+        description: "Invitation with valid website URL",
+        expectedStatus: 201,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({
+        website: "https://www.flyvoid-airline.test",
+      }),
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_058 - Invitation with invalid website URL format", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_058",
+        description: "Invitation with invalid website URL format",
+        expectedStatus: 400,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({ website: "not-a-url" }),
+      400,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_059 - Invitation with valid timezone value", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteSuccess(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_059",
+        description: "Invitation with valid timezone value",
+        expectedStatus: 201,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({ timezone: "Asia/Dubai" }),
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_060 - Invitation with invalid timezone value", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_060",
+        description: "Invitation with invalid timezone value",
+        expectedStatus: 400,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({ timezone: "Invalid Timezone" }),
+      400,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_061 - Invitation with valid logo URL", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteSuccess(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_061",
+        description: "Invitation with valid logo URL",
+        expectedStatus: 201,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({
+        logo: "https://cdn.flyvoid-airline.test/brand/logo.png",
+      }),
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_062 - Invitation with invalid logo URL format", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_062",
+        description: "Invitation with invalid logo URL format",
+        expectedStatus: 400,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({ logo: "bad-logo-url" }),
+      400,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_063 - Invitation with valid address field", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteSuccess(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_063",
+        description: "Invitation with valid address field",
+        expectedStatus: 201,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({
+        address: "Terminal 3, Dubai International Airport",
+      }),
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_064 - Invitation with empty address field", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_064",
+        description: "Invitation with empty address field",
+        expectedStatus: 400,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({ address: "" }),
+      400,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_065 - Invitation with valid currency code", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteSuccess(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_065",
+        description: "Invitation with valid currency code",
+        expectedStatus: 201,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({ currency: "AED" }),
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_066 - Invitation with invalid currency code format", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_066",
+        description: "Invitation with invalid currency code format",
+        expectedStatus: 400,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({ currency: "A1" }),
+      400,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_067 - Invitation with lowercase currency normalization handling", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    const { body } = await expectInviteSuccess(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_067",
+        description:
+          "Invitation with lowercase currency normalization handling",
+        expectedStatus: 201,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({ currency: "usd" }),
+    );
+
+    const airlineDbRecord = await airlineSeeder.findAirlineById(
+      app,
+      body.data.airlineId,
+    );
+
+    expect(airlineDbRecord.currency).toBe("USD");
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_068 - Invitation with valid jobTitle field", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteSuccess(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_068",
+        description: "Invitation with valid jobTitle field",
+        expectedStatus: 201,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({ jobTitle: "Commercial Manager" }),
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_069 - Invitation with empty jobTitle field", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_069",
+        description: "Invitation with empty jobTitle field",
+        expectedStatus: 400,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({ jobTitle: "" }),
+      400,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_070 - Invitation with null companyRegistrationNumber", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_070",
+        description: "Invitation with null companyRegistrationNumber",
+        expectedStatus: 400,
+      },
+      accessToken,
+      {
+        ...airlineFactory.buildInvitePayload(),
+        companyRegistrationNumber: null,
+      } as unknown as Record<string, unknown>,
+      400,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_071 - Invitation with null website value", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteSuccess(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_071",
+        description: "Invitation with null website value",
+        expectedStatus: 201,
+      },
+      accessToken,
+      {
+        ...airlineFactory.buildInvitePayload(),
+        website: null,
+      } as unknown as Record<string, unknown>,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_072 - Invitation with null timezone value", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_072",
+        description: "Invitation with null timezone value",
+        expectedStatus: 400,
+      },
+      accessToken,
+      {
+        ...airlineFactory.buildInvitePayload(),
+        timezone: null,
+      } as unknown as Record<string, unknown>,
+      400,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_073 - Invitation with null logo value", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteSuccess(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_073",
+        description: "Invitation with null logo value",
+        expectedStatus: 201,
+      },
+      accessToken,
+      {
+        ...airlineFactory.buildInvitePayload(),
+        logo: null,
+      } as unknown as Record<string, unknown>,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_074 - Invitation with null address value", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_074",
+        description: "Invitation with null address value",
+        expectedStatus: 400,
+      },
+      accessToken,
+      {
+        ...airlineFactory.buildInvitePayload(),
+        address: null,
+      } as unknown as Record<string, unknown>,
+      400,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_075 - Invitation with null currency value", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_075",
+        description: "Invitation with null currency value",
+        expectedStatus: 400,
+      },
+      accessToken,
+      {
+        ...airlineFactory.buildInvitePayload(),
+        currency: null,
+      } as unknown as Record<string, unknown>,
+      400,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_076 - Invitation with null jobTitle value", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_076",
+        description: "Invitation with null jobTitle value",
+        expectedStatus: 400,
+      },
+      accessToken,
+      {
+        ...airlineFactory.buildInvitePayload(),
+        jobTitle: null,
+      } as unknown as Record<string, unknown>,
+      400,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_077 - Invitation with whitespace-only companyRegistrationNumber", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_077",
+        description:
+          "Invitation with whitespace-only companyRegistrationNumber",
+        expectedStatus: 400,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({ companyRegistrationNumber: "   " }),
+      400,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_078 - Invitation with whitespace-only website value", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_078",
+        description: "Invitation with whitespace-only website value",
+        expectedStatus: 400,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({ website: "   " }),
+      400,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_079 - Invitation with whitespace-only timezone value", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_079",
+        description: "Invitation with whitespace-only timezone value",
+        expectedStatus: 400,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({ timezone: "   " }),
+      400,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_080 - Invitation with whitespace-only logo value", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_080",
+        description: "Invitation with whitespace-only logo value",
+        expectedStatus: 201,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({ logo: "   " }),
+      201,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_081 - Invitation with whitespace-only address value", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_081",
+        description: "Invitation with whitespace-only address value",
+        expectedStatus: 400,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({ address: "   " }),
+      400,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_082 - Invitation with whitespace-only currency value", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_082",
+        description: "Invitation with whitespace-only currency value",
+        expectedStatus: 400,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({ currency: "   " }),
+      400,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_083 - Invitation with whitespace-only jobTitle value", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_083",
+        description: "Invitation with whitespace-only jobTitle value",
+        expectedStatus: 400,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({ jobTitle: "   " }),
+      400,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_084 - Invitation with website exceeding allowed length", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_084",
+        description: "Invitation with website exceeding allowed length",
+        expectedStatus: 400,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({
+        website: `https://www.${"a".repeat(260)}.test`,
+      }),
+      400,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_085 - Invitation with companyRegistrationNumber exceeding allowed length", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_085",
+        description:
+          "Invitation with companyRegistrationNumber exceeding allowed length",
+        expectedStatus: 400,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({
+        companyRegistrationNumber: "C".repeat(101),
+      }),
+      400,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_086 - Invitation with timezone exceeding allowed length", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_086",
+        description: "Invitation with timezone exceeding allowed length",
+        expectedStatus: 400,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({ timezone: "A".repeat(101) }),
+      400,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_087 - Invitation with logo URL exceeding allowed length", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_087",
+        description: "Invitation with logo URL exceeding allowed length",
+        expectedStatus: 400,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({
+        logo: `https://cdn.flyvoid-airline.test/${"x".repeat(600)}.png`,
+      }),
+      400,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_088 - Invitation with address exceeding allowed length", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_088",
+        description: "Invitation with address exceeding allowed length",
+        expectedStatus: 400,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({ address: "A".repeat(256) }),
+      400,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_089 - Invitation with currency exceeding allowed length", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_089",
+        description: "Invitation with currency exceeding allowed length",
+        expectedStatus: 400,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({ currency: "A".repeat(11) }),
+      400,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_090 - Invitation with jobTitle exceeding allowed length", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_090",
+        description: "Invitation with jobTitle exceeding allowed length",
+        expectedStatus: 400,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({ jobTitle: "A".repeat(101) }),
+      400,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_091 - Invitation with duplicate companyRegistrationNumber", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    const companyRegistrationNumber = `CRN-DUP-${Date.now()}`;
+
+    const first = await inviteAirline(
+      app,
+      accessToken,
+      airlineFactory.buildInvitePayload({ companyRegistrationNumber }),
+    );
+    responseHelper.expectSuccess(first.response, 201);
+
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_091",
+        description: "Invitation with duplicate companyRegistrationNumber",
+        expectedStatus: 409,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({ companyRegistrationNumber }),
+      409,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_093 - Invitation response contains correct companyRegistrationNumber association", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    const payload = airlineFactory.buildInvitePayload({
+      companyRegistrationNumber: `CRN-ASSOC-${Date.now()}`,
+    });
+
+    const { body } = await expectInviteSuccess(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_093",
+        description:
+          "Invitation response contains correct companyRegistrationNumber association",
+        expectedStatus: 201,
+      },
+      accessToken,
+      payload,
+    );
+
+    const airline = await airlineSeeder.findAirlineById(
+      app,
+      body.data.airlineId,
+    );
+    expect(airline?.company_registration_number).toBe(
+      payload.companyRegistrationNumber,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_094 - Invitation response creates airline with correct timezone", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    const payload = airlineFactory.buildInvitePayload({
+      timezone: "America/New_York",
+    });
+
+    const { body } = await expectInviteSuccess(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_094",
+        description:
+          "Invitation response creates airline with correct timezone",
+        expectedStatus: 201,
+      },
+      accessToken,
+      payload,
+    );
+
+    const airline = await airlineSeeder.findAirlineById(
+      app,
+      body.data.airlineId,
+    );
+    expect(airline?.timezone).toBe(payload.timezone);
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_095 - Invitation response creates airline with correct currency", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    const payload = airlineFactory.buildInvitePayload({ currency: "eur" });
+
+    const { body } = await expectInviteSuccess(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_095",
+        description:
+          "Invitation response creates airline with correct currency",
+        expectedStatus: 201,
+      },
+      accessToken,
+      payload,
+    );
+
+    const airline = await airlineSeeder.findAirlineById(
+      app,
+      body.data.airlineId,
+    );
+    expect(airline?.currency).toBe("EUR");
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_096 - Invitation response stores logo URL successfully", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    const payload = airlineFactory.buildInvitePayload({
+      logo: "https://cdn.flyvoid-airline.test/new-logo.png",
+    });
+
+    const { body } = await expectInviteSuccess(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_096",
+        description: "Invitation response stores logo URL successfully",
+        expectedStatus: 201,
+      },
+      accessToken,
+      payload,
+    );
+
+    const airline = await airlineSeeder.findAirlineById(
+      app,
+      body.data.airlineId,
+    );
+    expect(airline?.logo).toBe(payload.logo);
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_097 - Invitation response stores address successfully", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    const payload = airlineFactory.buildInvitePayload({
+      address: "500 Sky Tower, Abu Dhabi",
+    });
+
+    const { body } = await expectInviteSuccess(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_097",
+        description: "Invitation response stores address successfully",
+        expectedStatus: 201,
+      },
+      accessToken,
+      payload,
+    );
+
+    const airline = await airlineSeeder.findAirlineById(
+      app,
+      body.data.airlineId,
+    );
+    expect(airline?.address).toBe(payload.address);
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_098 - Invitation response stores jobTitle successfully", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    const payload = airlineFactory.buildInvitePayload({
+      jobTitle: "Head of Airport Operations",
+    });
+
+    const { body } = await expectInviteSuccess(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_098",
+        description: "Invitation response stores jobTitle successfully",
+        expectedStatus: 201,
+      },
+      accessToken,
+      payload,
+    );
+
+    const invite = await airlineSeeder.findAirlineInvitationById(
+      app,
+      body.data.invitationId,
+    );
+    expect(invite?.job_title).toBe(payload.jobTitle);
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_099 - Invitation with Unicode address value", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteSuccess(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_099",
+        description: "Invitation with Unicode address value",
+        expectedStatus: 201,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({
+        address: "Avenida Sao Joao, Sao Paulo, Brasil",
+      }),
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_100 - Invitation with Unicode companyRegistrationNumber", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteSuccess(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_100",
+        description: "Invitation with Unicode companyRegistrationNumber",
+        expectedStatus: 201,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({
+        companyRegistrationNumber: "REG-ES-UNION-2026",
+      }),
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_101 - Invitation with unsupported currency code", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_101",
+        description: "Invitation with unsupported currency code",
+        expectedStatus: 400,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({ currency: "ZZZ" }),
+      400,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_102 - Invitation with unsupported timezone identifier", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_102",
+        description: "Invitation with unsupported timezone identifier",
+        expectedStatus: 400,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({ timezone: "Etc/Unknown" }),
+      400,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_103 - Invitation with HTTP website URL instead of HTTPS", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteSuccess(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_103",
+        description: "Invitation with HTTP website URL instead of HTTPS",
+        expectedStatus: 201,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({
+        website: "http://www.flyvoid-airline.test",
+      }),
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_104 - Invitation with HTTP logo URL instead of HTTPS", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteSuccess(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_104",
+        description: "Invitation with HTTP logo URL instead of HTTPS",
+        expectedStatus: 201,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({
+        logo: "http://cdn.flyvoid-airline.test/logo.png",
+      }),
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_105 - Invitation with malformed logo URL containing script injection", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_105",
+        description:
+          "Invitation with malformed logo URL containing script injection",
+        expectedStatus: 400,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({ logo: "javascript:alert(1)" }),
+      400,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_106 - Invitation with malformed website URL containing script injection", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    await expectInviteError(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_106",
+        description:
+          "Invitation with malformed website URL containing script injection",
+        expectedStatus: 400,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({ website: "javascript:alert(1)" }),
+      400,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_107 - Invitation with optional fields omitted completely", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+    const payload = airlineFactory.buildInvitePayload();
+    const {
+      website: _website,
+      logo: _logo,
+      ...withoutOptionalFields
+    } = payload;
+
+    await expectInviteSuccess(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_107",
+        description: "Invitation with optional fields omitted completely",
+        expectedStatus: 201,
+      },
+      accessToken,
+      withoutOptionalFields,
+    );
+  });
+
+  it("TC_AUTH_ADMIN_AIRLINE_INVITE_108 - Invitation with all optional fields populated successfully", async () => {
+    const accessToken = await createSuperAdminAccessToken(app);
+
+    await expectInviteSuccess(
+      app,
+      {
+        id: "TC_AUTH_ADMIN_AIRLINE_INVITE_108",
+        description:
+          "Invitation with all optional fields populated successfully",
+        expectedStatus: 201,
+      },
+      accessToken,
+      airlineFactory.buildInvitePayload({
+        website: "https://www.flyvoid-airline-rich-profile.test",
+        logo: "https://cdn.flyvoid-airline.test/rich-profile-logo.png",
+      }),
     );
   });
 });

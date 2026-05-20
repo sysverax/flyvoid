@@ -38,6 +38,9 @@ export class AirlineAdminInviteEntity {
   @Column({ name: "email", type: "varchar", length: 255 })
   email!: string;
 
+  @Column({ name: "job_title", type: "varchar", length: 100 })
+  jobTitle!: string;
+
   @Column({ name: "token_lookup", type: "varchar", length: 64, unique: true })
   tokenLookup!: string;
 

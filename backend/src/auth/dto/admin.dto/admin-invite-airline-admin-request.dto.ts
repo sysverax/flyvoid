@@ -58,38 +58,97 @@ export class AdminInviteAirlineAdminRequestDto {
   })
   countryCode!: string;
 
+
   @ApiProperty({
-    description: "Optional airline contact email",
-    example: "ops@skyjet.com",
+    description: "Company registration number",
+    example: "CRN-12345",
+  })
+  @IsString()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === "string" ? value.trim() : value,
+  )
+  @IsNotEmpty()
+  @MaxLength(100)
+  companyRegistrationNumber!: string;
+
+  @ApiProperty({
+    description: "Airline website",
+    example: "https://skyjet.example",
     required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  website?: string;
+
+  @ApiProperty({
+    description: "Airline contact email",
+    example: "ops@skyjet.com",
   })
   @Transform(({ value }: { value: string }) =>
     typeof value === "string" ? value.toLowerCase().trim() : value,
   )
   @IsEmail()
-  @IsOptional()
-  contactEmail?: string;
+  @IsNotEmpty()
+  contactEmail!: string;
 
   @ApiProperty({
-    description: "Optional airline contact phone",
+    description: "Airline contact phone",
     example: "+971501112233",
-    required: false,
   })
   @Transform(({ value }: { value: string }) =>
     typeof value === "string" ? value.trim() : value,
   )
   @IsString()
-  @IsOptional()
+  @IsNotEmpty()
   @MaxLength(30)
   @Matches(/^\+?[0-9]{7,15}$/, {
     message: "contactPhone must be a valid phone number",
   })
-  contactPhone?: string;
+  contactPhone!: string;
 
   @ApiProperty({
-    description: "Airline admin first name",
-    example: "Aisha",
+    description: "Airline timezone",
+    example: "Asia/Dubai",
   })
+  @IsString()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === "string" ? value.trim() : value,
+  )
+  @IsNotEmpty()
+  @MaxLength(100)
+  timezone!: string;
+
+  @ApiProperty({
+    description: "Airline logo URL or file reference",
+    example: "https://cdn.example.com/skyjet-logo.png",
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  logo?: string;
+
+  @ApiProperty({ description: "Airline registered address", example: "Airport Rd, Dubai" })
+  @IsString()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === "string" ? value.trim() : value,
+  )
+  @IsNotEmpty()
+  @MaxLength(255)
+  address!: string;
+
+  @ApiProperty({ description: "Airline operating currency", example: "AED" })
+  @IsString()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === "string" ? value.trim().toUpperCase() : value,
+  )
+  @IsNotEmpty()
+  @MaxLength(10)
+  currency!: string;
+
+
+  @ApiProperty({ description: "Airline admin first name", example: "Aisha" })
   @IsString()
   @Transform(({ value }: { value: unknown }) =>
     typeof value === "string" ? value.trim() : value,
@@ -103,10 +162,7 @@ export class AdminInviteAirlineAdminRequestDto {
   })
   adminFirstName!: string;
 
-  @ApiProperty({
-    description: "Airline admin last name",
-    example: "Khan",
-  })
+  @ApiProperty({ description: "Airline admin last name", example: "Khan" })
   @IsString()
   @Transform(({ value }: { value: unknown }) =>
     typeof value === "string" ? value.trim() : value,
@@ -120,14 +176,20 @@ export class AdminInviteAirlineAdminRequestDto {
   })
   adminLastName!: string;
 
-  @ApiProperty({
-    description: "Airline admin email",
-    example: "aisha.khan@skyjet.com",
-  })
+  @ApiProperty({ description: "Airline admin email", example: "aisha.khan@skyjet.com" })
   @Transform(({ value }: { value: unknown }) =>
     typeof value === "string" ? value.toLowerCase().trim() : value,
   )
   @IsEmail()
   @IsNotEmpty()
   adminEmail!: string;
+
+  @ApiProperty({ description: "Airline admin job title", example: "Country Manager" })
+  @IsString()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === "string" ? value.trim() : value,
+  )
+  @IsNotEmpty()
+  @MaxLength(100)
+  jobTitle!: string;
 }

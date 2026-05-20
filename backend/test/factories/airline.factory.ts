@@ -18,22 +18,36 @@ export const airlineFactory = {
       airlineName: string;
       airlineCode: string;
       countryCode: string;
+      companyRegistrationNumber: string;
+      website: string;
       contactEmail: string;
       contactPhone: string;
+      timezone: string;
+      logo: string;
+      address: string;
+      currency: string;
       adminFirstName: string;
       adminLastName: string;
       adminEmail: string;
+      jobTitle: string;
     }>,
   ) {
     return {
       airlineName: "Flyvoid Airways",
       airlineCode: uniqueAirlineCode(),
       countryCode: "IN",
+      companyRegistrationNumber: `CRN-${Date.now()}${airlineCounter}`,
+      website: `https://www.flyvoid-airline-${Date.now()}${airlineCounter}.test`,
       contactEmail: uniqueAirlineEmail("ops"),
       contactPhone: "+911234567890",
+      timezone: "Asia/Kolkata",
+      logo: `https://cdn.flyvoid-airline.test/logo-${Date.now()}${airlineCounter}.png`,
+      address: "221B Baker Street, London",
+      currency: "INR",
       adminFirstName: "Airline",
       adminLastName: "Admin",
       adminEmail: uniqueAirlineEmail("admin"),
+      jobTitle: "Operations Lead",
       ...overrides,
     };
   },

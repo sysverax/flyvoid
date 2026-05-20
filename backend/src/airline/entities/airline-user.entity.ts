@@ -33,6 +33,9 @@ export class AirlineUserEntity {
   @Column({ name: "email", type: "varchar", length: 255, unique: true })
   email!: string;
 
+  @Column({ name: "job_title", type: "varchar", length: 100 })
+  jobTitle!: string;
+
   @Column({ name: "password_hash", type: "varchar", length: 255 })
   passwordHash!: string;
 

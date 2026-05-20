@@ -164,11 +164,61 @@ Test cases:
 - `TC_AUTH_ADMIN_AIRLINE_INVITE_048`: Script injection attempt in airlineName field, expected `400`
 - `TC_AUTH_ADMIN_AIRLINE_INVITE_049`: Invitation with Unicode airline name, expected `201`
 - `TC_AUTH_ADMIN_AIRLINE_INVITE_050`: Re-invite after previous invite expiration, expected `201`
-- `TC_AUTH_ADMIN_AIRLINE_INVITE_051`: Invitation with valid optional contactEmail omitted, expected `201`
-- `TC_AUTH_ADMIN_AIRLINE_INVITE_052`: Invitation with valid optional contactPhone omitted, expected `201`
 - `TC_AUTH_ADMIN_AIRLINE_INVITE_053`: Invitation with whitespace-only required fields, expected `400`
 - `TC_AUTH_ADMIN_AIRLINE_INVITE_054`: Invitation with mixed-case admin email normalization, expected `201`
 - `TC_AUTH_ADMIN_AIRLINE_INVITE_055`: Invitation with already existing airline contact email, expected `201`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_056`: Invitation with valid companyRegistrationNumber, expected `201`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_057`: Invitation with valid website URL, expected `201`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_058`: Invitation with invalid website URL format, expected `400`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_059`: Invitation with valid timezone value, expected `201`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_060`: Invitation with invalid timezone value, expected `400`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_061`: Invitation with valid logo URL, expected `201`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_062`: Invitation with invalid logo URL format, expected `400`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_063`: Invitation with valid address field, expected `201`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_064`: Invitation with empty address field, expected `400`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_065`: Invitation with valid currency code, expected `201`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_066`: Invitation with invalid currency code format, expected `400`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_067`: Invitation with lowercase currency normalization handling, expected `201`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_068`: Invitation with valid jobTitle field, expected `201`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_069`: Invitation with empty jobTitle field, expected `400`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_070`: Invitation with null companyRegistrationNumber, expected `400`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_071`: Invitation with null website value, expected `201`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_072`: Invitation with null timezone value, expected `400`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_073`: Invitation with null logo value, expected `201`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_074`: Invitation with null address value, expected `400`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_075`: Invitation with null currency value, expected `400`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_076`: Invitation with null jobTitle value, expected `400`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_077`: Invitation with whitespace-only companyRegistrationNumber, expected `400`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_078`: Invitation with whitespace-only website value, expected `400`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_079`: Invitation with whitespace-only timezone value, expected `400`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_080`: Invitation with whitespace-only logo value, expected `201`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_081`: Invitation with whitespace-only address value, expected `400`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_082`: Invitation with whitespace-only currency value, expected `400`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_083`: Invitation with whitespace-only jobTitle value, expected `400`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_084`: Invitation with website exceeding allowed length, expected `400`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_085`: Invitation with companyRegistrationNumber exceeding allowed length, expected `400`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_086`: Invitation with timezone exceeding allowed length, expected `400`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_087`: Invitation with logo URL exceeding allowed length, expected `400`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_088`: Invitation with address exceeding allowed length, expected `400`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_089`: Invitation with currency exceeding allowed length, expected `400`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_090`: Invitation with jobTitle exceeding allowed length, expected `400`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_091`: Invitation with duplicate companyRegistrationNumber, expected `409`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_093`: Invitation response contains correct companyRegistrationNumber association, expected `201`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_094`: Invitation response creates airline with correct timezone, expected `201`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_095`: Invitation response creates airline with correct currency, expected `201`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_096`: Invitation response stores logo URL successfully, expected `201`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_097`: Invitation response stores address successfully, expected `201`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_098`: Invitation response stores jobTitle successfully, expected `201`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_099`: Invitation with Unicode address value, expected `201`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_100`: Invitation with Unicode companyRegistrationNumber, expected `201`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_101`: Invitation with unsupported currency code, expected `400`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_102`: Invitation with unsupported timezone identifier, expected `400`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_103`: Invitation with HTTP website URL instead of HTTPS, expected `201`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_104`: Invitation with HTTP logo URL instead of HTTPS, expected `201`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_105`: Invitation with malformed logo URL containing script injection, expected `400`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_106`: Invitation with malformed website URL containing script injection, expected `400`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_107`: Invitation with optional fields omitted completely, expected `201`
+- `TC_AUTH_ADMIN_AIRLINE_INVITE_108`: Invitation with all optional fields populated successfully, expected `201`
 
 Notes:
 

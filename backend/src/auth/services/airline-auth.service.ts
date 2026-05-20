@@ -100,6 +100,7 @@ export class AirlineAuthService {
         firstName: invite.firstName,
         lastName: invite.lastName,
         email: invite.email,
+        jobTitle: invite.jobTitle,
         passwordHash,
         role: AirlineRole.AIRLINE_ADMIN,
         isActive: true,
