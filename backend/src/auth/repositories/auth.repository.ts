@@ -567,15 +567,24 @@ export class AuthRepository {
     );
   }
 
-  async findAirlineByCode(
+  async findAirlineByCodeOrCompanyRegistrationNumber(
     code: string,
+    companyRegistrationNumber: string,
     requestId: string,
   ): Promise<AirlineEntity | null> {
-    this.logger.debug("Finding airline by code", "AuthRepository", requestId, {
-      code,
-    });
+    this.logger.debug(
+      "Finding airline by code or company registration number",
+      "AuthRepository",
+      requestId,
+      {
+        code,
+        companyRegistrationNumber,
+      },
+    );
 
-    return this.airlineRepository.findOne({ where: { code } });
+    return this.airlineRepository.findOne({
+      where: [{ code }, { companyRegistrationNumber }],
+    });
   }
 
   async findAirlineUserByEmail(

@@ -70,7 +70,7 @@ export class AdminInviteAirlineAdminResponseDto {
     description: "Airline logo URL",
     example: "https://cdn.skyjet.com/logo.png",
   })
-  logo?: string | null;
+  logo?: string;
 
   @ApiProperty({
     description: "Airline admin first name",
@@ -107,5 +107,5 @@ export class AdminInviteAirlineAdminResponseDto {
     example: "http://localhost:3000/airline/onboard?token=...",
     nullable: true,
   })
-  onboardingLink!: string | null;
+  onboardingLink?: string;
 }

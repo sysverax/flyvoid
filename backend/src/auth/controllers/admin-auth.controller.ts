@@ -135,7 +135,7 @@ export class AuthController {
     return BaseResponseDto.success(
       createdAdmin,
       requestId,
-      "Admin created successfully",
+      "Admin registered successfully",
     );
   }
 
@@ -203,7 +203,9 @@ export class AuthController {
     const message =
       "requiresPasswordReset" in signinResponse
         ? "Initial password reset required"
-        : "Signin successful";
+        : "requiresTwoFactor" in signinResponse
+          ? "Signin requires two-factor authentication"
+          : "Signin successful";
     return BaseResponseDto.success(signinResponse, requestId, message);
   }
 

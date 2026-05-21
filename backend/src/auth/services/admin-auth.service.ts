@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from "@nestjs/common";
@@ -93,7 +94,7 @@ export class AuthService {
           email: normalizedEmail,
         },
       );
-      throw new ConflictException("Admin already exists");
+      throw new ConflictException("Admin with this email already registered");
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
@@ -301,8 +302,11 @@ export class AuthService {
       requestId,
     );
 
-    if (!admin || !admin.isActive) {
+    if (!admin) {
       throw new UnauthorizedException("Admin not found");
+    }
+    if (!admin.isActive) {
+      throw new ForbiddenException("Admin account is inactive");
     }
 
     if (admin.twoFactorEnabled) {
@@ -343,8 +347,11 @@ export class AuthService {
       requestId,
     );
 
-    if (!admin || !admin.isActive) {
+    if (!admin) {
       throw new UnauthorizedException("Admin not found");
+    }
+    if (!admin.isActive) {
+      throw new ForbiddenException("Admin account is inactive");
     }
 
     if (admin.twoFactorEnabled) {
@@ -388,8 +395,11 @@ export class AuthService {
       requestId,
     );
 
-    if (!admin || !admin.isActive) {
+    if (!admin) {
       throw new UnauthorizedException("Admin not found");
+    }
+    if (!admin.isActive) {
+      throw new ForbiddenException("Admin account is inactive");
     }
 
     if (!admin.twoFactorEnabled || !admin.twoFactorSecretEncrypted) {
@@ -419,9 +429,13 @@ export class AuthService {
       requestId,
     );
 
+    if (!admin) {
+      throw new UnauthorizedException("Admin not found");
+    }
+    if (!admin.isActive) {
+      throw new ForbiddenException("Admin account is inactive");
+    }
     if (
-      !admin ||
-      !admin.isActive ||
       !admin.twoFactorEnabled ||
       !admin.twoFactorRecoveryCodeHashes ||
       admin.twoFactorRecoveryCodeHashes.length === 0
@@ -468,25 +482,27 @@ export class AuthService {
     dto: AdminInviteAirlineAdminRequestDto,
     requestId: string,
   ): Promise<AdminInviteAirlineAdminResponseDto> {
-    const inviter = await this.authRepository.findAdminById(
-      authenticatedUser.sub,
-      requestId,
-    );
-    if (!inviter || !inviter.isActive) {
-      throw new UnauthorizedException("Admin not found");
-    }
-
     const normalizedAirlineCode = dto.airlineCode.trim().toUpperCase();
+    const normalizedCompanyRegistrationNumber =
+      dto.companyRegistrationNumber.trim();
     const normalizedAdminEmail = dto.adminEmail.toLowerCase().trim();
     const normalizedContactEmail =
       dto.contactEmail?.toLowerCase().trim() ?? null;
 
-    const existingAirline = await this.authRepository.findAirlineByCode(
-      normalizedAirlineCode,
-      requestId,
-    );
-    if (existingAirline) {
+    const existingAirline =
+      await this.authRepository.findAirlineByCodeOrCompanyRegistrationNumber(
+        normalizedAirlineCode,
+        normalizedCompanyRegistrationNumber,
+        requestId,
+      );
+    if (existingAirline?.code === normalizedAirlineCode) {
       throw new ConflictException("Airline code already exists");
+    }
+    if (
+      existingAirline?.companyRegistrationNumber ===
+      normalizedCompanyRegistrationNumber
+    ) {
+      throw new ConflictException("Company registration number already exists");
     }
 
     const existingAirlineUser =
@@ -514,14 +530,14 @@ export class AuthService {
         name: dto.airlineName.trim(),
         code: normalizedAirlineCode,
         countryCode: dto.countryCode,
-        companyRegistrationNumber: dto.companyRegistrationNumber.trim(),
-        website: dto.website?.trim() ?? null,
+        companyRegistrationNumber: normalizedCompanyRegistrationNumber,
+        website: dto.website?.trim() ?? undefined,
         contactEmail: dto.contactEmail.trim(),
         contactPhone: dto.contactPhone.trim(),
         timezone: dto.timezone.trim(),
         currency: dto.currency.trim().toUpperCase(),
         address: dto.address.trim(),
-        logo: dto.logo?.trim() ?? null,
+        logo: dto.logo?.trim() ?? undefined,
         isActive: true,
       },
       requestId,
@@ -540,7 +556,7 @@ export class AuthService {
     const invite = await this.authRepository.createAirlineAdminInvite(
       {
         airlineId: airline.id,
-        invitedByAdminId: inviter.id,
+        invitedByAdminId: authenticatedUser.sub,
         firstName: dto.adminFirstName.trim(),
         lastName: dto.adminLastName.trim(),
         email: normalizedAdminEmail,
@@ -594,7 +610,9 @@ export class AuthService {
       email: invite.email,
       jobTitle: invite.jobTitle,
       expiresIn: config.auth.airlineAdminInviteExpiresIn,
-      onboardingLink: this.isOtpRestrictedEnvironment() ? onboardingLink : null,
+      onboardingLink: this.isOtpRestrictedEnvironment()
+        ? onboardingLink
+        : undefined,
     };
   }
 
@@ -667,11 +685,22 @@ export class AuthService {
     const adminId = payload.sub;
 
     const admin = await this.authRepository.findAdminById(adminId, requestId);
-    if (!admin || !admin.isActive) {
+    if (!admin) {
       this.logger.warn("Invalid refresh token", this.context, requestId, {
         adminId,
       });
       throw new UnauthorizedException("Invalid refresh token");
+    }
+    if (!admin.isActive) {
+      this.logger.warn(
+        "Inactive admin on refresh token",
+        this.context,
+        requestId,
+        {
+          adminId,
+        },
+      );
+      throw new ForbiddenException("Invalid refresh token");
     }
 
     const existingToken =
