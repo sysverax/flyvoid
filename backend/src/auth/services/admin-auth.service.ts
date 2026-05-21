@@ -2,6 +2,8 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   UnauthorizedException,
 } from "@nestjs/common";
@@ -865,14 +867,27 @@ export class AuthService {
       requestId,
     );
 
-    if (!admin || !admin.isActive) {
+    if (!admin) {
       this.logger.info(
         "Admin forgot password send OTP accepted with no active admin match",
         this.context,
         requestId,
         { email: normalizedEmail },
       );
-      return;
+      throw new UnauthorizedException("Admin not found");
+    }
+
+    if (!admin.isActive) {
+      this.logger.warn(
+        "Inactive admin forgot password OTP attempt",
+        this.context,
+        requestId,
+        {
+          adminId: admin.id,
+          email: normalizedEmail,
+        },
+      );
+      throw new ForbiddenException("Admin account is inactive");
     }
 
     const recentOtpCount =
@@ -895,7 +910,10 @@ export class AuthService {
           sendLimit: config.auth.adminForgotPasswordOtpSendLimit,
         },
       );
-      return;
+      throw new HttpException(
+        "Too many OTP requests. Please try again later.",
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
     }
 
     const otp = this.isOtpRestrictedEnvironment()
@@ -961,8 +979,11 @@ export class AuthService {
       requestId,
     );
 
-    if (!admin || !admin.isActive) {
-      throw new UnauthorizedException("Invalid or expired OTP");
+    if (!admin) {
+      throw new UnauthorizedException("Admin not found");
+    }
+    if (!admin.isActive) {
+      throw new ForbiddenException("Admin account is inactive");
     }
 
     const activeOtp =
@@ -982,7 +1003,18 @@ export class AuthService {
         activeOtp.id,
         requestId,
       );
-      throw new UnauthorizedException("Invalid or expired OTP");
+      this.logger.warn(
+        "Admin forgot password OTP max attempts reached",
+        this.context,
+        requestId,
+        {
+          adminId: admin.id,
+          otpId: activeOtp.id,
+        },
+      );
+      throw new ForbiddenException(
+        "Maximum OTP verification attempts exceeded. Please request a new OTP.",
+      );
     }
 
     const isOtpValid = await bcrypt.compare(dto.otp, activeOtp.otpHash);
@@ -991,6 +1023,15 @@ export class AuthService {
         activeOtp.id,
         activeOtp.attemptCount,
         requestId,
+      );
+      this.logger.warn(
+        "Admin forgot password OTP invalid attempt",
+        this.context,
+        requestId,
+        {
+          adminId: admin.id,
+          otpId: activeOtp.id,
+        },
       );
       throw new UnauthorizedException("Invalid or expired OTP");
     }
@@ -1039,10 +1080,13 @@ export class AuthService {
       payload.sub,
       requestId,
     );
-    if (!admin || !admin.isActive) {
+    if (!admin) {
       throw new UnauthorizedException(
         "Invalid or expired reset password token",
       );
+    }
+    if (!admin.isActive) {
+      throw new ForbiddenException("Admin account is inactive");
     }
 
     const otpRecord = await this.authRepository.findAdminForgotPasswordOtpById(

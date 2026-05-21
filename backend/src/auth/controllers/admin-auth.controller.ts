@@ -19,6 +19,7 @@ import {
   ApiUnauthorizedResponse,
   ApiTags,
   getSchemaPath,
+  ApiTooManyRequestsResponse,
 } from "@nestjs/swagger";
 import {
   REQUEST_ID_EXAMPLE,
@@ -658,7 +659,7 @@ export class AuthController {
             timestamp: { type: "string", example: TIMESTAMP_EXAMPLE },
             message: {
               type: "string",
-              example: "If the email exists, OTP has been sent",
+              example: "OTP sent successfully",
             },
             data: { type: "null", example: null },
           },
@@ -672,16 +673,18 @@ export class AuthController {
       "/api/v1/auth/admin/forgot-password/send-otp",
     ),
   })
+  @ApiTooManyRequestsResponse({
+    description: "OTP send limit exceeded",
+    schema: createBadRequestErrorSchema(
+      "/api/v1/auth/admin/forgot-password/send-otp",
+    ),
+  })
   async adminForgotPasswordSendOtp(
     @Body() dto: AdminForgotPasswordSendOtpRequestDto,
     @RequestId() requestId: string,
   ): Promise<BaseResponseDto<null>> {
     await this.authService.adminForgotPasswordSendOtp(dto, requestId);
-    return BaseResponseDto.success(
-      null,
-      requestId,
-      "If the email exists, OTP has been sent",
-    );
+    return BaseResponseDto.success(null, requestId, "OTP sent successfully");
   }
 
   @Post("forgot-password/verify-otp")
@@ -727,6 +730,13 @@ export class AuthController {
     schema: createUnauthorizedErrorSchema(
       "/api/v1/auth/admin/forgot-password/verify-otp",
       "Invalid or expired OTP",
+    ),
+  })
+  @ApiForbiddenResponse({
+    description: "Maximum OTP verification attempts exceeded",
+    schema: createUnauthorizedErrorSchema(
+      "/api/v1/auth/admin/forgot-password/verify-otp",
+      "Maximum OTP verification attempts exceeded",
     ),
   })
   async adminForgotPasswordVerifyOtp(
