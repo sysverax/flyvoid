@@ -26,6 +26,8 @@ import { isExternalMode } from "../../setup/test-app";
 import { UserType } from "../../../src/common/constants/user.constants";
 import { config } from "../../../src/config/config";
 import { RefreshTokenEntity } from "../../../src/auth/entities/refresh-token.entity";
+import { airlineFactory } from "../../factories/airline.factory";
+import { airlineSeeder } from "../../seeders/airline/airline.seeder";
 
 const SIGNOUT_ENDPOINT = "/api/v1/auth/admin/signout";
 const REFRESH_ENDPOINT = "/api/v1/auth/admin/refresh";
@@ -697,7 +699,7 @@ describe("Admin Signout API", () => {
   });
 
   it("TC_AUTH_ADMIN_SIGNOUT_029: Signout with token issued for different user type", async () => {
-    const airline = await adminAuthSeeder.seedOnboardedAirlineAdmin(app);
+    const airline = await airlineSeeder.seedOnboardedAirlineAdmin(app);
     const airlineSession = await authHelper.signinAirline(app, {
       email: airline.email,
       password: airline.password,

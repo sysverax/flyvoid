@@ -12,9 +12,9 @@ import { createTestApp } from "../../setup/test-app";
 import { loggerHelper } from "../../helpers/logger.helper";
 import { requestHelper } from "../../helpers/request.helper";
 import { responseHelper } from "../../helpers/response.helper";
-import { adminAuthSeeder } from "../../seeders/auth/admin-auth.seeder";
 import { seedGlobalTestData } from "../../seeders/global/global-test-data.seeder";
 import { TestCaseMeta } from "../../shared/interfaces/test-case.interface";
+import { airlineSeeder } from "../../seeders/airline/airline.seeder";
 
 describe("Airline Forgot Password API", () => {
   let app: INestApplication;
@@ -45,7 +45,7 @@ describe("Airline Forgot Password API", () => {
 
     let actualStatus = 0;
     try {
-      const seeded = await adminAuthSeeder.seedOnboardedAirlineAdmin(app);
+      const seeded = await airlineSeeder.seedOnboardedAirlineAdmin(app);
 
       const response = await requestHelper.post(
         app,
@@ -76,7 +76,7 @@ describe("Airline Forgot Password API", () => {
 
     let actualStatus = 0;
     try {
-      const seeded = await adminAuthSeeder.seedOnboardedAirlineAdmin(app);
+      const seeded = await airlineSeeder.seedOnboardedAirlineAdmin(app);
 
       const sendOtp = await requestHelper.post(
         app,

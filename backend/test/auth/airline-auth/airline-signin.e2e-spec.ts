@@ -13,10 +13,10 @@ import { loggerHelper } from "../../helpers/logger.helper";
 import { requestHelper } from "../../helpers/request.helper";
 import { responseHelper } from "../../helpers/response.helper";
 import { isExternalMode } from "../../setup/test-app";
-import { adminAuthSeeder } from "../../seeders/auth/admin-auth.seeder";
 import { seedGlobalTestData } from "../../seeders/global/global-test-data.seeder";
 import { TestCaseMeta } from "../../shared/interfaces/test-case.interface";
 import { airlineFactory } from "../../factories/airline.factory";
+import { airlineSeeder } from "../../seeders/airline/airline.seeder";
 
 describe("Airline Signin API", () => {
   let app: INestApplication;
@@ -47,7 +47,7 @@ describe("Airline Signin API", () => {
 
     let actualStatus = 0;
     try {
-      const seeded = await adminAuthSeeder.seedOnboardedAirlineAdmin(app);
+      const seeded = await airlineSeeder.seedOnboardedAirlineAdmin(app);
       const response = await requestHelper.post(
         app,
         "/api/v1/auth/airline/signin",
@@ -83,7 +83,7 @@ describe("Airline Signin API", () => {
 
     let actualStatus = 0;
     try {
-      const seeded = await adminAuthSeeder.seedOnboardedAirlineAdmin(app);
+      const seeded = await airlineSeeder.seedOnboardedAirlineAdmin(app);
       const response = await requestHelper.post(
         app,
         "/api/v1/auth/airline/signin",
@@ -124,7 +124,7 @@ describe("Airline Signin API", () => {
         return;
       }
 
-      const seeded = await adminAuthSeeder.seedOnboardedAirlineAdmin(app, {
+      const seeded = await airlineSeeder.seedOnboardedAirlineAdmin(app, {
         inactive: true,
       });
       const response = await requestHelper.post(
@@ -155,7 +155,7 @@ describe("Airline Signin API", () => {
 
     let actualStatus = 0;
     try {
-      await adminAuthSeeder.seedOnboardedAirlineAdmin(app);
+      await airlineSeeder.seedOnboardedAirlineAdmin(app);
       const response = await requestHelper.post(
         app,
         "/api/v1/auth/airline/signin",

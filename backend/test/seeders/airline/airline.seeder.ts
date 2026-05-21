@@ -5,6 +5,8 @@ import { requestHelper } from "../../helpers/request.helper";
 import { responseHelper } from "../../helpers/response.helper";
 import { testDbHelper } from "../../database/db.helper";
 import { directSqlHelper } from "../../database/direct-sql.helper";
+import { airlineFactory } from "../../factories/airline.factory";
+import { adminAuthSeeder } from "../admin/admin.seeder";
 
 export interface AirlineData {
   id: number;
@@ -42,6 +44,82 @@ export interface AirlineInvitationData {
 }
 
 export const airlineSeeder = {
+  async seedAirlineInvite(app: INestApplication): Promise<{
+    invitationToken: string;
+    invitedAdminEmail: string;
+  }> {
+    const inviter = await adminAuthSeeder.seedSuperAdmin(app);
+    const inviterSession = await authHelper.signinAdmin(app, {
+      email: inviter.email,
+      password: inviter.password,
+    });
+
+    const invitePayload = airlineFactory.buildInvitePayload();
+    const inviteResponse = await requestHelper.authorizedPost(
+      app,
+      "/api/v1/auth/admin/airline-invitations",
+      invitePayload,
+      inviterSession.accessToken,
+    );
+
+    const body = responseHelper.expectSuccess<{
+      onboardingLink: string | null;
+      email: string;
+    }>(inviteResponse, 201);
+
+    const onboardingLink = body.data.onboardingLink;
+    if (!onboardingLink) {
+      throw new Error("Onboarding link is missing in non-production test mode");
+    }
+
+    const token = new URL(onboardingLink).searchParams.get("token");
+    if (!token) {
+      throw new Error("Invitation token not found in onboarding link");
+    }
+
+    return {
+      invitationToken: token,
+      invitedAdminEmail: body.data.email,
+    };
+  },
+
+  async seedOnboardedAirlineAdmin(
+    app: INestApplication,
+    options?: { inactive?: boolean; password?: string },
+  ): Promise<{ email: string; password: string; userId: number }> {
+    const password = options?.password ?? "Password@123";
+    const invite = await this.seedAirlineInvite(app);
+
+    const onboardResponse = await requestHelper.post(
+      app,
+      "/api/v1/auth/airline/onboard",
+      {
+        invitationToken: invite.invitationToken,
+        password,
+      },
+    );
+
+    const onboardBody = responseHelper.expectSuccess<{
+      userId: number;
+      email: string;
+    }>(onboardResponse, 200);
+
+    if (options?.inactive) {
+      await testDbHelper.update(
+        app,
+        AirlineUserEntity,
+        { id: onboardBody.data.userId },
+        { isActive: false },
+      );
+    }
+
+    return {
+      email: onboardBody.data.email,
+      password,
+      userId: onboardBody.data.userId,
+    };
+  },
+
   async findAirlineById(
     app: INestApplication,
     airlineId: number,

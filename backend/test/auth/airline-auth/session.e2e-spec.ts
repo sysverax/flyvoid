@@ -13,11 +13,11 @@ import { loggerHelper } from "../../helpers/logger.helper";
 import { requestHelper } from "../../helpers/request.helper";
 import { responseHelper } from "../../helpers/response.helper";
 import { authFactory } from "../../factories/auth.factory";
-import { adminAuthSeeder } from "../../seeders/auth/admin-auth.seeder";
 import { seedGlobalTestData } from "../../seeders/global/global-test-data.seeder";
 import { TestCaseMeta } from "../../shared/interfaces/test-case.interface";
 import { authHelper } from "../../helpers/auth.helper";
 import { tokenHelper } from "../../helpers/token.helper";
+import { airlineSeeder } from "../../seeders/airline/airline.seeder";
 
 describe("Airline Session API", () => {
   let app: INestApplication;
@@ -48,7 +48,7 @@ describe("Airline Session API", () => {
 
     let actualStatus = 0;
     try {
-      const seeded = await adminAuthSeeder.seedOnboardedAirlineAdmin(app);
+      const seeded = await airlineSeeder.seedOnboardedAirlineAdmin(app);
       const session = await authHelper.signinAirline(app, {
         email: seeded.email,
         password: seeded.password,
@@ -119,7 +119,7 @@ describe("Airline Session API", () => {
 
     let actualStatus = 0;
     try {
-      const seeded = await adminAuthSeeder.seedOnboardedAirlineAdmin(app);
+      const seeded = await airlineSeeder.seedOnboardedAirlineAdmin(app);
       const session = await authHelper.signinAirline(app, {
         email: seeded.email,
         password: seeded.password,

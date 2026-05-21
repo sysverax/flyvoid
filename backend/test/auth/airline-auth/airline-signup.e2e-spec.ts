@@ -12,10 +12,10 @@ import { createTestApp } from "../../setup/test-app";
 import { loggerHelper } from "../../helpers/logger.helper";
 import { requestHelper } from "../../helpers/request.helper";
 import { responseHelper } from "../../helpers/response.helper";
-import { adminAuthSeeder } from "../../seeders/auth/admin-auth.seeder";
 import { seedGlobalTestData } from "../../seeders/global/global-test-data.seeder";
 import { TestCaseMeta } from "../../shared/interfaces/test-case.interface";
 import { airlineFactory } from "../../factories/airline.factory";
+import { airlineSeeder } from "../../seeders/airline/airline.seeder";
 
 describe("Airline Signup API", () => {
   let app: INestApplication;
@@ -46,7 +46,7 @@ describe("Airline Signup API", () => {
 
     let actualStatus = 0;
     try {
-      const invite = await adminAuthSeeder.seedAirlineInvite(app);
+      const invite = await airlineSeeder.seedAirlineInvite(app);
       const payload = airlineFactory.buildOnboardPayload(
         invite.invitationToken,
       );
@@ -119,7 +119,7 @@ describe("Airline Signup API", () => {
 
     let actualStatus = 0;
     try {
-      const invite = await adminAuthSeeder.seedAirlineInvite(app);
+      const invite = await airlineSeeder.seedAirlineInvite(app);
       const payload = airlineFactory.buildOnboardPayload(
         invite.invitationToken,
       );

@@ -302,7 +302,7 @@ describe("Admin Airline Invitation API", () => {
   });
 
   it("TC_AUTH_ADMIN_AIRLINE_INVITE_007 - Invitation by unauthorized role user", async () => {
-    const airline = await adminAuthSeeder.seedOnboardedAirlineAdmin(app);
+    const airline = await airlineSeeder.seedOnboardedAirlineAdmin(app);
     const airlineSession = await authHelper.signinAirline(app, {
       email: airline.email,
       password: airline.password,
@@ -346,7 +346,7 @@ describe("Admin Airline Invitation API", () => {
 
   it("TC_AUTH_ADMIN_AIRLINE_INVITE_009 - Duplicate admin email", async () => {
     const accessToken = await createSuperAdminAccessToken(app);
-    const onboarded = await adminAuthSeeder.seedOnboardedAirlineAdmin(app);
+    const onboarded = await airlineSeeder.seedOnboardedAirlineAdmin(app);
 
     await expectInviteError(
       app,
