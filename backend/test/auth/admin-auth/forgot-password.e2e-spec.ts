@@ -338,15 +338,6 @@ describe("Admin Forgot Password API", () => {
       expectedStatus: 200,
     };
 
-    if (isExternalMode()) {
-      loggerHelper.pass(
-        meta,
-        200,
-        "Skipped in external mode (requires in-process DB timestamp mutation)",
-      );
-      return;
-    }
-
     const seededSuperAdmin = await adminAuthSeeder.seedSuperAdmin(app);
     const email = seededSuperAdmin.email;
     await sendOtp(app, email);

@@ -185,6 +185,8 @@ export class AirportController {
     @Body() dto: UpdateAirportRequestDto,
     @RequestId() requestId: string,
   ): Promise<BaseResponseDto<AirportResponseDto>> {
+    UpdateAirportRequestDto.validateForUpdate(dto);
+
     const data = await this.airportService.updateAirport(
       req.user,
       airportId,

@@ -13,6 +13,7 @@ import {
 } from "class-validator";
 import { ApiProperty } from "@nestjs/swagger";
 import { AirportType } from "../entities/airport.entity";
+import { IsSafeText } from "../../common/validator/injection.validator";
 
 export class CreateAirportRequestDto {
   @ApiProperty({ example: "Dubai International Airport" })
@@ -21,6 +22,7 @@ export class CreateAirportRequestDto {
     typeof value === "string" ? value.trim() : value,
   )
   @IsNotEmpty()
+  @IsSafeText()
   @MaxLength(150)
   name!: string;
 
@@ -29,6 +31,9 @@ export class CreateAirportRequestDto {
   @Transform(({ value }: { value: unknown }) =>
     typeof value === "string" ? value.trim().toUpperCase() : value,
   )
+  @Matches(/^[A-Z]{3}$/, {
+    message: "iataCode must contain exactly 3 uppercase letters",
+  })
   @Length(3, 3)
   iataCode!: string;
 
@@ -37,6 +42,9 @@ export class CreateAirportRequestDto {
   @Transform(({ value }: { value: unknown }) =>
     typeof value === "string" ? value.trim().toUpperCase() : value,
   )
+  @Matches(/^[A-Z]{4}$/, {
+    message: "icaoCode must contain exactly 4 uppercase letters",
+  })
   @Length(4, 4)
   icaoCode!: string;
 
@@ -52,6 +60,7 @@ export class CreateAirportRequestDto {
   @Matches(/^[A-Z]{2}$/, {
     message: "countryCode must be a 2-letter uppercase ISO country code",
   })
+  @Length(2, 2)
   countryCode!: string;
 
   @ApiProperty({ example: "Dubai" })
@@ -60,6 +69,7 @@ export class CreateAirportRequestDto {
     typeof value === "string" ? value.trim() : value,
   )
   @IsNotEmpty()
+  @IsSafeText()
   @MaxLength(100)
   city!: string;
 
@@ -83,6 +93,7 @@ export class CreateAirportRequestDto {
     typeof value === "string" ? value.trim() : value,
   )
   @IsNotEmpty()
+  @IsSafeText()
   @MaxLength(100)
   timezone!: string;
 
@@ -100,15 +111,17 @@ export class CreateAirportRequestDto {
   @Transform(({ value }: { value: unknown }) =>
     typeof value === "string" ? value.trim() : value,
   )
+  @IsSafeText()
   @MaxLength(255)
   address?: string;
 
-  @ApiProperty({ example: "00000", required: false })
+  @ApiProperty({ example: "00000", required: true })
   @IsNotEmpty()
   @IsString()
   @Transform(({ value }: { value: unknown }) =>
     typeof value === "string" ? value.trim() : value,
   )
+  @IsSafeText()
   @MaxLength(20)
   postalCode!: string;
 }

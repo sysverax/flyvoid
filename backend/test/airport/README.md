@@ -1,0 +1,223 @@
+# Airport E2E Test Cases
+
+This document lists all Airport API e2e test cases in this folder for quick review.
+
+## Create Airport API
+
+- Spec file: `create-airport.e2e-spec.ts`
+- Endpoint: `POST /api/v1/airports`
+
+Test cases:
+
+- `TC_AIRPORT_CREATE_001`: Create airport by SUPER_ADMIN with valid payload, expected `201`
+- `TC_AIRPORT_CREATE_002`: Create airport by STAFF admin with AIRPORTS EDIT access, expected `201`
+- `TC_AIRPORT_CREATE_003`: Create airport by inactive admin should fail, expected `403`
+- `TC_AIRPORT_CREATE_004`: Create airport without access token, expected `401`
+- `TC_AIRPORT_CREATE_005`: Create airport with invalid access token, expected `401`
+- `TC_AIRPORT_CREATE_006`: Create airport with expired access token, expected `401`
+- `TC_AIRPORT_CREATE_007`: Create airport by STAFF admin without AIRPORTS EDIT access, expected `403`
+- `TC_AIRPORT_CREATE_008`: Create airport by unauthorized role user, expected `403`
+- `TC_AIRPORT_CREATE_009`: Duplicate IATA code should fail, expected `409`
+- `TC_AIRPORT_CREATE_010`: Duplicate ICAO code should fail, expected `409`
+- `TC_AIRPORT_CREATE_011`: Duplicate IATA and ICAO codes should fail, expected `409`
+- `TC_AIRPORT_CREATE_012`: Missing name field, expected `400`
+- `TC_AIRPORT_CREATE_013`: Missing iataCode field, expected `400`
+- `TC_AIRPORT_CREATE_014`: Missing icaoCode field, expected `400`
+- `TC_AIRPORT_CREATE_015`: Missing countryCode field, expected `400`
+- `TC_AIRPORT_CREATE_016`: Missing city field, expected `400`
+- `TC_AIRPORT_CREATE_017`: Missing latitude field, expected `400`
+- `TC_AIRPORT_CREATE_018`: Missing longitude field, expected `400`
+- `TC_AIRPORT_CREATE_019`: Missing timezone field, expected `400`
+- `TC_AIRPORT_CREATE_020`: Missing isActive field, expected `400`
+- `TC_AIRPORT_CREATE_021`: Missing type field, expected `400`
+- `TC_AIRPORT_CREATE_022`: Empty name value, expected `400`
+- `TC_AIRPORT_CREATE_023`: Empty iataCode value, expected `400`
+- `TC_AIRPORT_CREATE_024`: Empty icaoCode value, expected `400`
+- `TC_AIRPORT_CREATE_025`: Empty countryCode value, expected `400`
+- `TC_AIRPORT_CREATE_026`: Empty city value, expected `400`
+- `TC_AIRPORT_CREATE_027`: Empty timezone value, expected `400`
+- `TC_AIRPORT_CREATE_028`: Empty type value, expected `400`
+- `TC_AIRPORT_CREATE_029`: Null name value, expected `400`
+- `TC_AIRPORT_CREATE_030`: Null iataCode value, expected `400`
+- `TC_AIRPORT_CREATE_031`: Null icaoCode value, expected `400`
+- `TC_AIRPORT_CREATE_032`: Null countryCode value, expected `400`
+- `TC_AIRPORT_CREATE_033`: Null city value, expected `400`
+- `TC_AIRPORT_CREATE_034`: Null latitude value, expected `400`
+- `TC_AIRPORT_CREATE_035`: Null longitude value, expected `400`
+- `TC_AIRPORT_CREATE_036`: Null timezone value, expected `400`
+- `TC_AIRPORT_CREATE_037`: Null isActive value, expected `400`
+- `TC_AIRPORT_CREATE_038`: Null type value, expected `400`
+- `TC_AIRPORT_CREATE_039`: Invalid IATA code format less than 3 characters, expected `400`
+- `TC_AIRPORT_CREATE_040`: Invalid IATA code format greater than 3 characters, expected `400`
+- `TC_AIRPORT_CREATE_041`: Invalid ICAO code format less than 4 characters, expected `400`
+- `TC_AIRPORT_CREATE_042`: Invalid ICAO code format greater than 4 characters, expected `400`
+- `TC_AIRPORT_CREATE_043`: Invalid countryCode format, expected `400`
+- `TC_AIRPORT_CREATE_044`: Invalid airport type enum value, expected `400`
+- `TC_AIRPORT_CREATE_045`: Invalid timezone value, expected `400`
+- `TC_AIRPORT_CREATE_046`: Invalid latitude greater than 90, expected `400`
+- `TC_AIRPORT_CREATE_047`: Invalid latitude less than -90, expected `400`
+- `TC_AIRPORT_CREATE_048`: Invalid longitude greater than 180, expected `400`
+- `TC_AIRPORT_CREATE_049`: Invalid longitude less than -180, expected `400`
+- `TC_AIRPORT_CREATE_050`: Create INTERNATIONAL airport successfully, expected `201`
+- `TC_AIRPORT_CREATE_051`: Create DOMESTIC airport successfully, expected `201`
+- `TC_AIRPORT_CREATE_052`: Create inactive airport successfully, expected `201`
+- `TC_AIRPORT_CREATE_053`: Create active airport successfully, expected `201`
+- `TC_AIRPORT_CREATE_054`: Lowercase IATA code normalization handling, expected `201`
+- `TC_AIRPORT_CREATE_055`: Lowercase ICAO code normalization handling, expected `201`
+- `TC_AIRPORT_CREATE_056`: Lowercase countryCode normalization handling, expected `201`
+- `TC_AIRPORT_CREATE_057`: Create airport with optional address omitted, expected `201`
+- `TC_AIRPORT_CREATE_058`: Create airport with missing postalCode field, expected `400`
+- `TC_AIRPORT_CREATE_059`: Create airport with valid address field, expected `201`
+- `TC_AIRPORT_CREATE_060`: Create airport with valid postalCode field, expected `201`
+- `TC_AIRPORT_CREATE_061`: Create airport with empty optional address field, expected `201`
+- `TC_AIRPORT_CREATE_062`: Create airport with empty postalCode field, expected `400`
+- `TC_AIRPORT_CREATE_063`: Create airport with null address field, expected `201`
+- `TC_AIRPORT_CREATE_064`: Create airport with null postalCode field, expected `400`
+- `TC_AIRPORT_CREATE_065`: Airport name exceeding maximum allowed length, expected `400`
+- `TC_AIRPORT_CREATE_066`: City exceeding maximum allowed length, expected `400`
+- `TC_AIRPORT_CREATE_067`: Address exceeding maximum allowed length, expected `400`
+- `TC_AIRPORT_CREATE_068`: PostalCode exceeding maximum allowed length, expected `400`
+- `TC_AIRPORT_CREATE_069`: Create airport with Unicode airport name, expected `201`
+- `TC_AIRPORT_CREATE_070`: Create airport with Unicode city name, expected `201`
+- `TC_AIRPORT_CREATE_071`: Create airport with Unicode address value, expected `201`
+- `TC_AIRPORT_CREATE_072`: Whitespace-only name field, expected `400`
+- `TC_AIRPORT_CREATE_073`: Whitespace-only city field, expected `400`
+- `TC_AIRPORT_CREATE_074`: Whitespace-only timezone field, expected `400`
+- `TC_AIRPORT_CREATE_075`: Malformed JSON payload, expected `400`
+- `TC_AIRPORT_CREATE_076`: Additional unknown fields in payload, expected `400`
+- `TC_AIRPORT_CREATE_077`: SQL injection attempt in airport name, expected `400`
+- `TC_AIRPORT_CREATE_078`: SQL injection attempt in IATA code, expected `400`
+- `TC_AIRPORT_CREATE_079`: Script injection attempt in airport name, expected `400`
+- `TC_AIRPORT_CREATE_080`: Script injection attempt in address field, expected `400`
+- `TC_AIRPORT_CREATE_081`: Create airport response contains airport id, expected `201`
+- `TC_AIRPORT_CREATE_082`: Create airport response contains createdBy field, expected `201`
+- `TC_AIRPORT_CREATE_083`: Create airport response contains updatedBy field, expected `201`
+- `TC_AIRPORT_CREATE_084`: Create airport response contains createdAt timestamp, expected `201`
+- `TC_AIRPORT_CREATE_085`: Create airport response contains updatedAt timestamp, expected `201`
+- `TC_AIRPORT_CREATE_086`: Create airport response contains normalized IATA code, expected `201`
+- `TC_AIRPORT_CREATE_087`: Create airport response contains normalized ICAO code, expected `201`
+- `TC_AIRPORT_CREATE_088`: Create airport response contains normalized countryCode, expected `201`
+- `TC_AIRPORT_CREATE_089`: Create airport with decimal latitude and longitude precision, expected `201`
+- `TC_AIRPORT_CREATE_090`: Create airport with boundary latitude value 90, expected `201`
+- `TC_AIRPORT_CREATE_091`: Create airport with boundary latitude value -90, expected `201`
+- `TC_AIRPORT_CREATE_092`: Create airport with boundary longitude value 180, expected `201`
+- `TC_AIRPORT_CREATE_093`: Create airport with boundary longitude value -180, expected `201`
+- `TC_AIRPORT_CREATE_094`: Create airport with duplicate airport name but unique codes, expected `201`
+- `TC_AIRPORT_CREATE_095`: Create airport with same city but unique codes, expected `201`
+- `TC_AIRPORT_CREATE_096`: Create airport with reused postalCode value, expected `201`
+- `TC_AIRPORT_CREATE_097`: Create airport concurrently with same IATA code should create only one airport, expected `201` and `409`
+- `TC_AIRPORT_CREATE_098`: Create airport concurrently with same ICAO code should create only one airport, expected `201` and `409`
+- `TC_AIRPORT_CREATE_099`: Create airport with scientific notation latitude value, expected `400`
+- `TC_AIRPORT_CREATE_100`: Create airport with scientific notation longitude value, expected `400`
+- `TC_AIRPORT_CREATE_101`: Invalid IATA code with non-letter character, expected `400`
+- `TC_AIRPORT_CREATE_102`: Invalid ICAO code with non-letter character, expected `400`
+
+## Update Airport API
+
+- Spec file: `update-airport.e2e-spec.ts`
+- Endpoint: `PATCH /api/v1/airports/{airportId}`
+
+Test cases:
+
+- `TC_AIRPORT_UPDATE_001`: Update airport by SUPER_ADMIN with valid payload, expected `200`
+- `TC_AIRPORT_UPDATE_002`: Update airport by STAFF admin with AIRPORTS EDIT access, expected `200`
+- `TC_AIRPORT_UPDATE_003`: Update airport by inactive admin should fail, expected `403`
+- `TC_AIRPORT_UPDATE_004`: Update airport without access token, expected `401`
+- `TC_AIRPORT_UPDATE_005`: Update airport with invalid access token, expected `401`
+- `TC_AIRPORT_UPDATE_006`: Update airport with expired access token, expected `401`
+- `TC_AIRPORT_UPDATE_007`: Update airport by STAFF admin without AIRPORTS EDIT access, expected `403`
+- `TC_AIRPORT_UPDATE_008`: Update airport by unauthorized role user, expected `403`
+- `TC_AIRPORT_UPDATE_009`: Update non-existing airportId, expected `404`
+- `TC_AIRPORT_UPDATE_010`: Update airport with invalid airportId format, expected `400`
+- `TC_AIRPORT_UPDATE_011`: Update airport with duplicate IATA code, expected `409`
+- `TC_AIRPORT_UPDATE_012`: Update airport with duplicate ICAO code, expected `409`
+- `TC_AIRPORT_UPDATE_013`: Update airport with duplicate IATA and ICAO codes, expected `409`
+- `TC_AIRPORT_UPDATE_014`: Partial update airport name only, expected `200`
+- `TC_AIRPORT_UPDATE_015`: Partial update airport city only, expected `200`
+- `TC_AIRPORT_UPDATE_016`: Partial update airport coordinates only, expected `200`
+- `TC_AIRPORT_UPDATE_017`: Partial update airport timezone only, expected `200`
+- `TC_AIRPORT_UPDATE_018`: Partial update airport status only, expected `200`
+- `TC_AIRPORT_UPDATE_019`: Partial update airport type only, expected `200`
+- `TC_AIRPORT_UPDATE_020`: Partial update airport address only, expected `200`
+- `TC_AIRPORT_UPDATE_021`: Partial update airport postalCode only, expected `200`
+- `TC_AIRPORT_UPDATE_022`: Empty request body should not update airport, expected `400`
+- `TC_AIRPORT_UPDATE_023`: Empty name value, expected `400`
+- `TC_AIRPORT_UPDATE_024`: Empty iataCode value, expected `400`
+- `TC_AIRPORT_UPDATE_025`: Empty icaoCode value, expected `400`
+- `TC_AIRPORT_UPDATE_026`: Empty countryCode value, expected `400`
+- `TC_AIRPORT_UPDATE_027`: Empty city value, expected `400`
+- `TC_AIRPORT_UPDATE_028`: Empty timezone value, expected `400`
+- `TC_AIRPORT_UPDATE_029`: Empty type value, expected `400`
+- `TC_AIRPORT_UPDATE_030`: Null name value, expected `400`
+- `TC_AIRPORT_UPDATE_031`: Null iataCode value, expected `400`
+- `TC_AIRPORT_UPDATE_032`: Null icaoCode value, expected `400`
+- `TC_AIRPORT_UPDATE_033`: Null countryCode value, expected `400`
+- `TC_AIRPORT_UPDATE_034`: Null city value, expected `400`
+- `TC_AIRPORT_UPDATE_035`: Null latitude value, expected `400`
+- `TC_AIRPORT_UPDATE_036`: Null longitude value, expected `400`
+- `TC_AIRPORT_UPDATE_037`: Null timezone value, expected `400`
+- `TC_AIRPORT_UPDATE_038`: Null isActive value, expected `400`
+- `TC_AIRPORT_UPDATE_039`: Null type value, expected `400`
+- `TC_AIRPORT_UPDATE_040`: Invalid IATA code format less than 3 characters, expected `400`
+- `TC_AIRPORT_UPDATE_041`: Invalid IATA code format greater than 3 characters, expected `400`
+- `TC_AIRPORT_UPDATE_042`: Invalid ICAO code format less than 4 characters, expected `400`
+- `TC_AIRPORT_UPDATE_043`: Invalid ICAO code format greater than 4 characters, expected `400`
+- `TC_AIRPORT_UPDATE_044`: Invalid countryCode format, expected `400`
+- `TC_AIRPORT_UPDATE_045`: Invalid airport type enum value, expected `400`
+- `TC_AIRPORT_UPDATE_046`: Invalid timezone value, expected `400`
+- `TC_AIRPORT_UPDATE_047`: Invalid latitude greater than 90, expected `400`
+- `TC_AIRPORT_UPDATE_048`: Invalid latitude less than -90, expected `400`
+- `TC_AIRPORT_UPDATE_049`: Invalid longitude greater than 180, expected `400`
+- `TC_AIRPORT_UPDATE_050`: Invalid longitude less than -180, expected `400`
+- `TC_AIRPORT_UPDATE_051`: Update airport type to INTERNATIONAL successfully, expected `200`
+- `TC_AIRPORT_UPDATE_052`: Update airport type to DOMESTIC successfully, expected `200`
+- `TC_AIRPORT_UPDATE_053`: Update airport status to active successfully, expected `200`
+- `TC_AIRPORT_UPDATE_054`: Update airport status to inactive successfully, expected `200`
+- `TC_AIRPORT_UPDATE_055`: Lowercase IATA code normalization handling, expected `200`
+- `TC_AIRPORT_UPDATE_056`: Lowercase ICAO code normalization handling, expected `200`
+- `TC_AIRPORT_UPDATE_057`: Lowercase countryCode normalization handling, expected `200`
+- `TC_AIRPORT_UPDATE_058`: Update airport with valid address field, expected `200`
+- `TC_AIRPORT_UPDATE_059`: Update airport with valid postalCode field, expected `200`
+- `TC_AIRPORT_UPDATE_060`: Update airport with empty optional address field, expected `200`
+- `TC_AIRPORT_UPDATE_061`: Update airport with null address field, expected `200`
+- `TC_AIRPORT_UPDATE_062`: Update airport with empty required postalCode field, expected `400`
+- `TC_AIRPORT_UPDATE_063`: Update airport with null required postalCode field, expected `400`
+- `TC_AIRPORT_UPDATE_064`: Airport name exceeding maximum allowed length, expected `400`
+- `TC_AIRPORT_UPDATE_065`: City exceeding maximum allowed length, expected `400`
+- `TC_AIRPORT_UPDATE_066`: Address exceeding maximum allowed length, expected `400`
+- `TC_AIRPORT_UPDATE_067`: PostalCode exceeding maximum allowed length, expected `400`
+- `TC_AIRPORT_UPDATE_068`: Update airport with Unicode airport name, expected `200`
+- `TC_AIRPORT_UPDATE_069`: Update airport with Unicode city name, expected `200`
+- `TC_AIRPORT_UPDATE_070`: Update airport with Unicode address value, expected `200`
+- `TC_AIRPORT_UPDATE_071`: Whitespace-only name field, expected `400`
+- `TC_AIRPORT_UPDATE_072`: Whitespace-only city field, expected `400`
+- `TC_AIRPORT_UPDATE_073`: Whitespace-only timezone field, expected `400`
+- `TC_AIRPORT_UPDATE_074`: Malformed JSON payload, expected `400`
+- `TC_AIRPORT_UPDATE_075`: Additional unknown fields in payload, expected `400`
+- `TC_AIRPORT_UPDATE_076`: SQL injection attempt in airport name, expected `400`
+- `TC_AIRPORT_UPDATE_077`: SQL injection attempt in IATA code, expected `400`
+- `TC_AIRPORT_UPDATE_078`: Script injection attempt in airport name, expected `400`
+- `TC_AIRPORT_UPDATE_079`: Script injection attempt in address field, expected `400`
+- `TC_AIRPORT_UPDATE_080`: Update airport response contains airport id, expected `200`
+- `TC_AIRPORT_UPDATE_081`: Update airport response contains createdBy field unchanged, expected `200`
+- `TC_AIRPORT_UPDATE_082`: Update airport response contains updatedBy field updated correctly, expected `200`
+- `TC_AIRPORT_UPDATE_083`: Update airport response contains createdAt timestamp unchanged, expected `200`
+- `TC_AIRPORT_UPDATE_084`: Update airport response contains updatedAt timestamp updated correctly, expected `200`
+- `TC_AIRPORT_UPDATE_085`: Update airport response contains normalized IATA code, expected `200`
+- `TC_AIRPORT_UPDATE_086`: Update airport response contains normalized ICAO code, expected `200`
+- `TC_AIRPORT_UPDATE_087`: Update airport response contains normalized countryCode, expected `200`
+- `TC_AIRPORT_UPDATE_088`: Update airport with decimal latitude and longitude precision, expected `200`
+- `TC_AIRPORT_UPDATE_089`: Update airport with boundary latitude value 90, expected `200`
+- `TC_AIRPORT_UPDATE_090`: Update airport with boundary latitude value -90, expected `200`
+- `TC_AIRPORT_UPDATE_091`: Update airport with boundary longitude value 180, expected `200`
+- `TC_AIRPORT_UPDATE_092`: Update airport with boundary longitude value -180, expected `200`
+- `TC_AIRPORT_UPDATE_093`: Update airport name while keeping same IATA and ICAO codes, expected `200`
+- `TC_AIRPORT_UPDATE_094`: Update airport with same IATA code of current airport should succeed, expected `200`
+- `TC_AIRPORT_UPDATE_095`: Update airport with same ICAO code of current airport should succeed, expected `200`
+- `TC_AIRPORT_UPDATE_096`: Concurrent airport updates with conflicting IATA code should result in one success and one conflict, expected `200` and `409`
+- `TC_AIRPORT_UPDATE_097`: Concurrent airport updates with conflicting ICAO code should result in one success and one conflict, expected `200` and `409`
+- `TC_AIRPORT_UPDATE_098`: Update airport with scientific notation latitude value, expected `400`
+- `TC_AIRPORT_UPDATE_099`: Update airport with scientific notation longitude value, expected `400`
+- `TC_AIRPORT_UPDATE_100`: Update airport isActive from true to false successfully, expected `200`
+- `TC_AIRPORT_UPDATE_101`: Invalid IATA code with non-letter character, expected `400`
+- `TC_AIRPORT_UPDATE_102`: Invalid ICAO code with non-letter character, expected `400`

@@ -3,6 +3,7 @@
     "abcdefghijkmnpqrstuvwxyz",
     "ABCDEFGHJKLMNPQRSTUVWXYZ",
     "Aerolinea",
+    "Aeroporto",
     "ecode",
     "flyvoid",
     "otpauth",
@@ -14,6 +15,7 @@
     "signins",
     "smhd",
     "totp",
-    "üser"
+    "üser",
+    "vabb"
   ]
 }
