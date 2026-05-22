@@ -17,16 +17,16 @@ import {
   UpdateAirportRequestDto,
 } from "../dto";
 import { AirportEntity } from "../entities/airport.entity";
+import { AirportRepository } from "../repositories/airport.repository";
 
 @Injectable()
 export class AirportService {
   private readonly context = "AirportService";
 
   constructor(
-    @InjectRepository(AirportEntity)
-    private readonly airportRepository: Repository<AirportEntity>,
     @InjectRepository(AdminEntity)
     private readonly adminRepository: Repository<AdminEntity>,
+    private readonly airportRepository: AirportRepository,
     private readonly logger: LoggerService,
   ) {}
 
@@ -40,7 +40,7 @@ export class AirportService {
       requestId,
     );
 
-    await this.ensureUniqueCodes(dto.iataCode, dto.icaoCode);
+    await this.ensureUniqueCodes(dto.iataCode, dto.icaoCode, undefined, requestId);
 
     const created = this.airportRepository.create({
       name: dto.name,
@@ -59,7 +59,7 @@ export class AirportService {
       updatedBy: actor.id,
     });
 
-    const saved = await this.airportRepository.save(created);
+    const saved = await this.airportRepository.save(created, requestId);
 
     this.logger.info("Airport created", this.context, requestId, {
       airportId: saved.id,
@@ -82,9 +82,7 @@ export class AirportService {
       requestId,
     );
 
-    const existing = await this.airportRepository.findOne({
-      where: { id: airportId },
-    });
+    const existing = await this.airportRepository.findById(airportId, requestId);
     if (!existing) {
       throw new NotFoundException("Airport not found");
     }
@@ -94,6 +92,7 @@ export class AirportService {
         dto.iataCode ?? existing.iataCode,
         dto.icaoCode ?? existing.icaoCode,
         existing.id,
+        requestId,
       );
     }
 
@@ -104,7 +103,7 @@ export class AirportService {
       updatedBy: actor.id,
     });
 
-    const saved = await this.airportRepository.save(next);
+    const saved = await this.airportRepository.save(next, requestId);
 
     this.logger.info("Airport updated", this.context, requestId, {
       airportId: saved.id,
@@ -150,14 +149,11 @@ export class AirportService {
     iataCode: string,
     icaoCode: string,
     ignoreAirportId?: number,
+    requestId?: string,
   ): Promise<void> {
     const [sameIata, sameIcao] = await Promise.all([
-      this.airportRepository.findOne({
-        where: { iataCode },
-      }),
-      this.airportRepository.findOne({
-        where: { icaoCode },
-      }),
+      this.airportRepository.findByIataCode(iataCode, requestId ?? ""),
+      this.airportRepository.findByIcaoCode(icaoCode, requestId ?? ""),
     ]);
 
     if (sameIata && sameIata.id !== ignoreAirportId) {
