@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS public.platform_access_controls (
       asset IN (
         'DASHBOARD',
         'AIRLINES',
+        'AIRPORTS',
         'CANCELLED_FLIGHTS',
         'REVENUE',
         'PAYMENTS',

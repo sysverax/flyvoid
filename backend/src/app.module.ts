@@ -12,6 +12,7 @@ import { RequestIdMiddleware } from "./common/middleware/request-id.middleware";
 import { DatabaseModule } from "./database/database.module";
 import { HealthModule } from "./health/health.module";
 import { AirlineModule } from "./airline/airline.module";
+import { AirportModule } from "./airport/airport.module";
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { AirlineModule } from "./airline/airline.module";
     AuthModule,
     AdminModule,
     AirlineModule,
+    AirportModule,
   ],
 })
 export class AppModule implements NestModule {

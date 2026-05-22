@@ -3,6 +3,7 @@ import { AdminRole, AirlineRole, UserType } from "./user.constants";
 export enum PlatformAsset {
   DASHBOARD = "DASHBOARD",
   AIRLINES = "AIRLINES",
+  AIRPORTS = "AIRPORTS",
   CANCELLED_FLIGHTS = "CANCELLED_FLIGHTS",
   REVENUE = "REVENUE",
   PAYMENTS = "PAYMENTS",
