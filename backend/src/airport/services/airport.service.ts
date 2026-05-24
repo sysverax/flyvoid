@@ -37,11 +37,6 @@ export class AirportService {
     dto: CreateAirportRequestDto,
     requestId: string,
   ): Promise<AirportResponseDto> {
-    const actor = await this.requirePlatformEditor(
-      authenticatedUser,
-      requestId,
-    );
-
     await this.ensureUniqueCodes(
       dto.iataCode,
       dto.icaoCode,
@@ -62,15 +57,15 @@ export class AirportService {
       type: dto.type,
       address: dto.address ?? null,
       postalCode: dto.postalCode,
-      createdBy: actor.id,
-      updatedBy: actor.id,
+      createdBy: authenticatedUser.sub,
+      updatedBy: authenticatedUser.sub,
     });
 
     const saved = await this.airportRepository.save(created, requestId);
 
     this.logger.info("Airport created", this.context, requestId, {
       airportId: saved.id,
-      actorAdminId: actor.id,
+      actorAdminId: authenticatedUser.sub,
       iataCode: saved.iataCode,
       icaoCode: saved.icaoCode,
     });
@@ -105,11 +100,6 @@ export class AirportService {
     dto: UpdateAirportRequestDto,
     requestId: string,
   ): Promise<AirportResponseDto> {
-    const actor = await this.requirePlatformEditor(
-      authenticatedUser,
-      requestId,
-    );
-
     const existing = await this.airportRepository.findById(
       airportId,
       requestId,
@@ -131,49 +121,17 @@ export class AirportService {
       ...dto,
       address: dto.address ?? existing.address,
       postalCode: dto.postalCode ?? existing.postalCode,
-      updatedBy: actor.id,
+      updatedBy: authenticatedUser.sub,
     });
 
     const saved = await this.airportRepository.save(next, requestId);
 
     this.logger.info("Airport updated", this.context, requestId, {
       airportId: saved.id,
-      actorAdminId: actor.id,
+      actorAdminId: authenticatedUser.sub,
     });
 
     return this.toAirportResponse(saved);
-  }
-
-  private async requirePlatformEditor(
-    authenticatedUser: AuthenticatedUser,
-    requestId: string,
-  ): Promise<AdminEntity> {
-    if (authenticatedUser.userType !== UserType.PLATFORM) {
-      throw new UnauthorizedException("Unauthorized");
-    }
-
-    const admin = await this.adminRepository.findOne({
-      where: { id: authenticatedUser.sub },
-    });
-
-    if (!admin) {
-      throw new UnauthorizedException("Admin not found");
-    }
-
-    if (!admin.isActive) {
-      throw new ForbiddenException("Admin account is inactive");
-    }
-
-    if (![AdminRole.SUPER_ADMIN, AdminRole.STAFF].includes(admin.role)) {
-      throw new ForbiddenException("Insufficient permissions");
-    }
-
-    this.logger.debug("Platform editor verified", this.context, requestId, {
-      adminId: admin.id,
-      role: admin.role,
-    });
-
-    return admin;
   }
 
   private async ensureUniqueCodes(
