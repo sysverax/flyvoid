@@ -1,11 +1,13 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   Param,
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from "@nestjs/common";
@@ -48,19 +50,84 @@ import { AdminRole, UserType } from "../../common/constants/user.constants";
 import { BaseResponseDto } from "../../common/dto/base-response.dto";
 import { RequestId } from "../../common/decorators/request-id.decorator";
 import {
+  AirportListResponseDto,
   AirportResponseDto,
   CreateAirportRequestDto,
+  GetAirportsQueryDto,
   UpdateAirportRequestDto,
 } from "../dto";
 import { AirportService } from "../services/airport.service";
 
 @ApiTags("Airport")
-@ApiExtraModels(BaseResponseDto, AirportResponseDto)
+@ApiExtraModels(BaseResponseDto, AirportResponseDto, AirportListResponseDto)
 @UseGuards(JwtAuthGuard, RbacGuard)
 @RequireUserTypes(UserType.PLATFORM)
 @Controller("airports")
 export class AirportController {
   constructor(private readonly airportService: AirportService) {}
+
+  @Get("/")
+  @RequireUserRoles(AdminRole.SUPER_ADMIN, AdminRole.STAFF)
+  @RequireAccessControl({
+    platform: {
+      asset: PlatformAsset.AIRPORTS,
+      access: [AccessAction.VIEW],
+    },
+  })
+  @ApiBearerAuth("access-token")
+  @ApiOperation({
+    summary: "Get all airports",
+    description:
+      "Returns paginated airports with optional countryCode, status, and search filters.",
+  })
+  @ApiOkResponse({
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(BaseResponseDto) },
+        {
+          properties: {
+            success: { type: "boolean", example: true },
+            requestId: { type: "string", example: REQUEST_ID_EXAMPLE },
+            timestamp: { type: "string", example: TIMESTAMP_EXAMPLE },
+            message: {
+              type: "string",
+              example: "Airports fetched successfully",
+            },
+            data: { $ref: getSchemaPath(AirportListResponseDto) },
+          },
+        },
+      ],
+    },
+  })
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema("/api/v1/airports"),
+  })
+  @ApiUnauthorizedResponse({
+    schema: createUnauthorizedErrorSchema("/api/v1/airports", "Unauthorized"),
+  })
+  @ApiForbiddenResponse({
+    schema: createForbiddenErrorSchema(
+      "/api/v1/airports",
+      "Insufficient permissions",
+    ),
+  })
+  async getAirports(
+    @Req() req: AuthenticatedRequest,
+    @Query() query: GetAirportsQueryDto,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<AirportListResponseDto>> {
+    const data = await this.airportService.listAirports(
+      req.user,
+      query,
+      requestId,
+    );
+
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Airports fetched successfully",
+    );
+  }
 
   @Post("/")
   @HttpCode(201)

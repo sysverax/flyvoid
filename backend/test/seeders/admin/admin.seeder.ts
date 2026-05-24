@@ -8,6 +8,7 @@ import { requestHelper } from "../../helpers/request.helper";
 import { responseHelper } from "../../helpers/response.helper";
 import { testDbHelper } from "../../database/db.helper";
 import { directSqlHelper } from "../../database/direct-sql.helper";
+import { DataSource } from "typeorm";
 
 const createAdmin = async (
   app: INestApplication,
@@ -69,7 +70,7 @@ export const adminAuthSeeder = {
       isActive: boolean;
     }>,
   ): Promise<void> {
-    const dataSource = directSqlHelper.getDataSource(app);
+    const dataSource = app.get(DataSource);
     const usePostgresParams = dataSource.options.type === "postgres";
     const parameter = (index: number): string =>
       usePostgresParams ? `$${index + 1}` : "?";
@@ -96,7 +97,7 @@ export const adminAuthSeeder = {
       const whereIdToken = parameter(values.length);
       const sql = `UPDATE admins SET ${setClauses.join(", ")} WHERE id = ${whereIdToken}`;
       values.push(adminId);
-      await directSqlHelper.execute(app, sql, values);
+      await dataSource.query(sql, values);
 
       // const selectIdToken = usePostgresParams ? "$1" : "?";
       // const updatedAdmin = await directSqlHelper.first<{

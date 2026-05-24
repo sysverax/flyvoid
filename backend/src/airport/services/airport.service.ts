@@ -12,8 +12,10 @@ import { AuthenticatedUser } from "../../auth/interfaces/authenticated-request.i
 import { AdminRole, UserType } from "../../common/constants/user.constants";
 import { LoggerService } from "../../common/logger/logger.service";
 import {
+  AirportListResponseDto,
   AirportResponseDto,
   CreateAirportRequestDto,
+  GetAirportsQueryDto,
   UpdateAirportRequestDto,
 } from "../dto";
 import { AirportEntity } from "../entities/airport.entity";
@@ -40,7 +42,12 @@ export class AirportService {
       requestId,
     );
 
-    await this.ensureUniqueCodes(dto.iataCode, dto.icaoCode, undefined, requestId);
+    await this.ensureUniqueCodes(
+      dto.iataCode,
+      dto.icaoCode,
+      undefined,
+      requestId,
+    );
 
     const created = this.airportRepository.create({
       name: dto.name,
@@ -71,6 +78,27 @@ export class AirportService {
     return this.toAirportResponse(saved);
   }
 
+  async listAirports(
+    authenticatedUser: AuthenticatedUser,
+    query: GetAirportsQueryDto,
+    requestId: string,
+  ): Promise<AirportListResponseDto> {
+    const { airports, total } = await this.airportRepository.findAll(
+      query,
+      requestId,
+    );
+
+    const totalPages = total === 0 ? 0 : Math.ceil(total / query.limit);
+
+    return {
+      airports: airports.map((airport) => this.toAirportResponse(airport)),
+      total: total,
+      currentPage: query.page,
+      totalPages,
+      limit: query.limit,
+    };
+  }
+
   async updateAirport(
     authenticatedUser: AuthenticatedUser,
     airportId: number,
@@ -82,7 +110,10 @@ export class AirportService {
       requestId,
     );
 
-    const existing = await this.airportRepository.findById(airportId, requestId);
+    const existing = await this.airportRepository.findById(
+      airportId,
+      requestId,
+    );
     if (!existing) {
       throw new NotFoundException("Airport not found");
     }
@@ -180,10 +211,10 @@ export class AirportService {
       type: entity.type,
       address: entity.address ?? null,
       postalCode: entity.postalCode ?? null,
-      createdBy: entity.createdBy,
-      updatedBy: entity.updatedBy ?? null,
-      createdAt: entity.createdAt.toISOString(),
-      updatedAt: entity.updatedAt.toISOString(),
+      // createdBy: entity.createdBy,
+      // updatedBy: entity.updatedBy ?? null,
+      // createdAt: entity.createdAt.toISOString(),
+      // updatedAt: entity.updatedAt.toISOString(),
     };
   }
 }

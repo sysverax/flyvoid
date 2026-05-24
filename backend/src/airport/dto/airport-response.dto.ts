@@ -38,18 +38,18 @@ export class AirportResponseDto {
   @ApiProperty({ example: "Airport Road", nullable: true })
   address!: string | null;
 
-  @ApiProperty({ example: "00000", })
+  @ApiProperty({ example: "00000" })
   postalCode!: string | null;
 
-  @ApiProperty({ example: 2 })
-  createdBy!: number;
+  // @ApiProperty({ example: 2 })
+  // createdBy!: number;
 
-  @ApiProperty({ example: 2, nullable: true })
-  updatedBy!: number | null;
+  // @ApiProperty({ example: 2, nullable: true })
+  // updatedBy!: number | null;
 
-  @ApiProperty({ example: "2026-05-22T11:00:00.000Z" })
-  createdAt!: string;
+  // @ApiProperty({ example: "2026-05-22T11:00:00.000Z" })
+  // createdAt!: string;
 
-  @ApiProperty({ example: "2026-05-22T11:00:00.000Z" })
-  updatedAt!: string;
+  // @ApiProperty({ example: "2026-05-22T11:00:00.000Z" })
+  // updatedAt!: string;
 }

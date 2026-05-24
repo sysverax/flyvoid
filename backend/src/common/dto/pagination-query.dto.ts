@@ -5,6 +5,7 @@ import { IsInt, IsOptional, Min } from "class-validator";
 export interface PaginationMeta {
   total: number;
   currentPage: number;
+  totalPages: number;
   limit: number;
 }
 
@@ -16,9 +17,7 @@ export class PaginationQueryDto {
   })
   @IsOptional()
   @Transform(({ value }) =>
-    value === undefined || value === null || value === ""
-      ? 1
-      : Number(value),
+    value === undefined || value === null || value === "" ? 1 : Number(value),
   )
   @IsInt()
   @Min(1)
@@ -31,9 +30,7 @@ export class PaginationQueryDto {
   })
   @IsOptional()
   @Transform(({ value }) =>
-    value === undefined || value === null || value === ""
-      ? 10
-      : Number(value),
+    value === undefined || value === null || value === "" ? 10 : Number(value),
   )
   @IsInt()
   @Min(1)
