@@ -3,6 +3,7 @@ import { Transform } from "class-transformer";
 import {
   IsBoolean,
   IsInt,
+  IsNotEmpty,
   IsOptional,
   IsString,
   Matches,
@@ -54,7 +55,6 @@ export class GetAirportsQueryDto extends PaginationQueryDto {
     return value;
   })
   @IsBoolean()
-  @IsSafeText()
   status?: boolean;
 
   @ApiPropertyOptional({
@@ -67,10 +67,10 @@ export class GetAirportsQueryDto extends PaginationQueryDto {
       return value;
     }
 
-    const trimmed = value.trim();
-    return trimmed.length === 0 ? undefined : trimmed;
+    return value.trim();
   })
   @IsString()
+  @IsNotEmpty()
   @MaxLength(50)
   @IsSafeText()
   search?: string;

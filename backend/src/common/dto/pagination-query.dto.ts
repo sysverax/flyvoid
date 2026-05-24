@@ -1,6 +1,7 @@
 import { Transform } from "class-transformer";
 import { ApiPropertyOptional } from "@nestjs/swagger";
-import { IsInt, IsOptional, Min } from "class-validator";
+import { IsInt, IsOptional, Max, Min } from "class-validator";
+import { parseStrictPositiveInt } from "../../common/validator/number.validator";
 
 export interface PaginationMeta {
   total: number;
@@ -16,9 +17,7 @@ export class PaginationQueryDto {
     default: 1,
   })
   @IsOptional()
-  @Transform(({ value }) =>
-    value === undefined || value === null || value === "" ? 1 : Number(value),
-  )
+  @Transform(({ value }) => parseStrictPositiveInt(value, 1))
   @IsInt()
   @Min(1)
   page: number = 1;
@@ -29,10 +28,9 @@ export class PaginationQueryDto {
     default: 10,
   })
   @IsOptional()
-  @Transform(({ value }) =>
-    value === undefined || value === null || value === "" ? 10 : Number(value),
-  )
+  @Transform(({ value }) => parseStrictPositiveInt(value, 10))
   @IsInt()
+  @Max(200)
   @Min(1)
   limit: number = 10;
 }
