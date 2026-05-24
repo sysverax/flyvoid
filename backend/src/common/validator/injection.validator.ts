@@ -7,6 +7,7 @@ import {
 const INJECTION_PATTERNS: RegExp[] = [
   /<script\b/i,
   /<\/script>/i,
+  /\bjavascript\s*:/i,
   /\bon\w+\s*=/i,
   /--/,
   /\/\*/,
@@ -16,7 +17,20 @@ const INJECTION_PATTERNS: RegExp[] = [
 ];
 
 function hasInjectionPattern(value: string): boolean {
-  return INJECTION_PATTERNS.some((pattern) => pattern.test(value));
+  const candidates = [value];
+
+  try {
+    const decoded = decodeURIComponent(value);
+    if (decoded !== value) {
+      candidates.push(decoded);
+    }
+  } catch {
+    // Ignore malformed encoded input and validate raw value.
+  }
+
+  return candidates.some((candidate) =>
+    INJECTION_PATTERNS.some((pattern) => pattern.test(candidate)),
+  );
 }
 
 export function IsSafeText(

@@ -221,3 +221,99 @@ Test cases:
 - `TC_AIRPORT_UPDATE_100`: Update airport isActive from true to false successfully, expected `200`
 - `TC_AIRPORT_UPDATE_101`: Invalid IATA code with non-letter character, expected `400`
 - `TC_AIRPORT_UPDATE_102`: Invalid ICAO code with non-letter character, expected `400`
+
+## Get All Airports API
+
+- Spec file: `get-airports.e2e-spec.ts`
+- Endpoint: `GET /api/v1/airports`
+
+Test cases:
+
+- `TC_AIRPORT_GET_ALL_001`: Get airports by SUPER_ADMIN successfully, expected `200`
+- `TC_AIRPORT_GET_ALL_002`: Get airports by STAFF admin with AIRPORTS VIEW access successfully, expected `200`
+- `TC_AIRPORT_GET_ALL_003`: Get airports by inactive admin should fail, expected `403`
+- `TC_AIRPORT_GET_ALL_004`: Get airports without access token, expected `401`
+- `TC_AIRPORT_GET_ALL_005`: Get airports with invalid access token, expected `401`
+- `TC_AIRPORT_GET_ALL_006`: Get airports with expired access token, expected `401`
+- `TC_AIRPORT_GET_ALL_007`: Get airports by STAFF admin without AIRPORTS VIEW access, expected `403`
+- `TC_AIRPORT_GET_ALL_008`: Get airports by unauthorized role user, expected `403`
+- `TC_AIRPORT_GET_ALL_009`: Get airports with default pagination, expected `200`
+- `TC_AIRPORT_GET_ALL_010`: Get airports with custom page and limit, expected `200`
+- `TC_AIRPORT_GET_ALL_011`: Get airports with page=1, expected `200`
+- `TC_AIRPORT_GET_ALL_012`: Get airports with limit=1, expected `200`
+- `TC_AIRPORT_GET_ALL_013`: Get airports with maximum allowed limit, expected `200`
+- `TC_AIRPORT_GET_ALL_014`: Get airports with page greater than total pages, expected `200`
+- `TC_AIRPORT_GET_ALL_015`: Get airports with page=0, expected `400`
+- `TC_AIRPORT_GET_ALL_016`: Get airports with negative page number, expected `400`
+- `TC_AIRPORT_GET_ALL_017`: Get airports with invalid page format, expected `400`
+- `TC_AIRPORT_GET_ALL_018`: Get airports with limit=0, expected `400`
+- `TC_AIRPORT_GET_ALL_019`: Get airports with negative limit value, expected `400`
+- `TC_AIRPORT_GET_ALL_020`: Get airports with invalid limit format, expected `400`
+- `TC_AIRPORT_GET_ALL_021`: Get airports filtered by valid countryCode, expected `200`
+- `TC_AIRPORT_GET_ALL_022`: Get airports filtered by lowercase countryCode normalization handling, expected `200`
+- `TC_AIRPORT_GET_ALL_023`: Get airports filtered by invalid countryCode format, expected `400`
+- `TC_AIRPORT_GET_ALL_024`: Get airports filtered by non-existing countryCode, expected `200`
+- `TC_AIRPORT_GET_ALL_025`: Get airports filtered by status=true, expected `200`
+- `TC_AIRPORT_GET_ALL_026`: Get airports filtered by status=false, expected `200`
+- `TC_AIRPORT_GET_ALL_027`: Get airports filtered by status=active, expected `200`
+- `TC_AIRPORT_GET_ALL_028`: Get airports filtered by status=inactive, expected `200`
+- `TC_AIRPORT_GET_ALL_029`: Get airports filtered by invalid status value, expected `400`
+- `TC_AIRPORT_GET_ALL_030`: Get airports filtered by search using airport name, expected `200`
+- `TC_AIRPORT_GET_ALL_031`: Get airports filtered by search using IATA code, expected `200`
+- `TC_AIRPORT_GET_ALL_032`: Get airports filtered by search using ICAO code, expected `200`
+- `TC_AIRPORT_GET_ALL_033`: Get airports filtered by search using city name, expected `200`
+- `TC_AIRPORT_GET_ALL_034`: Get airports filtered by search using countryCode, expected `200`
+- `TC_AIRPORT_GET_ALL_035`: Get airports filtered by partial airport name search, expected `200`
+- `TC_AIRPORT_GET_ALL_036`: Get airports filtered by partial city search, expected `200`
+- `TC_AIRPORT_GET_ALL_037`: Get airports filtered by lowercase search term, expected `200`
+- `TC_AIRPORT_GET_ALL_038`: Get airports filtered by uppercase search term, expected `200`
+- `TC_AIRPORT_GET_ALL_039`: Get airports filtered by mixed-case search term, expected `200`
+- `TC_AIRPORT_GET_ALL_040`: Get airports with non-existing search value, expected `200`
+- `TC_AIRPORT_GET_ALL_041`: Get airports with empty search value, expected `400`
+- `TC_AIRPORT_GET_ALL_042`: Get airports with whitespace-only search value, expected `400`
+- `TC_AIRPORT_GET_ALL_043`: Get airports with Unicode search value, expected `200`
+- `TC_AIRPORT_GET_ALL_044`: Get airports using combined countryCode and status filters, expected `200`
+- `TC_AIRPORT_GET_ALL_045`: Get airports using combined countryCode and search filters, expected `200`
+- `TC_AIRPORT_GET_ALL_046`: Get airports using combined status and search filters, expected `200`
+- `TC_AIRPORT_GET_ALL_047`: Get airports using all filters together, expected `200`
+- `TC_AIRPORT_GET_ALL_048`: Get airports response contains airports array, expected `200`
+- `TC_AIRPORT_GET_ALL_049`: Get airports response contains total count, expected `200`
+- `TC_AIRPORT_GET_ALL_050`: Get airports response contains currentPage, expected `200`
+- `TC_AIRPORT_GET_ALL_051`: Get airports response contains totalPages, expected `200`
+- `TC_AIRPORT_GET_ALL_052`: Get airports response contains limit value, expected `200`
+- `TC_AIRPORT_GET_ALL_053`: Get airports response contains airport id field, expected `200`
+- `TC_AIRPORT_GET_ALL_054`: Get airports response contains airport name field, expected `200`
+- `TC_AIRPORT_GET_ALL_055`: Get airports response contains IATA code field, expected `200`
+- `TC_AIRPORT_GET_ALL_056`: Get airports response contains ICAO code field, expected `200`
+- `TC_AIRPORT_GET_ALL_057`: Get airports response contains countryCode field, expected `200`
+- `TC_AIRPORT_GET_ALL_058`: Get airports response contains city field, expected `200`
+- `TC_AIRPORT_GET_ALL_059`: Get airports response contains latitude field, expected `200`
+- `TC_AIRPORT_GET_ALL_060`: Get airports response contains longitude field, expected `200`
+- `TC_AIRPORT_GET_ALL_061`: Get airports response contains timezone field, expected `200`
+- `TC_AIRPORT_GET_ALL_062`: Get airports response contains isActive field, expected `200`
+- `TC_AIRPORT_GET_ALL_063`: Get airports response contains airport type field, expected `200`
+- `TC_AIRPORT_GET_ALL_064`: Get airports response contains address field, expected `200`
+- `TC_AIRPORT_GET_ALL_065`: Get airports response contains postalCode field, expected `200`
+- `TC_AIRPORT_GET_ALL_066`: Get airports sorted consistently across pagination requests, expected `200`
+- `TC_AIRPORT_GET_ALL_067`: Get airports with limit exceeding maximum allowed value, expected `400`
+- `TC_AIRPORT_GET_ALL_068`: Get airports with decimal page value, expected `400`
+- `TC_AIRPORT_GET_ALL_069`: Get airports with decimal limit value, expected `400`
+- `TC_AIRPORT_GET_ALL_070`: Get airports with scientific notation page value, expected `400`
+- `TC_AIRPORT_GET_ALL_071`: Get airports with scientific notation limit value, expected `400`
+- `TC_AIRPORT_GET_ALL_072`: Get airports with malformed query parameters, expected `400`
+- `TC_AIRPORT_GET_ALL_073`: Get airports with SQL injection attempt in search parameter, expected `400`
+- `TC_AIRPORT_GET_ALL_074`: Get airports with SQL injection attempt in countryCode parameter, expected `400`
+- `TC_AIRPORT_GET_ALL_075`: Get airports with script injection attempt in search parameter, expected `400`
+- `TC_AIRPORT_GET_ALL_076`: Get airports with duplicate query parameters, expected `400`
+- `TC_AIRPORT_GET_ALL_077`: Get airports with trailing whitespace in search parameter, expected `200`
+- `TC_AIRPORT_GET_ALL_078`: Get airports with leading whitespace in search parameter, expected `200`
+- `TC_AIRPORT_GET_ALL_079`: Get airports with URL encoded search parameter, expected `200`
+- `TC_AIRPORT_GET_ALL_080`: Get airports returns empty array when no airports exist, expected `200`
+- `TC_AIRPORT_GET_ALL_081`: Get airports with SQL injection attempt in status parameter, expected `400`
+- `TC_AIRPORT_GET_ALL_082`: Get airports with script injection attempt in countryCode parameter, expected `400`
+- `TC_AIRPORT_GET_ALL_083`: Get airports with SQL injection attempt in page parameter, expected `400`
+- `TC_AIRPORT_GET_ALL_084`: Get airports with script injection attempt in limit parameter, expected `400`
+- `TC_AIRPORT_GET_ALL_085`: Get airports with SQL injection UNION attempt in search parameter, expected `400`
+- `TC_AIRPORT_GET_ALL_086`: Get airports with SQL injection comment pattern in search parameter, expected `400`
+- `TC_AIRPORT_GET_ALL_087`: Get airports with encoded script payload in search parameter, expected `400`
+- `TC_AIRPORT_GET_ALL_088`: Get airports with javascript URI payload in search parameter, expected `400`
