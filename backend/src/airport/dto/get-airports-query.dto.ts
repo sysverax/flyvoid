@@ -10,6 +10,7 @@ import {
   Min,
 } from "class-validator";
 import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
+import { IsSafeText } from "../../common/validator/injection.validator";
 
 export class GetAirportsQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({
@@ -24,6 +25,7 @@ export class GetAirportsQueryDto extends PaginationQueryDto {
   @Matches(/^[A-Z]{2}$/, {
     message: "countryCode must be a 2-letter uppercase ISO country code",
   })
+  @IsSafeText()
   countryCode?: string;
 
   @ApiPropertyOptional({
@@ -52,6 +54,7 @@ export class GetAirportsQueryDto extends PaginationQueryDto {
     return value;
   })
   @IsBoolean()
+  @IsSafeText()
   status?: boolean;
 
   @ApiPropertyOptional({
@@ -68,6 +71,7 @@ export class GetAirportsQueryDto extends PaginationQueryDto {
     return trimmed.length === 0 ? undefined : trimmed;
   })
   @IsString()
-  @MaxLength(150)
+  @MaxLength(50)
+  @IsSafeText()
   search?: string;
 }
