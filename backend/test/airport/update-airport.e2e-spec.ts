@@ -11,8 +11,6 @@ import { TestCaseMeta } from "../shared/interfaces/test-case.interface";
 import { authHelper } from "../helpers/auth.helper";
 import { tokenHelper } from "../helpers/token.helper";
 import { airlineSeeder } from "../seeders/airline/airline.seeder";
-import { AirportType } from "../../src/airport/entities/airport.entity";
-import { directSqlHelper } from "../database/direct-sql.helper";
 
 const CREATE_AIRPORT_ENDPOINT = "/api/v1/airports";
 const UPDATE_AIRPORT_ENDPOINT = "/api/v1/airports";
@@ -27,7 +25,7 @@ interface AirportPayload {
   longitude: number | string;
   timezone: string;
   isActive: boolean;
-  type: AirportType;
+  type: string;
   address?: string;
   postalCode: string;
 }
@@ -43,7 +41,7 @@ interface AirportResponseData {
   longitude: number;
   timezone: string;
   isActive: boolean;
-  type: AirportType;
+  type: string;
   address: string | null;
   postalCode: string | null;
   createdBy: number;
@@ -88,7 +86,7 @@ const buildAirportPayload = (
     longitude: 72.8656,
     timezone: "Asia/Kolkata",
     isActive: true,
-    type: AirportType.INTERNATIONAL,
+    type: "INTERNATIONAL",
     address: "Airport Road, Mumbai",
     postalCode: "400099",
     ...overrides,
@@ -152,7 +150,7 @@ const revokeAirportsEditAccess = async (
   app: INestApplication,
   adminId: number,
 ): Promise<void> => {
-  const dataSource = directSqlHelper.getDataSource(app);
+  const dataSource = app.get(DataSource);
   const usePostgresParams = dataSource.options.type === "postgres";
   const parameter = (index: number): string =>
     usePostgresParams ? `$${index + 1}` : "?";
@@ -543,7 +541,7 @@ describe("Update Airport API", () => {
     {
       id: "TC_AIRPORT_UPDATE_019",
       description: "Partial update airport type only",
-      payload: { type: AirportType.DOMESTIC },
+      payload: { type: "DOMESTIC" },
     },
     {
       id: "TC_AIRPORT_UPDATE_020",

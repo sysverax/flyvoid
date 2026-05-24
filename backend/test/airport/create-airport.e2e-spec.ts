@@ -12,14 +12,6 @@ import { authHelper } from "../helpers/auth.helper";
 import { tokenHelper } from "../helpers/token.helper";
 import { airlineSeeder } from "../seeders/airline/airline.seeder";
 
-import {
-  AccessAction,
-  PlatformAsset,
-} from "../../src/common/constants/access-control.constants";
-import { AirportType } from "../../src/airport/entities/airport.entity";
-import { directSqlHelper } from "../database/direct-sql.helper";
-import { PlatformAccessControlEntity } from "../../src/admin/entities/platform-access-control.entity";
-
 const CREATE_AIRPORT_ENDPOINT = "/api/v1/airports";
 
 interface AirportPayload {
@@ -32,7 +24,7 @@ interface AirportPayload {
   longitude: number | string;
   timezone: string;
   isActive: boolean;
-  type: AirportType;
+  type: String;
   address?: string;
   postalCode: string;
 }
@@ -48,7 +40,7 @@ interface AirportResponseData {
   longitude: number;
   timezone: string;
   isActive: boolean;
-  type: AirportType;
+  type: string;
   address: string | null;
   postalCode: string | null;
   createdBy: number;
@@ -92,7 +84,7 @@ const buildCreateAirportPayload = (
     longitude: 72.8656,
     timezone: "Asia/Kolkata",
     isActive: true,
-    type: AirportType.INTERNATIONAL,
+    type: "INTERNATIONAL",
     address: "Airport Road, Mumbai",
     postalCode: "400099",
     ...overrides,
@@ -589,7 +581,7 @@ describe("Create Airport API", () => {
     {
       id: "TC_AIRPORT_CREATE_028",
       description: "Empty type value",
-      patch: { type: "" as unknown as AirportType },
+      patch: { type: "" },
     },
   ];
 
@@ -794,7 +786,7 @@ describe("Create Airport API", () => {
       },
       accessToken,
       buildCreateAirportPayload({
-        type: "REGIONAL" as unknown as AirportType,
+        type: "REGIONAL",
       }) as unknown as Record<string, unknown>,
       400,
     );
@@ -900,11 +892,11 @@ describe("Create Airport API", () => {
       },
       accessToken,
       buildCreateAirportPayload({
-        type: AirportType.INTERNATIONAL,
+        type: "INTERNATIONAL",
       }) as unknown as Record<string, unknown>,
     );
 
-    expect(body.data.type).toBe(AirportType.INTERNATIONAL);
+    expect(body.data.type).toBe("INTERNATIONAL");
   });
 
   it("TC_AIRPORT_CREATE_051 - Create DOMESTIC airport successfully", async () => {
@@ -918,11 +910,11 @@ describe("Create Airport API", () => {
       },
       accessToken,
       buildCreateAirportPayload({
-        type: AirportType.DOMESTIC,
+        type: "DOMESTIC",
       }) as unknown as Record<string, unknown>,
     );
 
-    expect(body.data.type).toBe(AirportType.DOMESTIC);
+    expect(body.data.type).toBe("DOMESTIC");
   });
 
   it("TC_AIRPORT_CREATE_052 - Create inactive airport successfully", async () => {
@@ -1452,69 +1444,69 @@ describe("Create Airport API", () => {
     expect(body.data.id).toBeDefined();
   });
 
-//   it("TC_AIRPORT_CREATE_082 - Create airport response contains createdBy field", async () => {
-//     const accessToken = await createSuperAdminAccessToken(app);
-//     const { body } = await expectCreateAirportSuccess(
-//       app,
-//       {
-//         id: "TC_AIRPORT_CREATE_082",
-//         description: "Create airport response contains createdBy field",
-//         expectedStatus: 201,
-//       },
-//       accessToken,
-//       buildCreateAirportPayload() as unknown as Record<string, unknown>,
-//     );
+  //   it("TC_AIRPORT_CREATE_082 - Create airport response contains createdBy field", async () => {
+  //     const accessToken = await createSuperAdminAccessToken(app);
+  //     const { body } = await expectCreateAirportSuccess(
+  //       app,
+  //       {
+  //         id: "TC_AIRPORT_CREATE_082",
+  //         description: "Create airport response contains createdBy field",
+  //         expectedStatus: 201,
+  //       },
+  //       accessToken,
+  //       buildCreateAirportPayload() as unknown as Record<string, unknown>,
+  //     );
 
-//     expect(body.data.createdBy).toBeDefined();
-//   });
+  //     expect(body.data.createdBy).toBeDefined();
+  //   });
 
-//   it("TC_AIRPORT_CREATE_083 - Create airport response contains updatedBy field", async () => {
-//     const accessToken = await createSuperAdminAccessToken(app);
-//     const { body } = await expectCreateAirportSuccess(
-//       app,
-//       {
-//         id: "TC_AIRPORT_CREATE_083",
-//         description: "Create airport response contains updatedBy field",
-//         expectedStatus: 201,
-//       },
-//       accessToken,
-//       buildCreateAirportPayload() as unknown as Record<string, unknown>,
-//     );
+  //   it("TC_AIRPORT_CREATE_083 - Create airport response contains updatedBy field", async () => {
+  //     const accessToken = await createSuperAdminAccessToken(app);
+  //     const { body } = await expectCreateAirportSuccess(
+  //       app,
+  //       {
+  //         id: "TC_AIRPORT_CREATE_083",
+  //         description: "Create airport response contains updatedBy field",
+  //         expectedStatus: 201,
+  //       },
+  //       accessToken,
+  //       buildCreateAirportPayload() as unknown as Record<string, unknown>,
+  //     );
 
-//     expect(body.data.updatedBy).toBeDefined();
-//   });
+  //     expect(body.data.updatedBy).toBeDefined();
+  //   });
 
-//   it("TC_AIRPORT_CREATE_084 - Create airport response contains createdAt timestamp", async () => {
-//     const accessToken = await createSuperAdminAccessToken(app);
-//     const { body } = await expectCreateAirportSuccess(
-//       app,
-//       {
-//         id: "TC_AIRPORT_CREATE_084",
-//         description: "Create airport response contains createdAt timestamp",
-//         expectedStatus: 201,
-//       },
-//       accessToken,
-//       buildCreateAirportPayload() as unknown as Record<string, unknown>,
-//     );
+  //   it("TC_AIRPORT_CREATE_084 - Create airport response contains createdAt timestamp", async () => {
+  //     const accessToken = await createSuperAdminAccessToken(app);
+  //     const { body } = await expectCreateAirportSuccess(
+  //       app,
+  //       {
+  //         id: "TC_AIRPORT_CREATE_084",
+  //         description: "Create airport response contains createdAt timestamp",
+  //         expectedStatus: 201,
+  //       },
+  //       accessToken,
+  //       buildCreateAirportPayload() as unknown as Record<string, unknown>,
+  //     );
 
-//     expect(typeof body.data.createdAt).toBe("string");
-//   });
+  //     expect(typeof body.data.createdAt).toBe("string");
+  //   });
 
-//   it("TC_AIRPORT_CREATE_085 - Create airport response contains updatedAt timestamp", async () => {
-//     const accessToken = await createSuperAdminAccessToken(app);
-//     const { body } = await expectCreateAirportSuccess(
-//       app,
-//       {
-//         id: "TC_AIRPORT_CREATE_085",
-//         description: "Create airport response contains updatedAt timestamp",
-//         expectedStatus: 201,
-//       },
-//       accessToken,
-//       buildCreateAirportPayload() as unknown as Record<string, unknown>,
-//     );
+  //   it("TC_AIRPORT_CREATE_085 - Create airport response contains updatedAt timestamp", async () => {
+  //     const accessToken = await createSuperAdminAccessToken(app);
+  //     const { body } = await expectCreateAirportSuccess(
+  //       app,
+  //       {
+  //         id: "TC_AIRPORT_CREATE_085",
+  //         description: "Create airport response contains updatedAt timestamp",
+  //         expectedStatus: 201,
+  //       },
+  //       accessToken,
+  //       buildCreateAirportPayload() as unknown as Record<string, unknown>,
+  //     );
 
-//     expect(typeof body.data.updatedAt).toBe("string");
-//   });
+  //     expect(typeof body.data.updatedAt).toBe("string");
+  //   });
 
   it("TC_AIRPORT_CREATE_086 - Create airport response contains normalized IATA code", async () => {
     const accessToken = await createSuperAdminAccessToken(app);
