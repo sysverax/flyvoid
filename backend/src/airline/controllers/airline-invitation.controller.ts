@@ -328,10 +328,12 @@ export class AirlineInvitationController {
     ),
   })
   async revokeInvitation(
+    @Req() req: AuthenticatedRequest,
     @Param("invitationId", ParseIntPipe) invitationId: number,
     @RequestId() requestId: string,
   ): Promise<BaseResponseDto<RevokeAirlineInvitationResponseDto>> {
     const response = await this.airlineInvitationService.revokeInvitation(
+      req.user,
       invitationId,
       requestId,
     );

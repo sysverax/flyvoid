@@ -5,8 +5,13 @@ export class AirlineInvitationResponseDto {
   @ApiProperty({ description: "Invitation id", example: 101 })
   invitationId!: number;
 
-  @ApiProperty({ description: "Airline id", example: 12 })
-  airlineId!: number;
+  @ApiProperty({
+    description:
+      "Airline id. Null until onboarding is completed and airline is created.",
+    example: null,
+    nullable: true,
+  })
+  airlineId!: number | null;
 
   @ApiProperty({ description: "Airline name", example: "SkyJet Airlines" })
   airlineName!: string;

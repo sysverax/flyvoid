@@ -6,11 +6,13 @@ export class AdminInviteAirlineAdminResponseDto {
   })
   invitationId!: number;
 
-  @ApiProperty({
-    description: "Airline id",
-    example: 12,
+  @ApiPropertyOptional({
+    description:
+      "Airline id. Null until onboarding is completed and airline is created.",
+    example: null,
+    nullable: true,
   })
-  airlineId!: number;
+  airlineId!: number | null;
 
   @ApiProperty({
     description: "Airline name",

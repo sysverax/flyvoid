@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
 import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
@@ -10,7 +11,10 @@ import * as bcrypt from "bcrypt";
 import * as crypto from "crypto";
 import * as QRCode from "qrcode";
 import * as speakeasy from "speakeasy";
+import { DataSource } from "typeorm";
 import { AirlineUserEntity } from "../../airline/entities/airline-user.entity";
+import { AIRLINE_INVITATION_STATUSES } from "../../airline/entities/airline-admin-invite.entity";
+import { AIRLINE_INVITATION_HISTORY_EVENTS } from "../../airline/entities/airline-admin-invite-history.entity";
 import { AirlineInvitationRepository } from "../../airline/repositories/airline-invitation.repository";
 import { AirlineRole, UserType } from "../../common/constants/user.constants";
 import { LoggerService } from "../../common/logger/logger.service";
@@ -61,6 +65,7 @@ export class AirlineAuthService {
     private readonly airlineInvitationRepository: AirlineInvitationRepository,
     private readonly jwtService: JwtService,
     private readonly logger: LoggerService,
+    private readonly dataSource: DataSource,
   ) {}
 
   async onboardAirlineAdmin(
@@ -73,48 +78,171 @@ export class AirlineAuthService {
       requestId,
     );
 
-    const invite = await this.findPendingAirlineInviteByToken(
-      dto.invitationToken,
-      requestId,
-    );
-    if (!invite) {
+    const token = dto.invitationToken.trim();
+    const tokenLookup = crypto.createHash("sha256").update(token).digest("hex");
+
+    // Broad lookup (no status/expiry filter) so status errors return accurate messages
+    const preCheckInvite =
+      await this.airlineInvitationRepository.findAirlineAdminInviteByTokenLookup(
+        tokenLookup,
+        requestId,
+      );
+
+    if (!preCheckInvite) {
       throw new UnauthorizedException("Invalid or expired invitation token");
     }
 
-    const adminCount =
-      await this.airlineInvitationRepository.countAirlineAdminsByAirlineId(
-        invite.airlineId,
-        requestId,
-      );
-    if (adminCount > 0) {
+    if (
+      preCheckInvite.status === AIRLINE_INVITATION_STATUSES.REVOKED ||
+      preCheckInvite.expiresAt.getTime() <= Date.now()
+    ) {
+      throw new UnauthorizedException("Invalid or expired invitation token");
+    }
+
+    if (
+      preCheckInvite.status === AIRLINE_INVITATION_STATUSES.ACCEPTED ||
+      preCheckInvite.airlineId
+    ) {
       throw new ConflictException("Airline admin already onboarded");
     }
 
-    const existingAirlineUser =
-      await this.authRepository.findAirlineUserByEmail(invite.email, requestId);
-    if (existingAirlineUser) {
-      throw new ConflictException("Airline admin email already exists");
+    if (!preCheckInvite.meta) {
+      throw new BadRequestException("Invitation metadata not found");
     }
 
-    const passwordHash = await bcrypt.hash(dto.password, 10);
-    const user = await this.authRepository.createAirlineUser(
-      {
-        airlineId: invite.airlineId,
-        firstName: invite.firstName,
-        lastName: invite.lastName,
-        email: invite.email,
-        jobTitle: invite.jobTitle,
-        passwordHash,
-        role: AirlineRole.AIRLINE_ADMIN,
-        isActive: true,
-      },
-      requestId,
-    );
+    // bcrypt verify outside transaction — CPU-intensive, must not hold a DB lock
+    const isTokenValid = await bcrypt.compare(token, preCheckInvite.tokenHash);
+    if (!isTokenValid) {
+      throw new UnauthorizedException("Invalid or expired invitation token");
+    }
 
-    await this.airlineInvitationRepository.markAirlineAdminInviteAccepted(
-      invite.id,
-      requestId,
-    );
+    // Hash password outside transaction — same reason
+    const passwordHash = await bcrypt.hash(dto.password, 10);
+
+    // Transaction with pessimistic write lock to prevent concurrent onboarding
+    // with the same token
+    const user = await this.dataSource.transaction(async (manager) => {
+      // Lock the invite row — any concurrent request blocks here until we commit
+      const lockedInvite =
+        await this.airlineInvitationRepository.lockAirlineAdminInviteById(
+          preCheckInvite.id,
+          requestId,
+          manager,
+        );
+
+      if (!lockedInvite) {
+        throw new NotFoundException("Invitation not found");
+      }
+
+      // Re-check status under lock — catches any state change since pre-check
+      if (
+        lockedInvite.status === AIRLINE_INVITATION_STATUSES.ACCEPTED ||
+        lockedInvite.airlineId
+      ) {
+        throw new ConflictException("Airline admin already onboarded");
+      }
+
+      if (
+        lockedInvite.status === AIRLINE_INVITATION_STATUSES.REVOKED ||
+        lockedInvite.expiresAt.getTime() <= Date.now()
+      ) {
+        throw new UnauthorizedException("Invalid or expired invitation token");
+      }
+
+      const meta = lockedInvite.meta!;
+
+      // Uniqueness checks inside the transaction for consistency
+      const existingAirlineUser =
+        await this.airlineInvitationRepository.findAirlineUserByEmail(
+          meta.adminEmail,
+          requestId,
+          manager,
+        );
+      if (existingAirlineUser) {
+        throw new ConflictException("Airline admin email already exists");
+      }
+
+      const existingAirline =
+        await this.airlineInvitationRepository.findAirlineByCodeOrCompanyRegistrationNumber(
+          meta.airlineCode,
+          meta.companyRegistrationNumber,
+          requestId,
+          manager,
+        );
+      if (existingAirline?.code === meta.airlineCode) {
+        throw new ConflictException("Airline code already exists");
+      }
+      if (
+        existingAirline?.companyRegistrationNumber ===
+        meta.companyRegistrationNumber
+      ) {
+        throw new ConflictException(
+          "Company registration number already exists",
+        );
+      }
+
+      const airline = await this.airlineInvitationRepository.createAirline(
+        {
+          invitationId: lockedInvite.id,
+          name: meta.airlineName,
+          code: meta.airlineCode,
+          countryCode: meta.countryCode,
+          companyRegistrationNumber: meta.companyRegistrationNumber,
+          website: meta.website ?? undefined,
+          contactEmail: meta.contactEmail,
+          contactPhone: meta.contactPhone,
+          timezone: meta.timezone,
+          currency: meta.currency,
+          address: meta.address,
+          logo: meta.logo ?? undefined,
+          isActive: true,
+        },
+        requestId,
+        manager,
+      );
+
+      const savedUser = await this.airlineInvitationRepository.createAirlineUser(
+        {
+          airlineId: airline.id,
+          firstName: meta.adminFirstName,
+          lastName: meta.adminLastName,
+          email: meta.adminEmail,
+          jobTitle: meta.adminJobTitle,
+          passwordHash,
+          role: AirlineRole.AIRLINE_ADMIN,
+          isActive: true,
+        },
+        requestId,
+        manager,
+      );
+
+      await this.airlineInvitationRepository.markAirlineAdminInviteAccepted(
+        lockedInvite.id,
+        airline.id,
+        requestId,
+        manager,
+      );
+
+      await this.airlineInvitationRepository.recordInvitationHistory(
+        {
+          invitationId: lockedInvite.id,
+          event: AIRLINE_INVITATION_HISTORY_EVENTS.ACCEPTED,
+          performedByAdminId: null,
+        },
+        requestId,
+        manager,
+      );
+
+      return savedUser;
+    });
+
+    if (!this.isOtpRestrictedEnvironment()) {
+      await this.sendAirlineAdminWelcomeEmail(
+        user.email,
+        preCheckInvite.meta.airlineName,
+        requestId,
+      );
+    }
 
     return {
       userId: user.id,
@@ -846,37 +974,6 @@ export class AirlineAuthService {
     return -1;
   }
 
-  private async findPendingAirlineInviteByToken(
-    invitationToken: string,
-    requestId: string,
-  ) {
-    const token = invitationToken.trim();
-    if (!token) {
-      return null;
-    }
-
-    const tokenLookup = crypto.createHash("sha256").update(token).digest("hex");
-    const invite =
-      await this.airlineInvitationRepository.findPendingAirlineAdminInviteByLookup(
-        tokenLookup,
-        requestId,
-      );
-    if (!invite) {
-      return null;
-    }
-
-    if (invite.expiresAt.getTime() <= Date.now() || invite.isRevoked) {
-      throw new UnauthorizedException("Invalid or expired invitation token");
-    }
-
-    if (invite.isAccepted) {
-      throw new ConflictException("Airline admin already onboarded");
-    }
-
-    const isTokenValid = await bcrypt.compare(token, invite.tokenHash);
-    return isTokenValid ? invite : null;
-  }
-
   private durationToMs(duration: string): number {
     const match = /^(\d+)([smhd])$/.exec(duration.trim());
     if (!match) {
@@ -944,6 +1041,44 @@ export class AirlineAuthService {
     } catch (error) {
       this.logger.error(
         "Failed to send airline forgot password OTP email",
+        this.context,
+        requestId,
+        {
+          recipientEmail,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
+      throw error;
+    }
+  }
+
+  private async sendAirlineAdminWelcomeEmail(
+    recipientEmail: string,
+    airlineName: string,
+    requestId: string,
+  ): Promise<void> {
+    try {
+      await this.sesClient.send(
+        new SendEmailCommand({
+          Source: config.ses.fromEmail,
+          Destination: {
+            ToAddresses: [recipientEmail],
+          },
+          Message: {
+            Subject: {
+              Data: "Welcome — Onboarding Complete",
+            },
+            Body: {
+              Text: {
+                Data: `Your account for ${airlineName} has been successfully set up. You can now sign in to the platform.`,
+              },
+            },
+          },
+        }),
+      );
+    } catch (error) {
+      this.logger.error(
+        "Failed to send airline admin welcome email",
         this.context,
         requestId,
         {

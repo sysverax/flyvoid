@@ -1,5 +1,5 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { IsNotEmpty, IsString, Matches, MinLength } from "class-validator";
+import { IsNotEmpty, IsString, Matches, MaxLength, MinLength } from "class-validator";
 
 export class AirlineAdminOnboardRequestDto {
   @ApiProperty({
@@ -8,6 +8,7 @@ export class AirlineAdminOnboardRequestDto {
   })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(512)
   invitationToken!: string;
 
   @ApiProperty({
@@ -15,10 +16,12 @@ export class AirlineAdminOnboardRequestDto {
       "New password with minimum 8 characters containing uppercase, lowercase, number, and special character.",
     example: "Password@123",
     minLength: 8,
+    maxLength: 72,
   })
   @IsString()
   @IsNotEmpty()
   @MinLength(8)
+  @MaxLength(72)
   @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).+$/, {
     message:
       "password must include uppercase, lowercase, number, and special character",

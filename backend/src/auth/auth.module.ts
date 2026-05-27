@@ -5,6 +5,8 @@ import { TypeOrmModule } from "@nestjs/typeorm";
 import { AdminEntity } from "../admin/entities/admin.entity";
 import { PlatformAccessControlEntity } from "../admin/entities/platform-access-control.entity";
 import { AirlineAdminInviteEntity } from "../airline/entities/airline-admin-invite.entity";
+import { AirlineAdminInviteHistoryEntity } from "../airline/entities/airline-admin-invite-history.entity";
+import { MetaAirlineInviteEntity } from "../airline/entities/meta-airline-invite.entity";
 import { AirlineEntity } from "../airline/entities/airline.entity";
 import { AirlineAccessControlEntity } from "../airline/entities/airline-access-control.entity";
 import { AirlineUserEntity } from "../airline/entities/airline-user.entity";
@@ -32,6 +34,8 @@ import { JwtStrategy } from "./strategies/jwt.strategy";
       AdminPasswordResetOtpEntity,
       AirlinePasswordResetOtpEntity,
       AirlineAdminInviteEntity,
+      AirlineAdminInviteHistoryEntity,
+      MetaAirlineInviteEntity,
       PlatformAccessControlEntity,
       AirlineAccessControlEntity,
     ]),
