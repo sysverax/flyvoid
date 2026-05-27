@@ -1,24 +1,25 @@
 import {
+  BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
-  UnauthorizedException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
-import { AdminEntity } from "../../admin/entities/admin.entity";
+import { DataSource, Repository } from "typeorm";
 import { AuthenticatedUser } from "../../auth/interfaces/authenticated-request.interface";
-import { AdminRole, UserType } from "../../common/constants/user.constants";
 import { LoggerService } from "../../common/logger/logger.service";
 import {
   AirportListResponseDto,
   AirportResponseDto,
   CreateAirportRequestDto,
   GetAirportsQueryDto,
+  UpdateAirlineAirportsRequestDto,
+  UpdateAirlineAirportsResponseDto,
   UpdateAirportRequestDto,
-} from "../dto";
+} from "../dto/airports";
+import { AirlineEntity } from "../entities/airline.entity";
 import { AirportEntity } from "../entities/airport.entity";
+import { AirlineAirportRepository } from "../repositories/airline-airport.repository";
 import { AirportRepository } from "../repositories/airport.repository";
 
 @Injectable()
@@ -26,9 +27,11 @@ export class AirportService {
   private readonly context = "AirportService";
 
   constructor(
-    @InjectRepository(AdminEntity)
-    private readonly adminRepository: Repository<AdminEntity>,
+    @InjectRepository(AirlineEntity)
+    private readonly airlineRepository: Repository<AirlineEntity>,
     private readonly airportRepository: AirportRepository,
+    private readonly airlineAirportRepository: AirlineAirportRepository,
+    private readonly dataSource: DataSource,
     private readonly logger: LoggerService,
   ) {}
 
@@ -132,6 +135,129 @@ export class AirportService {
     });
 
     return this.toAirportResponse(saved);
+  }
+
+  async updateAirlineAirports(
+    authenticatedUser: AuthenticatedUser,
+    airlineId: number,
+    dto: UpdateAirlineAirportsRequestDto,
+    requestId: string,
+  ): Promise<UpdateAirlineAirportsResponseDto> {
+    UpdateAirlineAirportsRequestDto.validatePayload(dto);
+
+    const airline = await this.airlineRepository.findOne({
+      where: { id: airlineId },
+    });
+    if (!airline) {
+      throw new NotFoundException("Airline not found");
+    }
+
+    const assignAirportIds = [...new Set(dto.assignAirportIds ?? [])];
+    const disableAirportIds = [...new Set(dto.disableAirportIds ?? [])];
+    const allRequestedAirportIds = [
+      ...new Set([...assignAirportIds, ...disableAirportIds]),
+    ];
+
+    const airports = await this.airportRepository.findByIds(
+      allRequestedAirportIds,
+      requestId,
+    );
+    const foundAirportIds = new Set(airports.map((airport) => airport.id));
+    const missingAirportIds = allRequestedAirportIds.filter(
+      (id) => !foundAirportIds.has(id),
+    );
+    if (missingAirportIds.length > 0) {
+      throw new BadRequestException(
+        `Invalid airport ids: ${missingAirportIds.join(", ")}`,
+      );
+    }
+
+    const assignedAirportIds: number[] = [];
+    const disabledAirportIds: number[] = [];
+
+    await this.dataSource.transaction(async (manager) => {
+      const existingMappings =
+        await this.airlineAirportRepository.findByAirlineAndAirportIds(
+          airlineId,
+          allRequestedAirportIds,
+          requestId,
+          manager,
+        );
+
+      const mappingByAirportId = new Map<
+        number,
+        (typeof existingMappings)[number]
+      >();
+      for (const mapping of existingMappings) {
+        mappingByAirportId.set(mapping.airportId, mapping);
+      }
+
+      const now = new Date();
+
+      for (const airportId of assignAirportIds) {
+        const existing = mappingByAirportId.get(airportId);
+        if (!existing || !existing.isActive) {
+          assignedAirportIds.push(airportId);
+        }
+      }
+
+      for (const airportId of disableAirportIds) {
+        const existing = mappingByAirportId.get(airportId);
+        if (existing?.isActive) {
+          disabledAirportIds.push(airportId);
+        }
+      }
+
+      await this.airlineAirportRepository.bulkUpsertAssignments(
+        assignedAirportIds.map((airportId) => ({
+          airlineId,
+          airportId,
+          isActive: true,
+          assignedByAdminId: authenticatedUser.sub,
+          assignedAt: now,
+          disabledByAdminId: null,
+          disabledAt: null,
+        })),
+        requestId,
+        manager,
+      );
+
+      await this.airlineAirportRepository.bulkDisableAssignments(
+        airlineId,
+        disabledAirportIds,
+        authenticatedUser.sub,
+        now,
+        requestId,
+        manager,
+      );
+    });
+
+    const currentActiveAirportIds =
+      await this.airlineAirportRepository.findActiveAirportIdsByAirlineId(
+        airlineId,
+        requestId,
+      );
+
+    this.logger.info(
+      "Airline airport assignments updated",
+      this.context,
+      requestId,
+      {
+        airlineId,
+        actorAdminId: authenticatedUser.sub,
+        assignedCount: assignedAirportIds.length,
+        disabledCount: disabledAirportIds.length,
+        totalActiveAirports: currentActiveAirportIds.length,
+      },
+    );
+
+    return {
+      airlineId,
+      assignedAirportIds,
+      disabledAirportIds,
+      activeAirportIds: currentActiveAirportIds,
+      totalActiveAirports: currentActiveAirportIds.length,
+    };
   }
 
   private async ensureUniqueCodes(

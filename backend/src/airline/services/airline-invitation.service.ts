@@ -27,6 +27,8 @@ import {
 import { AirlineAdminInviteEntity } from "../entities/airline-admin-invite.entity";
 import { AIRLINE_INVITATION_STATUSES } from "../utils";
 import { AIRLINE_INVITATION_HISTORY_EVENTS } from "../entities/airline-admin-invite-history.entity";
+import { AirlineRepository } from "../repositories/airline.repository";
+import { AirlineUserRepository } from "../repositories/airline-user.repository";
 import { AirlineInvitationRepository } from "../repositories/airline-invitation.repository";
 
 @Injectable()
@@ -41,6 +43,8 @@ export class AirlineInvitationService {
   });
 
   constructor(
+    private readonly airlineRepository: AirlineRepository,
+    private readonly airlineUserRepository: AirlineUserRepository,
     private readonly airlineInvitationRepository: AirlineInvitationRepository,
     private readonly logger: LoggerService,
     private readonly dataSource: DataSource,
@@ -59,7 +63,7 @@ export class AirlineInvitationService {
       dto.contactEmail?.toLowerCase().trim() ?? null;
 
     const existingAirline =
-      await this.airlineInvitationRepository.findAirlineByCodeOrCompanyRegistrationNumber(
+      await this.airlineRepository.findByCodeOrCompanyRegistrationNumber(
         normalizedAirlineCode,
         normalizedCompanyRegistrationNumber,
         requestId,
@@ -75,7 +79,7 @@ export class AirlineInvitationService {
     }
 
     const existingAirlineUser =
-      await this.airlineInvitationRepository.findAirlineUserByEmail(
+      await this.airlineUserRepository.findByEmail(
         normalizedAdminEmail,
         requestId,
       );

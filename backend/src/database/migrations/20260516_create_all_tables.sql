@@ -119,6 +119,43 @@ CREATE TABLE IF NOT EXISTS public.airports (
 CREATE INDEX IF NOT EXISTS idx_airports_country_code_city
   ON public.airports (country_code, city);
 
+CREATE TABLE IF NOT EXISTS public.airline_airports (
+  id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  airline_id integer NOT NULL,
+  airport_id integer NOT NULL,
+  is_active boolean NOT NULL DEFAULT true,
+  assigned_by_admin_id integer NOT NULL,
+  assigned_at timestamp without time zone NOT NULL DEFAULT now(),
+  disabled_by_admin_id integer,
+  disabled_at timestamp without time zone,
+  created_at timestamp without time zone NOT NULL DEFAULT now(),
+  updated_at timestamp without time zone NOT NULL DEFAULT now(),
+  CONSTRAINT fk_airline_airports_airline
+    FOREIGN KEY (airline_id)
+    REFERENCES public.airlines(id)
+    ON DELETE CASCADE,
+  CONSTRAINT fk_airline_airports_airport
+    FOREIGN KEY (airport_id)
+    REFERENCES public.airports(id)
+    ON DELETE CASCADE,
+  CONSTRAINT fk_airline_airports_assigned_by_admin
+    FOREIGN KEY (assigned_by_admin_id)
+    REFERENCES public.admins(id)
+    ON DELETE RESTRICT,
+  CONSTRAINT fk_airline_airports_disabled_by_admin
+    FOREIGN KEY (disabled_by_admin_id)
+    REFERENCES public.admins(id)
+    ON DELETE SET NULL,
+  CONSTRAINT uq_airline_airports_airline_airport
+    UNIQUE (airline_id, airport_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_airline_airports_airline_id_is_active
+  ON public.airline_airports (airline_id, is_active);
+
+CREATE INDEX IF NOT EXISTS idx_airline_airports_airport_id
+  ON public.airline_airports (airport_id);
+
 CREATE TABLE IF NOT EXISTS public.refresh_tokens (
   id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   admin_id integer NOT NULL,

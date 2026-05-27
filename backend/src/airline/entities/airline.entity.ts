@@ -8,6 +8,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from "typeorm";
+import { AirlineAirportEntity } from "./airline-airport.entity";
 import { AirlineAdminInviteEntity } from "./airline-admin-invite.entity";
 import { AirlineUserEntity } from "./airline-user.entity";
 
@@ -70,4 +71,7 @@ export class AirlineEntity {
 
   @OneToMany(() => AirlineUserEntity, (user) => user.airline)
   users!: AirlineUserEntity[];
+
+  @OneToMany(() => AirlineAirportEntity, (airlineAirport) => airlineAirport.airline)
+  airports!: AirlineAirportEntity[];
 }

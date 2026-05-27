@@ -16,6 +16,8 @@ import { AirlineUserEntity } from "../../airline/entities/airline-user.entity";
 import { AIRLINE_INVITATION_STATUSES } from "../../airline/utils";
 import { AIRLINE_INVITATION_HISTORY_EVENTS } from "../../airline/entities/airline-admin-invite-history.entity";
 import { AirlineInvitationRepository } from "../../airline/repositories/airline-invitation.repository";
+import { AirlineRepository } from "../../airline/repositories/airline.repository";
+import { AirlineUserRepository } from "../../airline/repositories/airline-user.repository";
 import { AirlineRole, UserType } from "../../common/constants/user.constants";
 import { LoggerService } from "../../common/logger/logger.service";
 import { config } from "../../config/config";
@@ -62,6 +64,8 @@ export class AirlineAuthService {
 
   constructor(
     private readonly authRepository: AuthRepository,
+    private readonly airlineRepository: AirlineRepository,
+    private readonly airlineUserRepository: AirlineUserRepository,
     private readonly airlineInvitationRepository: AirlineInvitationRepository,
     private readonly jwtService: JwtService,
     private readonly logger: LoggerService,
@@ -152,18 +156,17 @@ export class AirlineAuthService {
       const meta = lockedInvite.meta!;
 
       // Uniqueness checks inside the transaction for consistency
-      const existingAirlineUser =
-        await this.airlineInvitationRepository.findAirlineUserByEmail(
-          meta.adminEmail,
-          requestId,
-          manager,
-        );
+      const existingAirlineUser = await this.airlineUserRepository.findByEmail(
+        meta.adminEmail,
+        requestId,
+        manager,
+      );
       if (existingAirlineUser) {
         throw new ConflictException("Airline admin email already exists");
       }
 
       const existingAirline =
-        await this.airlineInvitationRepository.findAirlineByCodeOrCompanyRegistrationNumber(
+        await this.airlineRepository.findByCodeOrCompanyRegistrationNumber(
           meta.airlineCode,
           meta.companyRegistrationNumber,
           requestId,
@@ -181,7 +184,7 @@ export class AirlineAuthService {
         );
       }
 
-      const airline = await this.airlineInvitationRepository.createAirline(
+      const airline = await this.airlineRepository.create(
         {
           invitationId: lockedInvite.id,
           name: meta.airlineName,
@@ -201,21 +204,20 @@ export class AirlineAuthService {
         manager,
       );
 
-      const savedUser =
-        await this.airlineInvitationRepository.createAirlineUser(
-          {
-            airlineId: airline.id,
-            firstName: meta.adminFirstName,
-            lastName: meta.adminLastName,
-            email: meta.adminEmail,
-            jobTitle: meta.adminJobTitle,
-            passwordHash,
-            role: AirlineRole.AIRLINE_ADMIN,
-            isActive: true,
-          },
-          requestId,
-          manager,
-        );
+      const savedUser = await this.airlineUserRepository.create(
+        {
+          airlineId: airline.id,
+          firstName: meta.adminFirstName,
+          lastName: meta.adminLastName,
+          email: meta.adminEmail,
+          jobTitle: meta.adminJobTitle,
+          passwordHash,
+          role: AirlineRole.AIRLINE_ADMIN,
+          isActive: true,
+        },
+        requestId,
+        manager,
+      );
 
       await this.airlineInvitationRepository.markAirlineAdminInviteAccepted(
         lockedInvite.id,

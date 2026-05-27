@@ -14,6 +14,7 @@ import {
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiBody,
   ApiConflictResponse,
   ApiCreatedResponse,
   ApiExtraModels,
@@ -54,12 +55,19 @@ import {
   AirportResponseDto,
   CreateAirportRequestDto,
   GetAirportsQueryDto,
+  UpdateAirlineAirportsRequestDto,
+  UpdateAirlineAirportsResponseDto,
   UpdateAirportRequestDto,
 } from "../dto/airports";
 import { AirportService } from "../services/airport.service";
 
 @ApiTags("Airport")
-@ApiExtraModels(BaseResponseDto, AirportResponseDto, AirportListResponseDto)
+@ApiExtraModels(
+  BaseResponseDto,
+  AirportResponseDto,
+  AirportListResponseDto,
+  UpdateAirlineAirportsResponseDto,
+)
 @UseGuards(JwtAuthGuard, RbacGuard)
 @RequireUserTypes(UserType.PLATFORM)
 @Controller("airports")
@@ -262,5 +270,82 @@ export class AirportController {
     );
 
     return BaseResponseDto.success(data, requestId, "Airport updated");
+  }
+
+  @Patch("/airlines/:airlineId/assignments")
+  @RequireUserRoles(AdminRole.SUPER_ADMIN, AdminRole.STAFF)
+  @RequireAccessControl({
+    platform: {
+      asset: PlatformAsset.AIRLINES,
+      access: [AccessAction.EDIT],
+    },
+  })
+  @ApiBearerAuth("access-token")
+  @ApiOperation({
+    summary: "Assign or disable multiple airports for an airline",
+    description:
+      "Bulk operation that supports assigning airports, disabling assigned airports, or both in one request.",
+  })
+  @ApiBody({ type: UpdateAirlineAirportsRequestDto })
+  @ApiOkResponse({
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(BaseResponseDto) },
+        {
+          properties: {
+            success: { type: "boolean", example: true },
+            requestId: { type: "string", example: REQUEST_ID_EXAMPLE },
+            timestamp: { type: "string", example: TIMESTAMP_EXAMPLE },
+            message: {
+              type: "string",
+              example: "Airline airport assignments updated",
+            },
+            data: { $ref: getSchemaPath(UpdateAirlineAirportsResponseDto) },
+          },
+        },
+      ],
+    },
+  })
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema(
+      "/api/v1/airports/airlines/:airlineId/assignments",
+    ),
+  })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/airports/airlines/:airlineId/assignments",
+      "Airline not found",
+    ),
+  })
+  @ApiUnauthorizedResponse({
+    schema: createUnauthorizedErrorSchema(
+      "/api/v1/airports/airlines/:airlineId/assignments",
+      "Unauthorized",
+    ),
+  })
+  @ApiForbiddenResponse({
+    schema: createForbiddenErrorSchema(
+      "/api/v1/airports/airlines/:airlineId/assignments",
+      "Insufficient permissions",
+    ),
+  })
+  async updateAirlineAirports(
+    @Req() req: AuthenticatedRequest,
+    @Param("airlineId", ParseIntPipe) airlineId: number,
+    @Body() dto: UpdateAirlineAirportsRequestDto,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<UpdateAirlineAirportsResponseDto>> {
+    const data = await this.airportService.updateAirlineAirports(
+      req.user,
+      airlineId,
+      dto,
+      requestId,
+    );
+
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Airline airport assignments updated",
+    );
   }
 }

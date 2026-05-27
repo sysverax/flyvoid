@@ -2,10 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { EntityManager, MoreThan, Repository } from "typeorm";
 import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
-import { AirlineRole } from "../../common/constants/user.constants";
 import { LoggerService } from "../../common/logger/logger.service";
-import { AirlineEntity } from "../entities/airline.entity";
-import { AirlineUserEntity } from "../entities/airline-user.entity";
 import { AirlineAdminInviteEntity } from "../entities/airline-admin-invite.entity";
 import { AIRLINE_INVITATION_STATUSES } from "../utils";
 import {
@@ -25,10 +22,6 @@ export interface AirlineInvitationMatrixCounts {
 @Injectable()
 export class AirlineInvitationRepository {
   constructor(
-    @InjectRepository(AirlineEntity)
-    private readonly airlineRepository: Repository<AirlineEntity>,
-    @InjectRepository(AirlineUserEntity)
-    private readonly airlineUserRepository: Repository<AirlineUserEntity>,
     @InjectRepository(AirlineAdminInviteEntity)
     private readonly airlineAdminInviteRepository: Repository<AirlineAdminInviteEntity>,
     @InjectRepository(MetaAirlineInviteEntity)
@@ -37,50 +30,6 @@ export class AirlineInvitationRepository {
     private readonly inviteHistoryRepository: Repository<AirlineAdminInviteHistoryEntity>,
     private readonly logger: LoggerService,
   ) {}
-
-  async findAirlineByCodeOrCompanyRegistrationNumber(
-    code: string,
-    companyRegistrationNumber: string,
-    requestId: string,
-    manager?: EntityManager,
-  ): Promise<AirlineEntity | null> {
-    this.logger.debug(
-      "Finding airline by code or company registration number",
-      "AirlineInvitationRepository",
-      requestId,
-      {
-        code,
-        companyRegistrationNumber,
-      },
-    );
-
-    const repository = manager
-      ? manager.getRepository(AirlineEntity)
-      : this.airlineRepository;
-
-    return repository.findOne({
-      where: [{ code }, { companyRegistrationNumber }],
-    });
-  }
-
-  async findAirlineUserByEmail(
-    email: string,
-    requestId: string,
-    manager?: EntityManager,
-  ): Promise<AirlineUserEntity | null> {
-    this.logger.debug(
-      "Finding airline user by email",
-      "AirlineInvitationRepository",
-      requestId,
-      { email },
-    );
-
-    const repository = manager
-      ? manager.getRepository(AirlineUserEntity)
-      : this.airlineUserRepository;
-
-    return repository.findOne({ where: { email } });
-  }
 
   async lockAirlineAdminInviteById(
     inviteId: number,
@@ -127,70 +76,6 @@ export class AirlineInvitationRepository {
     return repository.save(entry);
   }
 
-  async createAirline(
-    payload: Pick<
-      AirlineEntity,
-      | "invitationId"
-      | "name"
-      | "code"
-      | "countryCode"
-      | "companyRegistrationNumber"
-      | "website"
-      | "contactEmail"
-      | "contactPhone"
-      | "timezone"
-      | "currency"
-      | "address"
-      | "logo"
-      | "isActive"
-    >,
-    requestId: string,
-    manager?: EntityManager,
-  ): Promise<AirlineEntity> {
-    this.logger.debug(
-      "Creating airline",
-      "AirlineInvitationRepository",
-      requestId,
-      {
-        code: payload.code,
-        name: payload.name,
-      },
-    );
-
-    const repository = manager
-      ? manager.getRepository(AirlineEntity)
-      : this.airlineRepository;
-
-    const airline = repository.create(payload);
-    return repository.save(airline);
-  }
-
-  async createAirlineUser(
-    payload: Pick<
-      AirlineUserEntity,
-      | "airlineId"
-      | "firstName"
-      | "lastName"
-      | "email"
-      | "jobTitle"
-      | "passwordHash"
-      | "role"
-      | "isActive"
-    >,
-    requestId: string,
-    manager: EntityManager,
-  ): Promise<AirlineUserEntity> {
-    this.logger.debug(
-      "Creating airline user",
-      "AirlineInvitationRepository",
-      requestId,
-      { email: payload.email, airlineId: payload.airlineId },
-    );
-
-    const repository = manager.getRepository(AirlineUserEntity);
-    const user = repository.create(payload);
-    return repository.save(user);
-  }
 
   async createMetaAirlineInvite(
     payload: Pick<
@@ -590,26 +475,6 @@ export class AirlineInvitationRepository {
       pending: Number(raw?.pending ?? 0),
       expired: Number(raw?.expired ?? 0),
     };
-  }
-
-  async countAirlineAdminsByAirlineId(
-    airlineId: number,
-    requestId: string,
-  ): Promise<number> {
-    this.logger.debug(
-      "Counting airline admins by airline id",
-      "AirlineInvitationRepository",
-      requestId,
-      { airlineId },
-    );
-
-    return this.airlineUserRepository.count({
-      where: {
-        airlineId,
-        role: AirlineRole.AIRLINE_ADMIN,
-        isActive: true,
-      },
-    });
   }
 
   async markAirlineAdminInviteAccepted(

@@ -18,6 +18,8 @@ import { AdminPasswordResetOtpEntity } from "./entities/admin-password-reset-otp
 import { RefreshTokenEntity } from "./entities/refresh-token.entity";
 import { RbacGuard } from "./guards/rbac.guard";
 import { AirlineInvitationRepository } from "../airline/repositories/airline-invitation.repository";
+import { AirlineRepository } from "../airline/repositories/airline.repository";
+import { AirlineUserRepository } from "../airline/repositories/airline-user.repository";
 import { AuthRepository } from "./repositories/auth.repository";
 import { AirlineAuthService } from "./services/airline-auth.service";
 import { AuthService } from "./services/admin-auth.service";
@@ -48,6 +50,8 @@ import { JwtStrategy } from "./strategies/jwt.strategy";
     AirlineAuthService,
     AuthRepository,
     AirlineInvitationRepository,
+    AirlineRepository,
+    AirlineUserRepository,
     JwtStrategy,
     RbacGuard,
   ],
@@ -58,6 +62,8 @@ import { JwtStrategy } from "./strategies/jwt.strategy";
     AuthRepository,
     AuthService,
     AirlineInvitationRepository,
+    AirlineRepository,
+    AirlineUserRepository,
   ],
 })
 export class AuthModule {}

@@ -2,7 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Brackets, Repository } from "typeorm";
 import { LoggerService } from "../../common/logger/logger.service";
-import { GetAirportsQueryDto } from "../dto/get-airports-query.dto";
+import { GetAirportsQueryDto } from "../dto/airports/get-airports-query.dto";
 import { AirportEntity } from "../entities/airport.entity";
 
 @Injectable()
@@ -47,6 +47,21 @@ export class AirportRepository {
     );
 
     return this.airportRepository.findOne({ where: { icaoCode } });
+  }
+
+  async findByIds(ids: number[], requestId: string): Promise<AirportEntity[]> {
+    this.logger.debug("Finding airports by ids", "AirportRepository", requestId, {
+      count: ids.length,
+    });
+
+    if (ids.length === 0) {
+      return [];
+    }
+
+    return this.airportRepository
+      .createQueryBuilder("airport")
+      .where("airport.id IN (:...ids)", { ids })
+      .getMany();
   }
 
   create(payload: Partial<AirportEntity>): AirportEntity {
