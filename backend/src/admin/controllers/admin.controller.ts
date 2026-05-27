@@ -114,8 +114,11 @@ export class AdminController {
   })
   @ApiOperation({
     summary: "Get logged-in admin profile",
-    description:
-      "Returns profile details for the currently authenticated platform admin using the access token from Authorization header. Requires userType=PLATFORM.",
+    description: `
+    Returns the profile of the currently authenticated platform admin, including assigned access controls.
+      Access: SUPER_ADMIN and STAFF with VIEW access on the PROFILE asset. Requires userType=PLATFORM.
+      Business logic validations:
+        1. Authenticated admin must be active (401 if not found or inactive)`,
   })
   @ApiOkResponse({
     description: "Logged-in admin profile fetched successfully",
@@ -181,8 +184,11 @@ export class AdminController {
   })
   @ApiOperation({
     summary: "Invite admin user",
-    description:
-      "Creates a new platform admin user with a role assigned by SUPER_ADMIN and returns a temporary password.",
+    description: `
+    Creates and invites a new platform admin user, returning a temporary password for first login.
+      Access: SUPER_ADMIN and STAFF with EDIT access on the ADMIN_USERS asset. Requires userType=PLATFORM.
+      Business logic validations (409 Conflict):
+        1. Email must not already exist on another admin account`,
   })
   @ApiBody({ type: InviteAdminUserRequestDto })
   @ApiCreatedResponse({
@@ -251,8 +257,12 @@ export class AdminController {
   })
   @ApiOperation({
     summary: "Update admin user",
-    description:
-      "Updates admin user profile fields (name/email/role) and status (isActive for suspend/activate).",
+    description: `
+    Partially updates a platform admin user's profile (name, email, role) and/or active status (suspend/activate).
+      Access: SUPER_ADMIN and STAFF with EDIT access on the ADMIN_USERS asset. Requires userType=PLATFORM.
+      Business logic validations:
+        1. Target admin must exist (404 if not found)
+        2. Email must not already be in use by another admin (409 Conflict)`,
   })
   @ApiBody({ type: UpdateAdminUserRequestDto })
   @ApiOkResponse({
@@ -334,8 +344,12 @@ export class AdminController {
   })
   @ApiOperation({
     summary: "Delete admin user",
-    description:
-      "Deletes an admin user account. SUPER_ADMIN accounts cannot be deleted.",
+    description: `
+    Permanently deletes a platform admin user account.
+      Access: SUPER_ADMIN with DELETE access on the ADMIN_USERS asset. Requires userType=PLATFORM.
+      Business logic validations:
+        1. Target admin must exist (404 if not found)
+        2. SUPER_ADMIN accounts cannot be deleted (400 Bad Request)`,
   })
   @ApiOkResponse({
     description: "Admin user deleted successfully",
@@ -399,8 +413,12 @@ export class AdminController {
   })
   @ApiOperation({
     summary: "View all admin users",
-    description:
-      "Returns all platform admin users. Accessible only to SUPER_ADMIN and STAFF who has the required permissions.",
+    description: `
+    Returns a paginated list of all platform admin users.
+      Access: SUPER_ADMIN and STAFF with VIEW access on the ADMIN_USERS asset. Requires userType=PLATFORM.
+      Filters:
+        1. page (pagination, min 1)
+        2. limit (items per page)`,
   })
   @ApiOkResponse({
     description: "Admin users fetched successfully",

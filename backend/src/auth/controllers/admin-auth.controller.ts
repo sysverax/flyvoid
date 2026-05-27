@@ -89,8 +89,11 @@ export class AuthController {
   @Post("signup")
   @ApiOperation({
     summary: "Admin signup (temporary)",
-    description:
-      "Temporary endpoint to create platform admins. This endpoint will be removed after initial setup.",
+    description: `
+    Temporary endpoint to bootstrap the first platform admin. Will be removed after initial setup.
+      Access: Public endpoint — no authentication required.
+      Business logic validations (409 Conflict):
+        1. Email must not already be registered as an admin`,
   })
   @ApiBody({
     description: "Admin signup request payload",
@@ -140,7 +143,15 @@ export class AuthController {
   @HttpCode(200)
   @ApiOperation({
     summary: "Admin signin",
-    description: "Authenticate admin and return access/refresh tokens.",
+    description: `
+    Authenticates a platform admin and returns tokens or a challenge response.
+      Access: Public endpoint — no authentication required.
+      Response variants:
+        1. Tokens (accessToken + refreshToken) — on successful login with 2FA disabled
+        2. requiresTwoFactor challenge — if 2FA is enabled; use signin/2fa/verify to complete
+        3. requiresPasswordReset challenge — on first login with a temporary password; use signin/reset-password to complete
+      Business logic validations:
+        1. Credentials must be valid (401 if invalid email or password)`,
   })
   @ApiBody({
     description: "Admin signin request payload",
@@ -210,8 +221,12 @@ export class AuthController {
   @HttpCode(200)
   @ApiOperation({
     summary: "Admin signin 2FA verify",
-    description:
-      "Verifies 2FA challenge token and TOTP code, then returns access/refresh tokens.",
+    description: `
+    Completes the 2FA signin step using the challenge token from signin and the current TOTP code.
+      Access: Public endpoint — challenge token from POST /auth/admin/signin required.
+      Business logic validations:
+        1. Challenge token must be valid and unexpired (401 if invalid)
+        2. TOTP code must be correct (401 if invalid)`,
   })
   @ApiBody({
     description: "Admin signin 2FA verify payload",
@@ -277,8 +292,11 @@ export class AuthController {
   @HttpCode(200)
   @ApiOperation({
     summary: "Admin initial password reset",
-    description:
-      "Completes mandatory first-login password reset using the resetPasswordToken returned by signin challenge.",
+    description: `
+    Completes the mandatory first-login password reset using the resetPasswordToken from the signin challenge.
+      Access: Public endpoint — resetPasswordToken from POST /auth/admin/signin required.
+      Business logic validations:
+        1. resetPasswordToken must be valid and unexpired (401 if invalid)`,
   })
   @ApiBody({
     description: "Initial password reset payload",
@@ -336,7 +354,12 @@ export class AuthController {
   @ApiBearerAuth("access-token")
   @ApiOperation({
     summary: "Admin 2FA setup",
-    description: `Initializes authenticator-app 2FA setup and returns setup secret + QR. Issuer is \"${config.auth.twoFactorIssuer}\". Requires userType=PLATFORM.`,
+    description: `
+    Initializes authenticator-app 2FA setup and returns the setup secret and QR code for scanning.
+      Issuer is "${config.auth.twoFactorIssuer}". Must call POST /auth/admin/2fa/enable with the generated TOTP code to activate.
+      Access: Authenticated platform admin. Requires userType=PLATFORM.
+      Business logic validations:
+        1. 2FA must not already be enabled (409 Conflict)`,
   })
   @ApiOkResponse({
     description: "2FA setup initialized",
@@ -394,8 +417,13 @@ export class AuthController {
   @ApiBearerAuth("access-token")
   @ApiOperation({
     summary: "Admin 2FA enable",
-    description:
-      "Enables authenticator-app 2FA using the current TOTP code. Requires userType=PLATFORM.",
+    description: `
+    Enables authenticator-app 2FA by verifying the current TOTP code against the setup secret.
+      Must be called after POST /auth/admin/2fa/setup to activate 2FA.
+      Access: Authenticated platform admin. Requires userType=PLATFORM.
+      Business logic validations:
+        1. 2FA setup must have been initiated first (400 if setup missing)
+        2. TOTP code must be valid (401 if invalid)`,
   })
   @ApiBody({
     description: "2FA enable request payload",
@@ -456,8 +484,12 @@ export class AuthController {
   @ApiBearerAuth("access-token")
   @ApiOperation({
     summary: "Admin 2FA disable",
-    description:
-      "Disables authenticator-app 2FA using a valid current TOTP code. Requires userType=PLATFORM.",
+    description: `
+    Disables authenticator-app 2FA using a valid current TOTP code.
+      Access: Authenticated platform admin. Requires userType=PLATFORM.
+      Business logic validations:
+        1. 2FA must be currently enabled (400 if not enabled)
+        2. TOTP code must be valid (401 if invalid)`,
   })
   @ApiBody({
     description: "2FA disable request payload",
@@ -511,8 +543,13 @@ export class AuthController {
   @HttpCode(200)
   @ApiOperation({
     summary: "Admin 2FA recover",
-    description:
-      "Recovers account access when authenticator app is unavailable by verifying email, password, and a recovery code. This disables 2FA and revokes active sessions.",
+    description: `
+    Recovers account access when the authenticator app is unavailable.
+      Verifies email, password, and a one-time recovery code, then disables 2FA and revokes all active sessions.
+      Access: Public endpoint — no authentication required.
+      Business logic validations:
+        1. Email and password must be valid (401 if invalid)
+        2. Recovery code must be valid and unused (401 if invalid)`,
   })
   @ApiBody({
     description: "2FA recovery request payload",
@@ -562,7 +599,14 @@ export class AuthController {
   @HttpCode(200)
   @ApiOperation({
     summary: "Admin forgot password send OTP",
-    description: `Generates OTP for admin forgot password flow. In local/dev/test, OTP is ${config.auth.adminForgotPasswordOtpStatic} and email is not sent. In production, a 6-digit OTP is emailed via AWS SES. OTP expires in ${config.auth.adminForgotPasswordOtpExpiryMinutes} minutes. Maximum ${config.auth.adminForgotPasswordOtpSendLimit} send requests are allowed in ${config.auth.adminForgotPasswordOtpSendWindowMinutes} minutes.`,
+    description: `
+    Sends a one-time password (OTP) to the admin's registered email for the forgot-password flow.
+      Returns success regardless of whether the email exists to prevent user enumeration.
+      In local/dev/test environments, OTP is ${config.auth.adminForgotPasswordOtpStatic} and no email is sent.
+      In production, a 6-digit OTP is delivered via AWS SES. OTP expires in ${config.auth.adminForgotPasswordOtpExpiryMinutes} minutes.
+      Access: Public endpoint — no authentication required.
+      Business logic validations:
+        1. Maximum ${config.auth.adminForgotPasswordOtpSendLimit} send requests allowed per ${config.auth.adminForgotPasswordOtpSendWindowMinutes}-minute window (429 Too Many Requests)`,
   })
   @ApiBody({
     description: "Admin forgot password send OTP request",
@@ -612,7 +656,12 @@ export class AuthController {
   @HttpCode(200)
   @ApiOperation({
     summary: "Admin forgot password verify OTP",
-    description: `Verifies OTP for admin forgot password flow. OTP expires in ${config.auth.adminForgotPasswordOtpExpiryMinutes} minutes and allows maximum ${config.auth.adminForgotPasswordOtpMaxAttempts} failed attempts before invalidation.`,
+    description: `
+    Verifies the OTP submitted for the forgot-password flow and returns a password reset token.
+      Access: Public endpoint — no authentication required.
+      Business logic validations:
+        1. OTP must be valid and unexpired — expires after ${config.auth.adminForgotPasswordOtpExpiryMinutes} minutes (401 if invalid)
+        2. Maximum ${config.auth.adminForgotPasswordOtpMaxAttempts} failed attempts allowed before the OTP is permanently invalidated (403 Forbidden)`,
   })
   @ApiBody({
     description: "Admin forgot password verify OTP request",
@@ -677,7 +726,11 @@ export class AuthController {
   @HttpCode(200)
   @ApiOperation({
     summary: "Admin forgot password reset",
-    description: `Resets admin password using resetPasswordToken issued by verify-otp API. Reset token expires in ${config.auth.adminForgotPasswordResetTokenExpiresIn}.`,
+    description: `
+    Resets the admin's password using the resetPasswordToken issued by POST /auth/admin/forgot-password/verify-otp.
+      Access: Public endpoint — resetPasswordToken from POST /auth/admin/forgot-password/verify-otp required.
+      Business logic validations:
+        1. resetPasswordToken must be valid and unexpired — expires in ${config.auth.adminForgotPasswordResetTokenExpiresIn} (401 if invalid)`,
   })
   @ApiBody({
     description: "Admin forgot password reset request",
@@ -730,8 +783,11 @@ export class AuthController {
   @HttpCode(200)
   @ApiOperation({
     summary: "Refresh token pair",
-    description:
-      "Validates refresh token, rotates refresh token, and returns new access/refresh tokens.",
+    description: `
+    Validates the provided refresh token, rotates it, and returns a new access/refresh token pair.
+      Access: Public endpoint — valid refresh token required in request body.
+      Business logic validations:
+        1. Refresh token must be valid and not revoked (401 if invalid or expired)`,
   })
   @ApiBody({
     description: "Refresh token request payload",
@@ -787,8 +843,9 @@ export class AuthController {
   @ApiBearerAuth("access-token")
   @ApiOperation({
     summary: "Signout",
-    description:
-      "Revokes provided refresh token for currently authenticated admin. Requires userType=PLATFORM.",
+    description: `
+    Revokes the provided refresh token, ending the current session.
+      Access: Authenticated platform admin. Requires userType=PLATFORM.`,
   })
   @ApiBody({
     description: "Signout request payload",

@@ -16,6 +16,7 @@ import {
   ApiUnauthorizedResponse,
   ApiTags,
   getSchemaPath,
+  ApiExtraModels,
 } from "@nestjs/swagger";
 import {
   REQUEST_ID_EXAMPLE,
@@ -50,6 +51,13 @@ import { AuthenticatedRequest } from "../interfaces/authenticated-request.interf
 import { AirlineAuthService } from "../services/airline-auth.service";
 
 @ApiTags("Airline Auth")
+@ApiExtraModels(
+  AirlineAdminOnboardResponseDto,
+  AirlineSigninResponseDto,
+  AirlineSigninTwoFactorChallengeResponseDto,
+  AirlineTwoFactorSetupResponseDto,
+  AirlineTwoFactorEnableResponseDto,
+)
 @Controller("auth/airline")
 export class AirlineAuthController {
   constructor(private readonly airlineAuthService: AirlineAuthService) {}
@@ -58,8 +66,16 @@ export class AirlineAuthController {
   @HttpCode(200)
   @ApiOperation({
     summary: "Onboard airline admin",
-    description:
-      "Completes airline admin onboarding using invitation token from email link and sets initial password. This can be completed once per airline admin invitation.",
+    description: `
+    Completes airline admin onboarding using the invitation token from the email link and sets the initial password.
+      Creates the airline and admin user records. Can only be completed once per invitation.
+      Access: Public endpoint — valid invitation token required.
+      Business logic validations:
+        1. Invitation token must be valid, not expired, and not revoked (401 if invalid)
+        2. Invitation must not already be accepted — no double onboarding (409 Conflict)
+        3. Airline code from invitation must not already exist (409 Conflict)
+        4. Company registration number from invitation must not already exist (409 Conflict)
+        5. Admin email from invitation must not already be registered (409 Conflict)`,
   })
   @ApiBody({
     description: "Airline admin onboarding payload",
@@ -116,7 +132,18 @@ export class AirlineAuthController {
 
   @Post("signin")
   @HttpCode(200)
-  @ApiOperation({ summary: "Airline signin" })
+  @ApiOperation({
+    summary: "Airline signin",
+    description: `
+    Authenticates an airline user and returns tokens or a 2FA challenge.
+      Access: Public endpoint — no authentication required.
+      Response variants:
+        1. Tokens (accessToken + refreshToken) — on successful login with 2FA disabled
+        2. requiresTwoFactor challenge — if 2FA is enabled; use signin/2fa/verify to complete
+      Business logic validations:
+        1. Credentials must be valid (401 if invalid email or password)
+        2. Airline account must be active (401 if inactive)`,
+  })
   @ApiBody({ type: AirlineSigninRequestDto })
   async signin(
     @Body() dto: AirlineSigninRequestDto,
@@ -132,7 +159,15 @@ export class AirlineAuthController {
 
   @Post("signin/2fa/verify")
   @HttpCode(200)
-  @ApiOperation({ summary: "Airline signin 2FA verify" })
+  @ApiOperation({
+    summary: "Airline signin 2FA verify",
+    description: `
+    Completes the 2FA signin step using the challenge token from signin and the current TOTP code.
+      Access: Public endpoint — challenge token from POST /auth/airline/signin required.
+      Business logic validations:
+        1. Challenge token must be valid and unexpired (401 if invalid)
+        2. TOTP code must be correct (401 if invalid)`,
+  })
   @ApiBody({ type: AirlineSigninTwoFactorVerifyRequestDto })
   async verifyTwoFactor(
     @Body() dto: AirlineSigninTwoFactorVerifyRequestDto,
@@ -149,7 +184,15 @@ export class AirlineAuthController {
   @HttpCode(200)
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "Airline 2FA setup" })
+  @ApiOperation({
+    summary: "Airline 2FA setup",
+    description: `
+    Initializes authenticator-app 2FA setup and returns a QR code and secret for scanning.
+      Must call POST /auth/airline/2fa/enable with the generated TOTP to activate.
+      Access: Authenticated airline user. Requires a valid access token.
+      Business logic validations:
+        1. 2FA must not already be enabled (409 Conflict)`,
+  })
   async setupTwoFactor(
     @Req() req: AuthenticatedRequest,
     @RequestId() requestId: string,
@@ -169,7 +212,16 @@ export class AirlineAuthController {
   @HttpCode(200)
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "Airline 2FA enable" })
+  @ApiOperation({
+    summary: "Airline 2FA enable",
+    description: `
+    Enables authenticator-app 2FA by verifying the current TOTP code against the setup secret.
+      Must be called after POST /auth/airline/2fa/setup to activate 2FA.
+      Access: Authenticated airline user. Requires a valid access token.
+      Business logic validations:
+        1. 2FA setup must have been initiated first (400 if setup missing)
+        2. TOTP code must be valid (401 if invalid)`,
+  })
   @ApiBody({ type: AirlineTwoFactorEnableRequestDto })
   async enableTwoFactor(
     @Req() req: AuthenticatedRequest,
@@ -192,7 +244,15 @@ export class AirlineAuthController {
   @HttpCode(200)
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "Airline 2FA disable" })
+  @ApiOperation({
+    summary: "Airline 2FA disable",
+    description: `
+    Disables authenticator-app 2FA using a valid current TOTP code.
+      Access: Authenticated airline user. Requires a valid access token.
+      Business logic validations:
+        1. 2FA must be currently enabled (400 if not enabled)
+        2. TOTP code must be valid (401 if invalid)`,
+  })
   @ApiBody({ type: AirlineTwoFactorDisableRequestDto })
   async disableTwoFactor(
     @Req() req: AuthenticatedRequest,
@@ -209,7 +269,16 @@ export class AirlineAuthController {
 
   @Post("2fa/recover")
   @HttpCode(200)
-  @ApiOperation({ summary: "Airline 2FA recover" })
+  @ApiOperation({
+    summary: "Airline 2FA recover",
+    description: `
+    Recovers account access when the authenticator app is unavailable.
+      Verifies email, password, and a one-time recovery code, then disables 2FA and revokes all active sessions.
+      Access: Public endpoint — no authentication required.
+      Business logic validations:
+        1. Email and password must be valid (401 if invalid)
+        2. Recovery code must be valid and unused (401 if invalid)`,
+  })
   @ApiBody({ type: AirlineTwoFactorRecoverRequestDto })
   async recoverTwoFactor(
     @Body() dto: AirlineTwoFactorRecoverRequestDto,
@@ -225,7 +294,13 @@ export class AirlineAuthController {
 
   @Post("forgot-password/send-otp")
   @HttpCode(200)
-  @ApiOperation({ summary: "Airline forgot password send OTP" })
+  @ApiOperation({
+    summary: "Airline forgot password send OTP",
+    description: `
+    Sends a password reset OTP to the registered email address.
+      Returns success regardless of whether the email exists to prevent user enumeration.
+      Access: Public endpoint — no authentication required.`,
+  })
   @ApiBody({ type: AirlineForgotPasswordSendOtpRequestDto })
   async forgotPasswordSendOtp(
     @Body() dto: AirlineForgotPasswordSendOtpRequestDto,
@@ -241,7 +316,15 @@ export class AirlineAuthController {
 
   @Post("forgot-password/verify-otp")
   @HttpCode(200)
-  @ApiOperation({ summary: "Airline forgot password verify OTP" })
+  @ApiOperation({
+    summary: "Airline forgot password verify OTP",
+    description: `
+    Verifies the OTP submitted for the forgot-password flow and returns a password reset token.
+      Access: Public endpoint — no authentication required.
+      Business logic validations:
+        1. OTP must be valid and unexpired (401 if invalid)
+        2. Too many failed attempts will invalidate the OTP`,
+  })
   @ApiBody({ type: AirlineForgotPasswordVerifyOtpRequestDto })
   async forgotPasswordVerifyOtp(
     @Body() dto: AirlineForgotPasswordVerifyOtpRequestDto,
@@ -260,7 +343,14 @@ export class AirlineAuthController {
 
   @Post("forgot-password")
   @HttpCode(200)
-  @ApiOperation({ summary: "Airline forgot password reset" })
+  @ApiOperation({
+    summary: "Airline forgot password reset",
+    description: `
+    Resets the airline user's password using the token issued by verify-otp.
+      Access: Public endpoint — resetPasswordToken from POST /auth/airline/forgot-password/verify-otp required.
+      Business logic validations:
+        1. resetPasswordToken must be valid and unexpired (401 if invalid)`,
+  })
   @ApiBody({ type: AirlineForgotPasswordResetRequestDto })
   async forgotPasswordReset(
     @Body() dto: AirlineForgotPasswordResetRequestDto,
@@ -276,7 +366,14 @@ export class AirlineAuthController {
 
   @Post("refresh")
   @HttpCode(200)
-  @ApiOperation({ summary: "Airline refresh" })
+  @ApiOperation({
+    summary: "Airline refresh",
+    description: `
+    Validates the provided refresh token, rotates it, and returns a new access/refresh token pair.
+      Access: Public endpoint — valid refresh token required in request body.
+      Business logic validations:
+        1. Refresh token must be valid and not revoked (401 if invalid or expired)`,
+  })
   @ApiBody({ type: RefreshTokenRequestDto })
   async refresh(
     @Body() dto: RefreshTokenRequestDto,
@@ -294,7 +391,12 @@ export class AirlineAuthController {
   @HttpCode(200)
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth("access-token")
-  @ApiOperation({ summary: "Airline signout" })
+  @ApiOperation({
+    summary: "Airline signout",
+    description: `
+    Revokes the provided refresh token, ending the current session.
+      Access: Authenticated airline user. Requires a valid access token.`,
+  })
   @ApiBody({ type: SignoutRequestDto })
   async signout(
     @Req() req: AuthenticatedRequest,
