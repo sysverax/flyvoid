@@ -85,8 +85,16 @@ export class AirportController {
   @ApiBearerAuth("access-token")
   @ApiOperation({
     summary: "Get all airports",
-    description:
-      "Returns paginated airports with optional countryCode, status, and search filters.",
+    description: `
+    Returns a paginated list of airports. 
+      Accessible to SUPER_ADMIN and STAFF with VIEW access on the AIRPORTS asset.
+      Supports optional filters: 
+        1. countryCode (2-letter ISO alpha-2)
+        2. status (active/inactive)
+        3. free-text search on airport name, IATA code, or ICAO code. 
+      Validations
+        1. page must be >= 1
+        2. countryCode must be exactly 2 uppercase letters`,
   })
   @ApiOkResponse({
     schema: {
@@ -149,8 +157,19 @@ export class AirportController {
   @ApiBearerAuth("access-token")
   @ApiOperation({
     summary: "Create airport",
-    description:
-      "Accessible to SUPER_ADMIN and STAFF with EDIT access for AIRPORTS platform asset.",
+    description: `
+    Creates a new airport. 
+      Accessible to SUPER_ADMIN and STAFF with EDIT access on the AIRPORTS asset. 
+      All fields are required except address and postalCode. 
+      Validations: 
+        1. name (max 150 chars, no injection chars)
+        2. iataCode (exactly 3 uppercase letters, must be unique)
+        3. icaoCode (exactly 4 uppercase letters, must be unique)
+        4. countryCode (2-letter ISO alpha-2)
+        5. city (max 100 chars)
+        6. latitude (valid decimal -90 to 90)
+        7. longitude (valid decimal -180 to 180)
+        8. timezone (max 100 chars)`,
   })
   @ApiCreatedResponse({
     schema: {
@@ -211,8 +230,12 @@ export class AirportController {
   @ApiBearerAuth("access-token")
   @ApiOperation({
     summary: "Update airport",
-    description:
-      "Accessible to SUPER_ADMIN and STAFF with EDIT access for AIRPORTS platform asset.",
+    description: `
+    Partially updates an existing airport. 
+        Accessible to SUPER_ADMIN and STAFF with EDIT access on the AIRPORTS asset. 
+        validations:
+          1. At least one field must be provided. Null values are rejected for all fields except address. 
+          2. If iataCode or icaoCode is provided, uniqueness is enforced across all airports.`,
   })
   @ApiOkResponse({
     schema: {
@@ -282,9 +305,17 @@ export class AirportController {
   })
   @ApiBearerAuth("access-token")
   @ApiOperation({
-    summary: "Assign or disable multiple airports for an airline",
-    description:
-      "Bulk operation that supports assigning airports, disabling assigned airports, or both in one request.",
+    summary: "Assign or disable airports for an airline",
+    description: `
+    Bulk operation to assign and/or disable airports for an active airline in a single request. 
+      Accessible to SUPER_ADMIN and STAFF with EDIT access on the AIRLINES asset. 
+      Validations: 
+        1. At least one of assignAirportIds or disableAirportIds must be non-empty; 
+        2. The same airport ID cannot appear in both lists; 
+        3. All provided airport IDs must exist in the system; 
+        4. The airline must be active. 
+        5. Already-active airports in assignAirportIds and already-disabled airports in disableAirportIds are silently skipped. 
+      The response reflects only the IDs that actually changed state.`,
   })
   @ApiBody({ type: UpdateAirlineAirportsRequestDto })
   @ApiOkResponse({

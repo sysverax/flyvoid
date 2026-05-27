@@ -30,6 +30,7 @@ import {
   TIMESTAMP_EXAMPLE,
   createBadRequestErrorSchema,
   createConflictErrorSchema,
+  createNotFoundErrorSchema,
   createUnauthorizedErrorSchema,
 } from "../../common/constants/swagger.constants";
 import { UserType } from "../../common/constants/user.constants";
@@ -92,8 +93,17 @@ export class AirlineInvitationController {
   @ApiBearerAuth("access-token")
   @ApiOperation({
     summary: "Invite airline admin",
-    description:
-      "Platform admin creates an airline and invites its first airline admin using email. In local/dev/test, email is not sent and onboarding link is returned in response. Requires userType=PLATFORM.",
+    description: `
+    Creates an airline profile and sends an invitation email to the first airline admin.
+      In local/dev/test environments, the email is not sent and the onboarding link is returned in the response.
+      Access: SUPER_ADMIN and STAFF with EDIT access on the INVITES_ONBOARDING asset. Requires userType=PLATFORM.
+      Business logic validations (409 Conflict):
+        1. airlineCode must not already exist in the airlines table
+        2. companyRegistrationNumber must not already exist in the airlines table
+        3. adminEmail must not already be registered as an airline user
+        4. adminEmail must not have an active pending invitation
+        5. airlineCode must not have an active pending invitation
+        6. companyRegistrationNumber must not have an active pending invitation`,
   })
   @ApiBody({
     description: "Airline admin invitation payload",
@@ -169,8 +179,12 @@ export class AirlineInvitationController {
   @ApiBearerAuth("access-token")
   @ApiOperation({
     summary: "Get airline invitations",
-    description:
-      "Returns paginated airline invitations including accepted, pending, expired, and revoked states. Requires userType=PLATFORM.",
+    description: `
+    Returns a paginated list of airline invitations across all statuses (pending, accepted, expired, revoked).
+      Access: SUPER_ADMIN and STAFF with VIEW access on the INVITES_ONBOARDING asset. Requires userType=PLATFORM.
+      Filters:
+        1. page (pagination, min 1)
+        2. limit (items per page)`,
   })
   @ApiOkResponse({
     description: "Airline invitations fetched successfully",
@@ -234,8 +248,13 @@ export class AirlineInvitationController {
   @ApiBearerAuth("access-token")
   @ApiOperation({
     summary: "Resend airline invitation",
-    description:
-      "Resends invitation for pending, expired, or revoked invitations by rotating token and expiry on the same invitation record. Requires userType=PLATFORM.",
+    description: `
+    Resends an invitation by rotating the token and extending the expiry on the existing invitation record.
+      Applicable to pending, expired, and revoked invitations.
+      Access: SUPER_ADMIN and STAFF with EDIT access on the INVITES_ONBOARDING asset. Requires userType=PLATFORM.
+      Business logic validations:
+        1. Invitation must exist (404 if not found)
+        2. Accepted invitations cannot be resent (409 Conflict)`,
   })
   @ApiOkResponse({
     description: "Invitation resent successfully",
@@ -263,6 +282,12 @@ export class AirlineInvitationController {
     description: "Validation failed",
     schema: createBadRequestErrorSchema(
       "/api/v1/airline/invitations/:invitationId/resend",
+    ),
+  })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/airline/invitations/:invitationId/resend",
+      "Invitation not found",
     ),
   })
   @ApiUnauthorizedResponse({
@@ -312,8 +337,13 @@ export class AirlineInvitationController {
   @ApiBearerAuth("access-token")
   @ApiOperation({
     summary: "Revoke airline invitation",
-    description:
-      "Revokes an existing invitation that is not yet accepted. Requires userType=PLATFORM.",
+    description: `
+    Revokes an existing invitation that has not yet been accepted.
+      If the invitation is already revoked, the request is a no-op (returns success without re-revoking).
+      Access: SUPER_ADMIN and STAFF with EDIT access on the INVITES_ONBOARDING asset. Requires userType=PLATFORM.
+      Business logic validations:
+        1. Invitation must exist (404 if not found)
+        2. Accepted invitations cannot be revoked (409 Conflict)`,
   })
   @ApiOkResponse({
     description: "Invitation revoked successfully",
@@ -341,6 +371,12 @@ export class AirlineInvitationController {
     description: "Validation failed",
     schema: createBadRequestErrorSchema(
       "/api/v1/airline/invitations/:invitationId/revoke",
+    ),
+  })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/airline/invitations/:invitationId/revoke",
+      "Invitation not found",
     ),
   })
   @ApiUnauthorizedResponse({
@@ -389,8 +425,9 @@ export class AirlineInvitationController {
   @ApiBearerAuth("access-token")
   @ApiOperation({
     summary: "Get invitation matrix",
-    description:
-      "Returns invitation matrix summary with total sent, accepted, expired, revoked, and pending counts. Requires userType=PLATFORM.",
+    description: `
+    Returns aggregate invitation counts broken down by status: total sent, accepted, expired, revoked, and pending.
+      Access: SUPER_ADMIN and STAFF with VIEW access on the INVITES_ONBOARDING asset. Requires userType=PLATFORM.`,
   })
   @ApiOkResponse({
     description: "Invitation matrix fetched successfully",
@@ -446,8 +483,13 @@ export class AirlineInvitationController {
   @ApiBearerAuth("access-token")
   @ApiOperation({
     summary: "Get invitation by id",
-    description:
-      "Returns full invitation details including event history. Each history record includes the platform admin who performed the action (null for ACCEPTED events). Requires userType=PLATFORM.",
+    description: `
+    Returns full invitation details including the complete event history.
+      Each history record includes the platform admin who performed the action (null for ACCEPTED events triggered by the invitee).
+      When accepted, the live airline record is used as the source of truth for airline data (meta snapshot used as fallback).
+      Access: SUPER_ADMIN and STAFF with VIEW access on the INVITES_ONBOARDING asset. Requires userType=PLATFORM.
+      Business logic validations:
+        1. Invitation must exist (404 if not found)`,
   })
   @ApiOkResponse({
     description: "Invitation fetched successfully",

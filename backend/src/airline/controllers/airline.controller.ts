@@ -5,6 +5,7 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiTags,
+  ApiUnauthorizedResponse,
   getSchemaPath,
 } from "@nestjs/swagger";
 import {
@@ -51,8 +52,11 @@ export class AirlineController {
   @ApiBearerAuth("access-token")
   @ApiOperation({
     summary: "Airline user profile",
-    description:
-      "Accessible to authenticated airline users (userType=AIRLINE).",
+    description: `
+    Returns the authenticated airline user's own profile.
+      Access: AIRLINE_ADMIN and AIRLINE_STAFF with VIEW access on the PROFILE asset. Requires userType=AIRLINE.
+      Business logic validations:
+        1. Authenticated user must be an active airline user (401 if not found or inactive)`,
   })
   @ApiOkResponse({
     schema: {
@@ -76,6 +80,12 @@ export class AirlineController {
   @ApiForbiddenResponse({
     description: "Insufficient permissions. AIRLINE user type is required.",
   })
+  @ApiUnauthorizedResponse({
+    schema: createUnauthorizedErrorSchema(
+      "/api/v1/airline/user/profile",
+      "Unauthorized",
+    ),
+  })
   async getUserProfile(
     @Req() req: AuthenticatedRequest,
     @RequestId() requestId: string,
@@ -96,8 +106,12 @@ export class AirlineController {
   @ApiBearerAuth("access-token")
   @ApiOperation({
     summary: "Airline profile",
-    description:
-      "Accessible only to airline admins (userType=AIRLINE, role=AIRLINE_ADMIN).",
+    description: `
+    Returns the airline profile associated with the authenticated airline admin's account.
+      Access: AIRLINE_ADMIN only. Requires userType=AIRLINE.
+      Business logic validations:
+        1. Authenticated user must be an active airline user (401 if not found or inactive)
+        2. Associated airline must be active (401 if not found or inactive)`,
   })
   @ApiOkResponse({
     schema: {
@@ -118,6 +132,12 @@ export class AirlineController {
   @ApiForbiddenResponse({
     description:
       "Insufficient permissions. AIRLINE_ADMIN role is required for this endpoint.",
+  })
+  @ApiUnauthorizedResponse({
+    schema: createUnauthorizedErrorSchema(
+      "/api/v1/airline/profile",
+      "Unauthorized",
+    ),
   })
   async getAirlineProfile(
     @Req() req: AuthenticatedRequest,
