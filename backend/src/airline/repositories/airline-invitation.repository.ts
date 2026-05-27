@@ -1,11 +1,20 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { MoreThan, Repository } from "typeorm";
+import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
 import { AirlineRole } from "../../common/constants/user.constants";
 import { LoggerService } from "../../common/logger/logger.service";
 import { AirlineEntity } from "../entities/airline.entity";
 import { AirlineUserEntity } from "../entities/airline-user.entity";
 import { AirlineAdminInviteEntity } from "../entities/airline-admin-invite.entity";
+
+export interface AirlineInvitationMatrixCounts {
+  totalSent: number;
+  accepted: number;
+  pending: number;
+  expired: number;
+  revoked: number;
+}
 
 @Injectable()
 export class AirlineInvitationRepository {
@@ -98,6 +107,7 @@ export class AirlineInvitationRepository {
       | "tokenHash"
       | "expiresAt"
       | "isAccepted"
+      | "isRevoked"
     >,
     requestId: string,
   ): Promise<AirlineAdminInviteEntity> {
@@ -130,6 +140,7 @@ export class AirlineInvitationRepository {
       where: {
         email,
         isAccepted: false,
+        isRevoked: false,
         expiresAt: MoreThan(new Date()),
       },
       order: {
@@ -153,6 +164,7 @@ export class AirlineInvitationRepository {
       where: {
         airlineId,
         isAccepted: false,
+        isRevoked: false,
         expiresAt: MoreThan(new Date()),
       },
       order: {
@@ -176,6 +188,7 @@ export class AirlineInvitationRepository {
       where: {
         id: inviteId,
         isAccepted: false,
+        isRevoked: false,
         expiresAt: MoreThan(new Date()),
       },
     });
@@ -196,9 +209,170 @@ export class AirlineInvitationRepository {
       where: {
         tokenLookup,
         isAccepted: false,
+        isRevoked: false,
         expiresAt: MoreThan(new Date()),
       },
     });
+  }
+
+  async findAirlineAdminInviteById(
+    inviteId: number,
+    requestId: string,
+  ): Promise<AirlineAdminInviteEntity | null> {
+    this.logger.debug(
+      "Finding airline admin invite by id",
+      "AirlineInvitationRepository",
+      requestId,
+      { inviteId },
+    );
+
+    return this.airlineAdminInviteRepository.findOne({
+      where: { id: inviteId },
+      relations: {
+        airline: true,
+      },
+    });
+  }
+
+  async findAllInvitations(
+    pagination: PaginationQueryDto,
+    requestId: string,
+  ): Promise<{ invitations: AirlineAdminInviteEntity[]; total: number }> {
+    this.logger.debug(
+      "Listing airline invitations",
+      "AirlineInvitationRepository",
+      requestId,
+      {
+        page: pagination.page,
+        limit: pagination.limit,
+      },
+    );
+
+    const skip = (pagination.page - 1) * pagination.limit;
+
+    const [invitations, total] =
+      await this.airlineAdminInviteRepository.findAndCount({
+        relations: {
+          airline: true,
+        },
+        order: {
+          createdAt: "DESC",
+        },
+        skip,
+        take: pagination.limit,
+      });
+
+    return { invitations, total };
+  }
+
+  async revokeAirlineAdminInvite(
+    inviteId: number,
+    requestId: string,
+  ): Promise<void> {
+    this.logger.debug(
+      "Revoking airline admin invite",
+      "AirlineInvitationRepository",
+      requestId,
+      { inviteId },
+    );
+
+    await this.airlineAdminInviteRepository.update(
+      { id: inviteId },
+      { isRevoked: true },
+    );
+  }
+
+  async revokeActiveAirlineAdminInvitesByEmail(
+    email: string,
+    requestId: string,
+  ): Promise<void> {
+    this.logger.debug(
+      "Revoking active airline admin invites by email",
+      "AirlineInvitationRepository",
+      requestId,
+      { email },
+    );
+
+    await this.airlineAdminInviteRepository.update(
+      {
+        email,
+        isAccepted: false,
+        isRevoked: false,
+        expiresAt: MoreThan(new Date()),
+      },
+      { isRevoked: true },
+    );
+  }
+
+  async refreshAirlineAdminInvite(
+    inviteId: number,
+    payload: Pick<
+      AirlineAdminInviteEntity,
+      | "invitedByAdminId"
+      | "tokenLookup"
+      | "tokenHash"
+      | "expiresAt"
+      | "isAccepted"
+      | "isRevoked"
+    >,
+    requestId: string,
+  ): Promise<void> {
+    this.logger.debug(
+      "Refreshing airline admin invite token",
+      "AirlineInvitationRepository",
+      requestId,
+      { inviteId },
+    );
+
+    await this.airlineAdminInviteRepository.update({ id: inviteId }, payload);
+  }
+
+  async getInvitationMatrix(
+    requestId: string,
+  ): Promise<AirlineInvitationMatrixCounts> {
+    this.logger.debug(
+      "Getting airline invitation matrix",
+      "AirlineInvitationRepository",
+      requestId,
+    );
+
+    const now = new Date();
+
+    const raw = await this.airlineAdminInviteRepository
+      .createQueryBuilder("invite")
+      .select("COUNT(*)", "totalSent")
+      .addSelect(
+        "SUM(CASE WHEN invite.is_accepted = true THEN 1 ELSE 0 END)",
+        "accepted",
+      )
+      .addSelect(
+        "SUM(CASE WHEN invite.is_accepted = false AND invite.is_revoked = true THEN 1 ELSE 0 END)",
+        "revoked",
+      )
+      .addSelect(
+        "SUM(CASE WHEN invite.is_accepted = false AND invite.is_revoked = false AND invite.expires_at > :now THEN 1 ELSE 0 END)",
+        "pending",
+      )
+      .addSelect(
+        "SUM(CASE WHEN invite.is_accepted = false AND invite.is_revoked = false AND invite.expires_at <= :now THEN 1 ELSE 0 END)",
+        "expired",
+      )
+      .setParameter("now", now)
+      .getRawOne<{
+        totalSent: string | null;
+        accepted: string | null;
+        revoked: string | null;
+        pending: string | null;
+        expired: string | null;
+      }>();
+
+    return {
+      totalSent: Number(raw?.totalSent ?? 0),
+      accepted: Number(raw?.accepted ?? 0),
+      revoked: Number(raw?.revoked ?? 0),
+      pending: Number(raw?.pending ?? 0),
+      expired: Number(raw?.expired ?? 0),
+    };
   }
 
   async countAirlineAdminsByAirlineId(
@@ -234,7 +408,7 @@ export class AirlineInvitationRepository {
 
     await this.airlineAdminInviteRepository.update(
       { id: inviteId },
-      { isAccepted: true },
+      { isAccepted: true, isRevoked: false },
     );
   }
 }

@@ -1,4 +1,9 @@
-import { ConflictException, Injectable } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
 import * as bcrypt from "bcrypt";
 import * as crypto from "crypto";
@@ -7,9 +12,20 @@ import {
   AdminInviteAirlineAdminRequestDto,
   AdminInviteAirlineAdminResponseDto,
 } from "../../auth/dto";
+import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
 import { LoggerService } from "../../common/logger/logger.service";
 import { config } from "../../config/config";
+import {
+  AirlineInvitationListResponseDto,
+  AirlineInvitationMatrixResponseDto,
+  AirlineInvitationResponseDto,
+  AirlineInvitationStatus,
+  ResendAirlineInvitationResponseDto,
+  RevokeAirlineInvitationResponseDto,
+} from "../dto";
+import { AirlineAdminInviteEntity } from "../entities/airline-admin-invite.entity";
 import { AirlineInvitationRepository } from "../repositories/airline-invitation.repository";
+import { Not } from "typeorm";
 
 @Injectable()
 export class AirlineInvitationService {
@@ -93,34 +109,17 @@ export class AirlineInvitationService {
       requestId,
     );
 
-    const invitationToken = crypto.randomBytes(32).toString("hex");
-    const tokenLookup = crypto
-      .createHash("sha256")
-      .update(invitationToken)
-      .digest("hex");
-    const tokenHash = await bcrypt.hash(invitationToken, 10);
-    const expiresAt = new Date(
-      Date.now() + this.durationToMs(config.auth.airlineAdminInviteExpiresIn),
+    const { invite, onboardingLink } = await this.createInvitation(
+      {
+        airlineId: airline.id,
+        invitedByAdminId: authenticatedUser.sub,
+        firstName: dto.adminFirstName.trim(),
+        lastName: dto.adminLastName.trim(),
+        email: normalizedAdminEmail,
+        jobTitle: dto.jobTitle.trim(),
+      },
+      requestId,
     );
-
-    const invite =
-      await this.airlineInvitationRepository.createAirlineAdminInvite(
-        {
-          airlineId: airline.id,
-          invitedByAdminId: authenticatedUser.sub,
-          firstName: dto.adminFirstName.trim(),
-          lastName: dto.adminLastName.trim(),
-          email: normalizedAdminEmail,
-          jobTitle: dto.jobTitle.trim(),
-          tokenLookup,
-          tokenHash,
-          expiresAt,
-          isAccepted: false,
-        },
-        requestId,
-      );
-
-    const onboardingLink = `${config.auth.airlineAdminOnboardingBaseUrl}?token=${invitationToken}`;
 
     if (this.isOtpRestrictedEnvironment()) {
       this.logger.info(
@@ -164,6 +163,224 @@ export class AirlineInvitationService {
       onboardingLink: this.isOtpRestrictedEnvironment()
         ? onboardingLink
         : undefined,
+    };
+  }
+
+  async listInvitations(
+    pagination: PaginationQueryDto,
+    requestId: string,
+  ): Promise<AirlineInvitationListResponseDto> {
+    const { invitations, total } =
+      await this.airlineInvitationRepository.findAllInvitations(
+        pagination,
+        requestId,
+      );
+
+    return {
+      total,
+      currentPage: pagination.page,
+      limit: pagination.limit,
+      invitations: invitations.map((invite) =>
+        this.toInvitationResponse(invite),
+      ),
+    };
+  }
+
+  async resendInvitation(
+    authenticatedUser: AuthenticatedUser,
+    invitationId: number,
+    requestId: string,
+  ): Promise<ResendAirlineInvitationResponseDto> {
+    const invite =
+      await this.airlineInvitationRepository.findAirlineAdminInviteById(
+        invitationId,
+        requestId,
+      );
+
+    if (!invite) {
+      throw new NotFoundException("Invitation not found");
+    }
+
+    const { invitationToken, tokenLookup, tokenHash, expiresAt } =
+      await this.generateInvitationTokenData();
+
+    await this.airlineInvitationRepository.refreshAirlineAdminInvite(
+      invite.id,
+      {
+        invitedByAdminId: authenticatedUser.sub,
+        tokenLookup,
+        tokenHash,
+        expiresAt,
+        isAccepted: false,
+        isRevoked: false,
+      },
+      requestId,
+    );
+
+    const onboardingLink = `${config.auth.airlineAdminOnboardingBaseUrl}?token=${invitationToken}`;
+
+    const airlineName = invite.airline?.name ?? "Airline";
+    if (this.isOtpRestrictedEnvironment()) {
+      this.logger.info(
+        "Airline invitation resent in non-production mode",
+        this.context,
+        requestId,
+        {
+          invitationId: invite.id,
+          email: invite.email,
+          onboardingLink,
+        },
+      );
+    } else {
+      await this.sendAirlineAdminInviteEmail(
+        invite.email,
+        onboardingLink,
+        airlineName,
+        requestId,
+      );
+    }
+
+    return {
+      invitationId: invite.id,
+      expiresIn: config.auth.airlineAdminInviteExpiresIn,
+      onboardingLink: this.isOtpRestrictedEnvironment()
+        ? onboardingLink
+        : undefined,
+    };
+  }
+
+  async revokeInvitation(
+    invitationId: number,
+    requestId: string,
+  ): Promise<RevokeAirlineInvitationResponseDto> {
+    const invite =
+      await this.airlineInvitationRepository.findAirlineAdminInviteById(
+        invitationId,
+        requestId,
+      );
+
+    if (!invite) {
+      throw new NotFoundException("Invitation not found");
+    }
+
+    if (invite.isAccepted) {
+      throw new ConflictException("Accepted invitation cannot be revoked");
+    }
+
+    if (!invite.isRevoked) {
+      await this.airlineInvitationRepository.revokeAirlineAdminInvite(
+        invite.id,
+        requestId,
+      );
+    }
+
+    return {
+      invitationId: invite.id,
+      status: AirlineInvitationStatus.REVOKED,
+    };
+  }
+
+  async getInvitationMatrix(
+    requestId: string,
+  ): Promise<AirlineInvitationMatrixResponseDto> {
+    return this.airlineInvitationRepository.getInvitationMatrix(requestId);
+  }
+
+  private toInvitationResponse(
+    invite: AirlineAdminInviteEntity,
+  ): AirlineInvitationResponseDto {
+    return {
+      invitationId: invite.id,
+      airlineId: invite.airlineId,
+      airlineName: invite.airline?.name ?? "",
+      airlineCode: invite.airline?.code ?? "",
+      firstName: invite.firstName,
+      lastName: invite.lastName,
+      email: invite.email,
+      jobTitle: invite.jobTitle,
+      invitedByAdminId: invite.invitedByAdminId,
+      status: this.resolveInvitationStatus(invite),
+      expiresAt: invite.expiresAt.toISOString(),
+      createdAt: invite.createdAt.toISOString(),
+      updatedAt: invite.updatedAt.toISOString(),
+    };
+  }
+
+  private resolveInvitationStatus(
+    invite: AirlineAdminInviteEntity,
+  ): AirlineInvitationStatus {
+    if (invite.isAccepted) {
+      return AirlineInvitationStatus.ACCEPTED;
+    }
+
+    if (invite.isRevoked) {
+      return AirlineInvitationStatus.REVOKED;
+    }
+
+    if (invite.expiresAt.getTime() <= Date.now()) {
+      return AirlineInvitationStatus.EXPIRED;
+    }
+
+    return AirlineInvitationStatus.PENDING;
+  }
+
+  private async createInvitation(
+    payload: {
+      airlineId: number;
+      invitedByAdminId: number;
+      firstName: string;
+      lastName: string;
+      email: string;
+      jobTitle: string;
+    },
+    requestId: string,
+  ): Promise<{ invite: AirlineAdminInviteEntity; onboardingLink: string }> {
+    const { invitationToken, tokenLookup, tokenHash, expiresAt } =
+      await this.generateInvitationTokenData();
+
+    const invite =
+      await this.airlineInvitationRepository.createAirlineAdminInvite(
+        {
+          airlineId: payload.airlineId,
+          invitedByAdminId: payload.invitedByAdminId,
+          firstName: payload.firstName,
+          lastName: payload.lastName,
+          email: payload.email,
+          jobTitle: payload.jobTitle,
+          tokenLookup,
+          tokenHash,
+          expiresAt,
+          isAccepted: false,
+          isRevoked: false,
+        },
+        requestId,
+      );
+
+    const onboardingLink = `${config.auth.airlineAdminOnboardingBaseUrl}?token=${invitationToken}`;
+    return { invite, onboardingLink };
+  }
+
+  private async generateInvitationTokenData(): Promise<{
+    invitationToken: string;
+    tokenLookup: string;
+    tokenHash: string;
+    expiresAt: Date;
+  }> {
+    const invitationToken = crypto.randomBytes(32).toString("hex");
+    const tokenLookup = crypto
+      .createHash("sha256")
+      .update(invitationToken)
+      .digest("hex");
+    const tokenHash = await bcrypt.hash(invitationToken, 10);
+    const expiresAt = new Date(
+      Date.now() + this.durationToMs(config.auth.airlineAdminInviteExpiresIn),
+    );
+
+    return {
+      invitationToken,
+      tokenLookup,
+      tokenHash,
+      expiresAt,
     };
   }
 

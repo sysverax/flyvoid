@@ -865,6 +865,14 @@ export class AirlineAuthService {
       return null;
     }
 
+    if (invite.expiresAt.getTime() <= Date.now() || invite.isRevoked) {
+      throw new UnauthorizedException("Invalid or expired invitation token");
+    }
+
+    if (invite.isAccepted) {
+      throw new ConflictException("Airline admin already onboarded");
+    }
+
     const isTokenValid = await bcrypt.compare(token, invite.tokenHash);
     return isTokenValid ? invite : null;
   }

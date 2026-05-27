@@ -208,6 +208,7 @@ CREATE TABLE IF NOT EXISTS public.airline_admin_invites (
   token_hash text NOT NULL,
   expires_at timestamp without time zone NOT NULL,
   is_accepted boolean NOT NULL DEFAULT false,
+  is_revoked boolean NOT NULL DEFAULT false,
   created_at timestamp without time zone NOT NULL DEFAULT now(),
   updated_at timestamp without time zone NOT NULL DEFAULT now(),
   CONSTRAINT fk_airline_admin_invites_airline

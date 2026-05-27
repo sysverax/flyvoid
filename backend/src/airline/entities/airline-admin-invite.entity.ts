@@ -53,6 +53,9 @@ export class AirlineAdminInviteEntity {
   @Column({ name: "is_accepted", type: "boolean", default: false })
   isAccepted!: boolean;
 
+  @Column({ name: "is_revoked", type: "boolean", default: false })
+  isRevoked!: boolean;
+
   @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
 
