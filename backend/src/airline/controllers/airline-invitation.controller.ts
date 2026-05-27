@@ -39,7 +39,7 @@ import { RbacGuard } from "../../auth/guards/rbac.guard";
 import { AuthenticatedRequest } from "../../auth/interfaces/authenticated-request.interface";
 import { AirlineInvitationService } from "../services/airline-invitation.service";
 
-@ApiTags("Airline")
+@ApiTags("Airline Invitations")
 @ApiExtraModels(
   BaseResponseDto,
   AdminInviteAirlineAdminRequestDto,
