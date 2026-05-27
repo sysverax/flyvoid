@@ -20,14 +20,12 @@ import {
   AirlineInvitationListResponseDto,
   AirlineInvitationMatrixResponseDto,
   AirlineInvitationResponseDto,
-  AirlineInvitationStatus,
+  AirlineInvitationDetailResponseDto,
   ResendAirlineInvitationResponseDto,
   RevokeAirlineInvitationResponseDto,
 } from "../dto";
-import {
-  AIRLINE_INVITATION_STATUSES,
-  AirlineAdminInviteEntity,
-} from "../entities/airline-admin-invite.entity";
+import { AirlineAdminInviteEntity } from "../entities/airline-admin-invite.entity";
+import { AIRLINE_INVITATION_STATUSES } from "../utils";
 import { AIRLINE_INVITATION_HISTORY_EVENTS } from "../entities/airline-admin-invite-history.entity";
 import { AirlineInvitationRepository } from "../repositories/airline-invitation.repository";
 
@@ -338,7 +336,55 @@ export class AirlineInvitationService {
 
     return {
       invitationId: invite.id,
-      status: AirlineInvitationStatus.REVOKED,
+      status: AIRLINE_INVITATION_STATUSES.REVOKED,
+    };
+  }
+
+  async getInvitation(
+    invitationId: number,
+    requestId: string,
+  ): Promise<AirlineInvitationDetailResponseDto> {
+    const invite =
+      await this.airlineInvitationRepository.findAirlineAdminInviteByIdWithHistory(
+        invitationId,
+        requestId,
+      );
+
+    if (!invite) {
+      throw new NotFoundException("Invitation not found");
+    }
+
+    // When accepted, the airline record is the live source of truth — it may
+    // have been updated after onboarding. Fall back to meta (snapshot at invite
+    // time) only if the airline relation is absent.
+    const airline = invite.airline;
+    const meta = invite.meta;
+
+    return {
+      invitationId: invite.id,
+      airlineId: invite.airlineId,
+      airlineName: airline?.name ?? meta?.airlineName ?? "",
+      airlineCode: airline?.code ?? meta?.airlineCode ?? "",
+      companyRegistrationNumber:
+        airline?.companyRegistrationNumber ??
+        meta?.companyRegistrationNumber ??
+        "",
+      firstName: meta?.adminFirstName ?? "",
+      lastName: meta?.adminLastName ?? "",
+      email: meta?.adminEmail ?? "",
+      jobTitle: meta?.adminJobTitle ?? "",
+      invitedByAdminId: invite.invitedByAdminId,
+      status: this.resolveInvitationStatus(invite),
+      expiresAt: invite.expiresAt.toISOString(),
+      createdAt: invite.createdAt.toISOString(),
+      updatedAt: invite.updatedAt.toISOString(),
+      history: (invite.history ?? []).map((h) => ({
+        id: h.id,
+        event: h.event,
+        performedByAdminId: h.performedByAdminId,
+        performedByAdminEmail: h.performedByAdmin?.email ?? null,
+        createdAt: h.createdAt.toISOString(),
+      })),
     };
   }
 
@@ -370,23 +416,23 @@ export class AirlineInvitationService {
 
   private resolveInvitationStatus(
     invite: AirlineAdminInviteEntity,
-  ): AirlineInvitationStatus {
+  ): AIRLINE_INVITATION_STATUSES {
     if (invite.status === AIRLINE_INVITATION_STATUSES.ACCEPTED) {
-      return AirlineInvitationStatus.ACCEPTED;
+      return AIRLINE_INVITATION_STATUSES.ACCEPTED;
     }
 
     if (invite.status === AIRLINE_INVITATION_STATUSES.REVOKED) {
-      return AirlineInvitationStatus.REVOKED;
+      return AIRLINE_INVITATION_STATUSES.REVOKED;
     }
 
     if (
       invite.status === AIRLINE_INVITATION_STATUSES.PENDING &&
       invite.expiresAt.getTime() <= Date.now()
     ) {
-      return AirlineInvitationStatus.EXPIRED;
+      return AIRLINE_INVITATION_STATUSES.EXPIRED;
     }
 
-    return AirlineInvitationStatus.PENDING;
+    return AIRLINE_INVITATION_STATUSES.PENDING;
   }
 
   private async createInvitation(

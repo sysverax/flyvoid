@@ -13,7 +13,7 @@ import * as QRCode from "qrcode";
 import * as speakeasy from "speakeasy";
 import { DataSource } from "typeorm";
 import { AirlineUserEntity } from "../../airline/entities/airline-user.entity";
-import { AIRLINE_INVITATION_STATUSES } from "../../airline/entities/airline-admin-invite.entity";
+import { AIRLINE_INVITATION_STATUSES } from "../../airline/utils";
 import { AIRLINE_INVITATION_HISTORY_EVENTS } from "../../airline/entities/airline-admin-invite-history.entity";
 import { AirlineInvitationRepository } from "../../airline/repositories/airline-invitation.repository";
 import { AirlineRole, UserType } from "../../common/constants/user.constants";
@@ -201,20 +201,21 @@ export class AirlineAuthService {
         manager,
       );
 
-      const savedUser = await this.airlineInvitationRepository.createAirlineUser(
-        {
-          airlineId: airline.id,
-          firstName: meta.adminFirstName,
-          lastName: meta.adminLastName,
-          email: meta.adminEmail,
-          jobTitle: meta.adminJobTitle,
-          passwordHash,
-          role: AirlineRole.AIRLINE_ADMIN,
-          isActive: true,
-        },
-        requestId,
-        manager,
-      );
+      const savedUser =
+        await this.airlineInvitationRepository.createAirlineUser(
+          {
+            airlineId: airline.id,
+            firstName: meta.adminFirstName,
+            lastName: meta.adminLastName,
+            email: meta.adminEmail,
+            jobTitle: meta.adminJobTitle,
+            passwordHash,
+            role: AirlineRole.AIRLINE_ADMIN,
+            isActive: true,
+          },
+          requestId,
+          manager,
+        );
 
       await this.airlineInvitationRepository.markAirlineAdminInviteAccepted(
         lockedInvite.id,

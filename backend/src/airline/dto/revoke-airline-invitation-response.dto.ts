@@ -1,5 +1,5 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { AirlineInvitationStatus } from "./airline-invitation-status.enum";
+import { AIRLINE_INVITATION_STATUSES } from "../utils";
 
 export class RevokeAirlineInvitationResponseDto {
   @ApiProperty({ description: "Revoked invitation id", example: 101 })
@@ -7,8 +7,8 @@ export class RevokeAirlineInvitationResponseDto {
 
   @ApiProperty({
     description: "Resulting status",
-    enum: AirlineInvitationStatus,
-    example: AirlineInvitationStatus.REVOKED,
+    enum: AIRLINE_INVITATION_STATUSES,
+    example: AIRLINE_INVITATION_STATUSES.REVOKED,
   })
-  status!: AirlineInvitationStatus;
+  status!: AIRLINE_INVITATION_STATUSES;
 }

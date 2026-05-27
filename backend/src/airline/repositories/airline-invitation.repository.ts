@@ -6,10 +6,8 @@ import { AirlineRole } from "../../common/constants/user.constants";
 import { LoggerService } from "../../common/logger/logger.service";
 import { AirlineEntity } from "../entities/airline.entity";
 import { AirlineUserEntity } from "../entities/airline-user.entity";
-import {
-  AIRLINE_INVITATION_STATUSES,
-  AirlineAdminInviteEntity,
-} from "../entities/airline-admin-invite.entity";
+import { AirlineAdminInviteEntity } from "../entities/airline-admin-invite.entity";
+import { AIRLINE_INVITATION_STATUSES } from "../utils";
 import {
   AIRLINE_INVITATION_HISTORY_EVENTS,
   AirlineAdminInviteHistoryEntity,
@@ -397,6 +395,34 @@ export class AirlineInvitationRepository {
       relations: {
         airline: true,
         meta: true,
+      },
+    });
+  }
+
+  async findAirlineAdminInviteByIdWithHistory(
+    inviteId: number,
+    requestId: string,
+  ): Promise<AirlineAdminInviteEntity | null> {
+    this.logger.debug(
+      "Finding airline admin invite by id with history",
+      "AirlineInvitationRepository",
+      requestId,
+      { inviteId },
+    );
+
+    return this.airlineAdminInviteRepository.findOne({
+      where: { id: inviteId },
+      relations: {
+        meta: true,
+        airline: true,
+        history: {
+          performedByAdmin: true,
+        },
+      },
+      order: {
+        history: {
+          createdAt: "ASC",
+        },
       },
     });
   }

@@ -18,6 +18,7 @@ import {
   ApiCreatedResponse,
   ApiExtraModels,
   ApiForbiddenResponse,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -34,7 +35,10 @@ import {
 import { UserType } from "../../common/constants/user.constants";
 import { RequestId } from "../../common/decorators/request-id.decorator";
 import { BaseResponseDto } from "../../common/dto/base-response.dto";
-import { RequireUserTypes } from "../../auth/decorators/rbac.decorator";
+import {
+  RequireAccessControl,
+  RequireUserTypes,
+} from "../../auth/decorators/rbac.decorator";
 import {
   AdminInviteAirlineAdminRequestDto,
   AdminInviteAirlineAdminResponseDto,
@@ -48,8 +52,14 @@ import {
   AirlineInvitationMatrixResponseDto,
   ResendAirlineInvitationResponseDto,
   RevokeAirlineInvitationResponseDto,
+  AirlineInvitationDetailResponseDto,
+  AirlineInvitationHistoryItemDto,
 } from "../dto";
 import { AirlineInvitationService } from "../services/airline-invitation.service";
+import {
+  AccessAction,
+  PlatformAsset,
+} from "../../common/constants/access-control.constants";
 
 @ApiTags("Airline Invitations")
 @ApiExtraModels(
@@ -57,11 +67,14 @@ import { AirlineInvitationService } from "../services/airline-invitation.service
   AdminInviteAirlineAdminRequestDto,
   AdminInviteAirlineAdminResponseDto,
   AirlineInvitationListResponseDto,
+  AirlineInvitationDetailResponseDto,
+  AirlineInvitationHistoryItemDto,
   ResendAirlineInvitationResponseDto,
   RevokeAirlineInvitationResponseDto,
   AirlineInvitationMatrixResponseDto,
 )
 @Controller("airline")
+@RequireUserTypes(UserType.PLATFORM)
 export class AirlineInvitationController {
   constructor(
     private readonly airlineInvitationService: AirlineInvitationService,
@@ -70,7 +83,12 @@ export class AirlineInvitationController {
   @Post("invitations")
   @HttpCode(201)
   @UseGuards(JwtAuthGuard, RbacGuard)
-  @RequireUserTypes(UserType.PLATFORM)
+  @RequireAccessControl({
+    platform: {
+      asset: PlatformAsset.AIRPORTS,
+      access: [AccessAction.VIEW],
+    },
+  })
   @ApiBearerAuth("access-token")
   @ApiOperation({
     summary: "Invite airline admin",
@@ -142,7 +160,12 @@ export class AirlineInvitationController {
 
   @Get("invitations")
   @UseGuards(JwtAuthGuard, RbacGuard)
-  @RequireUserTypes(UserType.PLATFORM)
+  @RequireAccessControl({
+    platform: {
+      asset: PlatformAsset.AIRPORTS,
+      access: [AccessAction.VIEW],
+    },
+  })
   @ApiBearerAuth("access-token")
   @ApiOperation({
     summary: "Get airline invitations",
@@ -202,7 +225,12 @@ export class AirlineInvitationController {
   @Post("invitations/:invitationId/resend")
   @HttpCode(200)
   @UseGuards(JwtAuthGuard, RbacGuard)
-  @RequireUserTypes(UserType.PLATFORM)
+  @RequireAccessControl({
+    platform: {
+      asset: PlatformAsset.AIRPORTS,
+      access: [AccessAction.VIEW],
+    },
+  })
   @ApiBearerAuth("access-token")
   @ApiOperation({
     summary: "Resend airline invitation",
@@ -275,7 +303,12 @@ export class AirlineInvitationController {
   @Post("invitations/:invitationId/revoke")
   @HttpCode(200)
   @UseGuards(JwtAuthGuard, RbacGuard)
-  @RequireUserTypes(UserType.PLATFORM)
+  @RequireAccessControl({
+    platform: {
+      asset: PlatformAsset.AIRPORTS,
+      access: [AccessAction.VIEW],
+    },
+  })
   @ApiBearerAuth("access-token")
   @ApiOperation({
     summary: "Revoke airline invitation",
@@ -347,7 +380,12 @@ export class AirlineInvitationController {
 
   @Get("invitations/matrix")
   @UseGuards(JwtAuthGuard, RbacGuard)
-  @RequireUserTypes(UserType.PLATFORM)
+  @RequireAccessControl({
+    platform: {
+      asset: PlatformAsset.AIRPORTS,
+      access: [AccessAction.VIEW],
+    },
+  })
   @ApiBearerAuth("access-token")
   @ApiOperation({
     summary: "Get invitation matrix",
@@ -387,14 +425,76 @@ export class AirlineInvitationController {
   async getInvitationMatrix(
     @RequestId() requestId: string,
   ): Promise<BaseResponseDto<AirlineInvitationMatrixResponseDto>> {
-    const response = await this.airlineInvitationService.getInvitationMatrix(
+    const response =
+      await this.airlineInvitationService.getInvitationMatrix(requestId);
+
+    return BaseResponseDto.success(
+      response,
+      requestId,
+      "Invitation matrix fetched successfully",
+    );
+  }
+
+  @Get("invitations/:invitationId")
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequireAccessControl({
+    platform: {
+      asset: PlatformAsset.AIRPORTS,
+      access: [AccessAction.VIEW],
+    },
+  })
+  @ApiBearerAuth("access-token")
+  @ApiOperation({
+    summary: "Get invitation by id",
+    description:
+      "Returns full invitation details including event history. Each history record includes the platform admin who performed the action (null for ACCEPTED events). Requires userType=PLATFORM.",
+  })
+  @ApiOkResponse({
+    description: "Invitation fetched successfully",
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(BaseResponseDto) },
+        {
+          properties: {
+            success: { type: "boolean", example: true },
+            requestId: { type: "string", example: REQUEST_ID_EXAMPLE },
+            timestamp: { type: "string", example: TIMESTAMP_EXAMPLE },
+            message: {
+              type: "string",
+              example: "Invitation fetched successfully",
+            },
+            data: { $ref: getSchemaPath(AirlineInvitationDetailResponseDto) },
+          },
+        },
+      ],
+    },
+  })
+  @ApiUnauthorizedResponse({
+    description: "Missing/invalid access token",
+    schema: createUnauthorizedErrorSchema(
+      "/api/v1/airline/invitations/:invitationId",
+      "Unauthorized",
+    ),
+  })
+  @ApiForbiddenResponse({
+    description: "Insufficient permissions. PLATFORM user type is required.",
+  })
+  @ApiNotFoundResponse({
+    description: "Invitation not found",
+  })
+  async getInvitation(
+    @Param("invitationId", ParseIntPipe) invitationId: number,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<AirlineInvitationDetailResponseDto>> {
+    const response = await this.airlineInvitationService.getInvitation(
+      invitationId,
       requestId,
     );
 
     return BaseResponseDto.success(
       response,
       requestId,
-      "Invitation matrix fetched successfully",
+      "Invitation fetched successfully",
     );
   }
 }
