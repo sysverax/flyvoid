@@ -6,14 +6,12 @@ import { PlatformAccessControlEntity } from "../../admin/entities/platform-acces
 import { AirlineAccessControlEntity } from "../../airline/entities/airline-access-control.entity";
 import { AirlineEntity } from "../../airline/entities/airline.entity";
 import { AirlineUserEntity } from "../../airline/entities/airline-user.entity";
-import { AirlineRole } from "../../common/constants/user.constants";
 import {
   AccessAction,
   PlatformAsset,
   UserAccessControlEntry,
 } from "../../common/constants/access-control.constants";
 import { LoggerService } from "../../common/logger/logger.service";
-import { AirlineAdminInviteEntity } from "../entities/airline-admin-invite.entity";
 import { AirlinePasswordResetOtpEntity } from "../entities/airline-password-reset-otp.entity";
 import { AirlineRefreshTokenEntity } from "../entities/airline-refresh-token.entity";
 import { AdminPasswordResetOtpEntity } from "../entities/admin-password-reset-otp.entity";
@@ -36,8 +34,6 @@ export class AuthRepository {
     private readonly airlineRepository: Repository<AirlineEntity>,
     @InjectRepository(AirlineUserEntity)
     private readonly airlineUserRepository: Repository<AirlineUserEntity>,
-    @InjectRepository(AirlineAdminInviteEntity)
-    private readonly airlineAdminInviteRepository: Repository<AirlineAdminInviteEntity>,
     @InjectRepository(PlatformAccessControlEntity)
     private readonly platformAccessControlRepository: Repository<PlatformAccessControlEntity>,
     @InjectRepository(AirlineAccessControlEntity)
@@ -567,26 +563,6 @@ export class AuthRepository {
     );
   }
 
-  async findAirlineByCodeOrCompanyRegistrationNumber(
-    code: string,
-    companyRegistrationNumber: string,
-    requestId: string,
-  ): Promise<AirlineEntity | null> {
-    this.logger.debug(
-      "Finding airline by code or company registration number",
-      "AuthRepository",
-      requestId,
-      {
-        code,
-        companyRegistrationNumber,
-      },
-    );
-
-    return this.airlineRepository.findOne({
-      where: [{ code }, { companyRegistrationNumber }],
-    });
-  }
-
   async findAirlineUserByEmail(
     email: string,
     requestId: string,
@@ -978,169 +954,6 @@ export class AuthRepository {
     );
   }
 
-  async createAirline(
-    payload: Pick<
-      AirlineEntity,
-      | "name"
-      | "code"
-      | "countryCode"
-      | "companyRegistrationNumber"
-      | "website"
-      | "contactEmail"
-      | "contactPhone"
-      | "timezone"
-      | "currency"
-      | "address"
-      | "logo"
-      | "isActive"
-    >,
-    requestId: string,
-  ): Promise<AirlineEntity> {
-    this.logger.debug("Creating airline", "AuthRepository", requestId, {
-      code: payload.code,
-      name: payload.name,
-    });
-
-    const airline = this.airlineRepository.create(payload);
-    return this.airlineRepository.save(airline);
-  }
-
-  async createAirlineAdminInvite(
-    payload: Pick<
-      AirlineAdminInviteEntity,
-      | "airlineId"
-      | "invitedByAdminId"
-      | "firstName"
-      | "lastName"
-      | "email"
-      | "jobTitle"
-      | "tokenLookup"
-      | "tokenHash"
-      | "expiresAt"
-      | "isAccepted"
-    >,
-    requestId: string,
-  ): Promise<AirlineAdminInviteEntity> {
-    this.logger.debug(
-      "Creating airline admin invite",
-      "AuthRepository",
-      requestId,
-      {
-        airlineId: payload.airlineId,
-        email: payload.email,
-      },
-    );
-
-    const invite = this.airlineAdminInviteRepository.create(payload);
-    return this.airlineAdminInviteRepository.save(invite);
-  }
-
-  async findActiveAirlineAdminInviteByEmail(
-    email: string,
-    requestId: string,
-  ): Promise<AirlineAdminInviteEntity | null> {
-    this.logger.debug(
-      "Finding active airline admin invite by email",
-      "AuthRepository",
-      requestId,
-      { email },
-    );
-
-    return this.airlineAdminInviteRepository.findOne({
-      where: {
-        email,
-        isAccepted: false,
-        expiresAt: MoreThan(new Date()),
-      },
-      order: {
-        createdAt: "DESC",
-      },
-    });
-  }
-
-  async findActiveAirlineAdminInviteByAirlineId(
-    airlineId: number,
-    requestId: string,
-  ): Promise<AirlineAdminInviteEntity | null> {
-    this.logger.debug(
-      "Finding active airline admin invite by airline id",
-      "AuthRepository",
-      requestId,
-      { airlineId },
-    );
-
-    return this.airlineAdminInviteRepository.findOne({
-      where: {
-        airlineId,
-        isAccepted: false,
-        expiresAt: MoreThan(new Date()),
-      },
-      order: {
-        createdAt: "DESC",
-      },
-    });
-  }
-
-  async findPendingAirlineAdminInviteById(
-    inviteId: number,
-    requestId: string,
-  ): Promise<AirlineAdminInviteEntity | null> {
-    this.logger.debug(
-      "Finding pending airline admin invite by id",
-      "AuthRepository",
-      requestId,
-      { inviteId },
-    );
-
-    return this.airlineAdminInviteRepository.findOne({
-      where: {
-        id: inviteId,
-        isAccepted: false,
-        expiresAt: MoreThan(new Date()),
-      },
-    });
-  }
-
-  async findPendingAirlineAdminInviteByLookup(
-    tokenLookup: string,
-    requestId: string,
-  ): Promise<AirlineAdminInviteEntity | null> {
-    this.logger.debug(
-      "Finding pending airline admin invite by token lookup",
-      "AuthRepository",
-      requestId,
-      { tokenLookup },
-    );
-
-    return this.airlineAdminInviteRepository.findOne({
-      where: {
-        tokenLookup,
-        isAccepted: false,
-        expiresAt: MoreThan(new Date()),
-      },
-    });
-  }
-
-  async countAirlineAdminsByAirlineId(
-    airlineId: number,
-    requestId: string,
-  ): Promise<number> {
-    this.logger.debug(
-      "Counting airline admins by airline id",
-      "AuthRepository",
-      requestId,
-      { airlineId },
-    );
-
-    return this.airlineUserRepository.count({
-      where: {
-        airlineId,
-        role: AirlineRole.AIRLINE_ADMIN,
-        isActive: true,
-      },
-    });
-  }
-
   async createAirlineUser(
     payload: Pick<
       AirlineUserEntity,
@@ -1165,20 +978,4 @@ export class AuthRepository {
     return this.airlineUserRepository.save(user);
   }
 
-  async markAirlineAdminInviteAccepted(
-    inviteId: number,
-    requestId: string,
-  ): Promise<void> {
-    this.logger.debug(
-      "Marking airline admin invite accepted",
-      "AuthRepository",
-      requestId,
-      { inviteId },
-    );
-
-    await this.airlineAdminInviteRepository.update(
-      { id: inviteId },
-      { isAccepted: true },
-    );
-  }
 }

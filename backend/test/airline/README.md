@@ -16,3 +16,7 @@ Test cases:
 - `TC_AIRLINE_PROFILE_001`: Airline user profile success, expected `200`
 - `TC_AIRLINE_PROFILE_002`: Airline profile success, expected `200`
 - `TC_AIRLINE_PROFILE_003`: Airline profile unauthorized, expected `401`
+
+## Airline Invitation API
+
+See `invitation/README.md` for invitation test cases and details.

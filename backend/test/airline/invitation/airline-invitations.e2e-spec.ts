@@ -22,7 +22,7 @@ import { tokenHelper } from "../../helpers/token.helper";
 import { isExternalMode } from "../../setup/test-app";
 import { airlineSeeder } from "../../seeders/airline/airline.seeder";
 
-const INVITE_ENDPOINT = "/api/v1/auth/admin/airline-invitations";
+const INVITE_ENDPOINT = "/api/v1/airline/invitations";
 
 export interface AirlineInvitationResponseData {
   invitationId: number;

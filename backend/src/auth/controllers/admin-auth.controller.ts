@@ -39,8 +39,6 @@ import {
   AdminForgotPasswordSendOtpRequestDto,
   AdminForgotPasswordVerifyOtpRequestDto,
   AdminForgotPasswordVerifyOtpResponseDto,
-  AdminInviteAirlineAdminRequestDto,
-  AdminInviteAirlineAdminResponseDto,
   AdminSigninRequestDto,
   AdminSigninPasswordResetChallengeResponseDto,
   AdminSigninResponseDto,
@@ -68,8 +66,6 @@ import { AuthService } from "../services/admin-auth.service";
   AdminTwoFactorEnableResponseDto,
   AdminTwoFactorDisableRequestDto,
   AdminTwoFactorRecoverRequestDto,
-  AdminInviteAirlineAdminRequestDto,
-  AdminInviteAirlineAdminResponseDto,
   AdminForgotPasswordSendOtpRequestDto,
   AdminForgotPasswordVerifyOtpRequestDto,
   AdminForgotPasswordVerifyOtpResponseDto,
@@ -559,81 +555,6 @@ export class AuthController {
       null,
       requestId,
       "2FA recovered successfully",
-    );
-  }
-
-  @Post("airline-invitations")
-  @HttpCode(201)
-  @UseGuards(JwtAuthGuard, RbacGuard)
-  @RequireUserTypes(UserType.PLATFORM)
-  @ApiBearerAuth("access-token")
-  @ApiOperation({
-    summary: "Invite airline admin",
-    description:
-      "Platform admin creates an airline and invites its first airline admin using email. In local/dev/test, email is not sent and onboarding link is returned in response. Requires userType=PLATFORM.",
-  })
-  @ApiBody({
-    description: "Airline admin invitation payload",
-    type: AdminInviteAirlineAdminRequestDto,
-  })
-  @ApiCreatedResponse({
-    description: "Invitation created successfully",
-    schema: {
-      allOf: [
-        { $ref: getSchemaPath(BaseResponseDto) },
-        {
-          properties: {
-            success: { type: "boolean", example: true },
-            requestId: { type: "string", example: REQUEST_ID_EXAMPLE },
-            timestamp: { type: "string", example: TIMESTAMP_EXAMPLE },
-            message: {
-              type: "string",
-              example: "Airline admin invitation created",
-            },
-            data: { $ref: getSchemaPath(AdminInviteAirlineAdminResponseDto) },
-          },
-        },
-      ],
-    },
-  })
-  @ApiBadRequestResponse({
-    description: "Validation failed",
-    schema: createBadRequestErrorSchema(
-      "/api/v1/auth/admin/airline-invitations",
-    ),
-  })
-  @ApiUnauthorizedResponse({
-    description: "Missing/invalid access token",
-    schema: createUnauthorizedErrorSchema(
-      "/api/v1/auth/admin/airline-invitations",
-      "Unauthorized",
-    ),
-  })
-  @ApiForbiddenResponse({
-    description: "Insufficient permissions. PLATFORM user type is required.",
-  })
-  @ApiConflictResponse({
-    description: "Airline code/email conflict or active invite already exists",
-    schema: createConflictErrorSchema(
-      "/api/v1/auth/admin/airline-invitations",
-      "Airline code already exists",
-    ),
-  })
-  async inviteAirlineAdmin(
-    @Req() req: AuthenticatedRequest,
-    @Body() dto: AdminInviteAirlineAdminRequestDto,
-    @RequestId() requestId: string,
-  ): Promise<BaseResponseDto<AdminInviteAirlineAdminResponseDto>> {
-    const response = await this.authService.inviteAirlineAdmin(
-      req.user,
-      dto,
-      requestId,
-    );
-
-    return BaseResponseDto.success(
-      response,
-      requestId,
-      "Airline admin invitation created",
     );
   }
 

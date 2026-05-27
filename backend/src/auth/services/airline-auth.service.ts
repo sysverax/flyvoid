@@ -11,6 +11,7 @@ import * as crypto from "crypto";
 import * as QRCode from "qrcode";
 import * as speakeasy from "speakeasy";
 import { AirlineUserEntity } from "../../airline/entities/airline-user.entity";
+import { AirlineInvitationRepository } from "../../airline/repositories/airline-invitation.repository";
 import { AirlineRole, UserType } from "../../common/constants/user.constants";
 import { LoggerService } from "../../common/logger/logger.service";
 import { config } from "../../config/config";
@@ -57,6 +58,7 @@ export class AirlineAuthService {
 
   constructor(
     private readonly authRepository: AuthRepository,
+    private readonly airlineInvitationRepository: AirlineInvitationRepository,
     private readonly jwtService: JwtService,
     private readonly logger: LoggerService,
   ) {}
@@ -79,10 +81,11 @@ export class AirlineAuthService {
       throw new UnauthorizedException("Invalid or expired invitation token");
     }
 
-    const adminCount = await this.authRepository.countAirlineAdminsByAirlineId(
-      invite.airlineId,
-      requestId,
-    );
+    const adminCount =
+      await this.airlineInvitationRepository.countAirlineAdminsByAirlineId(
+        invite.airlineId,
+        requestId,
+      );
     if (adminCount > 0) {
       throw new ConflictException("Airline admin already onboarded");
     }
@@ -108,7 +111,7 @@ export class AirlineAuthService {
       requestId,
     );
 
-    await this.authRepository.markAirlineAdminInviteAccepted(
+    await this.airlineInvitationRepository.markAirlineAdminInviteAccepted(
       invite.id,
       requestId,
     );
@@ -854,7 +857,7 @@ export class AirlineAuthService {
 
     const tokenLookup = crypto.createHash("sha256").update(token).digest("hex");
     const invite =
-      await this.authRepository.findPendingAirlineAdminInviteByLookup(
+      await this.airlineInvitationRepository.findPendingAirlineAdminInviteByLookup(
         tokenLookup,
         requestId,
       );
