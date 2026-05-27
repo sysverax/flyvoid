@@ -8,11 +8,7 @@ import {
   UpdateDateColumn,
 } from "typeorm";
 import { AdminEntity } from "../../admin/entities/admin.entity";
-
-export enum AirportType {
-  INTERNATIONAL = "INTERNATIONAL",
-  DOMESTIC = "DOMESTIC",
-}
+import { AirportType } from "../utils";
 
 @Entity("airports")
 export class AirportEntity {

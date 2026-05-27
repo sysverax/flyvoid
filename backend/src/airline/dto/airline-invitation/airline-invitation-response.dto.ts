@@ -1,41 +1,7 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { AIRLINE_INVITATION_STATUSES } from "../utils";
+import { AIRLINE_INVITATION_STATUSES } from "../../utils";
 
-export class AirlineInvitationHistoryItemDto {
-  @ApiProperty({ description: "History record id", example: 1 })
-  id!: number;
-
-  @ApiProperty({
-    description: "Event that occurred on the invitation",
-    example: "SENT",
-    enum: ["SENT", "RESENT", "REVOKED", "ACCEPTED"],
-  })
-  event!: string;
-
-  @ApiProperty({
-    description:
-      "Id of the platform admin who performed the action. Null for ACCEPTED events (performed by the airline admin).",
-    example: 1,
-    nullable: true,
-  })
-  performedByAdminId!: number | null;
-
-  @ApiProperty({
-    description:
-      "Email of the platform admin who performed the action. Null for ACCEPTED events.",
-    example: "admin@flyvoid.com",
-    nullable: true,
-  })
-  performedByAdminEmail!: string | null;
-
-  @ApiProperty({
-    description: "When this event occurred",
-    example: "2026-05-27T13:50:00.000Z",
-  })
-  createdAt!: string;
-}
-
-export class AirlineInvitationDetailResponseDto {
+export class AirlineInvitationResponseDto {
   @ApiProperty({ description: "Invitation id", example: 101 })
   invitationId!: number;
 
@@ -50,14 +16,8 @@ export class AirlineInvitationDetailResponseDto {
   @ApiProperty({ description: "Airline name", example: "SkyJet Airlines" })
   airlineName!: string;
 
-  @ApiProperty({ description: "Airline IATA code", example: "SJ" })
+  @ApiProperty({ description: "Airline code", example: "SJ" })
   airlineCode!: string;
-
-  @ApiProperty({
-    description: "Company registration number",
-    example: "SJ-2026-001",
-  })
-  companyRegistrationNumber!: string;
 
   @ApiProperty({ description: "Invited admin first name", example: "Aisha" })
   firstName!: string;
@@ -100,14 +60,8 @@ export class AirlineInvitationDetailResponseDto {
   createdAt!: string;
 
   @ApiProperty({
-    description: "Invitation last updated date-time",
+    description: "Invitation update date-time",
     example: "2026-05-26T13:50:00.000Z",
   })
   updatedAt!: string;
-
-  @ApiProperty({
-    description: "Chronological history of events on this invitation",
-    type: () => [AirlineInvitationHistoryItemDto],
-  })
-  history!: AirlineInvitationHistoryItemDto[];
 }

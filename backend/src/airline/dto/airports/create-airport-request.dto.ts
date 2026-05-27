@@ -12,8 +12,8 @@ import {
   MaxLength,
 } from "class-validator";
 import { ApiProperty } from "@nestjs/swagger";
-import { AirportType } from "../entities/airport.entity";
-import { IsSafeText } from "../../common/validator/injection.validator";
+import { AirportType } from "../../utils";
+import { IsSafeText } from "../../../common/validator/injection.validator";
 
 export class CreateAirportRequestDto {
   @ApiProperty({ example: "Dubai International Airport" })

@@ -10,8 +10,8 @@ import {
   MaxLength,
   Min,
 } from "class-validator";
-import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
-import { IsSafeText } from "../../common/validator/injection.validator";
+import { PaginationQueryDto } from "../../../common/dto/pagination-query.dto";
+import { IsSafeText } from "../../../common/validator/injection.validator";
 
 export class GetAirportsQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({

@@ -12,7 +12,7 @@ import { RequestIdMiddleware } from "./common/middleware/request-id.middleware";
 import { DatabaseModule } from "./database/database.module";
 import { HealthModule } from "./health/health.module";
 import { AirlineModule } from "./airline/airline.module";
-import { AirportModule } from "./airport/airport.module";
+import { AirportModule } from "./airline/airport.module";
 
 @Module({
   imports: [

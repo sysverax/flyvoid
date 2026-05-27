@@ -1,6 +1,6 @@
 import { ApiProperty } from "@nestjs/swagger";
 import { AirportResponseDto } from "./airport-response.dto";
-import { PaginationMeta } from "../../common/dto/pagination-query.dto";
+import { PaginationMeta } from "../../../common/dto/pagination-query.dto";
 
 export class AirportListResponseDto implements PaginationMeta {
   @ApiProperty({

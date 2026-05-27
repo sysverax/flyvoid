@@ -55,7 +55,7 @@ import {
   CreateAirportRequestDto,
   GetAirportsQueryDto,
   UpdateAirportRequestDto,
-} from "../dto";
+} from "../dto/airports";
 import { AirportService } from "../services/airport.service";
 
 @ApiTags("Airport")

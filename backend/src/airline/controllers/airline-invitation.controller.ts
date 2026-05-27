@@ -54,7 +54,7 @@ import {
   RevokeAirlineInvitationResponseDto,
   AirlineInvitationDetailResponseDto,
   AirlineInvitationHistoryItemDto,
-} from "../dto";
+} from "../dto/airline-invitation";
 import { AirlineInvitationService } from "../services/airline-invitation.service";
 import {
   AccessAction,
@@ -85,8 +85,8 @@ export class AirlineInvitationController {
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequireAccessControl({
     platform: {
-      asset: PlatformAsset.AIRPORTS,
-      access: [AccessAction.VIEW],
+      asset: PlatformAsset.INVITES_ONBOARDING,
+      access: [AccessAction.EDIT],
     },
   })
   @ApiBearerAuth("access-token")
@@ -162,7 +162,7 @@ export class AirlineInvitationController {
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequireAccessControl({
     platform: {
-      asset: PlatformAsset.AIRPORTS,
+      asset: PlatformAsset.INVITES_ONBOARDING,
       access: [AccessAction.VIEW],
     },
   })
@@ -227,8 +227,8 @@ export class AirlineInvitationController {
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequireAccessControl({
     platform: {
-      asset: PlatformAsset.AIRPORTS,
-      access: [AccessAction.VIEW],
+      asset: PlatformAsset.INVITES_ONBOARDING,
+      access: [AccessAction.EDIT],
     },
   })
   @ApiBearerAuth("access-token")
@@ -305,8 +305,8 @@ export class AirlineInvitationController {
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequireAccessControl({
     platform: {
-      asset: PlatformAsset.AIRPORTS,
-      access: [AccessAction.VIEW],
+      asset: PlatformAsset.INVITES_ONBOARDING,
+      access: [AccessAction.EDIT],
     },
   })
   @ApiBearerAuth("access-token")
@@ -382,7 +382,7 @@ export class AirlineInvitationController {
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequireAccessControl({
     platform: {
-      asset: PlatformAsset.AIRPORTS,
+      asset: PlatformAsset.INVITES_ONBOARDING,
       access: [AccessAction.VIEW],
     },
   })
@@ -439,7 +439,7 @@ export class AirlineInvitationController {
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequireAccessControl({
     platform: {
-      asset: PlatformAsset.AIRPORTS,
+      asset: PlatformAsset.INVITES_ONBOARDING,
       access: [AccessAction.VIEW],
     },
   })

@@ -1,5 +1,5 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { AIRLINE_INVITATION_STATUSES } from "../utils";
+import { AIRLINE_INVITATION_STATUSES } from "../../utils";
 
 export class RevokeAirlineInvitationResponseDto {
   @ApiProperty({ description: "Revoked invitation id", example: 101 })

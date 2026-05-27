@@ -23,7 +23,7 @@ import {
   AirlineInvitationDetailResponseDto,
   ResendAirlineInvitationResponseDto,
   RevokeAirlineInvitationResponseDto,
-} from "../dto";
+} from "../dto/airline-invitation";
 import { AirlineAdminInviteEntity } from "../entities/airline-admin-invite.entity";
 import { AIRLINE_INVITATION_STATUSES } from "../utils";
 import { AIRLINE_INVITATION_HISTORY_EVENTS } from "../entities/airline-admin-invite-history.entity";
