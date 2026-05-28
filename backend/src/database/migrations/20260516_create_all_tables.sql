@@ -253,6 +253,7 @@ CREATE TABLE IF NOT EXISTS public.meta_airline_invites (
   currency varchar(10) NOT NULL,
   address varchar(255) NOT NULL,
   logo varchar(512),
+  credit_limit integer NOT NULL DEFAULT 0,
   admin_first_name varchar(100) NOT NULL,
   admin_last_name varchar(100) NOT NULL,
   admin_email varchar(255) NOT NULL,
@@ -310,15 +311,6 @@ CREATE INDEX IF NOT EXISTS idx_airline_admin_invites_admin_id
 
 CREATE INDEX IF NOT EXISTS idx_airline_admin_invites_expires_at
   ON public.airline_admin_invites (expires_at);
-
-ALTER TABLE IF EXISTS public.airlines
-  DROP CONSTRAINT IF EXISTS fk_airlines_invitation;
-
-ALTER TABLE IF EXISTS public.airlines
-  ADD CONSTRAINT fk_airlines_invitation
-  FOREIGN KEY (invitation_id)
-  REFERENCES public.airline_admin_invites(id)
-  ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS public.airline_admin_invite_history (
   id                      integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -433,3 +425,125 @@ CREATE TABLE IF NOT EXISTS public.health_logs (
   created_at timestamp without time zone NOT NULL DEFAULT now(),
   updated_at timestamp without time zone NOT NULL DEFAULT now()
 );
+
+-- ─── Finance ──────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.wallets (
+  id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  airline_id integer NOT NULL,
+  balance numeric(12,2) NOT NULL DEFAULT 0,
+  credit_limit numeric(12,2) NOT NULL DEFAULT 0,
+  used_credit numeric(12,2) NOT NULL DEFAULT 0,
+  locked_amount numeric(12,2) NOT NULL DEFAULT 0,
+  currency varchar(10) NOT NULL DEFAULT 'USD',
+  created_at timestamp without time zone NOT NULL DEFAULT now(),
+  updated_at timestamp without time zone NOT NULL DEFAULT now(),
+  CONSTRAINT fk_wallets_airline
+    FOREIGN KEY (airline_id)
+    REFERENCES public.airlines(id)
+    ON DELETE CASCADE,
+  CONSTRAINT uq_wallets_airline_id
+    UNIQUE (airline_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_wallets_airline_id
+  ON public.wallets (airline_id);
+
+CREATE TABLE IF NOT EXISTS public.wallet_transactions (
+  id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  wallet_id integer NOT NULL,
+  type varchar(10) NOT NULL,
+  reference_type varchar(20) NOT NULL,
+  reference_id integer NOT NULL,
+  amount numeric(12,2) NOT NULL,
+  balance_before numeric(12,2) NOT NULL,
+  balance_after numeric(12,2) NOT NULL,
+  description text,
+  created_by integer,
+  created_at timestamp without time zone NOT NULL DEFAULT now(),
+  CONSTRAINT fk_wallet_transactions_wallet
+    FOREIGN KEY (wallet_id)
+    REFERENCES public.wallets(id)
+    ON DELETE RESTRICT,
+  CONSTRAINT chk_wallet_transactions_type
+    CHECK (type IN ('CREDIT', 'DEBIT')),
+  CONSTRAINT chk_wallet_transactions_reference_type
+    CHECK (reference_type IN ('BOOKING', 'PAYMENT', 'ADJUSTMENT'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_wallet_transactions_wallet_id
+  ON public.wallet_transactions (wallet_id);
+
+CREATE INDEX IF NOT EXISTS idx_wallet_transactions_reference
+  ON public.wallet_transactions (reference_type, reference_id);
+
+CREATE TABLE IF NOT EXISTS public.wallet_adjustments (
+  id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  wallet_id integer NOT NULL,
+  type varchar(10) NOT NULL,
+  amount numeric(12,2) NOT NULL,
+  reason varchar(255) NOT NULL,
+  notes text,
+  adjusted_by_admin_id integer NOT NULL,
+  created_at timestamp without time zone NOT NULL DEFAULT now(),
+  CONSTRAINT fk_wallet_adjustments_wallet
+    FOREIGN KEY (wallet_id)
+    REFERENCES public.wallets(id)
+    ON DELETE RESTRICT,
+  CONSTRAINT fk_wallet_adjustments_admin
+    FOREIGN KEY (adjusted_by_admin_id)
+    REFERENCES public.admins(id)
+    ON DELETE RESTRICT,
+  CONSTRAINT chk_wallet_adjustments_type
+    CHECK (type IN ('CREDIT', 'DEBIT'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_wallet_adjustments_wallet_id
+  ON public.wallet_adjustments (wallet_id);
+
+CREATE TABLE IF NOT EXISTS public.wallet_credit_limit_history (
+  id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  wallet_id integer NOT NULL,
+  previous_credit_limit numeric(12,2) NOT NULL,
+  new_credit_limit numeric(12,2) NOT NULL,
+  reason varchar(255) NOT NULL,
+  changed_by_admin_id integer NOT NULL,
+  created_at timestamp without time zone NOT NULL DEFAULT now(),
+  CONSTRAINT fk_wallet_credit_limit_history_wallet
+    FOREIGN KEY (wallet_id)
+    REFERENCES public.wallets(id)
+    ON DELETE RESTRICT,
+  CONSTRAINT fk_wallet_credit_limit_history_admin
+    FOREIGN KEY (changed_by_admin_id)
+    REFERENCES public.admins(id)
+    ON DELETE RESTRICT
+);
+
+CREATE INDEX IF NOT EXISTS idx_wallet_credit_limit_history_wallet_id
+  ON public.wallet_credit_limit_history (wallet_id);
+
+CREATE TABLE IF NOT EXISTS public.payments (
+  id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  wallet_id integer NOT NULL,
+  amount numeric(12,2) NOT NULL,
+  currency varchar(10) NOT NULL,
+  method varchar(20) NOT NULL,
+  status varchar(10) NOT NULL DEFAULT 'PENDING',
+  reference_code varchar(255),
+  transaction_id integer,
+  created_at timestamp without time zone NOT NULL DEFAULT now(),
+  CONSTRAINT fk_payments_wallet
+    FOREIGN KEY (wallet_id)
+    REFERENCES public.wallets(id)
+    ON DELETE RESTRICT,
+  CONSTRAINT chk_payments_method
+    CHECK (method IN ('BANK_TRANSFER', 'CARD', 'MANUAL')),
+  CONSTRAINT chk_payments_status
+    CHECK (status IN ('PENDING', 'SUCCESS', 'FAILED'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_payments_wallet_id
+  ON public.payments (wallet_id);
+
+CREATE INDEX IF NOT EXISTS idx_payments_status
+  ON public.payments (status);
