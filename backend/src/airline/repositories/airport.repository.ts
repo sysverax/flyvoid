@@ -50,9 +50,14 @@ export class AirportRepository {
   }
 
   async findByIds(ids: number[], requestId: string): Promise<AirportEntity[]> {
-    this.logger.debug("Finding airports by ids", "AirportRepository", requestId, {
-      count: ids.length,
-    });
+    this.logger.debug(
+      "Finding airports by ids",
+      "AirportRepository",
+      requestId,
+      {
+        count: ids.length,
+      },
+    );
 
     if (ids.length === 0) {
       return [];
@@ -104,6 +109,65 @@ export class AirportRepository {
 
     if (query.status !== undefined) {
       qb.andWhere("airport.isActive = :status", { status: query.status });
+    }
+
+    if (query.search) {
+      const search = `%${query.search.toLowerCase()}%`;
+      qb.andWhere(
+        new Brackets((where) => {
+          where
+            .where("LOWER(airport.name) LIKE :search", { search })
+            .orWhere("LOWER(airport.iataCode) LIKE :search", { search })
+            .orWhere("LOWER(airport.icaoCode) LIKE :search", { search })
+            .orWhere("LOWER(airport.city) LIKE :search", { search })
+            .orWhere("LOWER(airport.countryCode) LIKE :search", { search });
+        }),
+      );
+    }
+
+    const skip = (query.page - 1) * query.limit;
+
+    const [airports, total] = await qb
+      .orderBy("airport.createdAt", "DESC")
+      .skip(skip)
+      .take(query.limit)
+      .getManyAndCount();
+
+    return { airports, total };
+  }
+
+  async findAllForAirline(
+    query: GetAirportsQueryDto,
+    airlineId: number,
+    requestId: string,
+  ): Promise<{ airports: AirportEntity[]; total: number }> {
+    this.logger.debug(
+      "Listing airports for airline",
+      "AirportRepository",
+      requestId,
+      {
+        airlineId,
+        page: query.page,
+        limit: query.limit,
+        countryCode: query.countryCode ?? null,
+        search: query.search ?? null,
+      },
+    );
+
+    const qb = this.airportRepository
+      .createQueryBuilder("airport")
+      .innerJoin(
+        "airport.airlines",
+        "mapping",
+        "mapping.airlineId = :airlineId AND mapping.isActive = :mappingActive",
+        { airlineId, mappingActive: true },
+      )
+      .where("airport.isActive = :airportActive", { airportActive: true });
+
+    if (query.countryCode) {
+      qb.andWhere("airport.countryCode = :countryCode", {
+        countryCode: query.countryCode,
+      });
     }
 
     if (query.search) {

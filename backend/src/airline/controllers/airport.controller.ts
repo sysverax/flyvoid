@@ -36,6 +36,7 @@ import { RbacGuard } from "../../auth/guards/rbac.guard";
 import { AuthenticatedRequest } from "../../auth/interfaces/authenticated-request.interface";
 import {
   AccessAction,
+  AirlineAsset,
   PlatformAsset,
 } from "../../common/constants/access-control.constants";
 import {
@@ -69,16 +70,20 @@ import { AirportService } from "../services/airport.service";
   UpdateAirlineAirportsResponseDto,
 )
 @UseGuards(JwtAuthGuard, RbacGuard)
-@RequireUserTypes(UserType.PLATFORM)
 @Controller("airports")
 export class AirportController {
   constructor(private readonly airportService: AirportService) {}
 
   @Get("/")
-  @RequireUserRoles(AdminRole.SUPER_ADMIN, AdminRole.STAFF)
+  @RequireUserTypes(UserType.PLATFORM, UserType.AIRLINE)
+  // @RequireUserRoles(AdminRole.SUPER_ADMIN, AdminRole.STAFF)
   @RequireAccessControl({
     platform: {
       asset: PlatformAsset.AIRPORTS,
+      access: [AccessAction.VIEW],
+    },
+    airline: {
+      asset: AirlineAsset.AIRPORTS,
       access: [AccessAction.VIEW],
     },
   })
@@ -88,9 +93,10 @@ export class AirportController {
     description: `
     Returns a paginated list of airports. 
       Accessible to SUPER_ADMIN and STAFF with VIEW access on the AIRPORTS asset.
+      Accessible to AIRLINE users with VIEW access on the AIRPORTS asset.
       Supports optional filters: 
         1. countryCode (2-letter ISO alpha-2)
-        2. status (active/inactive)
+        2. status (active/inactive) - not supported for AIRLINE users, as they only see active airports.
         3. free-text search on airport name, IATA code, or ICAO code. 
       Validations
         1. page must be >= 1
@@ -147,6 +153,7 @@ export class AirportController {
 
   @Post("/")
   @HttpCode(201)
+  @RequireUserTypes(UserType.PLATFORM)
   @RequireUserRoles(AdminRole.SUPER_ADMIN, AdminRole.STAFF)
   @RequireAccessControl({
     platform: {
@@ -220,6 +227,7 @@ export class AirportController {
   }
 
   @Patch("/:airportId")
+  @RequireUserTypes(UserType.PLATFORM)
   @RequireUserRoles(AdminRole.SUPER_ADMIN, AdminRole.STAFF)
   @RequireAccessControl({
     platform: {
@@ -296,6 +304,7 @@ export class AirportController {
   }
 
   @Patch("/airlines/:airlineId/assignments")
+  @RequireUserTypes(UserType.PLATFORM)
   @RequireUserRoles(AdminRole.SUPER_ADMIN, AdminRole.STAFF)
   @RequireAccessControl({
     platform: {

@@ -8,6 +8,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { DataSource, Repository } from "typeorm";
 import { AuthenticatedUser } from "../../auth/interfaces/authenticated-request.interface";
 import { LoggerService } from "../../common/logger/logger.service";
+import { UserType } from "../../common/constants/user.constants";
 import {
   AirportListResponseDto,
   AirportResponseDto,
@@ -81,10 +82,14 @@ export class AirportService {
     query: GetAirportsQueryDto,
     requestId: string,
   ): Promise<AirportListResponseDto> {
-    const { airports, total } = await this.airportRepository.findAll(
-      query,
-      requestId,
-    );
+    const { airports, total } =
+      authenticatedUser.userType === UserType.AIRLINE
+        ? await this.airportRepository.findAllForAirline(
+            query,
+            authenticatedUser.airlineId!,
+            requestId,
+          )
+        : await this.airportRepository.findAll(query, requestId);
 
     const totalPages = total === 0 ? 0 : Math.ceil(total / query.limit);
 
