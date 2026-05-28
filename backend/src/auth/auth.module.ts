@@ -10,6 +10,7 @@ import { MetaAirlineInviteEntity } from "../airline/entities/meta-airline-invite
 import { AirlineEntity } from "../airline/entities/airline.entity";
 import { AirlineAccessControlEntity } from "../airline/entities/airline-access-control.entity";
 import { AirlineUserEntity } from "../airline/entities/airline-user.entity";
+import { FinanceModule } from "../finance/finance.module";
 import { AirlineAuthController } from "./controllers/airline-auth.controller";
 import { AuthController } from "./controllers/admin-auth.controller";
 import { AirlinePasswordResetOtpEntity } from "./entities/airline-password-reset-otp.entity";
@@ -41,6 +42,7 @@ import { JwtStrategy } from "./strategies/jwt.strategy";
       PlatformAccessControlEntity,
       AirlineAccessControlEntity,
     ]),
+    FinanceModule,
     JwtModule.register({}),
     PassportModule,
   ],

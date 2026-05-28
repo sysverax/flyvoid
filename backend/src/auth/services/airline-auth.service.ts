@@ -13,11 +13,12 @@ import * as QRCode from "qrcode";
 import * as speakeasy from "speakeasy";
 import { DataSource } from "typeorm";
 import { AirlineUserEntity } from "../../airline/entities/airline-user.entity";
-import { AIRLINE_INVITATION_STATUSES } from "../../airline/utils";
+import { AIRLINE_INVITATION_STATUSES } from "../../airline/constants";
 import { AIRLINE_INVITATION_HISTORY_EVENTS } from "../../airline/entities/airline-admin-invite-history.entity";
 import { AirlineInvitationRepository } from "../../airline/repositories/airline-invitation.repository";
 import { AirlineRepository } from "../../airline/repositories/airline.repository";
 import { AirlineUserRepository } from "../../airline/repositories/airline-user.repository";
+import { WalletRepository } from "../../finance/repositories/wallet.repository";
 import { AirlineRole, UserType } from "../../common/constants/user.constants";
 import { LoggerService } from "../../common/logger/logger.service";
 import { config } from "../../config/config";
@@ -67,6 +68,7 @@ export class AirlineAuthService {
     private readonly airlineRepository: AirlineRepository,
     private readonly airlineUserRepository: AirlineUserRepository,
     private readonly airlineInvitationRepository: AirlineInvitationRepository,
+    private readonly walletRepository: WalletRepository,
     private readonly jwtService: JwtService,
     private readonly logger: LoggerService,
     private readonly dataSource: DataSource,
@@ -231,6 +233,33 @@ export class AirlineAuthService {
           invitationId: lockedInvite.id,
           event: AIRLINE_INVITATION_HISTORY_EVENTS.ACCEPTED,
           performedByAdminId: null,
+        },
+        requestId,
+        manager,
+      );
+
+      // Create wallet for the airline
+      const savedWallet = await this.walletRepository.createWallet(
+        {
+          airlineId: airline.id,
+          balance: 0,
+          creditLimit: meta.creditLimit,
+          usedCredit: 0,
+          lockedAmount: 0,
+          currency: meta.currency,
+        },
+        requestId,
+        manager,
+      );
+
+      // Record initial credit limit history
+      await this.walletRepository.recordCreditLimitChange(
+        {
+          walletId: savedWallet.id,
+          previousCreditLimit: 0,
+          newCreditLimit: meta.creditLimit,
+          reason: "Initial credit limit set at airline onboarding",
+          changedByAdminId: lockedInvite.invitedByAdminId,
         },
         requestId,
         manager,

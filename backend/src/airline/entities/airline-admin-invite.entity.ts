@@ -13,7 +13,7 @@ import { AdminEntity } from "../../admin/entities/admin.entity";
 import { AirlineEntity } from "./airline.entity";
 import { AirlineAdminInviteHistoryEntity } from "./airline-admin-invite-history.entity";
 import { MetaAirlineInviteEntity } from "./meta-airline-invite.entity";
-import { AIRLINE_INVITATION_STATUSES } from "../utils/airline-invitation-status.enum";
+import { AIRLINE_INVITATION_STATUSES } from "../constants/airline-invitation-status.enum";
 
 @Entity("airline_admin_invites")
 export class AirlineAdminInviteEntity {

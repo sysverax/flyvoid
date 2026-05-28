@@ -4,7 +4,7 @@ import { EntityManager, MoreThan, Repository } from "typeorm";
 import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
 import { LoggerService } from "../../common/logger/logger.service";
 import { AirlineAdminInviteEntity } from "../entities/airline-admin-invite.entity";
-import { AIRLINE_INVITATION_STATUSES } from "../utils";
+import { AIRLINE_INVITATION_STATUSES } from "../constants";
 import {
   AIRLINE_INVITATION_HISTORY_EVENTS,
   AirlineAdminInviteHistoryEntity,
@@ -76,7 +76,6 @@ export class AirlineInvitationRepository {
     return repository.save(entry);
   }
 
-
   async createMetaAirlineInvite(
     payload: Pick<
       MetaAirlineInviteEntity,
@@ -91,6 +90,7 @@ export class AirlineInvitationRepository {
       | "currency"
       | "address"
       | "logo"
+      | "creditLimit"
       | "adminFirstName"
       | "adminLastName"
       | "adminEmail"

@@ -10,7 +10,7 @@ import {
 } from "typeorm";
 import { AdminEntity } from "../../admin/entities/admin.entity";
 import { AirlineAirportEntity } from "./airline-airport.entity";
-import { AirportType } from "../utils";
+import { AirportType } from "../constants";
 
 @Entity("airports")
 export class AirportEntity {
@@ -81,6 +81,9 @@ export class AirportEntity {
   @UpdateDateColumn({ name: "updated_at" })
   updatedAt!: Date;
 
-  @OneToMany(() => AirlineAirportEntity, (airlineAirport) => airlineAirport.airport)
+  @OneToMany(
+    () => AirlineAirportEntity,
+    (airlineAirport) => airlineAirport.airport,
+  )
   airlines!: AirlineAirportEntity[];
 }

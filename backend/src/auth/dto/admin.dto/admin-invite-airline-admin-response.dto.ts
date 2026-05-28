@@ -99,6 +99,12 @@ export class AdminInviteAirlineAdminResponseDto {
   jobTitle!: string;
 
   @ApiProperty({
+    description: "Initial credit limit for the airline wallet",
+    example: 500000,
+  })
+  creditLimit!: number;
+
+  @ApiProperty({
     description: "Invitation expiry duration",
     example: "48h",
   })

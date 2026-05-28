@@ -11,6 +11,7 @@ import {
 import { AirlineAirportEntity } from "./airline-airport.entity";
 import { AirlineAdminInviteEntity } from "./airline-admin-invite.entity";
 import { AirlineUserEntity } from "./airline-user.entity";
+import { WalletEntity } from "../../finance/entities/wallet.entity";
 
 @Entity("airlines")
 export class AirlineEntity {
@@ -56,10 +57,14 @@ export class AirlineEntity {
   @Column({ name: "invitation_id", type: "integer", nullable: true })
   invitationId!: number | null;
 
-  @OneToOne(() => AirlineAdminInviteEntity, (invitation) => invitation.airline, {
-    onDelete: "SET NULL",
-    nullable: true,
-  })
+  @OneToOne(
+    () => AirlineAdminInviteEntity,
+    (invitation) => invitation.airline,
+    {
+      onDelete: "SET NULL",
+      nullable: true,
+    },
+  )
   @JoinColumn({ name: "invitation_id" })
   invitation!: AirlineAdminInviteEntity | null;
 
@@ -72,6 +77,12 @@ export class AirlineEntity {
   @OneToMany(() => AirlineUserEntity, (user) => user.airline)
   users!: AirlineUserEntity[];
 
-  @OneToMany(() => AirlineAirportEntity, (airlineAirport) => airlineAirport.airline)
+  @OneToMany(
+    () => AirlineAirportEntity,
+    (airlineAirport) => airlineAirport.airline,
+  )
   airports!: AirlineAirportEntity[];
+
+  @OneToOne(() => WalletEntity, (wallet) => wallet.airline)
+  wallet!: WalletEntity;
 }

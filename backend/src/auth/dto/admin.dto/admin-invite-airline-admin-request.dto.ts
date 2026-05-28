@@ -2,11 +2,13 @@ import { Transform } from "class-transformer";
 import { ApiProperty } from "@nestjs/swagger";
 import {
   IsEmail,
+  IsInt,
   IsNotEmpty,
   Matches,
   IsOptional,
   IsString,
   MaxLength,
+  Min,
   MinLength,
 } from "class-validator";
 
@@ -192,4 +194,9 @@ export class AdminInviteAirlineAdminRequestDto {
   @IsNotEmpty()
   @MaxLength(100)
   jobTitle!: string;
+
+  @ApiProperty({ description: "Initial credit limit for the airline wallet (in cents or base currency units)", example: 500000 })
+  @IsInt()
+  @Min(0)
+  creditLimit!: number;
 }

@@ -25,7 +25,7 @@ import {
   RevokeAirlineInvitationResponseDto,
 } from "../dto/airline-invitation";
 import { AirlineAdminInviteEntity } from "../entities/airline-admin-invite.entity";
-import { AIRLINE_INVITATION_STATUSES } from "../utils";
+import { AIRLINE_INVITATION_STATUSES } from "../constants";
 import { AIRLINE_INVITATION_HISTORY_EVENTS } from "../entities/airline-admin-invite-history.entity";
 import { AirlineRepository } from "../repositories/airline.repository";
 import { AirlineUserRepository } from "../repositories/airline-user.repository";
@@ -78,11 +78,10 @@ export class AirlineInvitationService {
       throw new ConflictException("Company registration number already exists");
     }
 
-    const existingAirlineUser =
-      await this.airlineUserRepository.findByEmail(
-        normalizedAdminEmail,
-        requestId,
-      );
+    const existingAirlineUser = await this.airlineUserRepository.findByEmail(
+      normalizedAdminEmail,
+      requestId,
+    );
     if (existingAirlineUser) {
       throw new ConflictException("Airline admin email already exists");
     }
@@ -136,6 +135,7 @@ export class AirlineInvitationService {
               currency: dto.currency.trim().toUpperCase(),
               address: dto.address.trim(),
               logo: dto.logo?.trim() ?? undefined,
+              creditLimit: dto.creditLimit,
               adminFirstName: dto.adminFirstName.trim(),
               adminLastName: dto.adminLastName.trim(),
               adminEmail: normalizedAdminEmail,
@@ -193,6 +193,7 @@ export class AirlineInvitationService {
       lastName: dto.adminLastName.trim(),
       email: normalizedAdminEmail,
       jobTitle: dto.jobTitle.trim(),
+      creditLimit: dto.creditLimit,
       expiresIn: config.auth.airlineAdminInviteExpiresIn,
       onboardingLink: this.isOtpRestrictedEnvironment()
         ? onboardingLink

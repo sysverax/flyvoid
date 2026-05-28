@@ -1,5 +1,5 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { AirportType } from "../../utils";
+import { AirportType } from "../../constants";
 
 export class AirportResponseDto {
   @ApiProperty({ example: 1 })
