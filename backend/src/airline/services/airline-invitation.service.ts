@@ -135,7 +135,7 @@ export class AirlineInvitationService {
               currency: dto.currency.trim().toUpperCase(),
               address: dto.address.trim(),
               logo: dto.logo?.trim() ?? undefined,
-              creditLimit: dto.creditLimit,
+              creditLimit: dto.creditLimit ?? 0,
               adminFirstName: dto.adminFirstName.trim(),
               adminLastName: dto.adminLastName.trim(),
               adminEmail: normalizedAdminEmail,
@@ -193,7 +193,7 @@ export class AirlineInvitationService {
       lastName: dto.adminLastName.trim(),
       email: normalizedAdminEmail,
       jobTitle: dto.jobTitle.trim(),
-      creditLimit: dto.creditLimit,
+      creditLimit: dto.creditLimit ?? 0,
       expiresIn: config.auth.airlineAdminInviteExpiresIn,
       onboardingLink: this.isOtpRestrictedEnvironment()
         ? onboardingLink

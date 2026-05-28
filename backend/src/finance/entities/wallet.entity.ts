@@ -27,21 +27,39 @@ export class WalletEntity {
   @Column({ type: "decimal", precision: 12, scale: 2, default: 0 })
   balance!: number;
 
-  @Column({ type: "decimal", precision: 12, scale: 2, default: 0 })
+  @Column({
+    name: "credit_limit",
+    type: "decimal",
+    precision: 12,
+    scale: 2,
+    default: 0,
+  })
   creditLimit!: number;
 
-  @Column({ type: "decimal", precision: 12, scale: 2, default: 0 })
+  @Column({
+    name: "used_credit",
+    type: "decimal",
+    precision: 12,
+    scale: 2,
+    default: 0,
+  })
   usedCredit!: number;
 
-  @Column({ type: "decimal", precision: 12, scale: 2, default: 0 })
+  @Column({
+    name: "locked_amount",
+    type: "decimal",
+    precision: 12,
+    scale: 2,
+    default: 0,
+  })
   lockedAmount!: number;
 
   @Column({ type: "varchar", length: 10, default: "USD" })
   currency!: string;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ name: "updated_at" })
   updatedAt!: Date;
 }

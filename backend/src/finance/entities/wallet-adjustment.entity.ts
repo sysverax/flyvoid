@@ -14,11 +14,11 @@ export class WalletAdjustmentEntity {
   @PrimaryGeneratedColumn()
   id!: number;
 
-  @Column()
+  @Column({ name: "wallet_id" })
   walletId!: number;
 
   @ManyToOne(() => WalletEntity)
-  @JoinColumn({ name: "walletId" })
+  @JoinColumn({ name: "wallet_id" })
   wallet!: WalletEntity;
 
   @Column({ type: "simple-enum", enum: TRANSACTION_TYPES })
@@ -33,9 +33,9 @@ export class WalletAdjustmentEntity {
   @Column({ type: "text", nullable: true })
   notes?: string;
 
-  @Column()
+  @Column({ name: "adjusted_by_admin_id" })
   adjustedByAdminId!: number;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
 }

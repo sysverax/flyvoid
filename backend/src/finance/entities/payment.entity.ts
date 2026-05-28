@@ -14,11 +14,11 @@ export class PaymentEntity {
   @PrimaryGeneratedColumn()
   id!: number;
 
-  @Column()
+  @Column({ name: "wallet_id" })
   walletId!: number;
 
   @ManyToOne(() => WalletEntity)
-  @JoinColumn({ name: "walletId" })
+  @JoinColumn({ name: "wallet_id" })
   wallet!: WalletEntity;
 
   @Column({ type: "decimal", precision: 12, scale: 2 })
@@ -33,12 +33,12 @@ export class PaymentEntity {
   @Column({ type: "simple-enum", enum: PAYMENT_STATUSES })
   status!: PAYMENT_STATUSES;
 
-  @Column({ nullable: true })
+  @Column({ name: "reference_code", nullable: true })
   referenceCode?: string;
 
-  @Column({ nullable: true })
+  @Column({ name: "transaction_id", nullable: true })
   transactionId?: number;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
 }

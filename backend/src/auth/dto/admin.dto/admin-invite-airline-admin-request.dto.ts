@@ -195,8 +195,9 @@ export class AdminInviteAirlineAdminRequestDto {
   @MaxLength(100)
   jobTitle!: string;
 
-  @ApiProperty({ description: "Initial credit limit for the airline wallet (in cents or base currency units)", example: 500000 })
+  @ApiProperty({ description: "Initial credit limit for the airline wallet (in cents or base currency units)", example: 500000, required: false, default: 0 })
+  @IsOptional()
   @IsInt()
   @Min(0)
-  creditLimit!: number;
+  creditLimit?: number;
 }

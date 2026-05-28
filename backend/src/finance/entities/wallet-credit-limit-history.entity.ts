@@ -13,25 +13,35 @@ export class WalletCreditLimitHistoryEntity {
   @PrimaryGeneratedColumn()
   id!: number;
 
-  @Column()
+  @Column({ name: "wallet_id" })
   walletId!: number;
 
   @ManyToOne(() => WalletEntity)
-  @JoinColumn({ name: "walletId" })
+  @JoinColumn({ name: "wallet_id" })
   wallet!: WalletEntity;
 
-  @Column({ type: "decimal", precision: 12, scale: 2 })
+  @Column({
+    name: "previous_credit_limit",
+    type: "decimal",
+    precision: 12,
+    scale: 2,
+  })
   previousCreditLimit!: number;
 
-  @Column({ type: "decimal", precision: 12, scale: 2 })
+  @Column({
+    name: "new_credit_limit",
+    type: "decimal",
+    precision: 12,
+    scale: 2,
+  })
   newCreditLimit!: number;
 
   @Column()
   reason!: string;
 
-  @Column()
+  @Column({ name: "changed_by_admin_id" })
   changedByAdminId!: number;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
 }

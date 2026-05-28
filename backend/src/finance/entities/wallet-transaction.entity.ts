@@ -17,37 +17,41 @@ export class WalletTransactionEntity {
   @PrimaryGeneratedColumn()
   id!: number;
 
-  @Column()
+  @Column({ name: "wallet_id" })
   walletId!: number;
 
   @ManyToOne(() => WalletEntity)
-  @JoinColumn({ name: "walletId" })
+  @JoinColumn({ name: "wallet_id" })
   wallet!: WalletEntity;
 
   @Column({ type: "simple-enum", enum: TRANSACTION_TYPES })
   type!: TRANSACTION_TYPES;
 
-  @Column({ type: "simple-enum", enum: TRANSACTION_REFERENCE_TYPES })
+  @Column({
+    name: "reference_type",
+    type: "simple-enum",
+    enum: TRANSACTION_REFERENCE_TYPES,
+  })
   referenceType!: TRANSACTION_REFERENCE_TYPES;
 
-  @Column()
+  @Column({ name: "reference_id" })
   referenceId!: number;
 
   @Column({ type: "decimal", precision: 12, scale: 2 })
   amount!: number;
 
-  @Column({ type: "decimal", precision: 12, scale: 2 })
+  @Column({ name: "balance_before", type: "decimal", precision: 12, scale: 2 })
   balanceBefore!: number;
 
-  @Column({ type: "decimal", precision: 12, scale: 2 })
+  @Column({ name: "balance_after", type: "decimal", precision: 12, scale: 2 })
   balanceAfter!: number;
 
   @Column({ type: "text", nullable: true })
   description?: string;
 
-  @Column({ type: "integer", nullable: true })
+  @Column({ name: "created_by", type: "integer", nullable: true })
   createdBy?: number;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
 }
