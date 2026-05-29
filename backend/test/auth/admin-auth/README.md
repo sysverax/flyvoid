@@ -294,3 +294,64 @@ Notes:
 - `TC_AUTH_ADMIN_SIGNOUT_014` may return `200` as compatibility behavior because current endpoint enforces `PLATFORM` user type, not SUPER_ADMIN-only role restrictions.
 - `TC_AUTH_ADMIN_SIGNOUT_026` may return concurrent `200,200` as compatibility behavior when the live backend processes both signout requests before revocation visibility is enforced.
 - `TC_AUTH_ADMIN_SIGNOUT_030` may be skipped in external mode because in-process database inspection is not available.
+
+## Admin Initial Password Reset API
+
+- Spec file: `admin-initial-password-reset.e2e-spec.ts`
+- Endpoint: `POST /api/v1/auth/admin/signin/reset-password`
+
+Test cases:
+
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_001`: Initial password reset success with valid resetPasswordToken and valid newPassword, expected `200`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_002`: Initial password reset with invalid resetPasswordToken, expected `401`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_003`: Initial password reset with expired resetPasswordToken, expected `401`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_004`: Initial password reset with malformed resetPasswordToken, expected `401`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_005`: Initial password reset with already used resetPasswordToken, expected `401`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_006`: Initial password reset with empty resetPasswordToken, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_007`: Initial password reset with null resetPasswordToken, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_008`: Initial password reset with missing resetPasswordToken field, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_009`: Initial password reset with empty newPassword value, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_010`: Initial password reset with null newPassword value, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_011`: Initial password reset with missing newPassword field, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_012`: Initial password reset with password less than 8 characters, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_013`: Initial password reset with password missing uppercase character, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_014`: Initial password reset with password missing lowercase character, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_015`: Initial password reset with password missing numeric character, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_016`: Initial password reset with password missing special character, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_017`: Initial password reset with whitespace-only password, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_018`: Initial password reset with password containing leading whitespace, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_019`: Initial password reset with password containing trailing whitespace, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_020`: Initial password reset with same password as current password, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_021`: Initial password reset with very long password exceeding maximum allowed length, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_022`: Initial password reset with Unicode password characters, expected `200`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_023`: Initial password reset with SQL injection attempt in newPassword field, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_024`: Initial password reset with script injection attempt in newPassword field, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_025`: Initial password reset with malformed JSON payload, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_026`: Initial password reset with additional unknown fields, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_027`: Initial password reset response contains success=true, expected `200`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_028`: Initial password reset response contains correct success message, expected `200`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_029`: Initial password reset response contains null data object, expected `200`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_030`: Initial password reset allows subsequent signin with newly reset password, expected `200`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_031`: Initial password reset rejects signin using old password after successful reset, expected `401`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_032`: Initial password reset token generated from forgot-password flow should fail, expected `401`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_033`: Initial password reset token generated for another admin should fail, expected `401`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_034`: Initial password reset with random string token, expected `401`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_035`: Initial password reset with numeric token value, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_036`: Initial password reset with boolean token value, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_037`: Initial password reset with array token value, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_038`: Initial password reset with object token value, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_039`: Initial password reset with numeric password value, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_040`: Initial password reset with boolean password value, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_041`: Initial password reset with array password value, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_042`: Initial password reset with object password value, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_043`: Initial password reset token replay attack attempt after successful reset, expected `401`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_044`: Initial password reset for inactive admin account should fail, expected `401`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_045`: Initial password reset with concurrent requests using same token should allow only first request, expected `200`
+
+Notes:
+
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_018` and `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_019` document a compatibility behavior: the current DTO does not reject leading/trailing whitespace in `newPassword`, so these cases pass with a compatibility note rather than a hard failure.
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_020` documents a compatibility behavior: same-password restriction is not currently enforced during initial password reset.
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_021` documents a compatibility behavior: no maximum password length is enforced at the DTO level.
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_032` may be skipped if the static OTP is not available in the current environment.
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_044` may be skipped in external mode because in-process DB mutation (deactivating the admin) is not available.

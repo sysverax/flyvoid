@@ -2,15 +2,15 @@ import { INestApplication } from "@nestjs/common";
 import { afterAll, beforeAll, describe, expect, it } from "@jest/globals";
 import request from "supertest";
 import { DataSource } from "typeorm";
-import { createTestApp } from "../setup/test-app";
-import { loggerHelper } from "../helpers/logger.helper";
-import { requestHelper } from "../helpers/request.helper";
-import { responseHelper } from "../helpers/response.helper";
-import { adminAuthSeeder } from "../seeders/admin/admin.seeder";
-import { TestCaseMeta } from "../shared/interfaces/test-case.interface";
-import { authHelper } from "../helpers/auth.helper";
-import { tokenHelper } from "../helpers/token.helper";
-import { airlineSeeder } from "../seeders/airline/airline.seeder";
+import { createTestApp } from "../../setup/test-app";
+import { loggerHelper } from "../../helpers/logger.helper";
+import { requestHelper } from "../../helpers/request.helper";
+import { responseHelper } from "../../helpers/response.helper";
+import { adminAuthSeeder } from "../../seeders/admin/admin.seeder";
+import { TestCaseMeta } from "../../shared/interfaces/test-case.interface";
+import { authHelper } from "../../helpers/auth.helper";
+import { tokenHelper } from "../../helpers/token.helper";
+import { airlineSeeder } from "../../seeders/airline/airline.seeder";
 
 const CREATE_AIRPORT_ENDPOINT = "/api/v1/airports";
 
