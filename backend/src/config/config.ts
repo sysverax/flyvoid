@@ -30,6 +30,7 @@ export const config = {
     password: process.env.DB_PASSWORD ?? "postgres",
     name: process.env.DB_NAME ?? "my_backend_db",
     simulate: process.env.DB_SIMULATE === "true",
+    mode: process.env.DB_MODE ?? "development",
     synchronize: process.env.DB_SYNCHRONIZE === "true",
     logging: process.env.DB_LOGGING === "true",
   },

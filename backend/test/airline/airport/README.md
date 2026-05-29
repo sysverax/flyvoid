@@ -117,3 +117,137 @@ Notes:
 - `TC_AIRPORT_CREATE_038` and `TC_AIRPORT_CREATE_044`: The DTO `@Transform` uppercases `iataCode` and `icaoCode` before `@Matches` runs, so lowercase-letter input is normalized and accepted (`201`) rather than rejected (`400`). The test handles both outcomes.
 - `TC_AIRPORT_CREATE_076`: The DTO does not enforce IANA timezone format validation — only `@IsString`, `@IsNotEmpty`, `@IsSafeText`, and `@MaxLength(100)` are applied. Arbitrary non-empty strings within the length limit are accepted (`201`). The test handles both outcomes.
 - `TC_AIRPORT_CREATE_081`: `postalCode` is decorated with `@IsNotEmpty()` and has no `@IsOptional()`, so omitting it currently returns `400` rather than `201`. The test handles both outcomes.
+
+---
+
+## Update Airport API
+
+- Spec file: `update-airport.e2e-spec.ts`
+- Endpoint: `PATCH /api/v1/airports/{airportId}`
+
+Test cases:
+
+- `TC_AIRPORT_UPDATE_001`: SUPER_ADMIN with AIRPORTS EDIT access can update airport, expected `200`
+- `TC_AIRPORT_UPDATE_002`: STAFF admin with AIRPORTS EDIT access can update airport, expected `200`
+- `TC_AIRPORT_UPDATE_003`: Inactive admin access token should be rejected with 403, expected `403`
+- `TC_AIRPORT_UPDATE_004`: Request without access token should return 401, expected `401`
+- `TC_AIRPORT_UPDATE_005`: Request with invalid access token should return 401, expected `401`
+- `TC_AIRPORT_UPDATE_006`: Request with expired access token should return 401, expected `401`
+- `TC_AIRPORT_UPDATE_007`: STAFF admin without AIRPORTS EDIT access should return 403, expected `403`
+- `TC_AIRPORT_UPDATE_008`: Airline user cannot update airport, should return 403, expected `403`
+- `TC_AIRPORT_UPDATE_009`: Update non-existing airport should return 404, expected `404`
+- `TC_AIRPORT_UPDATE_010`: Non-numeric airportId (alphabetic string) should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_011`: Non-numeric airportId (alphanumeric string) should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_012`: Negative airportId should return 400 or 404 (compatibility), expected `400`
+- `TC_AIRPORT_UPDATE_013`: Zero airportId should return 400 or 404 (compatibility), expected `400`
+- `TC_AIRPORT_UPDATE_014`: Empty request body should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_015`: Malformed JSON body should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_016`: Unknown fields in payload should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_017`: Update only name field should succeed with 200, expected `200`
+- `TC_AIRPORT_UPDATE_018`: Update only city field should succeed with 200, expected `200`
+- `TC_AIRPORT_UPDATE_019`: Update only latitude field should succeed with 200, expected `200`
+- `TC_AIRPORT_UPDATE_020`: Update only longitude field should succeed with 200, expected `200`
+- `TC_AIRPORT_UPDATE_021`: Update only timezone field should succeed with 200, expected `200`
+- `TC_AIRPORT_UPDATE_022`: Update only isActive field should succeed with 200, expected `200`
+- `TC_AIRPORT_UPDATE_023`: Update only type field should succeed with 200, expected `200`
+- `TC_AIRPORT_UPDATE_024`: Update only address field should succeed with 200, expected `200`
+- `TC_AIRPORT_UPDATE_025`: Update only postalCode field should succeed with 200, expected `200`
+- `TC_AIRPORT_UPDATE_026`: Update only iataCode field should succeed with 200, expected `200`
+- `TC_AIRPORT_UPDATE_027`: Update only icaoCode field should succeed with 200, expected `200`
+- `TC_AIRPORT_UPDATE_028`: Null name value should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_029`: Null iataCode value should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_030`: Null icaoCode value should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_031`: Null countryCode value should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_032`: Null city value should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_033`: Null latitude value should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_034`: Null longitude value should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_035`: Null timezone value should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_036`: Null isActive value should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_037`: Null type value should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_038`: Null postalCode value should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_039`: Null address value is accepted and should return 200, expected `200`
+- `TC_AIRPORT_UPDATE_040`: Empty name string should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_041`: Empty iataCode string should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_042`: Empty icaoCode string should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_043`: Empty countryCode string should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_044`: Empty city string should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_045`: Empty timezone string should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_046`: Whitespace-only timezone string should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_047`: Empty postalCode string should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_048`: iataCode shorter than 3 characters should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_049`: iataCode longer than 3 characters should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_050`: Lowercase iataCode is normalized and may succeed (compatibility), expected `400`
+- `TC_AIRPORT_UPDATE_051`: iataCode with non-alpha characters should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_052`: iataCode with special characters should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_053`: iataCode already used by another airport should return 409, expected `409`
+- `TC_AIRPORT_UPDATE_054`: Updating airport with its own existing iataCode should succeed with 200, expected `200`
+- `TC_AIRPORT_UPDATE_055`: icaoCode shorter than 4 characters should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_056`: icaoCode longer than 4 characters should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_057`: Lowercase icaoCode is normalized and may succeed (compatibility), expected `400`
+- `TC_AIRPORT_UPDATE_058`: icaoCode with non-alpha characters should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_059`: icaoCode with special characters should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_060`: icaoCode already used by another airport should return 409, expected `409`
+- `TC_AIRPORT_UPDATE_061`: Updating airport with its own existing icaoCode should succeed with 200, expected `200`
+- `TC_AIRPORT_UPDATE_062`: countryCode shorter than 2 characters should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_063`: countryCode longer than 2 characters should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_064`: countryCode with non-alpha characters should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_065`: countryCode with special characters should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_066`: Lowercase countryCode is normalized to uppercase and should succeed with 200, expected `200`
+- `TC_AIRPORT_UPDATE_067`: name exceeding 150 characters should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_068`: Whitespace-only name should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_069`: Name with Unicode characters should succeed with 200, expected `200`
+- `TC_AIRPORT_UPDATE_070`: Name with SQL injection pattern should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_071`: Name with script injection pattern should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_072`: city exceeding 100 characters should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_073`: Whitespace-only city should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_074`: City with Unicode characters should succeed with 200, expected `200`
+- `TC_AIRPORT_UPDATE_075`: Latitude above 90 should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_076`: Latitude below -90 should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_077`: Non-numeric latitude string should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_078`: Latitude at boundary value 90 should succeed with 200, expected `200`
+- `TC_AIRPORT_UPDATE_079`: Latitude at boundary value -90 should succeed with 200, expected `200`
+- `TC_AIRPORT_UPDATE_080`: Longitude above 180 should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_081`: Longitude below -180 should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_082`: Non-numeric longitude string should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_083`: Longitude at boundary value 180 should succeed with 200, expected `200`
+- `TC_AIRPORT_UPDATE_084`: Longitude at boundary value -180 should succeed with 200, expected `200`
+- `TC_AIRPORT_UPDATE_085`: Timezone exceeding 100 characters should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_086`: Invalid IANA timezone format may be accepted (compatibility), expected `400`
+- `TC_AIRPORT_UPDATE_087`: Whitespace-only timezone string should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_088`: Update type to INTERNATIONAL should succeed with 200, expected `200`
+- `TC_AIRPORT_UPDATE_089`: Update type to DOMESTIC should succeed with 200, expected `200`
+- `TC_AIRPORT_UPDATE_090`: Invalid type value should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_091`: Update isActive to true should succeed with 200, expected `200`
+- `TC_AIRPORT_UPDATE_092`: Update isActive to false should succeed with 200, expected `200`
+- `TC_AIRPORT_UPDATE_093`: Non-boolean isActive value should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_094`: Update with valid address value should succeed with 200, expected `200`
+- `TC_AIRPORT_UPDATE_095`: Update with valid postalCode value should succeed with 200, expected `200`
+- `TC_AIRPORT_UPDATE_096`: address exceeding 255 characters should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_097`: postalCode exceeding 20 characters should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_098`: SQL injection in name field should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_099`: Script injection in name field should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_100`: SQL injection in address field should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_101`: Script injection in address field should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_102`: Event handler injection in name field should return 400, expected `400`
+- `TC_AIRPORT_UPDATE_103`: Successful update response contains airport id, expected `200`
+- `TC_AIRPORT_UPDATE_104`: Successful update response contains updated name, expected `200`
+- `TC_AIRPORT_UPDATE_105`: Successful update response contains updated iataCode (uppercased), expected `200`
+- `TC_AIRPORT_UPDATE_106`: Successful update response contains updated icaoCode (uppercased), expected `200`
+- `TC_AIRPORT_UPDATE_107`: Successful update response contains updated countryCode (uppercased), expected `200`
+- `TC_AIRPORT_UPDATE_108`: Successful update response contains updated city, expected `200`
+- `TC_AIRPORT_UPDATE_109`: Successful update response contains updated latitude, expected `200`
+- `TC_AIRPORT_UPDATE_110`: Successful update response contains updated longitude, expected `200`
+- `TC_AIRPORT_UPDATE_111`: Successful update response contains updated timezone, expected `200`
+- `TC_AIRPORT_UPDATE_112`: Successful update response contains updated isActive, expected `200`
+- `TC_AIRPORT_UPDATE_113`: Successful update response contains updated type, expected `200`
+- `TC_AIRPORT_UPDATE_114`: Successful update response contains updated address (including null), expected `200`
+- `TC_AIRPORT_UPDATE_115`: Successful update response contains updatedBy matching the admin id, expected `200`
+- `TC_AIRPORT_UPDATE_116`: Concurrent updates with same iataCode: one succeeds, one gets 409, expected `200` and `409`
+- `TC_AIRPORT_UPDATE_117`: Concurrent updates with same icaoCode: one succeeds, one gets 409, expected `200` and `409`
+
+Notes:
+
+- `TC_AIRPORT_UPDATE_050` and `TC_AIRPORT_UPDATE_057`: The DTO `@Transform` uppercases `iataCode` and `icaoCode` before `@Matches` runs, so lowercase-letter input is normalized and accepted (`200`) rather than rejected (`400`). The tests accept both outcomes.
+- `TC_AIRPORT_UPDATE_086`: The DTO does not enforce IANA timezone format validation — only `@IsString`, `@IsNotEmpty`, `@IsSafeText`, and `@MaxLength(100)` are applied. Arbitrary non-empty strings within the length limit may be accepted (`200`). The test accepts both outcomes.
+- `TC_AIRPORT_UPDATE_012` and `TC_AIRPORT_UPDATE_013`: `ParseIntPipe` accepts negative and zero integers; the service returns `404` (airport not found). The tests accept either `400` (explicit rejection) or `404` (service behavior).
+- `TC_AIRPORT_UPDATE_039`: `address` is the only field that explicitly allows `null` values per `UpdateAirportRequestDto.validateForUpdate`. All other fields reject `null` with `400`.
