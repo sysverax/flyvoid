@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+:root {
+  --primary: #0F2757;
+  --primary-hover: rgb(25, 52, 108);
+      --text-primary: #09090B;
+}
+
+@theme inline {
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+}
+
+body {
+  background-color: #F3F4F6;
+}
+
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
