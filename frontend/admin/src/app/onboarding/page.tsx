@@ -1,11 +1,8 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import {
-  Send,
-  ChevronDown,
-  Search,
-} from "lucide-react";
+import Image from "next/image";
+import { Send, ChevronDown, Search } from "lucide-react";
 import {
   Table,
   TableHeader,
@@ -82,42 +79,42 @@ const INITIAL_INVITATIONS: Invitation[] = [
     creditLimit: 100000,
     status: "Expired",
   },
-  {
-    id: "5",
-    airlineName: "TransAsia Link",
-    airlineCode: "TAL",
-    contactEmail: "onboard.tal@transasia.net",
-    country: "Japan",
-    invitedBy: "John Smith",
-    invitedDate: "15/02/2025",
-    expiryDate: "15/03/2025",
-    creditLimit: 150000,
-    status: "Accepted",
-  },
-  {
-    id: "6",
-    airlineName: "Alpine Airways",
-    airlineCode: "ALA",
-    contactEmail: "onboard.ala@alpine.ch",
-    country: "Switzerland",
-    invitedBy: "John Smith",
-    invitedDate: "10/01/2025",
-    expiryDate: "10/02/2025",
-    creditLimit: 120000,
-    status: "Revoked",
-  },
-  {
-    id: "7",
-    airlineName: "Nordic Flight",
-    airlineCode: "NDF",
-    contactEmail: "onboard.ndf@nordic.se",
-    country: "Sweden",
-    invitedBy: "Sarah Connor",
-    invitedDate: "05/01/2025",
-    expiryDate: "05/02/2025",
-    creditLimit: 80000,
-    status: "Expired",
-  },
+  // {
+  //   id: "5",
+  //   airlineName: "TransAsia Link",
+  //   airlineCode: "TAL",
+  //   contactEmail: "onboard.tal@transasia.net",
+  //   country: "Japan",
+  //   invitedBy: "John Smith",
+  //   invitedDate: "15/02/2025",
+  //   expiryDate: "15/03/2025",
+  //   creditLimit: 150000,
+  //   status: "Accepted",
+  // },
+  // {
+  //   id: "6",
+  //   airlineName: "Alpine Airways",
+  //   airlineCode: "ALA",
+  //   contactEmail: "onboard.ala@alpine.ch",
+  //   country: "Switzerland",
+  //   invitedBy: "John Smith",
+  //   invitedDate: "10/01/2025",
+  //   expiryDate: "10/02/2025",
+  //   creditLimit: 120000,
+  //   status: "Revoked",
+  // },
+  // {
+  //   id: "7",
+  //   airlineName: "Nordic Flight",
+  //   airlineCode: "NDF",
+  //   contactEmail: "onboard.ndf@nordic.se",
+  //   country: "Sweden",
+  //   invitedBy: "Sarah Connor",
+  //   invitedDate: "05/01/2025",
+  //   expiryDate: "05/02/2025",
+  //   creditLimit: 80000,
+  //   status: "Expired",
+  // },
 ];
 
 const STATUSES = ["Pending", "Expired", "Accepted", "Revoked"] as const;
@@ -137,9 +134,6 @@ export default function OnboardingPage() {
   const [currentPage, setCurrentPage] = useState(1);
 
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
-  const [viewDetailsTarget, setViewDetailsTarget] = useState<Invitation | null>(
-    null,
-  );
   const [revokeConfirmTarget, setRevokeConfirmTarget] =
     useState<Invitation | null>(null);
 
@@ -211,7 +205,11 @@ export default function OnboardingPage() {
 
   const toggleStatusFilter = (status: string) => {
     const next = new Set(selectedStatuses);
-    next.has(status) ? next.delete(status) : next.add(status);
+    if (next.has(status)) {
+      next.delete(status);
+    } else {
+      next.add(status);
+    }
     setSelectedStatuses(next);
     setCurrentPage(1);
   };
@@ -314,12 +312,12 @@ export default function OnboardingPage() {
   };
 
   return (
-    <div className="flex flex-col flex-1 min-h-screen pb-16">
+    <div className="flex min-h-screen flex-1 flex-col pb-16 lg:w-[1136px] lg:max-w-[calc(100vw-304px)]">
       <ToastList toasts={toasts} />
 
       <div className="space-y-7">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 -mt-2">
+        <div className="-mt-0.5 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center lg:h-[50px]">
           <div>
             <h1 className="text-2xl sm:text-[24px] font-semibold text-[#1F2937] tracking-tight">
               Invites & Onboarding
@@ -330,9 +328,9 @@ export default function OnboardingPage() {
           </div>
           <button
             onClick={() => setIsInviteModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-3 rounded-xl bg-primary hover:bg-primary-hover text-white text-[16px] transition-all duration-200 shadow-sm shadow-primary/20 group active:scale-98 cursor-pointer"
+            className="group flex h-[50px] items-center justify-center gap-2 rounded-[10px] bg-primary px-4 py-[9px] text-[16px] font-medium text-white transition-colors duration-200 hover:bg-primary-hover"
           >
-            <Send className="w-4 h-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+            <Send className="h-5 w-5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
             <span>Invite Airline</span>
           </button>
         </div>
@@ -349,11 +347,11 @@ export default function OnboardingPage() {
           filterDescriptionText={filterDescriptionText}
         >
           {/* Country dropdown */}
-          <div className="relative">
+          <div className="relative h-11 w-[180px]">
             <select
               value={selectedCountry}
               onChange={(e) => setSelectedCountry(e.target.value)}
-              className="appearance-none bg-[#F3F4F6] border border-[#D1D5DB] text-gray-800 py-2.5 pl-4 pr-10 rounded-xl text-[16px] font-medium hover:bg-slate-100/80 cursor-pointer focus:outline-none transition-all"
+              className="h-11 w-full appearance-none rounded-[8px] border border-[#D1D5DB] bg-[#F3F4F6] py-2.5 pl-4 pr-10 text-[16px] font-normal text-[#1F2937] transition-colors hover:bg-slate-100/80 focus:outline-none"
             >
               {countries.map((c) => (
                 <option key={c} value={c}>
@@ -361,18 +359,18 @@ export default function OnboardingPage() {
                 </option>
               ))}
             </select>
-            <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+            <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-[#6B7280]" />
           </div>
 
           {/* Status pills */}
-          <div className="flex items-center gap-1 border border-[#D1D5DB] bg-white py-1.5 px-1.5 rounded-xl">
+          <div className="flex h-11 items-center gap-1.5 rounded-[8px] border border-[#D1D5DB] bg-white px-[6px] py-2">
             {STATUSES.map((status) => (
               <button
                 key={status}
                 type="button"
                 onClick={() => toggleStatusFilter(status)}
                 className={cn(
-                  "px-2.5 py-2 rounded-lg text-[14px] transition-all duration-150 cursor-pointer",
+                  "flex h-[33px] items-center justify-center rounded-[6px] px-[10px] py-2 text-[14px] leading-[17px] transition-all duration-150 cursor-pointer",
                   selectedStatuses.has(status)
                     ? "bg-primary text-white shadow-sm"
                     : "text-[#1F2937] hover:text-primary hover:bg-[#F3F4F6]",
@@ -385,7 +383,7 @@ export default function OnboardingPage() {
         </FiltersCard>
 
         {/* Table card */}
-        <div className="hidden lg:block border border-[#E5E7EB] rounded-lg overflow-hidden">
+        <div className="hidden overflow-hidden rounded-[12px] border border-[#E5E7EB] lg:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -458,11 +456,15 @@ export default function OnboardingPage() {
                             <TooltipTrigger asChild>
                               <Button
                                 variant="ghost"
-                                className="cursor-pointer"
+                                className="h-5 w-5 cursor-pointer p-0"
                                 size="icon"
-                                onClick={() => setViewDetailsTarget(inv)}
                               >
-                                <img src="/icons/view.svg" alt="View" />
+                                <Image
+                                  src="/icons/view.svg"
+                                  alt="View"
+                                  width={20}
+                                  height={20}
+                                />
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent>
@@ -477,13 +479,18 @@ export default function OnboardingPage() {
                               <TooltipTrigger asChild>
                                 <Button
                                   variant="ghost"
-                                  className="cursor-pointer"
+                                  className="h-5 w-5 cursor-pointer p-0"
                                   size="icon"
                                   onClick={() => {
                                     setEditTarget(inv);
                                   }}
                                 >
-                                  <img src="/icons/edit.svg" alt="Edit" />
+                                  <Image
+                                    src="/icons/edit.svg"
+                                    alt="Edit"
+                                    width={20}
+                                    height={20}
+                                  />
                                 </Button>
                               </TooltipTrigger>
                               <TooltipContent>Edit Invitation</TooltipContent>
@@ -492,11 +499,16 @@ export default function OnboardingPage() {
                               <TooltipTrigger asChild>
                                 <Button
                                   variant="ghost"
-                                  className="cursor-pointer"
+                                  className="h-5 w-5 cursor-pointer p-0"
                                   size="icon"
                                   onClick={() => setResendConfirmTarget(inv)}
                                 >
-                                  <img src="/icons/resend.svg" alt="Resend" />
+                                  <Image
+                                    src="/icons/resend.svg"
+                                    alt="Resend"
+                                    width={20}
+                                    height={20}
+                                  />
                                 </Button>
                               </TooltipTrigger>
                               <TooltipContent>Resend Invitation</TooltipContent>
@@ -505,11 +517,16 @@ export default function OnboardingPage() {
                               <TooltipTrigger asChild>
                                 <Button
                                   variant="ghost"
-                                  className="cursor-pointer"
+                                  className="h-5 w-5 cursor-pointer p-0"
                                   size="icon"
                                   onClick={() => setRevokeConfirmTarget(inv)}
                                 >
-                                  <img src="/icons/revoke.svg" alt="Revoke" />
+                                  <Image
+                                    src="/icons/revoke.svg"
+                                    alt="Revoke"
+                                    width={20}
+                                    height={20}
+                                  />
                                 </Button>
                               </TooltipTrigger>
                               <TooltipContent>Revoke Invitation</TooltipContent>

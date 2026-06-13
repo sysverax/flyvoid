@@ -11,7 +11,7 @@ import {
   LogOut,
   Menu,
   X,
-  Users ,
+  Users,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 
@@ -22,7 +22,7 @@ const navItems = [
   { title: "Payments", icon: "/icons/payment.svg", path: "/payments" },
   { title: "Onboarding", icon: "/icons/onboarding.svg", path: "/onboarding" },
   { title: "Audit Logs", icon: FileText, path: "/audit-logs" },
-  { title: "Manage Users", icon: Users , path: "/manage-users" },
+  { title: "Manage Users", icon: Users, path: "/manage-users" },
   { title: "Admin Profile", icon: "/icons/user.svg", path: "/profile" },
 ];
 
@@ -35,61 +35,79 @@ export function Sidebar() {
     router.push("/auth");
   };
 
-  const NavContent = ({ mobile = false }: { mobile?: boolean }) => (
-    <div className="flex flex-col h-full">
+  const renderNavContent = (mobile = false) => (
+    <div className="flex h-full w-full flex-col gap-8 text-[18px] text-[#9FA9BC]">
       {/* Logo */}
-      <div className="flex items-center justify-between h-20 px-6 mb-3">
-        <Image src="/logo.svg" alt="Logo" width={142} height={37} />
+      <div className="relative h-14 w-full">
+        <Image
+          src="/logo.svg"
+          alt="Airbook logo"
+          width={142}
+          height={37}
+          className="absolute -top-1 left-[14px]"
+        />
 
         {mobile && (
-          <button onClick={() => setMobileOpen(false)}>
-            <X className="w-6 h-6" />
+          <button
+            onClick={() => setMobileOpen(false)}
+            className="rounded-md p-1 text-white/80 hover:bg-white/10 hover:text-white"
+            aria-label="Close sidebar"
+          >
+            <X className="h-6 w-6" />
           </button>
         )}
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
-        {navItems.map((item) => {
-          const isActive = pathname === item.path;
-          return (
-            <Link
-              key={item.path}
-              href={item.path}
-              className={cn(
-                "flex items-center gap-3 px-4 py-3 text-[18px] rounded-lg transition-all duration-200",
-                "hover:bg-white/10",
-                isActive ? "bg-white/15 text-white" : "text-[#9FA9BC]",
-              )}
-            >
-              {typeof item.icon === "string" ? (
-                <Image
-                  src={item.icon}
-                  alt={item.title}
-                  width={20}
-                  height={20}
-                />
-              ) : (
-                <item.icon className="w-5 h-5" />
-              )}
-              <span>{item.title}</span>
-            </Link>
-          );
-        })}
-      </nav>
+      <div className="flex flex-1 flex-col justify-between pb-3">
+        {/* Navigation */}
+        <nav className="scrollbar-hide flex-1 overflow-y-auto">
+          <div className="flex w-full flex-col items-start gap-3">
+            {navItems.map((item) => {
+              const isActive = pathname === item.path;
+              return (
+                <Link
+                  key={item.path}
+                  href={item.path}
+                  className={cn(
+                    "flex h-[46px] w-full items-center gap-3 rounded-[10px] px-4 py-3 text-[18px] leading-[22px] transition-colors duration-200",
+                    isActive
+                      ? "bg-[#203663] text-white"
+                      : "text-[#9FA9BC] hover:bg-[#203663]/50 hover:text-white",
+                  )}
+                >
+                  {typeof item.icon === "string" ? (
+                    <Image
+                      src={item.icon}
+                      alt={item.title}
+                      width={20}
+                      height={20}
+                      className={cn(
+                        "h-5 w-5",
+                        isActive ? "brightness-0 invert" : "opacity-90",
+                      )}
+                    />
+                  ) : (
+                    <item.icon className="h-5 w-5" strokeWidth={1.8} />
+                  )}
+                  <span className="flex-1">{item.title}</span>
+                </Link>
+              );
+            })}
+          </div>
+        </nav>
 
-      {/* Logout Button */}
-      <div className="p-3">
-        <button
-          onClick={handleLogout}
-          className={cn(
-            "flex items-center gap-3 px-4 py-3 text-[18px] rounded-lg transition-all duration-200 w-full",
-            "text-[#9FA9BC] hover:bg-white/10",
-          )}
-        >
-          <LogOut className="w-5 h-5" />
-          <span>Sign out</span>
-        </button>
+        {/* Logout Button */}
+        <div className="flex h-6 w-full items-center px-4">
+          <button
+            onClick={handleLogout}
+            className={cn(
+              "flex items-center gap-2 text-[18px] leading-[22px] text-[#9FA9BC] transition-colors duration-200 hover:text-white",
+            )}
+          >
+            <LogOut className="h-6 w-6" strokeWidth={1.6} />
+            <span>Sign out</span>
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -100,9 +118,10 @@ export function Sidebar() {
       <div className="lg:hidden fixed top-4 left-4 z-40">
         <button
           onClick={() => setMobileOpen(true)}
-          className="p-2 bg-white rounded-lg shadow"
+          className="rounded-lg bg-white p-2 shadow"
+          aria-label="Open sidebar"
         >
-          <Menu className="w-5 h-5 text-gray-700" />
+          <Menu className="h-5 w-5 text-gray-700" />
         </button>
       </div>
 
@@ -113,8 +132,8 @@ export function Sidebar() {
             className="fixed inset-0 bg-black/50"
             onClick={() => setMobileOpen(false)}
           />
-          <div className="relative w-72 bg-primary">
-            <NavContent mobile />
+          <div className="relative flex h-screen w-[240px] flex-col bg-[#0F2757] px-4 py-8">
+            {renderNavContent(true)}
           </div>
         </div>
       )}
@@ -122,10 +141,10 @@ export function Sidebar() {
       {/* Desktop sidebar */}
       <aside
         className={cn(
-          "hidden lg:flex flex-col fixed top-0 left-0 h-screen bg-primary border-r border-white/10 transition-all duration-300 z-40 w-60",
+          "fixed left-0 top-0 z-40 hidden h-screen w-[240px] flex-col bg-[#0F2757] px-4 py-8 lg:flex",
         )}
       >
-        <NavContent />
+        {renderNavContent()}
       </aside>
     </>
   );
