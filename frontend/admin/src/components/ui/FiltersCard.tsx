@@ -7,7 +7,7 @@ interface FiltersCardProps {
   setSearchQuery: (query: string) => void;
   searchPlaceholder?: string;
   onClearFilters: () => void;
-  filterDescriptionText: string;
+  filterDescriptionText?: string;
   children?: React.ReactNode;
 }
 
@@ -20,7 +20,7 @@ export function FiltersCard({
   children,
 }: FiltersCardProps) {
   return (
-    <div className="space-y-[14px] rounded-[12px] border border-[#E5E7EB] bg-white p-[18px]">
+    <div className="space-y-[14px] rounded-[12px] border border-[#E5E7EB] bg-white p-[17px]">
       {/* Search */}
       <div className="relative">
         <span className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
@@ -37,7 +37,7 @@ export function FiltersCard({
 
       {/* Filter row */}
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-3">{children}</div>
+        <div className="flex flex-wrap items-center gap-[12px]">{children}</div>
 
         <button
           onClick={onClearFilters}
@@ -49,7 +49,9 @@ export function FiltersCard({
       </div>
 
       {/* Summary text */}
-      <div className="text-[#6B7280] text-[14px]">{filterDescriptionText}</div>
+      {filterDescriptionText && (
+        <div className="text-[#6B7280] text-[14px] h-[17px]">{filterDescriptionText}</div>
+      )}
     </div>
   );
 }

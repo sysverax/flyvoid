@@ -10,6 +10,7 @@ import {
   TableRow,
   TableHead,
   TableCell,
+  SortHeader,
 } from "../../components/ui/table";
 import { Invitation, Toast, InviteFormState } from "@/src/types/onboarding";
 import { ToastList } from "@/src/components/ui/ToastList";
@@ -20,7 +21,7 @@ import {
   ResendDialog,
   RevokeDialog,
 } from "@/src/components/onboarding/RevokeConfirmModal";
-import { cn } from "@/src/lib/utils";
+import { cn, sortData } from "@/src/lib/utils";
 import { StatusBadge } from "@/src/components/ui/StatusBadge";
 import { TableEmptyState } from "@/src/components/ui/EmptyState";
 import { Button } from "@/src/components/ui/button";
@@ -133,6 +134,9 @@ export default function OnboardingPage() {
   const [resultsPerPage, setResultsPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
 
+  const [sortField, setSortField] = useState<keyof Invitation | null>(null);
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [revokeConfirmTarget, setRevokeConfirmTarget] =
     useState<Invitation | null>(null);
@@ -180,15 +184,19 @@ export default function OnboardingPage() {
     });
   }, [invitations, searchQuery, selectedCountry, selectedStatuses]);
 
+  const sortedInvitations = useMemo(() => {
+    return sortData(filteredInvitations, sortField, sortOrder, ["invitedDate", "expiryDate"]);
+  }, [filteredInvitations, sortField, sortOrder]);
+
   const totalPages = Math.max(
     1,
-    Math.ceil(filteredInvitations.length / resultsPerPage),
+    Math.ceil(sortedInvitations.length / resultsPerPage),
   );
 
   const paginatedInvitations = useMemo(() => {
     const startIndex = (currentPage - 1) * resultsPerPage;
-    return filteredInvitations.slice(startIndex, startIndex + resultsPerPage);
-  }, [filteredInvitations, currentPage, resultsPerPage]);
+    return sortedInvitations.slice(startIndex, startIndex + resultsPerPage);
+  }, [sortedInvitations, currentPage, resultsPerPage]);
 
   const filterDescriptionText = useMemo(() => {
     if (
@@ -219,8 +227,25 @@ export default function OnboardingPage() {
     setSelectedCountry("All Countries");
     setSelectedStatuses(new Set());
     setCurrentPage(1);
+    setSortField(null);
+    setSortOrder("asc");
     addToast("Filters cleared", "info");
   };
+
+  const handleSort = (field: keyof Invitation) => {
+    if (sortField === field) {
+      if (sortOrder === "asc") {
+        setSortOrder("desc");
+      } else {
+        setSortField(null);
+      }
+    } else {
+      setSortField(field);
+      setSortOrder("asc");
+    }
+    setCurrentPage(1);
+  };
+
 
   const handleResendInvite = (inv: Invitation) => {
     const today = new Date();
@@ -312,14 +337,15 @@ export default function OnboardingPage() {
   };
 
   return (
-    <div className="flex min-h-screen flex-1 flex-col pb-16 lg:w-[1136px] lg:max-w-[calc(100vw-304px)]">
+    // <div className="flex min-h-screen flex-1 flex-col pb-16 lg:w-[1136px] lg:max-w-[calc(100vw-304px)]">
+    <div className="flex min-h-screen flex-1 flex-col pb-16 lg:w-full lg:max-w-[calc(100vw-304px)]">
       <ToastList toasts={toasts} />
 
       <div className="space-y-7">
         {/* Header */}
         <div className="-mt-0.5 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center lg:h-[50px]">
           <div>
-            <h1 className="text-2xl sm:text-[24px] font-semibold text-[#1F2937] tracking-tight">
+            <h1 className="text-2xl sm:text-[24px] font-semibold text-[#1F2937] leading-[100%] tracking-[0%]">
               Invites & Onboarding
             </h1>
             <p className="text-[14px] text-[#6B7280] mt-1">
@@ -387,19 +413,31 @@ export default function OnboardingPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Airline</TableHead>
-                <TableHead>Contact Email</TableHead>
-                <TableHead>Country</TableHead>
-                <TableHead>Invited By</TableHead>
-                <TableHead className="whitespace-nowrap">
-                  Invited Date
+                <TableHead className="min-w-[165px]">
+                  <SortHeader label="Airline" field="airlineName" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                 </TableHead>
-                <TableHead className="whitespace-nowrap">Expiry Date</TableHead>
-                <TableHead className="text-right whitespace-nowrap">
-                  Credit Limit
+                <TableHead className="min-w-[146px]">
+                  <SortHeader label="Contact Email" field="contactEmail" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                 </TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead className="min-w-[114px]">
+                  <SortHeader label="Country" field="country" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                </TableHead>
+                <TableHead  className="min-w-[135px] whitespace-nowrap">
+                  <SortHeader label="Invited By" field="invitedBy" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                </TableHead>
+                <TableHead className="min-w-[105px] whitespace-nowrap">
+                  <SortHeader label="Invited Date" field="invitedDate" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                </TableHead>
+                <TableHead className="min-w-[105px] whitespace-nowrap">
+                  <SortHeader label="Expiry Date" field="expiryDate" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                </TableHead>
+                <TableHead className="whitespace-nowrap min-w-[110px]">
+                  <SortHeader label="Credit Limit" field="creditLimit" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} align="right" />
+                </TableHead>
+                <TableHead className="min-w-[100px]">
+                  <SortHeader label="Status" field="status" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                </TableHead>
+                <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -416,7 +454,7 @@ export default function OnboardingPage() {
                     key={inv.id}
                     className={cn(inv.status === "Revoked" && "opacity-50")}
                   >
-                    <TableCell className="max-w-[150px]">
+                    <TableCell className="w-[170px]">
                       <p className="truncate" title={inv.airlineName}>
                         {inv.airlineName}
                       </p>
@@ -429,7 +467,7 @@ export default function OnboardingPage() {
                     </TableCell>
                     <TableCell>
                       <span
-                        className="block max-w-[160px] truncate"
+                        className="block max-w-[120px] truncate"
                         title={inv.contactEmail}
                       >
                         {inv.contactEmail}
@@ -443,14 +481,14 @@ export default function OnboardingPage() {
                     <TableCell className="whitespace-nowrap">
                       {inv.expiryDate}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell>
                       ${inv.creditLimit.toLocaleString()}
                     </TableCell>
                     <TableCell>
                       <StatusBadge status={inv.status} />
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center justify-end gap-3">
+                      <div className="flex items-center justify-start min-w-[60px] gap-3">
                         {inv.status === "Accepted" && (
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -474,65 +512,65 @@ export default function OnboardingPage() {
                         )}
                         {(inv.status === "Pending" ||
                           inv.status === "Expired") && (
-                          <>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  className="h-5 w-5 cursor-pointer p-0"
-                                  size="icon"
-                                  onClick={() => {
-                                    setEditTarget(inv);
-                                  }}
-                                >
-                                  <Image
-                                    src="/icons/edit.svg"
-                                    alt="Edit"
-                                    width={20}
-                                    height={20}
-                                  />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>Edit Invitation</TooltipContent>
-                            </Tooltip>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  className="h-5 w-5 cursor-pointer p-0"
-                                  size="icon"
-                                  onClick={() => setResendConfirmTarget(inv)}
-                                >
-                                  <Image
-                                    src="/icons/resend.svg"
-                                    alt="Resend"
-                                    width={20}
-                                    height={20}
-                                  />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>Resend Invitation</TooltipContent>
-                            </Tooltip>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  className="h-5 w-5 cursor-pointer p-0"
-                                  size="icon"
-                                  onClick={() => setRevokeConfirmTarget(inv)}
-                                >
-                                  <Image
-                                    src="/icons/revoke.svg"
-                                    alt="Revoke"
-                                    width={20}
-                                    height={20}
-                                  />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>Revoke Invitation</TooltipContent>
-                            </Tooltip>
-                          </>
-                        )}
+                            <>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    className="h-5 w-5 cursor-pointer p-0"
+                                    size="icon"
+                                    onClick={() => {
+                                      setEditTarget(inv);
+                                    }}
+                                  >
+                                    <Image
+                                      src="/icons/edit.svg"
+                                      alt="Edit"
+                                      width={20}
+                                      height={20}
+                                    />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Edit Invitation</TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    className="h-5 w-5 cursor-pointer p-0"
+                                    size="icon"
+                                    onClick={() => setResendConfirmTarget(inv)}
+                                  >
+                                    <Image
+                                      src="/icons/resend.svg"
+                                      alt="Resend"
+                                      width={20}
+                                      height={20}
+                                    />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Resend Invitation</TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    className="h-5 w-5 cursor-pointer p-0"
+                                    size="icon"
+                                    onClick={() => setRevokeConfirmTarget(inv)}
+                                  >
+                                    <Image
+                                      src="/icons/revoke.svg"
+                                      alt="Revoke"
+                                      width={20}
+                                      height={20}
+                                    />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Revoke Invitation</TooltipContent>
+                              </Tooltip>
+                            </>
+                          )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -541,7 +579,7 @@ export default function OnboardingPage() {
             </TableBody>
           </Table>
         </div>
-
+ 
         {/* Pagination */}
         <Pagination
           totalResults={filteredInvitations.length}

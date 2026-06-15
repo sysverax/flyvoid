@@ -22,7 +22,7 @@ const TableHeader = React.forwardRef<
   <thead
     ref={ref}
     className={cn(
-      "border-b border-[#E5E7EB] bg-[#F9FAFB] [&_tr]:border-b",
+      "border-b border-[#E5E7EB] bg-[#F9FAFB] [&_tr]:border-b h-[40px]",
       className,
     )}
     {...props}
@@ -64,7 +64,7 @@ const TableHead = React.forwardRef<
   <th
     ref={ref}
     className={cn(
-      "h-10 px-3 py-3 text-left text-[12px] font-medium uppercase tracking-wide text-gray-500 align-middle [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
+      "h-10 px-3 py-2.5 text-left text-[12px] font-medium uppercase leading-[100%] tracking-[0%] text-gray-500 align-middle [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
       className,
     )}
     {...props}
@@ -87,4 +87,70 @@ const TableCell = React.forwardRef<
 ));
 TableCell.displayName = "TableCell";
 
-export { Table, TableHeader, TableBody, TableRow, TableHead, TableCell };
+interface SortHeaderProps<T> {
+  label: string;
+  field: keyof T;
+  sortField: keyof T | null;
+  sortOrder: "asc" | "desc";
+  onSort: (field: keyof T) => void;
+  align?: "left" | "right";
+}
+
+function SortHeader<T>({
+  label,
+  field,
+  sortField,
+  sortOrder,
+  onSort,
+  align = "left",
+}: SortHeaderProps<T>) {
+  const isSorted = sortField === field;
+  const isAsc = isSorted && sortOrder === "asc";
+  const isDesc = isSorted && sortOrder === "desc";
+
+  return (
+    <div className={cn("flex items-center", align === "right" && "justify-end")}>
+      <span>{label}</span>
+      <span
+        onClick={() => onSort(field)}
+        className="inline-flex cursor-pointer ml-1.5 select-none p-1 rounded transition-colors shrink-0"
+        // title={`Sort by ${label}`}
+      >
+        <svg
+          width="8"
+          height="12"
+          viewBox="0 0 8 12"
+          fill="none"
+          className="text-gray-400"
+        >
+          {/* Up Chevron */}
+          <path
+            d="M1 4.5L4 1.5L7 4.5"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={cn(
+              "transition-colors duration-150",
+              isAsc ? "text-gray-900" : "text-[#6B7280]"
+            )}
+          />
+          {/* Down Chevron */}
+          <path
+            d="M1 7.5L4 10.5L7 7.5"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={cn(
+              "transition-colors duration-150",
+              isDesc ? "text-gray-900" : "text-[#6B7280]"
+            )}
+          />
+        </svg>
+      </span>
+    </div>
+  );
+}
+
+export { Table, TableHeader, TableBody, TableRow, TableHead, TableCell, SortHeader };

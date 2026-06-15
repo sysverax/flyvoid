@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Figtree, Geist } from "next/font/google";
+import { Figtree, Geist, Urbanist } from "next/font/google";
 import "./globals.css";
 import { MainLayout } from "@/src/components/layout/MainLayout";
 import { cn } from "@/src/lib/utils";
@@ -9,6 +9,12 @@ const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
 const figtree = Figtree({
   subsets: ["latin"],
+  variable: "--font-figtree",
+});
+
+const urbanist = Urbanist({
+  subsets: ["latin"],
+  variable: "--font-urbanist",
 });
 
 export const metadata: Metadata = {
@@ -22,7 +28,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={cn("font-sans", geist.variable)}>
+    <html lang="en" className={cn("font-sans", figtree.variable, geist.variable, urbanist.variable)}>
       <body className={`${figtree.className} min-h-screen flex flex-col antialiased`}>
         <TooltipProvider>
           <MainLayout>{children}</MainLayout>
