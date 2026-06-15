@@ -41,7 +41,7 @@ export function FiltersCard({
 
         <button
           onClick={onClearFilters}
-          className="flex h-11 items-center gap-2 rounded-[8px] px-[14px] py-2 text-[16px] text-[#6B7280] transition-colors hover:text-gray-800"
+          className="flex h-11 items-center gap-2 rounded-[8px] px-[14px] py-2 text-[16px] text-[#6B7280] transition-colors hover:text-gray-800 cursor-pointer"
         >
           <X className="h-4 w-4" />
           <span>Clear All</span>

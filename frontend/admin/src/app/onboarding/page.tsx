@@ -2,7 +2,8 @@
 
 import { useState, useMemo } from "react";
 import Image from "next/image";
-import { Send, ChevronDown, Search } from "lucide-react";
+import { Send, Search } from "lucide-react";
+import { Dropdown } from "@/src/components/ui/Dropdown";
 import {
   Table,
   TableHeader,
@@ -17,6 +18,7 @@ import { ToastList } from "@/src/components/ui/ToastList";
 import { FiltersCard } from "@/src/components/ui/FiltersCard";
 import { Pagination } from "@/src/components/ui/pagination";
 import { InviteModal } from "@/src/components/onboarding/InviteModal";
+import { ViewInvitationModal } from "@/src/components/onboarding/ViewInvitationModal";
 import {
   ResendDialog,
   RevokeDialog,
@@ -138,6 +140,7 @@ export default function OnboardingPage() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
 
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [viewTarget, setViewTarget] = useState<Invitation | null>(null);
   const [revokeConfirmTarget, setRevokeConfirmTarget] =
     useState<Invitation | null>(null);
 
@@ -148,6 +151,13 @@ export default function OnboardingPage() {
     country: "France",
     creditLimit: "",
     expiryDate: "",
+    companyReg: "",
+    website: "",
+    phone: "",
+    timezone: "UTC",
+    logoUrl: "",
+    currency: "USD",
+    address: "",
   });
 
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -332,6 +342,13 @@ export default function OnboardingPage() {
       country: "France",
       creditLimit: "",
       expiryDate: "",
+      companyReg: "",
+      website: "",
+      phone: "",
+      timezone: "UTC",
+      logoUrl: "",
+      currency: "USD",
+      address: "",
     });
     addToast(`Successfully invited ${newInvitation.airlineName}!`);
   };
@@ -373,20 +390,16 @@ export default function OnboardingPage() {
           filterDescriptionText={filterDescriptionText}
         >
           {/* Country dropdown */}
-          <div className="relative h-11 w-[180px]">
-            <select
-              value={selectedCountry}
-              onChange={(e) => setSelectedCountry(e.target.value)}
-              className="h-11 w-full appearance-none rounded-[8px] border border-[#D1D5DB] bg-[#F3F4F6] py-2.5 pl-4 pr-10 text-[16px] font-normal text-[#1F2937] transition-colors hover:bg-slate-100/80 focus:outline-none"
-            >
-              {countries.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-[#6B7280]" />
-          </div>
+          <Dropdown
+            value={selectedCountry}
+            onChange={(val) => {
+              setSelectedCountry(val);
+              setCurrentPage(1);
+            }}
+            options={countries.map((c) => ({ value: c, label: c }))}
+            widthClass="w-44"
+            triggerWidthClass="w-[180px]"
+          />
 
           {/* Status pills */}
           <div className="flex h-11 items-center gap-1.5 rounded-[8px] border border-[#D1D5DB] bg-white px-[6px] py-2">
@@ -496,6 +509,7 @@ export default function OnboardingPage() {
                                 variant="ghost"
                                 className="h-5 w-5 cursor-pointer p-0"
                                 size="icon"
+                                onClick={() => setViewTarget(inv)}
                               >
                                 <Image
                                   src="/icons/view.svg"
@@ -506,7 +520,7 @@ export default function OnboardingPage() {
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent>
-                              View Airline Profile
+                              View Invitation Details
                             </TooltipContent>
                           </Tooltip>
                         )}
@@ -521,6 +535,21 @@ export default function OnboardingPage() {
                                     size="icon"
                                     onClick={() => {
                                       setEditTarget(inv);
+                                      setInviteForm({
+                                        airlineName: inv.airlineName,
+                                        airlineCode: inv.airlineCode,
+                                        contactEmail: inv.contactEmail,
+                                        country: inv.country,
+                                        creditLimit: String(inv.creditLimit),
+                                        expiryDate: "",
+                                        companyReg: "",
+                                        website: "",
+                                        phone: "",
+                                        timezone: "UTC",
+                                        logoUrl: "",
+                                        currency: "USD",
+                                        address: "",
+                                      });
                                     }}
                                   >
                                     <Image
@@ -591,7 +620,6 @@ export default function OnboardingPage() {
         />
       </div>
 
-      {/* Modals */}
       <InviteModal
         isOpen={isInviteModalOpen || !!editTarget}
         onClose={() => {
@@ -602,6 +630,11 @@ export default function OnboardingPage() {
         formState={inviteForm}
         setFormState={setInviteForm}
         editTarget={editTarget}
+      />
+
+      <ViewInvitationModal
+        invitation={viewTarget}
+        onClose={() => setViewTarget(null)}
       />
 
       <RevokeDialog

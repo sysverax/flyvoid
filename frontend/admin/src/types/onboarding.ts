@@ -20,4 +20,11 @@ export interface InviteFormState {
   country: string;
   creditLimit: string;
   expiryDate: string;
+  companyReg: string;
+  website: string;
+  phone: string;
+  timezone: string;
+  logoUrl: string;
+  currency: string;
+  address: string;
 }

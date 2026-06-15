@@ -3,10 +3,37 @@
 import { X } from "lucide-react";
 import { InviteFormState, Invitation } from "@/src/types/onboarding";
 import { cn } from "@/src/lib/utils";
+import { Dropdown, DropdownOption } from "@/src/components/ui/Dropdown";
 
-const COUNTRIES = ["France", "Japan", "Switzerland", "Sweden", "United States", "Australia"];
-const TIMEZONES = ["UTC", "UTC+1", "UTC+2", "UTC+5:30", "UTC+9", "UTC+10"];
-const CURRENCIES = ["USD", "EUR", "GBP", "JPY", "AUD"];
+const COUNTRIES: DropdownOption[] = [
+  { value: "France", label: "France" },
+  { value: "Japan", label: "Japan" },
+  { value: "Switzerland", label: "Switzerland" },
+  { value: "Sweden", label: "Sweden" },
+  { value: "United States", label: "United States" },
+  { value: "Australia", label: "Australia" },
+  { value: "United Kingdom", label: "United Kingdom" },
+  { value: "Germany", label: "Germany" },
+  { value: "India", label: "India" },
+  { value: "Canada", label: "Canada" },
+];
+
+const TIMEZONES: DropdownOption[] = [
+  { value: "UTC", label: "UTC" },
+  { value: "UTC+1", label: "UTC+1" },
+  { value: "UTC+2", label: "UTC+2" },
+  { value: "UTC+5:30", label: "UTC+5:30" },
+  { value: "UTC+9", label: "UTC+9" },
+  { value: "UTC+10", label: "UTC+10" },
+];
+
+const CURRENCIES: DropdownOption[] = [
+  { value: "USD", label: "USD" },
+  { value: "EUR", label: "EUR" },
+  { value: "GBP", label: "GBP" },
+  { value: "JPY", label: "JPY" },
+  { value: "AUD", label: "AUD" },
+];
 
 interface InviteModalProps {
   isOpen: boolean;
@@ -29,9 +56,12 @@ export function InviteModal({
 
   const field = (key: keyof InviteFormState) => ({
     value: formState[key] as string,
-    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
       setFormState({ ...formState, [key]: e.target.value }),
   });
+
+  const setField = (key: keyof InviteFormState) => (val: string) =>
+    setFormState({ ...formState, [key]: val });
 
   return (
     <>
@@ -71,54 +101,75 @@ export function InviteModal({
           </button>
         </div>
 
-         <div className="w-full" style={{ padding: "0px 24px" }}>
-        <div className="h-px bg-[#D1D5DB] w-full" />
-      </div>
+        <div className="w-full" style={{ padding: "0px 24px" }}>
+          <div className="h-px bg-[#D1D5DB] w-full" />
+        </div>
 
         {/* Scrollable body */}
         <form onSubmit={onSubmit} className="flex flex-col flex-1 overflow-hidden">
           <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6 scrollbar-hide">
             <section>
-              <h3 className="text-[18px] font-semibold text-[#1F2937] mb-4">Airline Details</h3>
-              <div className="grid grid-cols-2 gap-4">
+              <h3 className="text-[18px] font-semibold text-[#1F2937] mb-2.5">Airline Details</h3>
+              <div className="grid grid-cols-2 gap-[23px]">
                 <Field label="Airline Name" required>
                   <input placeholder="" {...field("airlineName")} className={inputCls} />
                 </Field>
                 <Field label="Airline Code" required>
                   <input placeholder="" {...field("airlineCode")} className={inputCls} />
                 </Field>
+
+                {/* Country — custom Dropdown */}
                 <Field label="Country" required>
-                  <select {...field("country")} className={inputCls}>
-                    {COUNTRIES.map((c) => <option key={c}>{c}</option>)}
-                  </select>
+                  <Dropdown
+                    value={formState.country || COUNTRIES[0].value}
+                    onChange={setField("country")}
+                    options={COUNTRIES}
+                    widthClass="w-full"
+                    triggerWidthClass="w-full"
+                  />
                 </Field>
+
                 <Field label="Company Registration Number" required>
-                  <input {...field("companyReg" as any)} className={inputCls} />
+                  <input {...field("companyReg")} className={inputCls} />
                 </Field>
                 <Field label="Website">
-                  <input placeholder="https://" {...field("website" as any)} className={inputCls} />
+                  <input placeholder="https://" {...field("website")} className={inputCls} />
                 </Field>
                 <Field label="Contact Email" required>
                   <input type="email" {...field("contactEmail")} className={inputCls} />
                 </Field>
                 <Field label="Contact Phone" required>
-                  <input type="tel" {...field("phone" as any)} className={inputCls} />
+                  <input type="tel" {...field("phone")} className={inputCls} />
                 </Field>
+
+                {/* Timezone — custom Dropdown */}
                 <Field label="Timezone" required>
-                  <select {...field("timezone" as any)} className={inputCls}>
-                    {TIMEZONES.map((t) => <option key={t}>{t}</option>)}
-                  </select>
+                  <Dropdown
+                    value={formState.timezone || TIMEZONES[0].value}
+                    onChange={setField("timezone")}
+                    options={TIMEZONES}
+                    widthClass="w-full"
+                    triggerWidthClass="w-full"
+                  />
                 </Field>
+
                 <Field label="Logo URL">
-                  <input placeholder="https://..." {...field("logoUrl" as any)} className={inputCls} />
+                  <input placeholder="https://..." {...field("logoUrl")} className={inputCls} />
                 </Field>
+
+                {/* Currency — custom Dropdown */}
                 <Field label="Currency" required>
-                  <select {...field("currency" as any)} className={inputCls}>
-                    {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
-                  </select>
+                  <Dropdown
+                    value={formState.currency || CURRENCIES[0].value}
+                    onChange={setField("currency")}
+                    options={CURRENCIES}
+                    widthClass="w-full"
+                    triggerWidthClass="w-full"
+                  />
                 </Field>
+
                 <Field label="Address" required className="col-span-2">
-                  <input {...field("address" as any)} className={inputCls} />
+                  <input {...field("address")} className={inputCls} />
                 </Field>
               </div>
             </section>
