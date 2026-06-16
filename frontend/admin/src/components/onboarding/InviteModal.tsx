@@ -112,10 +112,10 @@ export function InviteModal({
               <h3 className="text-[18px] font-semibold text-[#1F2937] mb-2.5">Airline Details</h3>
               <div className="grid grid-cols-2 gap-[23px]">
                 <Field label="Airline Name" required>
-                  <input placeholder="" {...field("airlineName")} className={inputCls} />
+                  <input placeholder="" {...field("airlineName")} required className={inputCls} />
                 </Field>
                 <Field label="Airline Code" required>
-                  <input placeholder="" {...field("airlineCode")} className={inputCls} />
+                  <input placeholder="" {...field("airlineCode")} required className={inputCls} />
                 </Field>
 
                 {/* Country — custom Dropdown */}
@@ -126,20 +126,22 @@ export function InviteModal({
                     options={COUNTRIES}
                     widthClass="w-full"
                     triggerWidthClass="w-full"
+                    heightClass="h-[49px]"
+                    bgClass="bg-white"
                   />
                 </Field>
 
                 <Field label="Company Registration Number" required>
-                  <input {...field("companyReg")} className={inputCls} />
+                  <input {...field("companyReg")} required className={inputCls} />
                 </Field>
                 <Field label="Website">
                   <input placeholder="https://" {...field("website")} className={inputCls} />
                 </Field>
                 <Field label="Contact Email" required>
-                  <input type="email" {...field("contactEmail")} className={inputCls} />
+                  <input type="email" {...field("contactEmail")} required className={inputCls} />
                 </Field>
                 <Field label="Contact Phone" required>
-                  <input type="tel" {...field("phone")} className={inputCls} />
+                  <input type="tel" {...field("phone")} required className={inputCls} />
                 </Field>
 
                 {/* Timezone — custom Dropdown */}
@@ -150,6 +152,8 @@ export function InviteModal({
                     options={TIMEZONES}
                     widthClass="w-full"
                     triggerWidthClass="w-full"
+                    heightClass="h-[49px]"
+                    bgClass="bg-white"
                   />
                 </Field>
 
@@ -165,11 +169,35 @@ export function InviteModal({
                     options={CURRENCIES}
                     widthClass="w-full"
                     triggerWidthClass="w-full"
+                    heightClass="h-[49px]"
+                    bgClass="bg-white"
                   />
                 </Field>
 
                 <Field label="Address" required className="col-span-2">
-                  <input {...field("address")} className={inputCls} />
+                  <input {...field("address")} required className={inputCls} />
+                </Field>
+              </div>
+            </section>
+
+            {/* Admin Details Section */}
+            <section className="pt-2">
+              <h3 className="text-[18px] font-semibold text-[#1F2937] mb-2.5">Admin Details</h3>
+              <div className="grid grid-cols-2 gap-[23px]">
+                <Field label="Admin First Name" required>
+                  <input placeholder="" {...field("adminFirstName")} required className={inputCls} />
+                </Field>
+                <Field label="Admin Last Name" required>
+                  <input placeholder="" {...field("adminLastName")} required className={inputCls} />
+                </Field>
+                <Field label="Admin Email" required>
+                  <input type="email" placeholder="" {...field("adminEmail")} required className={inputCls} />
+                </Field>
+                <Field label="Job Title" required>
+                  <input placeholder="" {...field("adminJobTitle")} required className={inputCls} />
+                </Field>
+                <Field label="Credit Limit" className="col-span-1">
+                  <input type="number" placeholder="" {...field("creditLimit")} required className={inputCls} />
                 </Field>
               </div>
             </section>
@@ -215,7 +243,7 @@ function Field({
   return (
     <div className={className}>
       <label className="block text-[16px] font-medium text-[#1F2937] mb-1.5">
-        {label} {required && <span>*</span>}
+        {label} {required && <span className="text-[#1F2937]">*</span>}
       </label>
       {children}
     </div>

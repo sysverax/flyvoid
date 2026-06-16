@@ -158,6 +158,10 @@ export default function OnboardingPage() {
     logoUrl: "",
     currency: "USD",
     address: "",
+    adminFirstName: "",
+    adminLastName: "",
+    adminEmail: "",
+    adminJobTitle: "",
   });
 
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -298,18 +302,35 @@ export default function OnboardingPage() {
       !inviteForm.airlineName ||
       !inviteForm.airlineCode ||
       !inviteForm.contactEmail ||
-      !inviteForm.expiryDate
+      !inviteForm.adminFirstName ||
+      !inviteForm.adminLastName ||
+      !inviteForm.adminEmail ||
+      !inviteForm.adminJobTitle
     ) {
       addToast("Please fill in all required fields", "warning");
       return;
     }
 
-    const rawDate = new Date(inviteForm.expiryDate);
-    const formattedExpiry = [
-      String(rawDate.getDate()).padStart(2, "0"),
-      String(rawDate.getMonth() + 1).padStart(2, "0"),
-      rawDate.getFullYear(),
-    ].join("/");
+    const formattedExpiry = inviteForm.expiryDate
+      ? (() => {
+          const rawDate = new Date(inviteForm.expiryDate);
+          return [
+            String(rawDate.getDate()).padStart(2, "0"),
+            String(rawDate.getMonth() + 1).padStart(2, "0"),
+            rawDate.getFullYear(),
+          ].join("/");
+        })()
+      : editTarget
+      ? editTarget.expiryDate
+      : (() => {
+          const today = new Date();
+          today.setDate(today.getDate() + 30);
+          return [
+            String(today.getDate()).padStart(2, "0"),
+            String(today.getMonth() + 1).padStart(2, "0"),
+            today.getFullYear(),
+          ].join("/");
+        })();
 
     const today = new Date();
     const formattedToday = [
@@ -318,23 +339,68 @@ export default function OnboardingPage() {
       today.getFullYear(),
     ].join("/");
 
-    const newInvitation: Invitation = {
-      id: Math.random().toString(36).substring(2, 9),
-      airlineName: inviteForm.airlineName,
-      airlineCode: inviteForm.airlineCode.toUpperCase(),
-      contactEmail: inviteForm.contactEmail,
-      country: inviteForm.country,
-      invitedBy: "You (Admin)",
-      invitedDate: formattedToday,
-      expiryDate: formattedExpiry,
-      creditLimit: inviteForm.creditLimit
-        ? parseInt(inviteForm.creditLimit)
-        : 100000,
-      status: "Pending",
-    };
+    if (editTarget) {
+      setInvitations((prev) =>
+        prev.map((item) =>
+          item.id === editTarget.id
+            ? {
+                ...item,
+                airlineName: inviteForm.airlineName,
+                airlineCode: inviteForm.airlineCode.toUpperCase(),
+                contactEmail: inviteForm.contactEmail,
+                country: inviteForm.country,
+                expiryDate: formattedExpiry,
+                creditLimit: inviteForm.creditLimit
+                  ? parseInt(inviteForm.creditLimit)
+                  : 100000,
+                companyReg: inviteForm.companyReg,
+                website: inviteForm.website,
+                phone: inviteForm.phone,
+                timezone: inviteForm.timezone,
+                logoUrl: inviteForm.logoUrl,
+                currency: inviteForm.currency,
+                address: inviteForm.address,
+                adminFirstName: inviteForm.adminFirstName,
+                adminLastName: inviteForm.adminLastName,
+                adminEmail: inviteForm.adminEmail,
+                adminJobTitle: inviteForm.adminJobTitle,
+              }
+            : item
+        )
+      );
+      setEditTarget(null);
+      addToast(`Successfully updated invitation for ${inviteForm.airlineName}!`);
+    } else {
+      const newInvitation: Invitation = {
+        id: Math.random().toString(36).substring(2, 9),
+        airlineName: inviteForm.airlineName,
+        airlineCode: inviteForm.airlineCode.toUpperCase(),
+        contactEmail: inviteForm.contactEmail,
+        country: inviteForm.country,
+        invitedBy: "You (Admin)",
+        invitedDate: formattedToday,
+        expiryDate: formattedExpiry,
+        creditLimit: inviteForm.creditLimit
+          ? parseInt(inviteForm.creditLimit)
+          : 100000,
+        status: "Pending",
+        companyReg: inviteForm.companyReg,
+        website: inviteForm.website,
+        phone: inviteForm.phone,
+        timezone: inviteForm.timezone,
+        logoUrl: inviteForm.logoUrl,
+        currency: inviteForm.currency,
+        address: inviteForm.address,
+        adminFirstName: inviteForm.adminFirstName,
+        adminLastName: inviteForm.adminLastName,
+        adminEmail: inviteForm.adminEmail,
+        adminJobTitle: inviteForm.adminJobTitle,
+      };
+      setInvitations((prev) => [newInvitation, ...prev]);
+      setIsInviteModalOpen(false);
+      addToast(`Successfully invited ${newInvitation.airlineName}!`);
+    }
 
-    setInvitations((prev) => [newInvitation, ...prev]);
-    setIsInviteModalOpen(false);
     setInviteForm({
       airlineName: "",
       airlineCode: "",
@@ -349,8 +415,11 @@ export default function OnboardingPage() {
       logoUrl: "",
       currency: "USD",
       address: "",
+      adminFirstName: "",
+      adminLastName: "",
+      adminEmail: "",
+      adminJobTitle: "",
     });
-    addToast(`Successfully invited ${newInvitation.airlineName}!`);
   };
 
   return (
@@ -541,14 +610,26 @@ export default function OnboardingPage() {
                                         contactEmail: inv.contactEmail,
                                         country: inv.country,
                                         creditLimit: String(inv.creditLimit),
-                                        expiryDate: "",
-                                        companyReg: "",
-                                        website: "",
-                                        phone: "",
-                                        timezone: "UTC",
-                                        logoUrl: "",
-                                        currency: "USD",
-                                        address: "",
+                                        expiryDate: inv.expiryDate
+                                          ? (() => {
+                                              const parts = inv.expiryDate.split("/");
+                                              if (parts.length === 3) {
+                                                return `${parts[2]}-${parts[1]}-${parts[0]}`;
+                                              }
+                                              return "";
+                                            })()
+                                          : "",
+                                        companyReg: inv.companyReg || "",
+                                        website: inv.website || "",
+                                        phone: inv.phone || "",
+                                        timezone: inv.timezone || "UTC",
+                                        logoUrl: inv.logoUrl || "",
+                                        currency: inv.currency || "USD",
+                                        address: inv.address || "",
+                                        adminFirstName: inv.adminFirstName || "",
+                                        adminLastName: inv.adminLastName || "",
+                                        adminEmail: inv.adminEmail || "",
+                                        adminJobTitle: inv.adminJobTitle || "",
                                       });
                                     }}
                                   >

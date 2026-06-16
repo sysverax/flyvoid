@@ -45,7 +45,7 @@ export function ViewInvitationModal({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg transition-colors cursor-pointer hover:bg-gray-100"
+            className="p-1.5 rounded-lg transition-colors cursor-pointer"
           >
             <X className="w-5 h-5 text-[#1F2937]" />
           </button>
@@ -60,7 +60,7 @@ export function ViewInvitationModal({
         {invitation && (
           <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6 scrollbar-hide">
 
-            {/* Airline Details section */}
+             {/* Airline Details section */}
             <section>
               <h3 className="text-[18px] font-semibold text-[#1F2937] mb-2.5">
                 Airline Details
@@ -69,28 +69,121 @@ export function ViewInvitationModal({
                 <Field label="Airline Name">
                   <input
                     disabled
-                    value={invitation.airlineName}
+                    value={invitation.airlineName || ""}
                     className={readonlyCls}
                   />
                 </Field>
                 <Field label="Airline Code">
                   <input
                     disabled
-                    value={invitation.airlineCode}
+                    value={invitation.airlineCode || ""}
                     className={readonlyCls}
                   />
                 </Field>
                 <Field label="Country">
                   <input
                     disabled
-                    value={invitation.country}
+                    value={invitation.country || ""}
+                    className={readonlyCls}
+                  />
+                </Field>
+                <Field label="Company Registration Number">
+                  <input
+                    disabled
+                    value={invitation.companyReg || ""}
+                    className={readonlyCls}
+                  />
+                </Field>
+                <Field label="Website">
+                  <input
+                    disabled
+                    value={invitation.website || ""}
                     className={readonlyCls}
                   />
                 </Field>
                 <Field label="Contact Email">
                   <input
                     disabled
-                    value={invitation.contactEmail}
+                    value={invitation.contactEmail || ""}
+                    className={readonlyCls}
+                  />
+                </Field>
+                <Field label="Contact Phone">
+                  <input
+                    disabled
+                    value={invitation.phone || ""}
+                    className={readonlyCls}
+                  />
+                </Field>
+                <Field label="Timezone">
+                  <input
+                    disabled
+                    value={invitation.timezone || ""}
+                    className={readonlyCls}
+                  />
+                </Field>
+                <Field label="Logo URL">
+                  <input
+                    disabled
+                    value={invitation.logoUrl || ""}
+                    className={readonlyCls}
+                  />
+                </Field>
+                <Field label="Currency">
+                  <input
+                    disabled
+                    value={invitation.currency || ""}
+                    className={readonlyCls}
+                  />
+                </Field>
+                <Field label="Address" className="col-span-2">
+                  <input
+                    disabled
+                    value={invitation.address || ""}
+                    className={readonlyCls}
+                  />
+                </Field>
+              </div>
+            </section>
+
+            {/* Admin Details section */}
+            <section>
+              <h3 className="text-[18px] font-semibold text-[#1F2937] mb-2.5">
+                Admin Details
+              </h3>
+              <div className="grid grid-cols-2 gap-7">
+                <Field label="Admin First Name">
+                  <input
+                    disabled
+                    value={invitation.adminFirstName || ""}
+                    className={readonlyCls}
+                  />
+                </Field>
+                <Field label="Admin Last Name">
+                  <input
+                    disabled
+                    value={invitation.adminLastName || ""}
+                    className={readonlyCls}
+                  />
+                </Field>
+                <Field label="Admin Email">
+                  <input
+                    disabled
+                    value={invitation.adminEmail || ""}
+                    className={readonlyCls}
+                  />
+                </Field>
+                <Field label="Job Title">
+                  <input
+                    disabled
+                    value={invitation.adminJobTitle || ""}
+                    className={readonlyCls}
+                  />
+                </Field>
+                <Field label="Credit Limit" className="col-span-2">
+                  <input
+                    disabled
+                    value={`$${invitation.creditLimit.toLocaleString()}`}
                     className={readonlyCls}
                   />
                 </Field>
@@ -106,35 +199,28 @@ export function ViewInvitationModal({
                 <Field label="Invited By">
                   <input
                     disabled
-                    value={invitation.invitedBy}
-                    className={readonlyCls}
-                  />
-                </Field>
-                <Field label="Credit Limit">
-                  <input
-                    disabled
-                    value={`$${invitation.creditLimit.toLocaleString()}`}
+                    value={invitation.invitedBy || ""}
                     className={readonlyCls}
                   />
                 </Field>
                 <Field label="Invited Date">
                   <input
                     disabled
-                    value={invitation.invitedDate}
+                    value={invitation.invitedDate || ""}
                     className={readonlyCls}
                   />
                 </Field>
                 <Field label="Expiry Date">
                   <input
                     disabled
-                    value={invitation.expiryDate}
+                    value={invitation.expiryDate || ""}
                     className={readonlyCls}
                   />
                 </Field>
                 <Field label="Status">
                   <input
                     disabled
-                    value={invitation.status}
+                    value={invitation.status || ""}
                     className={cn(readonlyCls, statusColor(invitation.status))}
                   />
                 </Field>

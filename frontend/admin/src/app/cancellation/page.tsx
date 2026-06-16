@@ -67,19 +67,7 @@ const INITIAL_FLIGHTS: CancelledFlight[] = [
     cost: 110000,
     revenue: 828,
     status: "Failed",
-  },
-  {
-    id: "5",
-    flightCode: "SW7890",
-    airlineName: "Southern Wings",
-    airlineCode: "SW",
-    route: "FRA → JFK",
-    date: "28/02/2025",
-    passengers: 69,
-    cost: 150000,
-    revenue: 1260,
-    status: "Pending",
-  },
+  }
 ];
 
 export default function CancellationPage() {

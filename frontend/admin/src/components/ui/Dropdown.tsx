@@ -15,6 +15,8 @@ interface DropdownProps {
   options: DropdownOption[];
   widthClass?: string;        // Width of the open menu container (e.g., "w-60" or "w-44")
   triggerWidthClass?: string; // Width of the trigger button container (e.g., "w-[180px]")
+  heightClass?: string;       // Height of the trigger button (e.g., "h-11" or "h-[49px]")
+  bgClass?: string;           // Background color of the trigger button (e.g., "bg-[#F3F4F6]" or "bg-white")
 }
 
 export function Dropdown({
@@ -23,6 +25,8 @@ export function Dropdown({
   options,
   widthClass = "w-60",
   triggerWidthClass = "w-[180px]",
+  heightClass = "h-11",
+  bgClass = "bg-[#F3F4F6]",
 }: DropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -48,11 +52,15 @@ export function Dropdown({
   };
 
   return (
-    <div ref={dropdownRef} className={cn("relative h-11 select-none", triggerWidthClass)}>
+    <div ref={dropdownRef} className={cn("relative select-none", heightClass, triggerWidthClass)}>
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="h-11 w-full flex items-center justify-between rounded-[8px] border border-[#D1D5DB] bg-[#F3F4F6] pl-4 pr-3.5 text-[#1F2937] outline-none cursor-pointer hover:bg-slate-100/80 transition-colors text-[16px] font-medium"
+        className={cn(
+          "w-full flex items-center justify-between rounded-[8px] border border-[#D1D5DB] pl-4 pr-3.5 text-[#1F2937] outline-none cursor-pointer hover:bg-slate-100/80 transition-colors text-[16px] font-medium",
+          heightClass,
+          bgClass
+        )}
       >
         <span className="truncate text-left flex-1 mr-2">{selectedOption ? selectedOption.label : value}</span>
         <ChevronDown 

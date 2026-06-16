@@ -62,28 +62,28 @@ const INITIAL_AIRLINES: Airline[] = [
   },
   {
     id: "2",
-    airlineName: "Pacific Airways",
-    airlineCode: "PA",
+    airlineName: "SkyLine Airways",
+    airlineCode: "SKY",
     country: "United States",
-    companyReg: "REG-PAC-1002",
-    website: "https://www.pacific.example.com",
-    contactEmail: "ops.south@pacific.com",
-    contactPhone: "+1 555 020 0002",
-    timezone: "CST",
+    companyReg: "REG-SKY-1001",
+    website: "https://www.sky.example.com",
+    contactEmail: "ops@skyline.com",
+    contactPhone: "+1 555 010 0000",
+    timezone: "UTC",
     currency: "USD",
-    address: "200 Airport Rd, Dallas, TX",
-    onboardingDate: "12/06/2023",
+    address: "1 Aviation Way, Terminal 1",
+    onboardingDate: "15/01/2024",
     status: "Active",
     flightsCount: 12,
     passengersCount: 1847,
     spend: 245000,
     revenue: 19600,
     stripeConnection: "Connected",
-    adminFirstName: "Jane",
-    adminLastName: "Smith",
-    adminEmail: "jane@pacific.com",
-    adminJobTitle: "Ops Manager",
-    creditLimit: 250000,
+    adminFirstName: "Operations",
+    adminLastName: "Admin",
+    adminEmail: "ops@skyline.com",
+    adminJobTitle: "Operations Manager",
+    creditLimit: 100000,
     totalCancelledFlights: 12,
     totalPassengersMetric: 1847,
     avgCostPerPassenger: 132,
@@ -95,8 +95,8 @@ const INITIAL_AIRLINES: Airline[] = [
   },
   {
     id: "3",
-    airlineName: "Pacific Airways",
-    airlineCode: "PA",
+    airlineName: "SkyLine Airways",
+    airlineCode: "SKY",
     country: "United States",
     companyReg: "REG-PAC-1003",
     website: "https://www.pacific.example.com",
@@ -128,7 +128,7 @@ const INITIAL_AIRLINES: Airline[] = [
   },
   {
     id: "4",
-    airlineName: "Pacific Airways",
+    airlineName: "SkyLine Airways",
     airlineCode: "PA",
     country: "United States",
     companyReg: "REG-PAC-1004",
@@ -377,7 +377,7 @@ export default function AirlinesPage() {
           </FiltersCard>
 
           {/* Airlines Table */}
-          <div className="overflow-hidden rounded-[12px] border border-[#E5E7EB] bg-white mb-5">
+          <div className="overflow-hidden rounded-[12px] border border-[#E5E7EB] bg-white mb-6">
             <Table>
               <TableHeader className="pt-1">
                 <TableRow>
@@ -426,7 +426,7 @@ export default function AirlinesPage() {
                         {airline.airlineName}
                       </TableCell>
                       <TableCell>
-                        <span className="rounded-[4px] bg-[#E5E7EB] text-[#1F2937] font-inter text-[16px] px-2.5 py-1.5 font-medium">
+                        <span className="rounded-[4px] bg-[#E5E7EB] text-[#1F2937] font-inter text-[12px] px-2.5 py-1.5 font-medium h-[28px]">
                           {airline.airlineCode}
                         </span>
                       </TableCell>
@@ -485,15 +485,15 @@ export default function AirlinesPage() {
                             <Eye className="h-[20px] w-[20px]" />
                           </button>
                           <button
-                            onClick={() => handleOpenSuspendConfirm(airline)}
-                            disabled={airline.status === "Suspended"}
-                            className={cn(
-                              "p-1 transition-colors cursor-pointer",
-                              airline.status === "Suspended"
-                                ? "text-gray-200 cursor-not-allowed"
-                                : "text-gray-400 hover:text-rose-600"
-                            )}
-                            title="Suspend Airline"
+                             onClick={() => handleOpenSuspendConfirm(airline)}
+                             disabled={airline.status !== "Active"}
+                             className={cn(
+                               "p-1 transition-colors cursor-pointer",
+                               airline.status !== "Active"
+                                 ? "text-gray-200 cursor-not-allowed"
+                                 : "text-gray-400 hover:text-rose-600"
+                             )}
+                             title="Suspend Airline"
                           >
                             <img
                                 src="/icons/spam.svg"
@@ -521,13 +521,12 @@ export default function AirlinesPage() {
         </div>
       )}
 
-      {editTarget && (
-        <EditAirlineModal
-          airline={editTarget}
-          onClose={() => setEditTarget(null)}
-          onSave={handleSaveEdit}
-        />
-      )}
+      <EditAirlineModal
+        isOpen={!!editTarget}
+        airline={editTarget}
+        onClose={() => setEditTarget(null)}
+        onSave={handleSaveEdit}
+      />
 
       <SuspendAirlineDialog
         isOpen={!!suspendTarget}
