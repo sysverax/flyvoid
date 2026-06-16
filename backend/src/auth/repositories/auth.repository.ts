@@ -892,7 +892,7 @@ export class AuthRepository {
 
     await this.airlineUserRepository.update(
       { id: airlineUserId },
-      { passwordHash },
+      { passwordHash, requirePasswordReset: false },
     );
   }
 
@@ -965,6 +965,7 @@ export class AuthRepository {
       | "passwordHash"
       | "role"
       | "isActive"
+      | "requirePasswordReset"
     >,
     requestId: string,
   ): Promise<AirlineUserEntity> {

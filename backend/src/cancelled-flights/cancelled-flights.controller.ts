@@ -280,7 +280,7 @@ export class CancelledFlightsController {
   @RequireAccessControl({
     airline: {
       asset: AirlineAsset.CANCELLED_FLIGHTS,
-      access: [AccessAction.VIEW, AccessAction.DELETE],
+      access: [AccessAction.VIEW, AccessAction.EDIT],
     },
   })
   @ApiOperation({
