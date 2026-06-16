@@ -12,6 +12,7 @@ import {
   SortHeader,
 } from "@/src/components/ui/table";
 import { Pagination } from "@/src/components/ui/pagination";
+import { TableEmptyState } from "@/src/components/ui/EmptyState";
 import { cn } from "@/src/lib/utils";
 
 interface AuditLog {
@@ -93,18 +94,18 @@ const INITIAL_LOGS: AuditLog[] = [
 function getActionColor(action: string) {
   const lower = action.toLowerCase();
   if (lower.includes("enabled") || lower.includes("created")) {
-    return "text-emerald-600";
+    return "!text-[#059669]";
   }
   if (lower.includes("updated") || lower.includes("changed")) {
-    return "text-amber-500";
+    return "!text-[#F59E0B]";
   }
-  if (lower.includes("sent")) {
-    return "text-blue-600";
+  if (lower.includes("completed") || lower.includes("sent")) {
+    return "!text-[#09090B]";
   }
   if (lower.includes("suspended") || lower.includes("revoked")) {
-    return "text-rose-600";
+    return "!text-[#EF4444]";
   }
-  return "text-gray-500";
+  return "!text-[#09090B]";
 }
 
 export default function AuditLogsPage() {
@@ -201,7 +202,7 @@ export default function AuditLogsPage() {
       </div>
 
       {/* Search Input Box */}
-      <div className="rounded-[12px] border border-[#E5E7EB] bg-white p-[17px] mb-6">
+      <div className="rounded-[12px] border border-[#E5E7EB] bg-white p-5 mb-7">
         <div className="relative">
           <span className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
             <Search className="h-5 w-5 text-[#6B7280]" />
@@ -214,7 +215,7 @@ export default function AuditLogsPage() {
               setSearchQuery(e.target.value);
               setCurrentPage(1);
             }}
-            className="block h-11 w-full rounded-[8px] border border-[#D1D5DB] bg-[#F3F4F6] py-[14px] pl-11 pr-4 text-[16px] text-slate-950 placeholder-[#6B7280] transition-all hover:bg-slate-100/50 focus:border-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20"
+            className="block h-12 w-full rounded-[10px] border border-[#D1D5DB] bg-[#F3F4F6] py-[7px] pl-11 pr-4 text-[16px] text-slate-950 placeholder-[#6B7280] transition-all hover:bg-slate-100/50 focus:border-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
         </div>
       </div>
@@ -224,7 +225,7 @@ export default function AuditLogsPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="min-w-[180px] uppercase text-xs font-semibold text-gray-500">
+              <TableHead className="min-w-[180px]">
                 <SortHeader
                   label="Timestamp"
                   field="timestamp"
@@ -233,7 +234,7 @@ export default function AuditLogsPage() {
                   onSort={handleSort}
                 />
               </TableHead>
-              <TableHead className="min-w-[200px] uppercase text-xs font-semibold text-gray-500">
+              <TableHead className="min-w-[250px]">
                 <SortHeader
                   label="Admin"
                   field="admin"
@@ -242,7 +243,7 @@ export default function AuditLogsPage() {
                   onSort={handleSort}
                 />
               </TableHead>
-              <TableHead className="min-w-[160px] uppercase text-xs font-semibold text-gray-500">
+              <TableHead className="min-w-[180px]">
                 <SortHeader
                   label="Action"
                   field="action"
@@ -251,7 +252,7 @@ export default function AuditLogsPage() {
                   onSort={handleSort}
                 />
               </TableHead>
-              <TableHead className="min-w-[180px] uppercase text-xs font-semibold text-gray-500">
+              <TableHead className="min-w-[180px]">
                 <SortHeader
                   label="Entity"
                   field="entity"
@@ -260,7 +261,7 @@ export default function AuditLogsPage() {
                   onSort={handleSort}
                 />
               </TableHead>
-              <TableHead className="min-w-[240px] uppercase text-xs font-semibold text-gray-500">
+              <TableHead className="min-w-[346px]">
                 <SortHeader
                   label="Details"
                   field="details"
@@ -273,11 +274,12 @@ export default function AuditLogsPage() {
           </TableHeader>
           <TableBody>
             {paginatedLogs.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={5} className="text-center py-10 text-gray-500">
-                  No logs found matching your search.
-                </TableCell>
-              </TableRow>
+              <TableEmptyState
+                colSpan={5}
+                icon={Search}
+                title="No logs found"
+                message="Try adjusting your filters or search query."
+              />
             ) : (
               paginatedLogs.map((log) => (
                 <TableRow key={log.id} className="hover:bg-gray-50/50">

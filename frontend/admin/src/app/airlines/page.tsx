@@ -485,21 +485,21 @@ export default function AirlinesPage() {
                             <Eye className="h-[20px] w-[20px]" />
                           </button>
                           <button
-                             onClick={() => handleOpenSuspendConfirm(airline)}
-                             disabled={airline.status !== "Active"}
-                             className={cn(
-                               "p-1 transition-colors cursor-pointer",
-                               airline.status !== "Active"
-                                 ? "text-gray-200 cursor-not-allowed"
-                                 : "text-gray-400 hover:text-rose-600"
-                             )}
-                             title="Suspend Airline"
+                            onClick={() => handleOpenSuspendConfirm(airline)}
+                            // disabled={airline.status === "Suspended"}
+                            className={cn(
+                              "p-1 transition-colors cursor-pointer",
+                              // airline.status === "Suspended"
+                              //    ? "text-gray-200 cursor-not-allowed"
+                              //    : "text-gray-400 hover:text-rose-600"
+                            )}
+                            title="Suspend Airline"
                           >
                             <img
-                                src="/icons/spam.svg"
-                                alt="Spam"
-                                className="h-[20px] w-[20px]"
-                              />                          
+                              src="/icons/spam.svg"
+                              alt="Spam"
+                              className="h-[20px] w-[20px]"
+                            />
                           </button>
                         </div>
                       </TableCell>

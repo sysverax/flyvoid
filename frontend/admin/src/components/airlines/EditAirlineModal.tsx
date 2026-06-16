@@ -556,7 +556,7 @@ export function EditAirlineModal({
   );
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// Helpers
 const inputCls =
   "w-full px-4 py-3 rounded-lg border border-[#D1D5DB] text-[16px] text-[#1F2937] bg-white focus:outline-none focus:ring-2 focus:ring-[#1B2B6B]/20 focus:border-[#1B2B6B] transition-all placeholder:text-[#9CA3AF]";
 
