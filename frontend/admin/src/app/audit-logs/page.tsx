@@ -283,19 +283,19 @@ export default function AuditLogsPage() {
             ) : (
               paginatedLogs.map((log) => (
                 <TableRow key={log.id} className="hover:bg-gray-50/50">
-                  <TableCell className="text-[#1F2937] font-normal font-mono text-xs">
+                  <TableCell>
                     {log.timestamp}
                   </TableCell>
-                  <TableCell className="text-[#1F2937] font-normal">
+                  <TableCell>
                     {log.admin}
                   </TableCell>
                   <TableCell className={cn("font-medium", getActionColor(log.action))}>
                     {log.action}
                   </TableCell>
-                  <TableCell className="text-[#1F2937] font-normal">
+                  <TableCell>
                     {log.entity}
                   </TableCell>
-                  <TableCell className="text-gray-500 font-normal">
+                  <TableCell>
                     {log.details}
                   </TableCell>
                 </TableRow>

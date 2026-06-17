@@ -3,7 +3,10 @@
 :root {
   --primary: #0F2757;
   --primary-hover: rgb(25, 52, 108);
-      --text-primary: #09090B;
+  --text-primary: #09090B;
+  --border: 220 13% 91%;
+  --muted-foreground: 220 9% 46%;
+  --card: 0 0% 100%;
 }
 
 @theme {
@@ -36,4 +39,9 @@ body {
     opacity: 0;
     cursor: pointer;
   }
+}
+
+/* Prevent Recharts SVG contents from being clipped when using negative margins */
+.recharts-wrapper svg {
+  overflow: visible !important;
 }
