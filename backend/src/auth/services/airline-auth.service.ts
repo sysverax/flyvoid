@@ -23,6 +23,7 @@ import { AirlineRole, UserType } from "../../common/constants/user.constants";
 import { LoggerService } from "../../common/logger/logger.service";
 import { config } from "../../config/config";
 import {
+  AirlineInitialPasswordResetRequestDto,
   AirlineTwoFactorDisableRequestDto,
   AirlineTwoFactorEnableRequestDto,
   AirlineTwoFactorEnableResponseDto,
@@ -35,6 +36,7 @@ import {
   AirlineForgotPasswordVerifyOtpRequestDto,
   AirlineForgotPasswordVerifyOtpResponseDto,
   AirlineSigninRequestDto,
+  AirlineSigninPasswordResetChallengeResponseDto,
   AirlineSigninResponseDto,
   AirlineSigninTwoFactorChallengeResponseDto,
   AirlineSigninTwoFactorVerifyRequestDto,
@@ -216,6 +218,7 @@ export class AirlineAuthService {
           passwordHash,
           role: AirlineRole.AIRLINE_ADMIN,
           isActive: true,
+          requirePasswordReset: false,
         },
         requestId,
         manager,
@@ -287,7 +290,9 @@ export class AirlineAuthService {
     dto: AirlineSigninRequestDto,
     requestId: string,
   ): Promise<
-    AirlineSigninResponseDto | AirlineSigninTwoFactorChallengeResponseDto
+    | AirlineSigninResponseDto
+    | AirlineSigninTwoFactorChallengeResponseDto
+    | AirlineSigninPasswordResetChallengeResponseDto
   > {
     this.logger.info("Airline signin attempt", this.context, requestId, {
       email: dto.email,
@@ -337,13 +342,19 @@ export class AirlineAuthService {
       };
     }
 
+    if (user.requirePasswordReset) {
+      return this.buildInitialPasswordResetChallenge(user);
+    }
+
     return this.issueSessionTokens(user, requestId);
   }
 
   async verifySigninTwoFactor(
     dto: AirlineSigninTwoFactorVerifyRequestDto,
     requestId: string,
-  ): Promise<AirlineSigninResponseDto> {
+  ): Promise<
+    AirlineSigninResponseDto | AirlineSigninPasswordResetChallengeResponseDto
+  > {
     const payload = await this.verifyAirlineTwoFactorChallengeToken(
       dto.twoFactorToken,
     );
@@ -367,7 +378,41 @@ export class AirlineAuthService {
       throw new UnauthorizedException("Invalid 2FA code");
     }
 
+    if (user.requirePasswordReset) {
+      return this.buildInitialPasswordResetChallenge(user);
+    }
+
     return this.issueSessionTokens(user, requestId);
+  }
+
+  async airlineInitialPasswordReset(
+    dto: AirlineInitialPasswordResetRequestDto,
+    requestId: string,
+  ): Promise<void> {
+    const payload = await this.verifyAirlineInitialPasswordResetToken(
+      dto.resetPasswordToken,
+    );
+
+    const user = await this.authRepository.findAirlineUserById(
+      payload.sub,
+      requestId,
+    );
+    if (!user || !user.isActive || !user.requirePasswordReset) {
+      throw new UnauthorizedException(
+        "Invalid or expired initial password reset token",
+      );
+    }
+
+    const newPasswordHash = await bcrypt.hash(dto.newPassword, 10);
+    await this.authRepository.updateAirlineUserPasswordHash(
+      user.id,
+      newPasswordHash,
+      requestId,
+    );
+    await this.authRepository.revokeActiveAirlineRefreshTokensByAirlineUserId(
+      user.id,
+      requestId,
+    );
   }
 
   async setupTwoFactor(
@@ -892,6 +937,35 @@ export class AirlineAuthService {
     }
   }
 
+  private async verifyAirlineInitialPasswordResetToken(
+    token: string,
+  ): Promise<{ sub: number; type: string; userType?: UserType }> {
+    try {
+      const payload = await this.jwtService.verifyAsync<{
+        sub: number;
+        type: string;
+        userType?: UserType;
+      }>(token, {
+        secret: config.jwt.accessSecret,
+      });
+
+      if (
+        payload.type !== "airline_initial_password_reset" ||
+        payload.userType !== UserType.AIRLINE
+      ) {
+        throw new UnauthorizedException(
+          "Invalid or expired initial password reset token",
+        );
+      }
+
+      return payload;
+    } catch {
+      throw new UnauthorizedException(
+        "Invalid or expired initial password reset token",
+      );
+    }
+  }
+
   private async verifyAirlineForgotPasswordResetToken(
     token: string,
   ): Promise<{ sub: number; otpId: number; type: string; userType: UserType }> {
@@ -1130,6 +1204,32 @@ export class AirlineAuthService {
       lastName: user.lastName,
       email: user.email,
       role: user.role as AirlineRole,
+    };
+  }
+
+  private async buildInitialPasswordResetChallenge(
+    user: AirlineUserEntity,
+  ): Promise<AirlineSigninPasswordResetChallengeResponseDto> {
+    const resetPasswordToken = await this.jwtService.signAsync(
+      {
+        sub: user.id,
+        userType: UserType.AIRLINE,
+        type: "airline_initial_password_reset",
+      },
+      {
+        secret: config.jwt.accessSecret,
+        expiresIn: this.getJwtDuration(
+          config.auth.adminInitialPasswordResetTokenExpiresIn,
+        ),
+      },
+    );
+
+    return {
+      requiresPasswordReset: true,
+      resetPasswordToken,
+      resetPasswordTokenExpiresIn:
+        config.auth.adminInitialPasswordResetTokenExpiresIn,
+      user: this.toAirlineUserProfile(user),
     };
   }
 }

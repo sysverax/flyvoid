@@ -350,7 +350,6 @@ export class AdminService {
 
     if (
       actionSet.has(AccessAction.EDIT) ||
-      actionSet.has(AccessAction.DELETE) ||
       actionSet.has(AccessAction.EXPORT)
     ) {
       actionSet.add(AccessAction.VIEW);

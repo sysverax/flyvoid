@@ -29,7 +29,6 @@ export enum AirlineAsset {
 export enum AccessAction {
   VIEW = "VIEW",
   EDIT = "EDIT",
-  DELETE = "DELETE",
   EXPORT = "EXPORT",
 }
 
