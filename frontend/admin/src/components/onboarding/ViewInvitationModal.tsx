@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
+import { useLockBodyScroll } from "@/src/hooks/useLockBodyScroll";
 import { Invitation } from "@/src/types/onboarding";
 import { cn } from "@/src/lib/utils";
 
@@ -14,6 +16,15 @@ export function ViewInvitationModal({
   onClose,
 }: ViewInvitationModalProps) {
   const isOpen = !!invitation;
+  useLockBodyScroll(isOpen);
+
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isOpen && scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = 0;
+    }
+  }, [isOpen]);
 
   return (
     <>
@@ -47,7 +58,7 @@ export function ViewInvitationModal({
             onClick={onClose}
             className="p-1.5 rounded-lg transition-colors cursor-pointer"
           >
-            <X className="w-5 h-5 text-[#1F2937]" />
+            <X className="w-6 h-6 text-[#1F2937]" />
           </button>
         </div>
 
@@ -58,7 +69,7 @@ export function ViewInvitationModal({
 
         {/* Scrollable body */}
         {invitation && (
-          <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6 scrollbar-hide">
+          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-6 py-6 space-y-6 scrollbar-hide">
 
              {/* Airline Details section */}
             <section>

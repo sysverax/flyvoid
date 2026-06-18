@@ -226,19 +226,19 @@ export default function CancellationPage() {
   const statsConfig = [
     {
       title: "Total Cancellations",
-      value: totalCancellations,
+      value: "5",
       description: "Matching current filters",
       icon: <img src="/icons/plane.svg" alt="Plane" />,
     },
     {
       title: "Total Passengers",
-      value: totalPassengers.toLocaleString(),
+      value: "628",
       description: "Across cancelled flights",
       icon: <Users className="h-5 w-5" />,
     },
     {
       title: "Platform Revenue",
-      value: `$${platformRevenue.toLocaleString()}`,
+      value: "$6,188",
       description: "5% of total cost",
       icon: <DollarSign className="h-5 w-5" />,
     },
@@ -261,11 +261,11 @@ export default function CancellationPage() {
         {statsConfig.map((card, idx) => (
           <div
             key={idx}
-            className="flex items-start justify-between rounded-[12px] border border-[#E5E7EB] bg-white p-3.5"
+            className="flex items-start justify-between rounded-[12px] border border-[#E5E7EB] bg-white p-3.5 relative -top-0.5"
           >
             <div>
               <p className="text-[16px] text-[#6B7280]">{card.title}</p>
-              <h3 className="text-[24px] font-semibold text-[#1F2937]">
+              <h3 className="text-[24px] font-semibold text-[#1F2937] -ml-0.5">
                 {card.value}
               </h3>
               <p className="text-[14px] text-[#6B7280] mt-2.5">
@@ -363,7 +363,7 @@ export default function CancellationPage() {
       </div>
 
       {/* Flights Table */}
-      <div className="overflow-hidden rounded-[12px] border border-[#E5E7EB] bg-white mb-5">
+      <div className="overflow-hidden rounded-[12px] border border-[#E5E7EB] bg-white mb-5 relative -top-1 -left-[1px]">
         <Table>
           <TableHeader>
             <TableRow>
@@ -412,7 +412,7 @@ export default function CancellationPage() {
                   onSort={handleSort}
                 />
               </TableHead>
-              <TableHead className="min-w-[120px]">
+              <TableHead className="min-w-[120px] relative -left-1">
                 <SortHeader
                   label="Cost"
                   field="cost"
@@ -421,7 +421,7 @@ export default function CancellationPage() {
                   onSort={handleSort}
                 />
               </TableHead>
-              <TableHead className="min-w-[120px]">
+              <TableHead className="min-w-[120px] relative -left-1">
                 <SortHeader
                   label="Revenue"
                   field="revenue"
@@ -430,7 +430,7 @@ export default function CancellationPage() {
                   onSort={handleSort}
                 />
               </TableHead>
-              <TableHead className="min-w-[120px]">
+              <TableHead className="min-w-[120px] relative -left-1">
                 <SortHeader
                   label="Status"
                   field="status"
@@ -460,7 +460,7 @@ export default function CancellationPage() {
                       <span className="font-medium text-[#1F2937]">
                         {flight.airlineName}
                       </span>
-                      <span className="rounded-[4px] bg-[#E5E7EB] text-[#1F2937] font-inter text-[12px] px-2.5 py-1.5 font-medium">
+                      <span className="rounded-[4px] bg-[#E5E7EB] text-[#1F2937] font-inter text-[12px] px-2.5 py-1.5 font-medium relative left-1">
                         {flight.airlineCode}
                       </span>
                     </div>
@@ -474,7 +474,7 @@ export default function CancellationPage() {
                   <TableCell className="text-[#1F2937]">
                     {flight.passengers}
                   </TableCell>
-                  <TableCell className="text-[#6B7280]">
+                  <TableCell className="text-[#6B7280] relative -left-0.5">
                     ${flight.cost.toLocaleString()}
                   </TableCell>
                   <TableCell className="text-[#10B981] font-semibold">

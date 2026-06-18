@@ -221,7 +221,7 @@ export default function AuditLogsPage() {
       </div>
 
       {/* Audit Logs Table */}
-      <div className="overflow-hidden rounded-[12px] border border-[#E5E7EB] bg-white mb-6">
+      <div className="overflow-hidden rounded-[12px] border border-[#E5E7EB] bg-white mb-6 relative -top-1">
         <Table>
           <TableHeader>
             <TableRow>

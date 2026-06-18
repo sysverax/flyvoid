@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
+import { useLockBodyScroll } from "@/src/hooks/useLockBodyScroll";
 import { InviteFormState, Invitation } from "@/src/types/onboarding";
 import { cn } from "@/src/lib/utils";
 import { Dropdown, DropdownOption } from "@/src/components/ui/Dropdown";
@@ -52,6 +54,16 @@ export function InviteModal({
   setFormState,
   editTarget,
 }: InviteModalProps) {
+  useLockBodyScroll(isOpen);
+
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isOpen && scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = 0;
+    }
+  }, [isOpen]);
+
   const isEdit = !!editTarget;
 
   const field = (key: keyof InviteFormState) => ({
@@ -107,9 +119,9 @@ export function InviteModal({
 
         {/* Scrollable body */}
         <form onSubmit={onSubmit} className="flex flex-col flex-1 overflow-hidden">
-          <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6 scrollbar-hide">
+          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-6 py-6 space-y-6 scrollbar-hide relative -left-0.5">
             <section>
-              <h3 className="text-[18px] font-semibold text-[#1F2937] mb-2.5">Airline Details</h3>
+              <h3 className="text-[18px] font-semibold text-[#1F2937] mb-2.5 relative -top-0.5">Airline Details</h3>
               <div className="grid grid-cols-2 gap-[23px]">
                 <Field label="Airline Name" required>
                   <input placeholder="" {...field("airlineName")} required className={inputCls} />

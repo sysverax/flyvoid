@@ -313,16 +313,16 @@ export default function OnboardingPage() {
 
     const formattedExpiry = inviteForm.expiryDate
       ? (() => {
-          const rawDate = new Date(inviteForm.expiryDate);
-          return [
-            String(rawDate.getDate()).padStart(2, "0"),
-            String(rawDate.getMonth() + 1).padStart(2, "0"),
-            rawDate.getFullYear(),
-          ].join("/");
-        })()
+        const rawDate = new Date(inviteForm.expiryDate);
+        return [
+          String(rawDate.getDate()).padStart(2, "0"),
+          String(rawDate.getMonth() + 1).padStart(2, "0"),
+          rawDate.getFullYear(),
+        ].join("/");
+      })()
       : editTarget
-      ? editTarget.expiryDate
-      : (() => {
+        ? editTarget.expiryDate
+        : (() => {
           const today = new Date();
           today.setDate(today.getDate() + 30);
           return [
@@ -344,27 +344,27 @@ export default function OnboardingPage() {
         prev.map((item) =>
           item.id === editTarget.id
             ? {
-                ...item,
-                airlineName: inviteForm.airlineName,
-                airlineCode: inviteForm.airlineCode.toUpperCase(),
-                contactEmail: inviteForm.contactEmail,
-                country: inviteForm.country,
-                expiryDate: formattedExpiry,
-                creditLimit: inviteForm.creditLimit
-                  ? parseInt(inviteForm.creditLimit)
-                  : 100000,
-                companyReg: inviteForm.companyReg,
-                website: inviteForm.website,
-                phone: inviteForm.phone,
-                timezone: inviteForm.timezone,
-                logoUrl: inviteForm.logoUrl,
-                currency: inviteForm.currency,
-                address: inviteForm.address,
-                adminFirstName: inviteForm.adminFirstName,
-                adminLastName: inviteForm.adminLastName,
-                adminEmail: inviteForm.adminEmail,
-                adminJobTitle: inviteForm.adminJobTitle,
-              }
+              ...item,
+              airlineName: inviteForm.airlineName,
+              airlineCode: inviteForm.airlineCode.toUpperCase(),
+              contactEmail: inviteForm.contactEmail,
+              country: inviteForm.country,
+              expiryDate: formattedExpiry,
+              creditLimit: inviteForm.creditLimit
+                ? parseInt(inviteForm.creditLimit)
+                : 100000,
+              companyReg: inviteForm.companyReg,
+              website: inviteForm.website,
+              phone: inviteForm.phone,
+              timezone: inviteForm.timezone,
+              logoUrl: inviteForm.logoUrl,
+              currency: inviteForm.currency,
+              address: inviteForm.address,
+              adminFirstName: inviteForm.adminFirstName,
+              adminLastName: inviteForm.adminLastName,
+              adminEmail: inviteForm.adminEmail,
+              adminJobTitle: inviteForm.adminJobTitle,
+            }
             : item
         )
       );
@@ -491,11 +491,11 @@ export default function OnboardingPage() {
         </FiltersCard>
 
         {/* Table card */}
-        <div className="hidden overflow-hidden rounded-[12px] border border-[#E5E7EB] lg:block">
+        <div className="hidden overflow-hidden rounded-[12px] border border-[#E5E7EB] lg:block mb-6">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="min-w-[165px]">
+                <TableHead className="min-w-[130px]">
                   <SortHeader label="Airline" field="airlineName" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                 </TableHead>
                 <TableHead className="min-w-[146px]">
@@ -504,13 +504,13 @@ export default function OnboardingPage() {
                 <TableHead className="min-w-[114px]">
                   <SortHeader label="Country" field="country" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                 </TableHead>
-                <TableHead  className="min-w-[135px] whitespace-nowrap">
+                <TableHead className="min-w-[130px] whitespace-nowrap">
                   <SortHeader label="Invited By" field="invitedBy" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                 </TableHead>
                 <TableHead className="min-w-[105px] whitespace-nowrap">
                   <SortHeader label="Invited Date" field="invitedDate" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                 </TableHead>
-                <TableHead className="min-w-[105px] whitespace-nowrap">
+                <TableHead className="min-w-[90px] whitespace-nowrap">
                   <SortHeader label="Expiry Date" field="expiryDate" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                 </TableHead>
                 <TableHead className="whitespace-nowrap min-w-[110px]">
@@ -522,7 +522,7 @@ export default function OnboardingPage() {
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <TableBody className="relative -top-1">
               {paginatedInvitations.length === 0 ? (
                 <TableEmptyState
                   colSpan={9}
@@ -534,7 +534,7 @@ export default function OnboardingPage() {
                 paginatedInvitations.map((inv) => (
                   <TableRow
                     key={inv.id}
-                    className={cn(inv.status === "Revoked" && "opacity-50")}
+                    className={cn(inv.status === "Revoked" && "opacity-50" , "relative","mt-1")}
                   >
                     <TableCell className="w-[170px]">
                       <p className="truncate" title={inv.airlineName}>
@@ -557,13 +557,13 @@ export default function OnboardingPage() {
                     </TableCell>
                     <TableCell>{inv.country}</TableCell>
                     <TableCell>{inv.invitedBy}</TableCell>
-                    <TableCell className="whitespace-nowrap">
+                    <TableCell className="whitespace-nowrap pl-5">
                       {inv.invitedDate}
                     </TableCell>
                     <TableCell className="whitespace-nowrap">
                       {inv.expiryDate}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="pl-2">
                       ${inv.creditLimit.toLocaleString()}
                     </TableCell>
                     <TableCell>
@@ -612,12 +612,12 @@ export default function OnboardingPage() {
                                         creditLimit: String(inv.creditLimit),
                                         expiryDate: inv.expiryDate
                                           ? (() => {
-                                              const parts = inv.expiryDate.split("/");
-                                              if (parts.length === 3) {
-                                                return `${parts[2]}-${parts[1]}-${parts[0]}`;
-                                              }
-                                              return "";
-                                            })()
+                                            const parts = inv.expiryDate.split("/");
+                                            if (parts.length === 3) {
+                                              return `${parts[2]}-${parts[1]}-${parts[0]}`;
+                                            }
+                                            return "";
+                                          })()
                                           : "",
                                         companyReg: inv.companyReg || "",
                                         website: inv.website || "",
@@ -689,7 +689,7 @@ export default function OnboardingPage() {
             </TableBody>
           </Table>
         </div>
- 
+
         {/* Pagination */}
         <Pagination
           totalResults={filteredInvitations.length}

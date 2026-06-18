@@ -93,7 +93,7 @@ export function TfaVerification({
     /* State 1: Recovery Codes View */
     return (
       <>
-        <div className="justify-start text-gray-800 text-lg font-medium font-figtree">
+        <div className="justify-start text-gray-800 text-[19px] font-medium font-figtree leading-[100%]">
           Choose verification method
         </div>
         <div className="self-stretch flex flex-col justify-start items-start gap-5 w-full">
@@ -105,7 +105,7 @@ export function TfaVerification({
                 className="size-5 shrink-0 mt-0.5"
               />
               <div className="inline-flex flex-col justify-start items-start gap-1">
-                <div className="justify-start text-gray-800 text-base font-medium font-figtree">
+                <div className="justify-start text-gray-800 text-base font-medium font-figtree leading-[100%]">
                   Save your recovery codes
                 </div>
                 <div className="justify-start text-gray-500 text-sm font-normal font-figtree leading-normal">
@@ -121,12 +121,12 @@ export function TfaVerification({
                 key={i}
                 className="self-stretch inline-flex justify-start items-center gap-3"
               >
-                <div className="flex-1 px-3 py-2 bg-white rounded-lg outline outline-1 outline-offset-[-1px] outline-gray-300 flex justify-center items-center gap-2.5">
+                <div className="h-[35px] flex-1 px-3 py-2 bg-white rounded-lg outline outline-1 outline-offset-[-1px] outline-gray-300 flex justify-center items-center gap-2.5">
                   <div className="justify-start text-gray-800 text-base font-medium font-figtree">
                     {RECOVERY_CODES[i * 2]}
                   </div>
                 </div>
-                <div className="flex-1 px-3 py-2 bg-white rounded-lg outline outline-1 outline-offset-[-1px] outline-gray-300 flex justify-center items-center gap-2.5">
+                <div className="h-[35px] flex-1 px-3 py-2 bg-white rounded-lg outline outline-1 outline-offset-[-1px] outline-gray-300 flex justify-center items-center gap-2.5">
                   <div className="justify-start text-gray-800 text-base font-medium font-figtree">
                     {RECOVERY_CODES[i * 2 + 1]}
                   </div>
@@ -202,7 +202,7 @@ export function TfaVerification({
           onClick={onCompleteSetup}
           disabled={!isRecoveryCodesChecked}
           className={cn(
-            "px-4 py-3 bg-blue-950 rounded-[10px] inline-flex justify-center items-center overflow-hidden transition-all duration-200 cursor-pointer relative top-0.5",
+            "px-4 py-3 bg-blue-950 rounded-[10px] inline-flex justify-center items-center overflow-hidden transition-all duration-200 cursor-pointer relative -top-1.5",
             !isRecoveryCodesChecked
               ? "opacity-40 pointer-events-none"
               : "hover:bg-primary-hover opacity-100",
@@ -218,12 +218,12 @@ export function TfaVerification({
 
   /* State 0 OTP Inputs and QR App Setup */
   return (
-    <div className="self-stretch flex flex-col justify-start items-start gap-6 pt-6 border-t border-gray-200 w-full animate-fadeIn">
+    <div className="self-stretch flex flex-col justify-start items-start gap-6 w-full animate-fadeIn">
       {tfaMethod === "authenticator" && (
         <div className="self-stretch p-6 bg-gray-100 rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-300 flex flex-col justify-start items-start gap-6">
-          <div className="flex justify-start items-center gap-2">
+          <div className="flex justify-start items-center gap-2.5">
             <img src="/icons/qr.svg" alt="secure" className="size-5 shrink-0" />
-            <span className="justify-start text-gray-800 text-lg font-medium font-figtree leading-[130%]">
+            <span className="justify-start text-gray-800 text-lg font-medium font-figtree">
               Scan QR code with your authenticator app
             </span>
           </div>
@@ -318,19 +318,22 @@ export function TfaVerification({
       )}
 
       {/* Enter Verification Code Section */}
-      <div className="self-stretch flex flex-col justify-start items-start gap-6 w-full">
-        <div className="flex flex-col justify-start items-start gap-1.5">
+      <div className={cn(
+        "self-stretch flex flex-col justify-start items-start gap-6 w-full pt-5.5",
+        tfaMethod === "authenticator" && "border-t border-gray-200 relative -top-1"
+      )}>
+        <div className="flex flex-col justify-start items-start gap-1">
           <div className="justify-start text-gray-800 text-lg font-semibold font-figtree">
             Enter verification code
           </div>
-          <div className="justify-start text-gray-500 text-sm font-normal font-figtree">
+          <div className="justify-start text-gray-500 text-sm font-normal font-figtree leading-[100%]">
             {tfaMethod === "email"
               ? `Enter the 6-digit code sent to ${email}`
               : "Enter the 6-digit code from your authenticator app"}
           </div>
         </div>
 
-        <div className="self-stretch flex flex-wrap justify-start items-center gap-4 w-full">
+        <div className="self-stretch flex flex-wrap justify-start items-center gap-3 w-full">
           {/* OTP Input Fields */}
           <div className="h-11 rounded-lg outline outline-1 outline-gray-300 inline-flex items-center overflow-hidden bg-gray-50/50">
             {otpValues.map((digit, idx) => (

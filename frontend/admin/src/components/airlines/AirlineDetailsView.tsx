@@ -65,7 +65,7 @@ export function AirlineDetailsView({
 
       {/* Suspended Warning Banner */}
       {airline.status === "Suspended" && (
-        <div className="self-stretch relative top-[9px] pb-4 px-6 pt-3 bg-red-50 rounded-lg outline outline-1 outline-offset-[-1px] outline-red-200 flex justify-start items-center gap-2.5">
+        <div className="h-[44px] mb-6 self-stretch relative top-[9px] px-6 bg-red-50 rounded-lg outline outline-1 outline-offset-[-1px] outline-red-200 flex justify-start items-center gap-2.5">
           <AlertTriangle className="h-5 w-5 text-red-500 shrink-0" />
           <span className="text-red-500 text-sm font-normal font-figtree">
             This airline is suspended. Manual review required to reactivate.
@@ -174,17 +174,6 @@ export function AirlineDetailsView({
                 {airline.onboardingDate}
               </div>
             </div>
-            {airline.status === "Active" && (
-              <div className="self-stretch flex justify-between items-center h-[22px]">
-                <div className="text-gray-500 text-lg font-normal font-figtree">
-                  Assigned Airports
-                </div>
-                <div className="w-72 text-gray-800 text-lg font-medium font-figtree line-clamp-1 text-right">
-                  {airline.assignedAirports ||
-                    "Pacific Airport, Heathrow Airport, Tokyo Haneda Airport, Los Angeles International Airport, Heathrow Airport, Dubai International Airport, Heathrow Airport, Los Angeles International Airport"}
-                </div>
-              </div>
-            )}
           </div>
         </div>
 

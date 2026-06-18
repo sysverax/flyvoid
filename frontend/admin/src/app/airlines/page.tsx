@@ -393,20 +393,20 @@ export default function AirlinesPage() {
                   <TableHead className="min-w-[90px]">
                     <SortHeader label="Flights" field="flightsCount" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                   </TableHead>
-                  <TableHead className="min-w-[121px]">
+                  <TableHead className="min-w-[121px] relative -left-1">
                     <SortHeader label="Passengers" field="passengersCount" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                   </TableHead>
-                  <TableHead className="min-w-[124px]">
+                  <TableHead className="min-w-[124px] relative -left-1">
                     <SortHeader label="Spend" field="spend" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                   </TableHead>
-                  <TableHead className="min-w-[115px]">
+                  <TableHead className="min-w-[115px] relative -left-1.5">
                     <SortHeader label="Revenue" field="revenue" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                   </TableHead>
-                  <TableHead className="min-w-[128px]">
+                  <TableHead className="min-w-[128px] relative left-1">
                     <SortHeader label="Stripe" field="stripeConnection" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                   </TableHead>
-                  <TableHead className="whitespace-nowrap min-w-[143px]">
-                    Enable/Disable
+                  <TableHead className="whitespace-nowrap min-w-[143px] relative left-1">
+                    <SortHeader label="Enable/Disable" field="status" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                   </TableHead>
                   <TableHead>Action</TableHead>
                 </TableRow>
@@ -439,16 +439,16 @@ export default function AirlinesPage() {
                       <TableCell className="text-[#1F2937]">
                         {airline.passengersCount.toLocaleString()}
                       </TableCell>
-                      <TableCell className="text-[#6B7280]">
+                      <TableCell className="text-[#6B7280] relative -left-1">
                         ${airline.spend.toLocaleString()}
                       </TableCell>
-                      <TableCell className="text-[#6B7280]">
+                      <TableCell className="text-[#6B7280] relative -left-1">
                         ${airline.revenue.toLocaleString()}
                       </TableCell>
                       <TableCell>
                         <span
                           className={cn(
-                            "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold",
+                            "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold relative left-1.5",
                             airline.stripeConnection === "Connected" && "bg-emerald-50 text-emerald-700",
                             airline.stripeConnection === "Pending" && "bg-amber-50 text-amber-700",
                             airline.stripeConnection === "Failed" && "bg-rose-50 text-rose-700"
@@ -463,7 +463,7 @@ export default function AirlinesPage() {
                           type="button"
                           onClick={() => handleToggleStatus(airline)}
                           className={cn(
-                            "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
+                            "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none relative left-1",
                             airline.status === "Active" ? "bg-emerald-500" : "bg-gray-200"
                           )}
                         >

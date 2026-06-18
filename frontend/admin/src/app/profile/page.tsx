@@ -297,28 +297,28 @@ export default function AdminProfilePage() {
             <>
               <div className="self-stretch rounded-xl inline-flex justify-start items-start gap-4">
                 <div className="flex-1 px-3 py-2.5 bg-gray-100 rounded-[10px] outline outline-1 outline-offset-[-1px] outline-gray-200 inline-flex flex-col justify-start items-start gap-0.5">
-                  <div className="justify-start text-gray-500 text-sm font-normal font-figtree">
+                  <div className="justify-start text-gray-500 text-sm font-normal font-figtree leading-[100%]">
                     Status
                   </div>
-                  <div className="justify-start text-gray-800 text-lg font-medium font-figtree">
+                  <div className="justify-start text-gray-800 text-lg font-medium font-figtree leading-[100%]">
                     Enabled
                   </div>
                 </div>
                 <div className="flex-1 px-3 py-2.5 bg-gray-100 rounded-[10px] outline outline-1 outline-offset-[-1px] outline-gray-200 inline-flex flex-col justify-start items-start gap-0.5">
-                  <div className="justify-start text-gray-500 text-sm font-normal font-figtree">
+                  <div className="justify-start text-gray-500 text-sm font-normal font-figtree leading-[100%]">
                     Method
                   </div>
-                  <div className="justify-start text-gray-800 text-lg font-medium font-figtree">
+                  <div className="justify-start text-gray-800 text-lg font-medium font-figtree leading-[100%]">
                     {tfaEnabledMethod === "email"
                       ? "Email OTP"
                       : "Authenticator App"}
                   </div>
                 </div>
                 <div className="flex-1 px-3 py-2.5 bg-gray-100 rounded-[10px] outline outline-1 outline-offset-[-1px] outline-gray-200 inline-flex flex-col justify-start items-start gap-0.5">
-                  <div className="justify-start text-gray-500 text-sm font-normal font-figtree">
+                  <div className="justify-start text-gray-500 text-sm font-normal font-figtree leading-[100%]">
                     Enabled on
                   </div>
-                  <div className="justify-start text-gray-800 text-lg font-medium font-figtree">
+                  <div className="justify-start text-gray-800 text-lg font-medium font-figtree leading-[100%]">
                     {tfaEnabledDate}
                   </div>
                 </div>
@@ -326,7 +326,7 @@ export default function AdminProfilePage() {
               <button
                 type="button"
                 onClick={handleDisableTfa}
-                className="px-4 py-3 bg-red-600 hover:bg-red-700 text-white text-base font-medium font-figtree rounded-[10px] inline-flex justify-center items-center overflow-hidden cursor-pointer transition-colors relative top-0.5"
+                className="h-[43px] px-4 py-3 bg-[#DC2626] hover:bg-red-700 text-white text-base font-medium font-figtree rounded-[10px] inline-flex justify-center items-center overflow-hidden cursor-pointer transition-colors relative top-1 -mb-2.5"
               >
                 <div className="justify-start text-white text-base font-medium font-figtree">
                   Disable 2FA
@@ -338,7 +338,7 @@ export default function AdminProfilePage() {
             <>
               {!isShowingRecoveryCodes && (
                 <>
-                  <div className="justify-start text-gray-800 text-lg font-medium font-figtree">
+                  <div className="justify-start text-gray-800 text-[19px] font-medium font-figtree leading-[100%]">
                     Choose verification method
                   </div>
 
@@ -389,7 +389,7 @@ export default function AdminProfilePage() {
                         setIsConfiguringTfa(false);
                       }}
                       className={cn(
-                        "self-stretch px-4 py-3.5 rounded-[10px] outline outline-1 outline-offset-[-1px] inline-flex justify-start items-center gap-4 cursor-pointer transition-all",
+                        "h-[70px] self-stretch px-4 py-3.5 rounded-[10px] outline outline-1 outline-offset-[-1px] inline-flex justify-start items-center gap-4 cursor-pointer transition-all",
                         tfaMethod === "authenticator"
                           ? "outline-blue-950 bg-blue-50/20"
                           : "outline-gray-300 hover:bg-gray-50/50",
@@ -410,10 +410,10 @@ export default function AdminProfilePage() {
                       <div className="flex justify-start items-center gap-2.5">
                         <Smartphone className="size-5 text-gray-800 shrink-0" />
                         <div className="inline-flex flex-col justify-start items-start gap-1">
-                          <span className="justify-start text-gray-800 text-base font-medium font-figtree">
+                          <span className="justify-start text-gray-800 text-base font-medium font-figtree leading-[100%]">
                             Authenticator App
                           </span>
-                          <span className="justify-start text-gray-500 text-sm font-normal font-figtree leading-[100%]">
+                          <span className="justify-start text-gray-500 text-sm font-normal font-figtree">
                             Use Google Authenticator, Authy, Microsoft
                             Authenticator, or 1Password
                           </span>

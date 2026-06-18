@@ -2,6 +2,7 @@
 
 import { X } from "lucide-react";
 import { cn } from "@/src/lib/utils";
+import { useLockBodyScroll } from "@/src/hooks/useLockBodyScroll";
 
 function DialogRoot({
   isOpen,
@@ -12,6 +13,8 @@ function DialogRoot({
   onClose: () => void;
   children: React.ReactNode;
 }) {
+  useLockBodyScroll(isOpen);
+
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-6">

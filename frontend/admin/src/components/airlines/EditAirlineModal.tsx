@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { X, Search } from "lucide-react";
+import { useLockBodyScroll } from "@/src/hooks/useLockBodyScroll";
 import { Airline } from "@/src/types/airlines";
 import { cn } from "@/src/lib/utils";
 import { Dropdown, DropdownOption } from "@/src/components/ui/Dropdown";
@@ -96,6 +97,16 @@ export function EditAirlineModal({
   onClose,
   onSave,
 }: EditAirlineModalProps) {
+  useLockBodyScroll(isOpen);
+
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isOpen && scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = 0;
+    }
+  }, [isOpen]);
+
   const [editFormState, setEditFormState] = useState({
     airlineName: "",
     airlineCode: "",
@@ -258,7 +269,7 @@ export function EditAirlineModal({
         )}
       >
         {/* Header */}
-        <div className="flex items-start justify-between px-6 py-5">
+        <div className="flex items-start justify-between pl-6 pr-4.5 py-5">
           <div>
             <h2 className="text-[24px] font-semibold text-[#1F2937]">
               Edit Airline Details
@@ -271,7 +282,7 @@ export function EditAirlineModal({
             onClick={onClose}
             className="p-1.5 rounded-lg transition-colors cursor-pointer"
           >
-            <X className="w-5 h-5 text-[#1F2937]" />
+            <X className="w-6 h-6 text-[#1F2937]" />
           </button>
         </div>
 
@@ -281,13 +292,13 @@ export function EditAirlineModal({
 
         {/* Scrollable body */}
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
-          <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6 scrollbar-hide">
+          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-6 py-7 space-y-6 scrollbar-hide">
 
             {/* Airline Details Section */}
             <section>
-              <h3 className="text-[18px] font-semibold text-[#1F2937] mb-2.5">Airline Details</h3>
+              <h3 className="text-[18px] font-semibold text-[#1F2937] mb-2.5 relative -top-1">Airline Details</h3>
               <div className="grid grid-cols-2 gap-[23px]">
-                <Field label="Airline Name" required>
+                <Field label="Airline Name" required >
                   <input placeholder="" {...field("airlineName")} required className={inputCls} />
                 </Field>
                 <Field label="Airline Code" required>
@@ -558,7 +569,7 @@ export function EditAirlineModal({
 
 // Helpers
 const inputCls =
-  "w-full px-4 py-3 rounded-lg border border-[#D1D5DB] text-[16px] text-[#1F2937] bg-white focus:outline-none focus:ring-2 focus:ring-[#1B2B6B]/20 focus:border-[#1B2B6B] transition-all placeholder:text-[#9CA3AF]";
+  "w-full h-[49px] px-4 py-3 rounded-lg border border-[#D1D5DB] text-[16px] text-[#1F2937] bg-white focus:outline-none focus:ring-2 focus:ring-[#1B2B6B]/20 focus:border-[#1B2B6B] transition-all placeholder:text-[#9CA3AF]";
 
 function Field({
   label,

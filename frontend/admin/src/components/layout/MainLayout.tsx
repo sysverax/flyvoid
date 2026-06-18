@@ -16,7 +16,7 @@ export function MainLayout({ children }: MainLayoutProps) {
           "min-h-screen transition-all duration-300 pt-16 lg:pt-0 lg:ml-60",
         )}
       >
-        <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">{children}</div>
+        <div className="p-4 sm:p-6 lg:p-8 w-full">{children}</div>
       </main>
     </div>
   );
