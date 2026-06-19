@@ -28,9 +28,10 @@ function getPool(): Pool {
   return pool;
 }
 
-export async function query<
-  T extends Record<string, unknown> = Record<string, unknown>,
->(sql: string, params?: unknown[]): Promise<QueryResult<T>> {
+export async function query<T extends object = Record<string, unknown>>(
+  sql: string,
+  params?: unknown[],
+): Promise<QueryResult<T>> {
   return getPool().query<T>(sql, params);
 }
 

@@ -18,6 +18,8 @@ import {
   signupAndGetTokens,
   getAdminTokens,
 } from "../../../helpers/auth.helper";
+import { describe, it } from "node:test";
+import { beforeAll, afterAll, expect } from "@jest/globals";
 
 const EMAIL_PATTERN = "%@e2e-recover.test";
 const TEST_PASSWORD = "Password@123";
@@ -237,39 +239,33 @@ describe("POST /api/v1/auth/admin/2fa/recover", () => {
 
   // TC_AUTH_ADMIN_2FA_RECOVER_005
   it("TC_AUTH_ADMIN_2FA_RECOVER_005: 2FA recovery with invalid password → 401", async () => {
-    const res = await api
-      .post("/api/v1/auth/admin/2fa/recover")
-      .send({
-        email: adminEmail,
-        password: "WrongPass@999",
-        recoveryCode: recoveryCodes[0],
-      });
+    const res = await api.post("/api/v1/auth/admin/2fa/recover").send({
+      email: adminEmail,
+      password: "WrongPass@999",
+      recoveryCode: recoveryCodes[0],
+    });
 
     expect(res.status).toBe(401);
   });
 
   // TC_AUTH_ADMIN_2FA_RECOVER_006
   it("TC_AUTH_ADMIN_2FA_RECOVER_006: 2FA recovery with non-existing email → 401", async () => {
-    const res = await api
-      .post("/api/v1/auth/admin/2fa/recover")
-      .send({
-        email: "ghost@e2e-recover.test",
-        password: TEST_PASSWORD,
-        recoveryCode: "ABCD1234EF",
-      });
+    const res = await api.post("/api/v1/auth/admin/2fa/recover").send({
+      email: "ghost@e2e-recover.test",
+      password: TEST_PASSWORD,
+      recoveryCode: "ABCD1234EF",
+    });
 
     expect(res.status).toBe(401);
   });
 
   // TC_AUTH_ADMIN_2FA_RECOVER_007
   it("TC_AUTH_ADMIN_2FA_RECOVER_007: 2FA recovery with invalid recovery code → 401", async () => {
-    const res = await api
-      .post("/api/v1/auth/admin/2fa/recover")
-      .send({
-        email: adminEmail,
-        password: TEST_PASSWORD,
-        recoveryCode: "INVALID0000",
-      });
+    const res = await api.post("/api/v1/auth/admin/2fa/recover").send({
+      email: adminEmail,
+      password: TEST_PASSWORD,
+      recoveryCode: "INVALID0000",
+    });
 
     expect(res.status).toBe(401);
   });
@@ -279,24 +275,20 @@ describe("POST /api/v1/auth/admin/2fa/recover", () => {
     const codeToReuse = reuseTestRecoveryCodes[0];
 
     // First use: should succeed
-    const firstRes = await api
-      .post("/api/v1/auth/admin/2fa/recover")
-      .send({
-        email: reuseTestEmail,
-        password: TEST_PASSWORD,
-        recoveryCode: codeToReuse,
-      });
+    const firstRes = await api.post("/api/v1/auth/admin/2fa/recover").send({
+      email: reuseTestEmail,
+      password: TEST_PASSWORD,
+      recoveryCode: codeToReuse,
+    });
     expect(firstRes.status).toBe(200);
 
     // Second use: same code, 2FA is now disabled — trying to recover again
     // with the same (now spent) code must fail
-    const secondRes = await api
-      .post("/api/v1/auth/admin/2fa/recover")
-      .send({
-        email: reuseTestEmail,
-        password: TEST_PASSWORD,
-        recoveryCode: codeToReuse,
-      });
+    const secondRes = await api.post("/api/v1/auth/admin/2fa/recover").send({
+      email: reuseTestEmail,
+      password: TEST_PASSWORD,
+      recoveryCode: codeToReuse,
+    });
 
     // 2FA was disabled by the first recovery, so there is nothing to recover.
     // The service should return 401 (invalid recovery credentials).
@@ -361,13 +353,11 @@ describe("POST /api/v1/auth/admin/2fa/recover", () => {
 
   // TC_AUTH_ADMIN_2FA_RECOVER_015
   it("TC_AUTH_ADMIN_2FA_RECOVER_015: Invalid email format → 400", async () => {
-    const res = await api
-      .post("/api/v1/auth/admin/2fa/recover")
-      .send({
-        email: "not-an-email",
-        password: TEST_PASSWORD,
-        recoveryCode: "ABCD1234EF",
-      });
+    const res = await api.post("/api/v1/auth/admin/2fa/recover").send({
+      email: "not-an-email",
+      password: TEST_PASSWORD,
+      recoveryCode: "ABCD1234EF",
+    });
 
     expect(res.status).toBe(400);
   });

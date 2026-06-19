@@ -28,6 +28,8 @@ import {
   insertExhaustedOtpRecord,
 } from "../../../seeders/admin.seeder";
 import { uniqueEmail } from "../../../fixtures/admin.fixture";
+import { describe, it } from "node:test";
+import { beforeAll, afterAll, expect } from "@jest/globals";
 
 const EMAIL_PATTERN = "%@e2e-fp.test";
 const TEST_PASSWORD = "Password@123";
@@ -697,24 +699,20 @@ describe("POST /api/v1/auth/admin/forgot-password", () => {
 
   // TC_AUTH_ADMIN_FORGOT_PASSWORD_RESET_002
   it("TC_AUTH_ADMIN_FORGOT_PASSWORD_RESET_002: Invalid resetPasswordToken → 401", async () => {
-    const res = await api
-      .post("/api/v1/auth/admin/forgot-password")
-      .send({
-        resetPasswordToken: "invalid.token.value",
-        newPassword: NEW_PASSWORD,
-      });
+    const res = await api.post("/api/v1/auth/admin/forgot-password").send({
+      resetPasswordToken: "invalid.token.value",
+      newPassword: NEW_PASSWORD,
+    });
 
     expect(res.status).toBe(401);
   });
 
   // TC_AUTH_ADMIN_FORGOT_PASSWORD_RESET_022
   it("TC_AUTH_ADMIN_FORGOT_PASSWORD_RESET_022: SQL injection in token field → 401 (invalid token)", async () => {
-    const res = await api
-      .post("/api/v1/auth/admin/forgot-password")
-      .send({
-        resetPasswordToken: "'; DROP TABLE admins;--",
-        newPassword: NEW_PASSWORD,
-      });
+    const res = await api.post("/api/v1/auth/admin/forgot-password").send({
+      resetPasswordToken: "'; DROP TABLE admins;--",
+      newPassword: NEW_PASSWORD,
+    });
 
     expect(res.status).toBe(401);
   });
@@ -813,12 +811,10 @@ describe("POST /api/v1/auth/admin/forgot-password", () => {
 
   // TC_AUTH_ADMIN_FORGOT_PASSWORD_RESET_014
   it("TC_AUTH_ADMIN_FORGOT_PASSWORD_RESET_014: newPassword without special character → 400", async () => {
-    const res = await api
-      .post("/api/v1/auth/admin/forgot-password")
-      .send({
-        resetPasswordToken: "some.token",
-        newPassword: "NewPassword123",
-      });
+    const res = await api.post("/api/v1/auth/admin/forgot-password").send({
+      resetPasswordToken: "some.token",
+      newPassword: "NewPassword123",
+    });
 
     expect(res.status).toBe(400);
   });
@@ -850,13 +846,11 @@ describe("POST /api/v1/auth/admin/forgot-password", () => {
 
   // TC_AUTH_ADMIN_FORGOT_PASSWORD_RESET_020
   it("TC_AUTH_ADMIN_FORGOT_PASSWORD_RESET_020: Unknown fields → 400 (forbidNonWhitelisted)", async () => {
-    const res = await api
-      .post("/api/v1/auth/admin/forgot-password")
-      .send({
-        resetPasswordToken: "some.token",
-        newPassword: NEW_PASSWORD,
-        extraField: "bad",
-      });
+    const res = await api.post("/api/v1/auth/admin/forgot-password").send({
+      resetPasswordToken: "some.token",
+      newPassword: NEW_PASSWORD,
+      extraField: "bad",
+    });
 
     expect(res.status).toBe(400);
   });

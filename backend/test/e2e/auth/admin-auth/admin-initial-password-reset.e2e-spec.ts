@@ -19,6 +19,8 @@ import {
   insertActiveAdmin,
 } from "../../../seeders/admin.seeder";
 import { uniqueEmail } from "../../../fixtures/admin.fixture";
+import { describe, it } from "node:test";
+import { beforeAll, afterAll, expect } from "@jest/globals";
 
 const EMAIL_PATTERN = "%@e2e-ipr.test";
 const TEST_PASSWORD = "Password@123";
