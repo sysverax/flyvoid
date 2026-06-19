@@ -32,8 +32,7 @@ import {
   sqlInjectionEmailPayload,
   scriptInjectionFirstNamePayload,
 } from "../../../fixtures/admin.fixture";
-import { describe, it } from "node:test";
-import { beforeAll, afterAll, expect } from "@jest/globals";
+import { describe, it, beforeAll, afterAll, expect } from "@jest/globals";
 const EMAIL_PATTERN = "%@e2e.test";
 
 describe("POST /api/v1/auth/admin/signup", () => {
@@ -65,7 +64,7 @@ describe("POST /api/v1/auth/admin/signup", () => {
 
     expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
-    expect(res.body.message).toBe("Admin created successfully");
+    expect(res.body.message).toBe("Admin registered successfully");
     expect(res.body.data.id).toBeDefined();
     expect(typeof res.body.data.id).toBe("number");
     expect(res.body.data.email).toBe(email);
@@ -169,7 +168,7 @@ describe("POST /api/v1/auth/admin/signup", () => {
 
     expect(res.status).toBe(409);
     expect(res.body.statusCode).toBe(409);
-    expect(res.body.message).toMatch(/already exists/i);
+    expect(res.body.message).toMatch(/already registered/i);
   });
 
   // TC_AUTH_ADMIN_SIGNUP_032

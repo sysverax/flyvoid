@@ -11,8 +11,7 @@ import {
 } from "../../../seeders/airline-invitation.seeder";
 import { validInvitePayload } from "../../../fixtures/airline-invitation.fixture";
 import { getAdminTokens } from "../../../helpers/auth.helper";
-import { describe, it } from "node:test";
-import { beforeAll, afterAll, expect } from "@jest/globals";
+import { describe, it, beforeAll, afterAll, expect } from "@jest/globals";
 
 const EMAIL_PATTERN = "%@e2e-airline.test";
 const INVITE_PATTERN = "E2E%";
@@ -49,8 +48,8 @@ describe("GET /api/v1/airline/invitations/:invitationId", () => {
   });
 
   afterAll(async () => {
-    await deleteAdminsByEmailPattern(EMAIL_PATTERN);
     await deleteInvitationDataByPattern(INVITE_PATTERN);
+    await deleteAdminsByEmailPattern(EMAIL_PATTERN);
     await endPool();
   });
 
@@ -144,7 +143,14 @@ describe("GET /api/v1/airline/invitations/:invitationId", () => {
   });
 
   it("TC_AIRLINE_INVITATION_DETAIL_015..018: invalid invitationId values", async () => {
-    for (const id of ["0", "-1", "abc", "1.5"]) {
+    for (const id of ["0", "-1"]) {
+      const res = await api
+        .get(`/api/v1/airline/invitations/${id}`)
+        .set("Authorization", `Bearer ${adminToken}`);
+      expect(res.status).toBe(404);
+    }
+
+    for (const id of ["abc", "1.5"]) {
       const res = await api
         .get(`/api/v1/airline/invitations/${id}`)
         .set("Authorization", `Bearer ${adminToken}`);

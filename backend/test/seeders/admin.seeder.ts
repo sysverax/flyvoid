@@ -66,7 +66,7 @@ export async function insertActiveAdmin(
   const result = await query<SeededAdmin>(
     `INSERT INTO admins
        (first_name, last_name, email, password_hash, role, is_active, require_password_reset)
-     VALUES ($1, $2, $3, $4, $5::varchar, $6, $7)
+     VALUES ($1, $2, $3, $4, $5::admins_role_enum, $6, $7)
      RETURNING id, email, role`,
     [
       firstName,
@@ -96,7 +96,7 @@ export async function insertInactiveAdmin(
   const result = await query<SeededAdmin>(
     `INSERT INTO admins
        (first_name, last_name, email, password_hash, role, is_active, require_password_reset)
-     VALUES ($1, $2, $3, $4, $5::varchar, $6, $7)
+     VALUES ($1, $2, $3, $4, $5::admins_role_enum, $6, $7)
      RETURNING id, email, role`,
     [
       firstName,
@@ -126,7 +126,7 @@ export async function insertAdminWithPasswordResetRequired(
   const result = await query<SeededAdmin>(
     `INSERT INTO admins
        (first_name, last_name, email, password_hash, role, is_active, require_password_reset)
-     VALUES ($1, $2, $3, $4, $5::varchar, $6, $7)
+     VALUES ($1, $2, $3, $4, $5::admins_role_enum, $6, $7)
      RETURNING id, email, role`,
     [
       firstName,

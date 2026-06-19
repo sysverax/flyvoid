@@ -28,8 +28,7 @@ import {
   signupAndGetTokens,
   getAdminTokens,
 } from "../../../helpers/auth.helper";
-import { describe, it } from "node:test";
-import { beforeAll, afterAll, expect } from "@jest/globals";
+import { describe, it, beforeAll, afterAll, expect } from "@jest/globals";
 
 const EMAIL_PATTERN = "%@e2e-2fa.test";
 const TEST_PASSWORD = "Password@123";

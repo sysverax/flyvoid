@@ -12,8 +12,7 @@ import {
 } from "../../../fixtures/airline-auth.fixture";
 import { validInvitePayload } from "../../../fixtures/airline-invitation.fixture";
 import { deleteInvitationDataByPattern } from "../../../seeders/airline-invitation.seeder";
-import { describe, it } from "node:test";
-import { beforeAll, afterAll, expect } from "@jest/globals";
+import { describe, it, beforeAll, afterAll, expect } from "@jest/globals";
 
 const ADMIN_EMAIL_PATTERN = "%@e2e-airline-auth.test";
 const INVITE_PATTERN = "E2E%";
@@ -87,8 +86,8 @@ describe("POST /api/v1/auth/airline/2fa/disable & /2fa/recover", () => {
   });
 
   afterAll(async () => {
-    await deleteAdminsByEmailPattern(ADMIN_EMAIL_PATTERN);
     await deleteInvitationDataByPattern(INVITE_PATTERN);
+    await deleteAdminsByEmailPattern(ADMIN_EMAIL_PATTERN);
     await endPool();
   });
 
@@ -214,14 +213,12 @@ describe("POST /api/v1/auth/airline/2fa/disable & /2fa/recover", () => {
   });
 
   it("TC_AIRLINE_2FA_RECOVER_003: Validation unknown fields/malformed JSON -> 400", async () => {
-    const unknown = await api
-      .post("/api/v1/auth/airline/2fa/recover")
-      .send({
-        email: "bad",
-        password: "short",
-        recoveryCode: "x",
-        unknown: "bad",
-      });
+    const unknown = await api.post("/api/v1/auth/airline/2fa/recover").send({
+      email: "bad",
+      password: "short",
+      recoveryCode: "x",
+      unknown: "bad",
+    });
     expect(unknown.status).toBe(400);
 
     const malformed = await api

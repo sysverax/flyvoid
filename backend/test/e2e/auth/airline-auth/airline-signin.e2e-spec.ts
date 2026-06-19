@@ -15,8 +15,7 @@ import {
   insertAirlineRow,
   insertAirlineUserRow,
 } from "../../../seeders/airline-invitation.seeder";
-import { describe, it } from "node:test";
-import { beforeAll, afterAll, expect } from "@jest/globals";
+import { describe, it, beforeAll, afterAll, expect } from "@jest/globals";
 
 const ADMIN_EMAIL_PATTERN = "%@e2e-airline-auth.test";
 const INVITE_PATTERN = "E2E%";
@@ -69,8 +68,8 @@ describe("POST /api/v1/auth/airline/signin", () => {
   });
 
   afterAll(async () => {
-    await deleteAdminsByEmailPattern(ADMIN_EMAIL_PATTERN);
     await deleteInvitationDataByPattern(INVITE_PATTERN);
+    await deleteAdminsByEmailPattern(ADMIN_EMAIL_PATTERN);
     await endPool();
   });
 
@@ -203,13 +202,11 @@ describe("POST /api/v1/auth/airline/signin", () => {
   });
 
   it("TC_AIRLINE_SIGNIN_007: Unknown fields and malformed JSON -> 400", async () => {
-    const unknown = await api
-      .post("/api/v1/auth/airline/signin")
-      .send({
-        email: activeEmail,
-        password: AIRLINE_TEST_PASSWORD,
-        unknown: "bad",
-      });
+    const unknown = await api.post("/api/v1/auth/airline/signin").send({
+      email: activeEmail,
+      password: AIRLINE_TEST_PASSWORD,
+      unknown: "bad",
+    });
     expect(unknown.status).toBe(400);
 
     const malformed = await api

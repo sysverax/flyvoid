@@ -13,8 +13,7 @@ import {
   validInvitePayload,
 } from "../../../fixtures/airline-invitation.fixture";
 import { getAdminTokens } from "../../../helpers/auth.helper";
-import { describe, it } from "node:test";
-import { beforeAll, afterAll, expect } from "@jest/globals";
+import { describe, it, beforeAll, afterAll, expect } from "@jest/globals";
 
 const EMAIL_PATTERN = "%@e2e-airline.test";
 const CODE_PATTERN = "E2E%";
@@ -542,7 +541,7 @@ describe("POST /api/v1/airline/invitations", () => {
         .set("Authorization", `Bearer ${superAdminToken}`)
         .send(payload);
 
-      expect([400, 201]).toContain(res.status);
+      expect(400).toBe(res.status);
     }
   });
 

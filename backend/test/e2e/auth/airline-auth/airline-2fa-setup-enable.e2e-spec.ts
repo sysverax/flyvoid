@@ -11,8 +11,7 @@ import {
 } from "../../../fixtures/airline-auth.fixture";
 import { validInvitePayload } from "../../../fixtures/airline-invitation.fixture";
 import { deleteInvitationDataByPattern } from "../../../seeders/airline-invitation.seeder";
-import { describe, it } from "node:test";
-import { beforeAll, afterAll, expect } from "@jest/globals";
+import { describe, it, beforeAll, afterAll, expect } from "@jest/globals";
 
 const ADMIN_EMAIL_PATTERN = "%@e2e-airline-auth.test";
 const INVITE_PATTERN = "E2E%";
@@ -61,8 +60,8 @@ describe("POST /api/v1/auth/airline/2fa/setup & /2fa/enable", () => {
   });
 
   afterAll(async () => {
-    await deleteAdminsByEmailPattern(ADMIN_EMAIL_PATTERN);
     await deleteInvitationDataByPattern(INVITE_PATTERN);
+    await deleteAdminsByEmailPattern(ADMIN_EMAIL_PATTERN);
     await endPool();
   });
 

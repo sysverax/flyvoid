@@ -1,8 +1,32 @@
 # Admin Auth E2E Test Cases
 
-This document lists all Admin Auth API e2e test cases in this folder for quick review.
+This document lists all Admin Auth E2E test cases extracted from the specification files.
 
-## Admin Signup API
+**Scope:**
+
+- HTTP-only assertions via supertest
+- Raw SQL seeding/cleanup via pg helpers (where applicable)
+- No imports from src in test code
+
+---
+
+## Files
+
+- [admin-signup.e2e-spec.ts](./admin-signup.e2e-spec.ts) : `POST /api/v1/auth/admin/signup`
+- [admin-signin.e2e-spec.ts](./admin-signin.e2e-spec.ts) : `POST /api/v1/auth/admin/signin`
+- [forgot-password.e2e-spec.ts](./forgot-password.e2e-spec.ts) :
+  - `POST /api/v1/auth/admin/forgot-password/send-otp`
+  - `POST /api/v1/auth/admin/forgot-password/verify-otp`
+  - `POST /api/v1/auth/admin/forgot-password`
+- [refresh-token.e2e-spec.ts](./refresh-token.e2e-spec.ts) : `POST /api/v1/auth/admin/refresh`
+- [signout.e2e-spec.ts](./signout.e2e-spec.ts) : `POST /api/v1/auth/admin/signout`
+- [admin-initial-password-reset.e2e-spec.ts](./admin-initial-password-reset.e2e-spec.ts) : `POST /api/v1/auth/admin/signin/reset-password`
+
+---
+
+## Test Cases by Endpoint
+
+### POST /api/v1/auth/admin/signup
 
 - Spec file: `admin-signup.e2e-spec.ts`
 - Endpoint: `POST /api/v1/auth/admin/signup`
@@ -52,7 +76,9 @@ Test cases:
 - `TC_AUTH_ADMIN_SIGNUP_041`: Signup with script injection attempt in firstName, expected `400`
 - `TC_AUTH_ADMIN_SIGNUP_042`: Signup with Unicode characters in firstName and lastName, expected `201`
 
-## Admin Signin API
+---
+
+### POST /api/v1/auth/admin/signin
 
 - Spec file: `admin-signin.e2e-spec.ts`
 - Endpoint: `POST /api/v1/auth/admin/signin`
@@ -79,7 +105,7 @@ Test cases:
 - `TC_AUTH_ADMIN_SIGNIN_018`: Deleted admin signin attempt, expected `401`
 - `TC_AUTH_ADMIN_SIGNIN_019`: Multiple failed signin attempts handling, expected `401`
 - `TC_AUTH_ADMIN_SIGNIN_020`: Successful SUPER_ADMIN signin returns complete response with tokens and profile data, expected `200`
-- `TC_AUTH_ADMIN_SIGNIN_020`: Successful STAFF_ADMIN signin returns complete response with tokens and profile data, expected `200`
+- `TC_AUTH_ADMIN_SIGNIN_021`: Successful STAFF_ADMIN signin returns complete response with tokens and profile data, expected `200`
 
 - `TC_AUTH_ADMIN_SIGNIN_029`: Signin requiring two-factor authentication challenge, expected `200`
 - `TC_AUTH_ADMIN_SIGNIN_030`: Two-factor signin response contains requiresTwoFactor=true, expected `200`
@@ -107,7 +133,13 @@ Notes:
 - `TC_AUTH_ADMIN_SIGNIN_018` may be skipped in external mode because it requires in-process DB mutation (hard delete).
 - `TC_AUTH_ADMIN_SIGNIN_026`, `TC_AUTH_ADMIN_SIGNIN_027`, and `TC_AUTH_ADMIN_SIGNIN_028` are commented out pending implementation of legacy platform role labels.
 
-## Admin Forgot Password API
+---
+
+### POST /api/v1/auth/admin/forgot-password/send-otp
+
+### POST /api/v1/auth/admin/forgot-password/verify-otp
+
+### POST /api/v1/auth/admin/forgot-password
 
 - Spec file: `forgot-password.e2e-spec.ts`
 - Endpoints:
@@ -196,7 +228,9 @@ Notes:
 - `TC_AUTH_ADMIN_FORGOT_PASSWORD_SEND_OTP_013` and `TC_AUTH_ADMIN_FORGOT_PASSWORD_RESET_015` are compatibility placeholders because deleted-admin state and password-history validation are not implemented.
 - DB-mutation scenarios (for expiry/window checks) may be skipped in external mode where in-process repository access is unavailable.
 
-## Admin Refresh Token API
+---
+
+### POST /api/v1/auth/admin/refresh
 
 - Spec file: `refresh-token.e2e-spec.ts`
 - Endpoint: `POST /api/v1/auth/admin/refresh`
@@ -249,7 +283,9 @@ Notes:
 - In external mode, DB-mutation tests (inactive/deleted account checks) may be skipped because in-process repository access is unavailable.
 - Rotation/replay strictness (`TC_AUTH_ADMIN_REFRESH_TOKEN_023`, `TC_AUTH_ADMIN_REFRESH_TOKEN_024`, `TC_AUTH_ADMIN_REFRESH_TOKEN_028`) is compatibility-aware if the live backend does not enforce one-time refresh semantics.
 
-## Admin Signout API
+---
+
+### POST /api/v1/auth/admin/signout
 
 - Spec file: `signout.e2e-spec.ts`
 - Endpoint: `POST /api/v1/auth/admin/signout`
@@ -295,7 +331,9 @@ Notes:
 - `TC_AUTH_ADMIN_SIGNOUT_026` may return concurrent `200,200` as compatibility behavior when the live backend processes both signout requests before revocation visibility is enforced.
 - `TC_AUTH_ADMIN_SIGNOUT_030` may be skipped in external mode because in-process database inspection is not available.
 
-## Admin Initial Password Reset API
+---
+
+### POST /api/v1/auth/admin/signin/reset-password
 
 - Spec file: `admin-initial-password-reset.e2e-spec.ts`
 - Endpoint: `POST /api/v1/auth/admin/signin/reset-password`

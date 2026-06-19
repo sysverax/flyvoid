@@ -8,8 +8,7 @@ import {
 } from "../../../seeders/airline-invitation.seeder";
 import { validInvitePayload } from "../../../fixtures/airline-invitation.fixture";
 import { getAdminTokens } from "../../../helpers/auth.helper";
-import { describe, it } from "node:test";
-import { beforeAll, afterAll, expect } from "@jest/globals";
+import { describe, it, beforeAll, afterAll, expect } from "@jest/globals";
 
 const EMAIL_PATTERN = "%@e2e-airline.test";
 const INVITE_PATTERN = "E2E%";
@@ -53,8 +52,8 @@ describe("GET /api/v1/airline/invitations", () => {
   });
 
   afterAll(async () => {
-    await deleteAdminsByEmailPattern(EMAIL_PATTERN);
     await deleteInvitationDataByPattern(INVITE_PATTERN);
+    await deleteAdminsByEmailPattern(EMAIL_PATTERN);
     await endPool();
   });
 
