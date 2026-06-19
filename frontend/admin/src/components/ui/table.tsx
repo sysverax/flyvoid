@@ -114,7 +114,7 @@ function SortHeader<T>({
       <span
         onClick={() => onSort(field)}
         className="inline-flex cursor-pointer ml-1.5 select-none p-1 rounded transition-colors shrink-0"
-        // title={`Sort by ${label}`}
+      // title={`Sort by ${label}`}
       >
         <svg
           width="8"

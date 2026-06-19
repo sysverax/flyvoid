@@ -534,7 +534,7 @@ export default function OnboardingPage() {
                 paginatedInvitations.map((inv) => (
                   <TableRow
                     key={inv.id}
-                    className={cn(inv.status === "Revoked" && "opacity-50" , "relative","mt-1")}
+                    className={cn(inv.status === "Revoked" && "opacity-50", "relative", "mt-1")}
                   >
                     <TableCell className="w-[170px]">
                       <p className="truncate" title={inv.airlineName}>
