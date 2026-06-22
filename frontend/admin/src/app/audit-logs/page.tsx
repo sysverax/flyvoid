@@ -221,7 +221,7 @@ export default function AuditLogsPage() {
       </div>
 
       {/* Audit Logs Table */}
-      <div className="overflow-hidden rounded-[12px] border border-[#E5E7EB] bg-white mb-6 relative -top-1">
+      <div className="overflow-hidden rounded-[12px] border border-[#E5E7EB] bg-white mb-6">
         <Table>
           <TableHeader>
             <TableRow>
@@ -295,7 +295,7 @@ export default function AuditLogsPage() {
                   <TableCell>
                     {log.entity}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="!text-[#6B7280]">
                     {log.details}
                   </TableCell>
                 </TableRow>

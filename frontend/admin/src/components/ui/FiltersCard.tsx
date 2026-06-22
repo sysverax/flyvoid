@@ -50,7 +50,7 @@ export function FiltersCard({
 
       {/* Summary text */}
       {filterDescriptionText && (
-        <div className="text-[#6B7280] text-[14px] h-[17px]">{filterDescriptionText}</div>
+        <div className="text-[#6B7280] text-[14px] h-[17px] -mt-1">{filterDescriptionText}</div>
       )}
     </div>
   );

@@ -31,8 +31,8 @@ const statusStyles: Record<string, { bg: string; text: string }> = {
     text: "text-[#991B1B]",
   },
   Disabled: {
-    bg: "bg-[#E5E7EB]",
-    text: "text-[#374151]",
+    bg: "bg-[#F3F4F6]",
+    text: "text-[#1F2937]",
   },
   Inactive: {
     bg: "bg-[#E5E7EB]",

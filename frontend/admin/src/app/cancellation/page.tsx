@@ -363,7 +363,7 @@ export default function CancellationPage() {
       </div>
 
       {/* Flights Table */}
-      <div className="overflow-hidden rounded-[12px] border border-[#E5E7EB] bg-white mb-5 relative -top-1 -left-[1px]">
+      <div className="overflow-hidden rounded-[12px] border border-[#E5E7EB] bg-white mb-5 relative -left-[1px]">
         <Table>
           <TableHeader>
             <TableRow>
@@ -477,7 +477,7 @@ export default function CancellationPage() {
                   <TableCell className="text-[#6B7280] relative -left-0.5">
                     ${flight.cost.toLocaleString()}
                   </TableCell>
-                  <TableCell className="text-[#10B981] font-semibold">
+                  <TableCell className="!text-[#10B981] font-semibold">
                     ${flight.revenue.toLocaleString()}
                   </TableCell>
                   <TableCell>
