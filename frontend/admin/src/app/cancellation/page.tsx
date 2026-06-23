@@ -18,6 +18,7 @@ import { TableEmptyState } from "@/src/components/ui/EmptyState";
 import { FiltersCard } from "@/src/components/ui/FiltersCard";
 import { StatusBadge } from "@/src/components/ui/StatusBadge";
 import { Dropdown } from "@/src/components/ui/Dropdown";
+import { DatePicker } from "@/src/components/ui/DatePicker";
 
 const INITIAL_FLIGHTS: CancelledFlight[] = [
   {
@@ -320,43 +321,24 @@ export default function CancellationPage() {
 
           {/* Date controls */}
           <div className="flex items-center gap-2">
-            <div className="relative h-11 w-[160px]">
-              <input
-                type={startDate ? "date" : "text"}
-                placeholder="Start Date"
-                value={startDate}
-                onFocus={(e) => (e.target.type = "date")}
-                onBlur={(e) => {
-                  if (!e.target.value) {
-                    e.target.type = "text";
-                  }
-                }}
-                onChange={(e) => {
-                  setStartDate(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="h-11 w-full appearance-none rounded-[8px] border border-[#D1D5DB] bg-[#F3F4F6] py-3 pl-4 pr-10 text-gray-600 outline-none cursor-pointer hover:bg-slate-100/80 transition-colors text-[16px] custom-date-input"
-              />
-              <Calendar className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[#6B7280]" />
-            </div>
-            <div className="relative h-11 w-[160px] ml-1.5">
-              <input
-                type={endDate ? "date" : "text"}
-                placeholder="End Date"
+            <DatePicker
+              value={startDate}
+              onChange={(val) => {
+                setStartDate(val);
+                setCurrentPage(1);
+              }}
+              placeholder="Start Date"
+            />
+            <div className="ml-1.5">
+              <DatePicker
                 value={endDate}
-                onFocus={(e) => (e.target.type = "date")}
-                onBlur={(e) => {
-                  if (!e.target.value) {
-                    e.target.type = "text";
-                  }
-                }}
-                onChange={(e) => {
-                  setEndDate(e.target.value);
+                onChange={(val) => {
+                  setEndDate(val);
                   setCurrentPage(1);
                 }}
-                className="h-11 w-full appearance-none rounded-[8px] border border-[#D1D5DB] bg-[#F3F4F6] py-2 pl-4 pr-10 text-gray-600 outline-none cursor-pointer hover:bg-slate-100/80 transition-colors text-[16px] custom-date-input"
+                placeholder="End Date"
+                align="right"
               />
-              <Calendar className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[#6B7280]" />
             </div>
           </div>
         </FiltersCard>

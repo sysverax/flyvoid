@@ -16,9 +16,17 @@ import {
   Plane,
   X,
   Calendar,
+  ArrowUpRight,
+  ArrowDownRight,
+  Mail,
+  ChevronDown,
+  ChevronsUpDown,
 } from "lucide-react";
 import { cn, sortData } from "@/src/lib/utils";
 import { Dropdown } from "@/src/components/ui/Dropdown";
+import { Dialog } from "@/src/components/ui/Dialog";
+import { PlatformReserveModal } from "@/src/components/PlatformReserveModal";
+import { DatePicker } from "@/src/components/ui/DatePicker";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell, SortHeader } from "@/src/components/ui/table";
 import { Pagination } from "@/src/components/ui/pagination";
 import { StatusBadge } from "@/src/components/ui/StatusBadge";
@@ -139,6 +147,17 @@ interface Transaction {
   status: "Completed" | "Pending" | "Failed";
   reference: string;
   description: string;
+}
+
+interface TreasuryAudit {
+  id: string;
+  type: "Deposit" | "Withdrawal";
+  amount: number;
+  adminUser: string;
+  timestamp: string;
+  reference: string;
+  reason: string;
+  status: "Completed" | "Pending" | "Failed";
 }
 
 const DETAILED_AIRLINE_HEALTH_DATA: AirlineHealth[] = [
@@ -303,12 +322,67 @@ const TRANSACTIONS_DATA: Transaction[] = [
   },
 ];
 
-const PERIOD_OPTIONS = [
-  { value: "This Month", label: "This Month" },
-  { value: "Last Month", label: "Last Month" },
-  { value: "Last 7 Days", label: "Last 7 Days" },
-  { value: "Last 30 Days", label: "Last 30 Days" },
-  { value: "Last 90 Days", label: "Last 90 Days" },
+const TREASURY_AUDIT_DATA: TreasuryAudit[] = [
+  {
+    id: "TR001",
+    type: "Deposit",
+    amount: 100000,
+    adminUser: "John Smith",
+    timestamp: "2025-02-01T16:00:00",
+    reference: "RES-2025-001001",
+    reason: "Initial platform reserve funding",
+    status: "Completed",
+  },
+  {
+    id: "TR002",
+    type: "Deposit",
+    amount: 100000,
+    adminUser: "John Smith",
+    timestamp: "2025-02-01T16:00:00",
+    reference: "RES-2025-001001",
+    reason: "Initial platform reserve funding",
+    status: "Completed",
+  },
+  {
+    id: "TR003",
+    type: "Withdrawal",
+    amount: 50000,
+    adminUser: "Jane Doe",
+    timestamp: "2025-02-05T10:30:00",
+    reference: "RES-2025-001002",
+    reason: "Partial withdrawal for personal account",
+    status: "Completed",
+  },
+  {
+    id: "TR004",
+    type: "Deposit",
+    amount: 75000,
+    adminUser: "Emily White",
+    timestamp: "2025-02-10T13:15:00",
+    reference: "RES-2025-001003",
+    reason: "Funding for new project",
+    status: "Completed",
+  },
+  {
+    id: "TR005",
+    type: "Withdrawal",
+    amount: 25000,
+    adminUser: "Michael Johnson",
+    timestamp: "2025-02-15T09:00:00",
+    reference: "RES-2025-001004",
+    reason: "Transfer to client account",
+    status: "Completed",
+  },
+  {
+    id: "TR006",
+    type: "Deposit",
+    amount: 50000,
+    adminUser: "Sarah Brown",
+    timestamp: "2025-02-20T15:45:00",
+    reference: "RES-2025-001005",
+    reason: "Funding from venture capital",
+    status: "Completed",
+  },
 ];
 
 const TABS_CONFIG = [
@@ -329,95 +403,6 @@ const TABS_CONFIG = [
   },
 ] as const;
 
-interface ManageReserveDropdownProps {
-  value: string;
-  onChange: (value: string) => void;
-  options: { value: string; label: string }[];
-  widthClass?: string;
-  triggerWidthClass?: string;
-  heightClass?: string;
-  bgClass?: string;
-}
-
-function ManageReserveDropdown({
-  value,
-  onChange,
-  options,
-  widthClass = "w-48",
-  triggerWidthClass = "w-[156px]",
-  heightClass = "h-[38px]",
-  bgClass = "bg-[#F3F4F6]",
-}: ManageReserveDropdownProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, []);
-
-  const handleSelect = (val: string) => {
-    onChange(val);
-    setIsOpen(false);
-  };
-
-  return (
-    <div ref={dropdownRef} className={cn("relative select-none", heightClass, triggerWidthClass)}>
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className={cn(
-          "w-full h-full flex items-center justify-start gap-2 rounded-[8px] border border-[#D1D5DB] pl-3 pr-3 text-[#1F2937] outline-none cursor-pointer hover:bg-slate-100/80 transition-colors text-[16px] font-medium",
-          bgClass
-        )}
-      >
-        <Settings className="w-3.5 h-3.5 shrink-0 text-gray-700 relative -left-0.5" />
-        <span className="truncate text-sm font-normal text-left flex-1">
-          Manage Reserve
-        </span>
-      </button>
-
-      {isOpen && (
-        <div
-          className={cn(
-            "absolute left-0 mt-2 z-50 p-2 bg-white rounded-lg shadow-[0px_4px_8px_0px_rgba(0,0,0,0.12)] outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col justify-start items-start gap-0.5",
-            widthClass
-          )}
-        >
-          {options.map((option) => {
-            const isSelected = option.value === value;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => handleSelect(option.value)}
-                className={cn(
-                  "self-stretch p-2 rounded-md inline-flex justify-start items-center gap-2.5 text-left transition-colors cursor-pointer",
-                  isSelected ? "bg-gray-200" : "hover:bg-gray-100"
-                )}
-              >
-                <div className="size-4 flex items-center justify-center shrink-0">
-                  {isSelected && <Check className="h-3.5 w-3.5 text-gray-800 stroke-[2.5px]" />}
-                </div>
-                <span className="justify-start text-gray-800 text-[16px] font-normal font-figtree truncate leading-[1.5]">
-                  {option.label}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
 const AIRPORT_NAMES: Record<string, string> = {
   YYC: "Calgary International Airport",
   LAX: "Los Angeles International Airport",
@@ -434,6 +419,32 @@ const AIRPORT_NAMES: Record<string, string> = {
   SYD: "Sydney Kingsford Smith Airport",
 };
 
+const AIRLINES = [
+  "Southern Breeze Airways",
+  "Southern Wings",
+  "Eastern Wings Flight",
+  "Sky High Airlines",
+  "AeroQuest Airlines",
+  "Air Frontier Services",
+  "Cloud Nine Airways",
+];
+
+const formatTreasuryTimestamp = (dateStr: string) => {
+  const date = new Date(dateStr);
+  const optionsMonth: Intl.DateTimeFormatOptions = { month: "short" };
+  const month = new Intl.DateTimeFormat("en-US", optionsMonth).format(date);
+  const day = date.getDate();
+  const year = date.getFullYear();
+
+  let hours = date.getHours();
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const ampm = hours >= 12 ? "PM" : "AM";
+  hours = hours % 12;
+  hours = hours ? hours : 12;
+
+  return `${month} ${day}, ${year} at ${hours}:${minutes} ${ampm}`;
+};
+
 export default function PaymentsPage() {
   const [activeTab, setActiveTab] = useState<
     "overview" | "detailed" | "treasury"
@@ -443,6 +454,10 @@ export default function PaymentsPage() {
   // Global Date range states
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+
+  // Platform Reserve states
+  const [treasuryAudits, setTreasuryAudits] = useState<TreasuryAudit[]>(TREASURY_AUDIT_DATA);
+  const [isReserveModalOpen, setIsReserveModalOpen] = useState(false);
 
   const dateRangeLabel = useMemo(() => {
     if (startDate && endDate) {
@@ -476,6 +491,14 @@ export default function PaymentsPage() {
 
   const [transactionCurrentPage, setTransactionCurrentPage] = useState(1);
   const [transactionPerPage, setTransactionPerPage] = useState(10);
+
+  // Treasury Sorting state
+  const [treasurySortField, setTreasurySortField] = useState<keyof TreasuryAudit | null>(null);
+  const [treasurySortOrder, setTreasurySortOrder] = useState<"asc" | "desc">("asc");
+
+  // Treasury Pagination state
+  const [treasuryCurrentPage, setTreasuryCurrentPage] = useState(1);
+  const [treasuryPerPage, setTreasuryPerPage] = useState(10);
 
   // Dynamic filter lists
   const airlineOptions = useMemo(() => {
@@ -606,6 +629,55 @@ export default function PaymentsPage() {
     return sortedTransactions.slice(start, start + transactionPerPage);
   }, [sortedTransactions, transactionCurrentPage, transactionPerPage]);
 
+  // Treasury Filtering calculations
+  const filteredTreasuryData = useMemo(() => {
+    return treasuryAudits.filter((tx) => {
+      let matchesDate = true;
+      if (startDate || endDate) {
+        const txTime = new Date(tx.timestamp).getTime();
+
+        if (startDate) {
+          const startLimit = new Date(startDate).getTime();
+          if (txTime < startLimit) matchesDate = false;
+        }
+        if (endDate) {
+          const adjustedEndLimit = new Date(endDate);
+          adjustedEndLimit.setHours(23, 59, 59, 999);
+          if (txTime > adjustedEndLimit.getTime()) matchesDate = false;
+        }
+      }
+      return matchesDate;
+    });
+  }, [startDate, endDate]);
+
+  // Treasury KPI summaries
+  const { treasuryBalance, treasuryDeposited, treasuryWithdrawn } = useMemo(() => {
+    const deposits = filteredTreasuryData
+      .filter((t) => t.type === "Deposit")
+      .reduce((sum, t) => sum + t.amount, 0);
+    const withdrawals = filteredTreasuryData
+      .filter((t) => t.type === "Withdrawal")
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    return {
+      treasuryBalance: deposits - withdrawals,
+      treasuryDeposited: deposits,
+      treasuryWithdrawn: withdrawals,
+    };
+  }, [filteredTreasuryData]);
+
+  // Treasury Sorting
+  const sortedTreasuryData = useMemo(() => {
+    return sortData(filteredTreasuryData, treasurySortField, treasurySortOrder, ["timestamp"]);
+  }, [filteredTreasuryData, treasurySortField, treasurySortOrder]);
+
+  // Treasury Pagination
+  const treasuryTotalPages = Math.ceil(sortedTreasuryData.length / treasuryPerPage) || 1;
+  const paginatedTreasuryData = useMemo(() => {
+    const start = (treasuryCurrentPage - 1) * treasuryPerPage;
+    return sortedTreasuryData.slice(start, start + treasuryPerPage);
+  }, [sortedTreasuryData, treasuryCurrentPage, treasuryPerPage]);
+
   const handleClearFilters = () => {
     setAirlineFilter("All");
     setAirportFilter("All");
@@ -615,11 +687,44 @@ export default function PaymentsPage() {
     setEndDate("");
     setFinancialCurrentPage(1);
     setTransactionCurrentPage(1);
+    setTreasuryCurrentPage(1);
+  };
+
+  const handleReserveSubmit = (
+    type: "Deposit" | "Withdrawal",
+    amountNum: number,
+    email: string,
+    note: string
+  ) => {
+    const newReserveValue = type === "Deposit" ? reserveValue + amountNum : reserveValue - amountNum;
+
+    const emailToName: Record<string, string> = {
+      "you@flyvoid.com": "You (Admin)",
+      "john.smith@flyvoid.com": "John Smith",
+      "jane.doe@flyvoid.com": "Jane Doe",
+      "emily.white@flyvoid.com": "Emily White",
+      "michael.johnson@flyvoid.com": "Michael Johnson",
+      "sarah.brown@flyvoid.com": "Sarah Brown",
+    };
+
+    const newTx: TreasuryAudit = {
+      id: `TR${String(treasuryAudits.length + 1).padStart(3, "0")}`,
+      type: type,
+      amount: amountNum,
+      adminUser: emailToName[email] || "Unknown Admin",
+      timestamp: new Date().toISOString().split(".")[0], // Keep clean timestamp
+      reference: `RES-2025-${String(1000 + treasuryAudits.length + 1).padStart(6, "0")}`,
+      reason: note.trim() || (type === "Deposit" ? "Platform reserve deposit" : "Platform reserve withdrawal"),
+      status: "Completed",
+    };
+
+    setTreasuryAudits([newTx, ...treasuryAudits]);
+    setReserveValue(newReserveValue);
+    setIsReserveModalOpen(false);
   };
 
   // Platform Reserve state
   const [reserveValue, setReserveValue] = useState(250000);
-  const [reservePeriod, setReservePeriod] = useState("This Month");
 
   // Define KPI Cards data dynamically based on the current state values
   const kpiCardsConfig = [
@@ -742,47 +847,26 @@ export default function PaymentsPage() {
 
         {/* Date filter range in top right */}
         <div className="flex items-center gap-2.5">
-          <div className="relative h-11 w-[160px]">
-            <input
-              type={startDate ? "date" : "text"}
-              placeholder="Start Date"
-              value={startDate}
-              onFocus={(e) => (e.target.type = "date")}
-              onBlur={(e) => {
-                if (!e.target.value) {
-                  e.target.type = "text";
-                }
-              }}
-              onChange={(e) => {
-                setStartDate(e.target.value);
-                setFinancialCurrentPage(1);
-                setTransactionCurrentPage(1);
-              }}
-              className="h-11 w-full appearance-none rounded-[8px] border border-[#D1D5DB] bg-[#F3F4F6] py-3 px-4 text-gray-600 outline-none cursor-pointer hover:bg-slate-100/80 transition-colors text-[16px] custom-date-input"
-            />
-            <Calendar className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[#6B7280]" />
-          </div>
+          <DatePicker
+            value={startDate}
+            onChange={(val) => {
+              setStartDate(val);
+              setFinancialCurrentPage(1);
+              setTransactionCurrentPage(1);
+            }}
+            placeholder="Start Date"
+          />
           <span className="text-[#6B7280] text-sm font-normal">to</span>
-          <div className="relative h-11 w-[160px]">
-            <input
-              type={endDate ? "date" : "text"}
-              placeholder="End Date"
-              value={endDate}
-              onFocus={(e) => (e.target.type = "date")}
-              onBlur={(e) => {
-                if (!e.target.value) {
-                  e.target.type = "text";
-                }
-              }}
-              onChange={(e) => {
-                setEndDate(e.target.value);
-                setFinancialCurrentPage(1);
-                setTransactionCurrentPage(1);
-              }}
-              className="h-11 w-full appearance-none rounded-[8px] border border-[#D1D5DB] bg-[#F3F4F6] py-3 px-4 text-gray-600 outline-none cursor-pointer hover:bg-slate-100/80 transition-colors text-[16px] custom-date-input"
-            />
-            <Calendar className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[#6B7280]" />
-          </div>
+          <DatePicker
+            value={endDate}
+            onChange={(val) => {
+              setEndDate(val);
+              setFinancialCurrentPage(1);
+              setTransactionCurrentPage(1);
+            }}
+            placeholder="End Date"
+            align="right"
+          />
         </div>
       </div>
 
@@ -829,22 +913,14 @@ export default function PaymentsPage() {
                 </div>
               </div>
               <div className="h-9 flex justify-start items-center">
-                <ManageReserveDropdown
-                  value={reservePeriod}
-                  onChange={(val) => {
-                    setReservePeriod(val);
-                    // Dynamically simulate reserve values for different time periods
-                    if (val === "This Month") setReserveValue(250000);
-                    else if (val === "Last Month") setReserveValue(180000);
-                    else if (val === "Last 7 Days") setReserveValue(120000);
-                    else if (val === "Last 30 Days") setReserveValue(220000);
-                    else if (val === "Last 90 Days") setReserveValue(450000);
-                  }}
-                  options={PERIOD_OPTIONS}
-                  widthClass="w-48"
-                  triggerWidthClass="w-[156px]"
-                  heightClass="h-[38px]"
-                />
+                <button
+                  type="button"
+                  onClick={() => setIsReserveModalOpen(true)}
+                  className="h-[38px] flex items-center justify-start gap-2 rounded-[8px] border border-[#D1D5DB] px-3.5 text-[#1F2937] outline-none cursor-pointer hover:bg-slate-100/80 transition-colors text-[14px] font-medium bg-[#F3F4F6]"
+                >
+                  <Settings className="w-3.5 h-3.5 shrink-0 text-gray-700 relative -left-0.5" />
+                  <span>Manage Reserve</span>
+                </button>
               </div>
             </div>
 
@@ -1583,8 +1659,294 @@ export default function PaymentsPage() {
         )}
 
         {/* Tab 3: Platform Treasury */}
-        {activeTab === "treasury" && <div></div>}
+        {activeTab === "treasury" && (
+          <div className="self-stretch flex flex-col justify-start items-start gap-5 animate-fadeIn">
+            {/* Header */}
+            <div className="self-stretch inline-flex justify-between items-center">
+              <div className="flex justify-start items-center gap-2">
+                <div className="justify-start text-gray-800 text-lg font-semibold leading-[100%]">
+                  Platform Reserve Summary
+                </div>
+                <div className="justify-start text-gray-500 text-sm font-normal">
+                  ({dateRangeLabel})
+                </div>
+              </div>
+              <div className="h-9 flex justify-start items-center">
+                <button
+                  type="button"
+                  onClick={() => setIsReserveModalOpen(true)}
+                  className="h-[38px] flex items-center justify-start gap-2 rounded-[8px] border border-[#D1D5DB] px-3.5 text-[#1F2937] outline-none cursor-pointer hover:bg-slate-100/80 transition-colors text-[14px] font-medium bg-[#F3F4F6]"
+                >
+                  <Settings className="w-3.5 h-3.5 shrink-0 text-gray-700 relative -left-0.5" />
+                  <span>Manage Reserve</span>
+                </button>
+              </div>
+            </div>
+
+            {/* KPI Cards Row */}
+            <div className="self-stretch w-full grid grid-cols-1 md:grid-cols-3 gap-3">
+              {/* Current Balance Card */}
+              <div className="w-full p-4 bg-white rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col gap-2.5">
+                <div className="flex justify-start items-start gap-5">
+                  <div className="flex-1 flex flex-col gap-1 text-left">
+                    <div className="text-gray-500 text-base font-normal">
+                      Current Balance
+                    </div>
+                    <div className="flex items-center gap-1.5 relative -top-0.5">
+                      <div className="text-2xl font-semibold text-gray-800">
+                        ${treasuryBalance.toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="size-11 p-2.5 bg-gray-100 text-primary rounded-lg flex justify-center items-center shrink-0">
+                    <Wallet className="w-5 h-5" />
+                  </div>
+                </div>
+                <div className="text-gray-500 text-sm font-normal text-left">
+                  Available in reserve
+                </div>
+              </div>
+
+              {/* Total Deposited Card */}
+              <div className="w-full p-4 bg-white rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col gap-2.5">
+                <div className="flex justify-start items-start gap-5">
+                  <div className="flex-1 flex flex-col gap-1 text-left">
+                    <div className="text-gray-500 text-base font-normal">
+                      Total Deposited
+                    </div>
+                    <div className="flex items-center gap-1.5 relative -top-0.5">
+                      <div className="text-2xl font-semibold text-green-600">
+                        ${treasuryDeposited.toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="size-11 p-2.5 bg-gray-100 text-emerald-600 rounded-lg flex justify-center items-center shrink-0">
+                    <TrendingUp className="w-5 h-5" />
+                  </div>
+                </div>
+                <div className="text-gray-500 text-sm font-normal text-left">
+                  All-time deposits
+                </div>
+              </div>
+
+              {/* Total Withdrawn Card */}
+              <div className="w-full p-4 bg-white rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col gap-2.5">
+                <div className="flex justify-start items-start gap-5">
+                  <div className="flex-1 flex flex-col gap-1 text-left">
+                    <div className="text-gray-500 text-base font-normal">
+                      Total Withdrawn
+                    </div>
+                    <div className="flex items-center gap-1.5 relative -top-0.5">
+                      <div className="text-2xl font-semibold text-red-500">
+                        ${treasuryWithdrawn.toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="size-11 p-2.5 bg-gray-100 text-rose-600 rounded-lg flex justify-center items-center shrink-0">
+                    <TrendingDown className="w-5 h-5" />
+                  </div>
+                </div>
+                <div className="text-gray-500 text-sm font-normal text-left">
+                  All-time withdrawals
+                </div>
+              </div>
+            </div>
+
+            {/* Audit Trail Section */}
+            <div className="self-stretch p-6 bg-white rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col justify-start items-start text-left">
+              <div className="self-stretch justify-start text-gray-800 relative top-1">
+                <span className="text-[20px] font-semibold">
+                  Platform Reserve Audit Trail
+                </span>
+              </div>
+
+              <div className="w-full overflow-hidden rounded-[12px] border border-[#E5E7EB] bg-white mt-7">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="min-w-[120px]">
+                        <SortHeader
+                          label="Type"
+                          field="type"
+                          sortField={treasurySortField}
+                          sortOrder={treasurySortOrder}
+                          onSort={(f) => {
+                            if (treasurySortField === f) {
+                              setTreasurySortOrder(treasurySortOrder === "asc" ? "desc" : "asc");
+                            } else {
+                              setTreasurySortField(f as keyof TreasuryAudit);
+                              setTreasurySortOrder("asc");
+                            }
+                          }}
+                        />
+                      </TableHead>
+                      <TableHead className="min-w-[120px]">
+                        <SortHeader
+                          label="Amount"
+                          field="amount"
+                          sortField={treasurySortField}
+                          sortOrder={treasurySortOrder}
+                          onSort={(f) => {
+                            if (treasurySortField === f) {
+                              setTreasurySortOrder(treasurySortOrder === "asc" ? "desc" : "asc");
+                            } else {
+                              setTreasurySortField(f as keyof TreasuryAudit);
+                              setTreasurySortOrder("asc");
+                            }
+                          }}
+                        />
+                      </TableHead>
+                      <TableHead className="min-w-[140px]">
+                        <SortHeader
+                          label="Admin User"
+                          field="adminUser"
+                          sortField={treasurySortField}
+                          sortOrder={treasurySortOrder}
+                          onSort={(f) => {
+                            if (treasurySortField === f) {
+                              setTreasurySortOrder(treasurySortOrder === "asc" ? "desc" : "asc");
+                            } else {
+                              setTreasurySortField(f as keyof TreasuryAudit);
+                              setTreasurySortOrder("asc");
+                            }
+                          }}
+                        />
+                      </TableHead>
+                      <TableHead className="min-w-[180px]">
+                        <SortHeader
+                          label="Timestamp"
+                          field="timestamp"
+                          sortField={treasurySortField}
+                          sortOrder={treasurySortOrder}
+                          onSort={(f) => {
+                            if (treasurySortField === f) {
+                              setTreasurySortOrder(treasurySortOrder === "asc" ? "desc" : "asc");
+                            } else {
+                              setTreasurySortField(f as keyof TreasuryAudit);
+                              setTreasurySortOrder("asc");
+                            }
+                          }}
+                        />
+                      </TableHead>
+                      <TableHead className="min-w-[160px]">
+                        <SortHeader
+                          label="Reference"
+                          field="reference"
+                          sortField={treasurySortField}
+                          sortOrder={treasurySortOrder}
+                          onSort={(f) => {
+                            if (treasurySortField === f) {
+                              setTreasurySortOrder(treasurySortOrder === "asc" ? "desc" : "asc");
+                            } else {
+                              setTreasurySortField(f as keyof TreasuryAudit);
+                              setTreasurySortOrder("asc");
+                            }
+                          }}
+                        />
+                      </TableHead>
+                      <TableHead className="min-w-[200px]">
+                        <SortHeader
+                          label="Reason"
+                          field="reason"
+                          sortField={treasurySortField}
+                          sortOrder={treasurySortOrder}
+                          onSort={(f) => {
+                            if (treasurySortField === f) {
+                              setTreasurySortOrder(treasurySortOrder === "asc" ? "desc" : "asc");
+                            } else {
+                              setTreasurySortField(f as keyof TreasuryAudit);
+                              setTreasurySortOrder("asc");
+                            }
+                          }}
+                        />
+                      </TableHead>
+                      <TableHead className="min-w-[120px]">
+                        <SortHeader
+                          label="Status"
+                          field="status"
+                          sortField={treasurySortField}
+                          sortOrder={treasurySortOrder}
+                          onSort={(f) => {
+                            if (treasurySortField === f) {
+                              setTreasurySortOrder(treasurySortOrder === "asc" ? "desc" : "asc");
+                            } else {
+                              setTreasurySortField(f as keyof TreasuryAudit);
+                              setTreasurySortOrder("asc");
+                            }
+                          }}
+                        />
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {paginatedTreasuryData.length > 0 ? (
+                      paginatedTreasuryData.map((row) => {
+                        const isDeposit = row.type === "Deposit";
+                        const typeBadgeStyles = isDeposit
+                          ? "bg-green-100 text-green-800"
+                          : "bg-red-100 text-red-800";
+                        const amountStyles = isDeposit ? "!text-[#09090B]" : "!text-red-500";
+                        const amountPrefix = isDeposit ? "+$" : "-$";
+
+                        return (
+                          <TableRow key={row.id} className="translate-y-1 translate-x-0.5">
+                            <TableCell>
+                              <span className={cn("inline-flex items-center px-2.5 py-[3px] h-[20px] rounded-full text-[12px] font-medium gap-1", typeBadgeStyles)}>
+                                {isDeposit ? (
+                                  <ArrowUpRight className="w-3.5 h-3.5 shrink-0" />
+                                ) : (
+                                  <ArrowDownRight className="w-3.5 h-3.5 shrink-0" />
+                                )}
+                                {row.type}
+                              </span>
+                            </TableCell>
+                            <TableCell className={amountStyles}>
+                              {amountPrefix}{row.amount.toLocaleString()}
+                            </TableCell>
+                            <TableCell>{row.adminUser}</TableCell>
+                            <TableCell>{formatTreasuryTimestamp(row.timestamp)}</TableCell>
+                            <TableCell>{row.reference}</TableCell>
+                            <TableCell className="truncate max-w-[200px]" title={row.reason}>
+                              {row.reason}
+                            </TableCell>
+                            <TableCell>
+                              <StatusBadge status={row.status} />
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={7} className="px-6 py-10 text-center text-gray-500">
+                          No audit trail data matches your filters.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <div className="w-full mt-5">
+                <Pagination
+                  totalResults={filteredTreasuryData.length}
+                  currentPage={treasuryCurrentPage}
+                  setCurrentPage={setTreasuryCurrentPage}
+                  resultsPerPage={treasuryPerPage}
+                  setResultsPerPage={setTreasuryPerPage}
+                  totalPages={treasuryTotalPages}
+                />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
+      {/* Platform Reserve Modal */}
+      <PlatformReserveModal
+        isOpen={isReserveModalOpen}
+        onClose={() => setIsReserveModalOpen(false)}
+        reserveValue={reserveValue}
+        onConfirm={handleReserveSubmit}
+      />
     </div>
   );
 }

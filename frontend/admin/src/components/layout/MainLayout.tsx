@@ -2,12 +2,24 @@
 
 import { Sidebar } from "./Sidebar";
 import { cn } from "@/src/lib/utils";
+import { usePathname } from "next/navigation";
 
 interface MainLayoutProps {
   children: React.ReactNode;
 }
 
 export function MainLayout({ children }: MainLayoutProps) {
+  const pathname = usePathname();
+  const isAuthPage = pathname === "/login" || pathname === "/forgot-password";
+
+  if (isAuthPage) {
+    return (
+      <div className="min-h-screen w-full bg-[#F3F4F6] flex flex-col justify-center items-center">
+        {children}
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen w-full bg-background">
       <Sidebar />
