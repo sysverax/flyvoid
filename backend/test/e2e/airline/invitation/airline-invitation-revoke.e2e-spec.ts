@@ -34,6 +34,7 @@ async function tokenFor(
   return (await getAdminTokens(email, TEST_PASSWORD)).accessToken;
 }
 
+
 describe("POST /api/v1/airline/invitations/:invitationId/revoke", () => {
   let superToken = "";
   let staffEditToken = "";
