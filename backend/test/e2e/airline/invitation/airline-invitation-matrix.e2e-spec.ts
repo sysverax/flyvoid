@@ -1,5 +1,5 @@
 import { api } from "../../../helpers/http-client.helper";
-import { endPool } from "../../../helpers/db-client.helper";
+import { endPool, query } from "../../../helpers/db-client.helper";
 import { deleteAdminsByEmailPattern } from "../../../helpers/db-cleanup.helper";
 import { insertActiveAdmin } from "../../../seeders/admin.seeder";
 import {
@@ -171,13 +171,154 @@ describe("GET /api/v1/airline/invitations/matrix", () => {
     }
   });
 
+  it("TC_AIRLINE_INVITATION_MATRIX_012..015: remaining authorization matrix scenarios", async () => {
+    // TC_012: Inactive admin — get token before deactivating
+    const inactiveEmail = `matrix-inactive-${Date.now()}@e2e-airline.test`;
+    await insertActiveAdmin({
+      email: inactiveEmail,
+      password: TEST_PASSWORD,
+      role: "SUPER_ADMIN",
+    });
+    const inactiveToken = (
+      await getAdminTokens(inactiveEmail, TEST_PASSWORD)
+    ).accessToken;
+    await query("UPDATE admins SET is_active = false WHERE email = $1", [
+      inactiveEmail,
+    ]);
+    const inactiveRes = await api
+      .get("/api/v1/airline/invitations/matrix")
+      .set("Authorization", `Bearer ${inactiveToken}`);
+    expect([401, 403]).toContain(inactiveRes.status);
+
+    // TC_013: STAFF with EDIT-only (no VIEW) → 403
+    const editOnlyEmail = `matrix-edit-only-${Date.now()}@e2e-airline.test`;
+    const editOnlyAdmin = await insertActiveAdmin({
+      email: editOnlyEmail,
+      password: TEST_PASSWORD,
+      role: "STAFF",
+    });
+    await grantInvitePermission(editOnlyAdmin.id, "EDIT");
+    const editOnlyToken = (
+      await getAdminTokens(editOnlyEmail, TEST_PASSWORD)
+    ).accessToken;
+    const editOnlyRes = await api
+      .get("/api/v1/airline/invitations/matrix")
+      .set("Authorization", `Bearer ${editOnlyToken}`);
+    expect(editOnlyRes.status).toBe(403);
+
+    // TC_014: STAFF with no permissions → 403
+    const noPermEmail = `matrix-no-perm-${Date.now()}@e2e-airline.test`;
+    await insertActiveAdmin({
+      email: noPermEmail,
+      password: TEST_PASSWORD,
+      role: "STAFF",
+    });
+    const noPermToken = (
+      await getAdminTokens(noPermEmail, TEST_PASSWORD)
+    ).accessToken;
+    const noPermRes = await api
+      .get("/api/v1/airline/invitations/matrix")
+      .set("Authorization", `Bearer ${noPermToken}`);
+    expect(noPermRes.status).toBe(403);
+
+    // TC_015: SUPER_ADMIN remains authorized
+    const superRes = await api
+      .get("/api/v1/airline/invitations/matrix")
+      .set("Authorization", `Bearer ${superToken}`);
+    expect(superRes.status).toBe(200);
+  });
+
+  it("TC_AIRLINE_INVITATION_MATRIX_026..034: counts update correctly across invitation lifecycle events", async () => {
+    type Matrix = {
+      totalSent: number;
+      pending: number;
+      accepted: number;
+      revoked: number;
+      expired: number;
+    };
+
+    const snapshot = async (): Promise<Matrix> =>
+      (
+        await api
+          .get("/api/v1/airline/invitations/matrix")
+          .set("Authorization", `Bearer ${superToken}`)
+      ).body.data as Matrix;
+
+    const before = await snapshot();
+
+    // TC_026/030: create → totalSent +1, pending +1
+    const newPayload = validInvitePayload();
+    await api
+      .post("/api/v1/airline/invitations")
+      .set("Authorization", `Bearer ${superToken}`)
+      .send(newPayload);
+    const newId = (await getLatestInvitationIdByAdminEmail(
+      newPayload.adminEmail,
+    )) as number;
+
+    const afterCreate = await snapshot();
+    expect(afterCreate.totalSent).toBe(before.totalSent + 1);
+    expect(afterCreate.pending).toBe(before.pending + 1);
+
+    // TC_028: revoke pending → revoked +1, pending back to baseline
+    await setInvitationStatus(newId, "REVOKED", { revokedAt: new Date() });
+    const afterRevoke = await snapshot();
+    expect(afterRevoke.revoked).toBe(before.revoked + 1);
+    expect(afterRevoke.pending).toBe(before.pending);
+
+    // TC_027: accept a fresh invitation → accepted +1
+    const acceptPayload = validInvitePayload();
+    await api
+      .post("/api/v1/airline/invitations")
+      .set("Authorization", `Bearer ${superToken}`)
+      .send(acceptPayload);
+    const acceptId = (await getLatestInvitationIdByAdminEmail(
+      acceptPayload.adminEmail,
+    )) as number;
+    await setInvitationStatus(acceptId, "ACCEPTED", { acceptedAt: new Date() });
+    const afterAccept = await snapshot();
+    expect(afterAccept.accepted).toBe(before.accepted + 1);
+
+    // TC_029: expire a fresh pending invitation → expired increases
+    const expirePayload = validInvitePayload();
+    await api
+      .post("/api/v1/airline/invitations")
+      .set("Authorization", `Bearer ${superToken}`)
+      .send(expirePayload);
+    const expireId = (await getLatestInvitationIdByAdminEmail(
+      expirePayload.adminEmail,
+    )) as number;
+    await setInvitationStatus(expireId, "PENDING", {
+      expiresAt: new Date(Date.now() - 60_000),
+    });
+    const afterExpire = await snapshot();
+    expect(afterExpire.expired).toBeGreaterThan(before.expired);
+
+    // TC_034: totalSent must equal sum of all buckets at every snapshot
+    expect(afterExpire.totalSent).toBe(
+      afterExpire.accepted +
+        afterExpire.pending +
+        afterExpire.expired +
+        afterExpire.revoked,
+    );
+  });
+
+  it("TC_AIRLINE_INVITATION_MATRIX_041..043: malformed auth and method-restriction checks", async () => {
+    // TC_041: Malformed Authorization header (no Bearer prefix)
+    const malformedAuth = await api
+      .get("/api/v1/airline/invitations/matrix")
+      .set("Authorization", "Token somevalue");
+    expect(malformedAuth.status).toBe(401);
+
+    // TC_043: Wrong HTTP method — POST on a read-only matrix endpoint
+    const wrongMethod = await api
+      .post("/api/v1/airline/invitations/matrix")
+      .set("Authorization", `Bearer ${superToken}`)
+      .send({});
+    expect([404, 405]).toContain(wrongMethod.status);
+  });
+
   it.todo(
-    "TC_AIRLINE_INVITATION_MATRIX_012..015: remaining authorization matrix scenarios",
-  );
-  it.todo(
-    "TC_AIRLINE_INVITATION_MATRIX_026..034: dynamic lifecycle updates after create/accept/revoke/resend actions",
-  );
-  it.todo(
-    "TC_AIRLINE_INVITATION_MATRIX_041..043: malformed auth header, concurrency, method-restriction checks",
+    "TC_AIRLINE_INVITATION_MATRIX_042: concurrent matrix reads return consistent data",
   );
 });

@@ -14,6 +14,7 @@
  *
  * 2FA admin is set up through the live API flow in beforeAll.
  */
+import { Logger } from "@nestjs/common";
 import { api } from "../../../helpers/http-client.helper";
 import { endPool, query } from "../../../helpers/db-client.helper";
 import { deleteAdminsByEmailPattern } from "../../../helpers/db-cleanup.helper";
@@ -45,6 +46,46 @@ import { describe, it, beforeAll, afterAll, expect } from "@jest/globals";
 
 const EMAIL_PATTERN = "%@e2e-signin.test";
 const TEST_PASSWORD = "Password@123";
+const SIGNIN_PATH = "/api/v1/auth/admin/signin";
+
+function logSigninResponse(testCaseName: string, response: any): void {
+  const message = response?.body?.message ?? response?.text ?? "";
+
+  if (message) {
+    Logger.log(`[${testCaseName}] Signin response message: ${message}`, "E2E");
+  }
+}
+
+function getCurrentTestName(): string {
+  return (
+    (
+      expect as unknown as { getState?: () => { currentTestName?: string } }
+    ).getState?.()?.currentTestName ?? "unknown-test"
+  );
+}
+
+const originalApiPost = api.post.bind(api);
+(api as typeof api & { post: typeof api.post }).post = ((path: string) => {
+  const request = originalApiPost(path);
+
+  if (path !== SIGNIN_PATH) {
+    return request;
+  }
+
+  const originalSend = request.send.bind(request);
+  const wrappedSend = (body: string | object | undefined) => {
+    return Promise.resolve(originalSend(body)).then((response: any) => {
+      const testCaseName = getCurrentTestName();
+      logSigninResponse(testCaseName, response);
+      return response;
+    });
+  };
+
+  (request as typeof request & { send: typeof originalSend }).send =
+    wrappedSend as typeof originalSend;
+
+  return request;
+}) as typeof api.post;
 
 // Emails for seeded admins
 let superAdminEmail: string;

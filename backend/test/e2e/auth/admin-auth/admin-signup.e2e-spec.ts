@@ -4,6 +4,7 @@
  * Black-box: all interactions via HTTP (supertest) and raw SQL (pg).
  * No imports from src/.
  */
+import { Logger } from "@nestjs/common";
 import { api } from "../../../helpers/http-client.helper";
 import { endPool } from "../../../helpers/db-client.helper";
 import { deleteAdminsByEmailPattern } from "../../../helpers/db-cleanup.helper";
@@ -34,6 +35,46 @@ import {
 } from "../../../fixtures/admin.fixture";
 import { describe, it, beforeAll, afterAll, expect } from "@jest/globals";
 const EMAIL_PATTERN = "%@e2e.test";
+const SIGNUP_PATH = "/api/v1/auth/admin/signup";
+
+function logSignupResponse(testCaseName: string, response: any): void {
+  const message = response?.body?.message ?? response?.text ?? "";
+
+  if (message) {
+    Logger.log(`[${testCaseName}] Signup response message: ${message}`, "E2E");
+  }
+}
+
+function getCurrentTestName(): string {
+  return (
+    (
+      expect as unknown as { getState?: () => { currentTestName?: string } }
+    ).getState?.()?.currentTestName ?? "unknown-test"
+  );
+}
+
+const originalApiPost = api.post.bind(api);
+(api as typeof api & { post: typeof api.post }).post = ((path: string) => {
+  const request = originalApiPost(path);
+
+  if (path !== SIGNUP_PATH) {
+    return request;
+  }
+
+  const originalSend = request.send.bind(request);
+  const wrappedSend = (body: string | object | undefined) => {
+    return Promise.resolve(originalSend(body)).then((response: any) => {
+      const testCaseName = getCurrentTestName();
+      logSignupResponse(testCaseName, response);
+      return response;
+    });
+  };
+
+  (request as typeof request & { send: typeof originalSend }).send =
+    wrappedSend as typeof originalSend;
+
+  return request;
+}) as typeof api.post;
 
 describe("POST /api/v1/auth/admin/signup", () => {
   // Email for the "pre-existing admin" used by duplicate tests (TC_002, TC_032)
@@ -42,10 +83,12 @@ describe("POST /api/v1/auth/admin/signup", () => {
   beforeAll(async () => {
     // Create a pre-existing admin that duplicate tests can collide against.
     existingAdminEmail = uniqueEmail("signup-existing");
-    await api
+    const res = await api
       .post("/api/v1/auth/admin/signup")
-      .send(validSignupPayload(existingAdminEmail))
-      .expect(201);
+      .send(validSignupPayload(existingAdminEmail));
+    // .expect(201);
+
+    expect(res.status).toBe(201);
   });
 
   afterAll(async () => {

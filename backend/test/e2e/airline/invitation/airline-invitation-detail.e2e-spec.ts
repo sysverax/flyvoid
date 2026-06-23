@@ -1,5 +1,5 @@
 import { api } from "../../../helpers/http-client.helper";
-import { endPool } from "../../../helpers/db-client.helper";
+import { endPool, query } from "../../../helpers/db-client.helper";
 import { deleteAdminsByEmailPattern } from "../../../helpers/db-cleanup.helper";
 import { insertActiveAdmin } from "../../../seeders/admin.seeder";
 import {
@@ -227,13 +227,129 @@ describe("GET /api/v1/airline/invitations/:invitationId", () => {
     expect(res.body.message).toBe("Invitation fetched successfully");
   });
 
+  it("TC_AIRLINE_INVITATION_DETAIL_010..013: full authorization matrix — inactive/edit-only/no-perm/super", async () => {
+    const id = await createInviteId();
+
+    // TC_010: Inactive admin — obtain token first, then deactivate
+    const inactiveEmail = `detail-inactive-${Date.now()}@e2e-airline.test`;
+    await insertActiveAdmin({
+      email: inactiveEmail,
+      password: TEST_PASSWORD,
+      role: "SUPER_ADMIN",
+    });
+    const inactiveToken = (
+      await getAdminTokens(inactiveEmail, TEST_PASSWORD)
+    ).accessToken;
+    await query("UPDATE admins SET is_active = false WHERE email = $1", [
+      inactiveEmail,
+    ]);
+    const inactiveRes = await api
+      .get(`/api/v1/airline/invitations/${id}`)
+      .set("Authorization", `Bearer ${inactiveToken}`);
+    expect([401, 403]).toContain(inactiveRes.status);
+
+    // TC_011: STAFF with EDIT-only (no VIEW) — should be 403
+    const editOnlyEmail = `detail-edit-only-${Date.now()}@e2e-airline.test`;
+    const editOnlyAdmin = await insertActiveAdmin({
+      email: editOnlyEmail,
+      password: TEST_PASSWORD,
+      role: "STAFF",
+    });
+    await grantInvitePermission(editOnlyAdmin.id, "EDIT");
+    const editOnlyToken = (
+      await getAdminTokens(editOnlyEmail, TEST_PASSWORD)
+    ).accessToken;
+    const editOnlyRes = await api
+      .get(`/api/v1/airline/invitations/${id}`)
+      .set("Authorization", `Bearer ${editOnlyToken}`);
+    expect(editOnlyRes.status).toBe(403);
+
+    // TC_012: STAFF with no permissions — should be 403
+    const noPermEmail = `detail-no-perm-${Date.now()}@e2e-airline.test`;
+    await insertActiveAdmin({
+      email: noPermEmail,
+      password: TEST_PASSWORD,
+      role: "STAFF",
+    });
+    const noPermToken = (
+      await getAdminTokens(noPermEmail, TEST_PASSWORD)
+    ).accessToken;
+    const noPermRes = await api
+      .get(`/api/v1/airline/invitations/${id}`)
+      .set("Authorization", `Bearer ${noPermToken}`);
+    expect(noPermRes.status).toBe(403);
+
+    // TC_013: SUPER_ADMIN remains authorized
+    const superRes = await api
+      .get(`/api/v1/airline/invitations/${id}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(superRes.status).toBe(200);
+  });
+
+  it("TC_AIRLINE_INVITATION_DETAIL_037..041: status-enum validity, history-status consistency, list consistency", async () => {
+    const id = await createInviteId();
+    const detail = await api
+      .get(`/api/v1/airline/invitations/${id}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(detail.status).toBe(200);
+
+    // TC_037: status is one of the valid enum values
+    expect(["PENDING", "ACCEPTED", "REVOKED"]).toContain(
+      detail.body.data.status,
+    );
+
+    // TC_038/040: for PENDING, acceptedAt should be null or absent
+    if (detail.body.data.status === "PENDING") {
+      const acceptedAt = detail.body.data.acceptedAt;
+      expect(acceptedAt === null || acceptedAt === undefined).toBe(true);
+    }
+
+    // TC_039: status matches latest history event after revoke
+    await insertInviteHistoryRow({ invitationId: id, event: "REVOKED" });
+    await setInvitationStatus(id, "REVOKED", { revokedAt: new Date() });
+    const revokedDetail = await api
+      .get(`/api/v1/airline/invitations/${id}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(revokedDetail.status).toBe(200);
+    expect(revokedDetail.body.data.status).toBe("REVOKED");
+    const history = revokedDetail.body.data.history as Array<{ event: string }>;
+    const lastEvent = history[history.length - 1]?.event;
+    expect(lastEvent).toBe("REVOKED");
+
+    // TC_041: detail data is consistent with the matching list entry
+    const listRes = await api
+      .get("/api/v1/airline/invitations")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(listRes.status).toBe(200);
+    const listItem = (
+      listRes.body.data.invitations as Array<{ invitationId: number }>
+    ).find((inv) => inv.invitationId === id);
+    expect(listItem).toBeDefined();
+  });
+
+  it("TC_AIRLINE_INVITATION_DETAIL_044..046: SQLi, script, and malformed path params rejected", async () => {
+    // TC_044: SQL injection in path param — non-numeric → 400
+    const sqli = await api
+      .get("/api/v1/airline/invitations/1;DROP TABLE admins--")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(sqli.status).toBe(400);
+
+    // TC_045: Script injection in path param — non-numeric → 400
+    const script = await api
+      .get(
+        "/api/v1/airline/invitations/%3Cscript%3Ealert(1)%3C%2Fscript%3E",
+      )
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(script.status).toBe(400);
+
+    // TC_046: Excessively large number that overflows integer range
+    const overflow = await api
+      .get("/api/v1/airline/invitations/999999999999999999999999")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect([400, 404]).toContain(overflow.status);
+  });
+
   it.todo(
-    "TC_AIRLINE_INVITATION_DETAIL_010..013: full authorization matrix (inactive/edit-only/unauthorized role)",
-  );
-  it.todo(
-    "TC_AIRLINE_INVITATION_DETAIL_037..041: accepted-live-airline/source-of-truth consistency checks across list/detail",
-  );
-  it.todo(
-    "TC_AIRLINE_INVITATION_DETAIL_044..047: SQLi/script/malformed path/concurrency checks",
+    "TC_AIRLINE_INVITATION_DETAIL_047: concurrent detail reads return consistent data",
   );
 });

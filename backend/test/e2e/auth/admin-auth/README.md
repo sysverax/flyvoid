@@ -231,7 +231,7 @@ Notes:
 Test cases:
 
 - `TC_AUTH_ADMIN_FORGOT_PASSWORD_SEND_OTP_001`: Send OTP with valid registered email, expected `200`
-- `TC_AUTH_ADMIN_FORGOT_PASSWORD_SEND_OTP_002`: Send OTP with non-existing email should return generic success response, expected `200`
+- `TC_AUTH_ADMIN_FORGOT_PASSWORD_SEND_OTP_002`: Send OTP with non-existing email should return , expected `401`
 - `TC_AUTH_ADMIN_FORGOT_PASSWORD_SEND_OTP_003`: Send OTP with invalid email format, expected `400`
 - `TC_AUTH_ADMIN_FORGOT_PASSWORD_SEND_OTP_004`: Send OTP with missing email field, expected `400`
 - `TC_AUTH_ADMIN_FORGOT_PASSWORD_SEND_OTP_005`: Send OTP with empty email value, expected `400`

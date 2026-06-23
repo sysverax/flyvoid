@@ -9,6 +9,7 @@
  *
  * TC IDs: TC_AUTH_ADMIN_REFRESH_TOKEN_001 through 040
  */
+import { Logger } from "@nestjs/common";
 import { api } from "../../../helpers/http-client.helper";
 import { endPool, query } from "../../../helpers/db-client.helper";
 import { deleteAdminsByEmailPattern } from "../../../helpers/db-cleanup.helper";
@@ -547,7 +548,8 @@ describe("POST /api/v1/auth/admin/refresh", () => {
     const verifyRes = await api
       .post("/api/v1/auth/admin/forgot-password/verify-otp")
       .send({ email, otp: "444444" });
-    const resetToken = (verifyRes.body.data as { resetPasswordToken: string }).resetPasswordToken;
+    const resetToken = (verifyRes.body.data as { resetPasswordToken: string })
+      .resetPasswordToken;
 
     await api
       .post("/api/v1/auth/admin/forgot-password")

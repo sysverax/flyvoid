@@ -129,6 +129,23 @@ This document lists all airline invitation E2E test cases extracted from the tes
 
 - `TC_AIRLINE_INVITATION_LIST_028`: Request without access token, expected `401`
 - `TC_AIRLINE_INVITATION_LIST_029`: Request with invalid token, expected `401`
+- `TC_AIRLINE_INVITATION_LIST_030`: Expired JWT → `401`
+- `TC_AIRLINE_INVITATION_LIST_031`: Inactive admin (token obtained before deactivation) → `401`/`403`
+- `TC_AIRLINE_INVITATION_LIST_032`: STAFF with EDIT-only (no VIEW) → `403`
+- `TC_AIRLINE_INVITATION_LIST_033`: STAFF with no permissions → `403`
+- `TC_AIRLINE_INVITATION_LIST_034`: SUPER_ADMIN authorized → `200`
+- `TC_AIRLINE_INVITATION_LIST_035`: STAFF with VIEW authorized → `200`
+
+#### Pagination Details
+
+- `TC_AIRLINE_INVITATION_LIST_036`: limit=1 → invitations.length ≤ 1, expected `200`
+- `TC_AIRLINE_INVITATION_LIST_037`: page=2&limit=2 → currentPage=2, limit=2, expected `200`
+- `TC_AIRLINE_INVITATION_LIST_038`: Out-of-range page → empty invitations array, expected `200`
+- `TC_AIRLINE_INVITATION_LIST_039`: total is consistent across different limit values, expected `200`
+- `TC_AIRLINE_INVITATION_LIST_040`: currentPage echoes the page query param, expected `200`
+- `TC_AIRLINE_INVITATION_LIST_041`: limit echoes the limit query param, expected `200`
+- `TC_AIRLINE_INVITATION_LIST_042`: total increments by 1 after new invitation created, expected `200`
+- `TC_AIRLINE_INVITATION_LIST_043`: totalPages === Math.ceil(total / limit), expected `200`
 
 #### Query Parameter Validation
 
@@ -142,16 +159,29 @@ This document lists all airline invitation E2E test cases extracted from the tes
 - `TC_AIRLINE_INVITATION_LIST_051`: Invalid limit=1.5 (float), expected `400`
 - `TC_AIRLINE_INVITATION_LIST_052`: Invalid limit=abc (non-numeric), expected `400`
 - `TC_AIRLINE_INVITATION_LIST_053`: Invalid limit=true (boolean), expected `400`
+- `TC_AIRLINE_INVITATION_LIST_054`: Empty page= param → `200` or `400`
+- `TC_AIRLINE_INVITATION_LIST_055`: Empty limit= param → `200` or `400`
 
 #### Sorting & Data Integrity
 
 - `TC_AIRLINE_INVITATION_LIST_056`: Sorted by latest createdAt first, expected `200`
+- `TC_AIRLINE_INVITATION_LIST_057`: All status values are from valid enum (PENDING/ACCEPTED/REVOKED), expected `200`
+- `TC_AIRLINE_INVITATION_LIST_058`: Accepted invitation appears with status ACCEPTED, expected `200`
+- `TC_AIRLINE_INVITATION_LIST_059`: Revoked invitation appears with status REVOKED, expected `200`
+- `TC_AIRLINE_INVITATION_LIST_060`: Expired invitation appears with status PENDING + past expiresAt, expected `200`
+- `TC_AIRLINE_INVITATION_LIST_061`: createdAt is a valid ISO timestamp for every row, expected `200`
+- `TC_AIRLINE_INVITATION_LIST_062`: No duplicate invitationIds in the result, expected `200`
+- `TC_AIRLINE_INVITATION_LIST_063`: No sensitive fields (token_hash, password_hash) in response, expected `200`
 
-#### Deferred/TODO
+#### Security & Edge Cases
 
-- `TC_AIRLINE_INVITATION_LIST_030-043`: Remaining authz/pagination variants
-- `TC_AIRLINE_INVITATION_LIST_054-055`: Additional pagination edge cases
-- `TC_AIRLINE_INVITATION_LIST_057-070`: Status/data-integrity and parser edge cases
+- `TC_AIRLINE_INVITATION_LIST_064`: SQL injection in page param → `400`
+- `TC_AIRLINE_INVITATION_LIST_065`: Script injection in query param → `200` or `400` (safely handled)
+- `TC_AIRLINE_INVITATION_LIST_066`: Extremely large page number → empty array, expected `200`
+- `TC_AIRLINE_INVITATION_LIST_067`: Extremely large limit → rejected, expected `400`
+- `TC_AIRLINE_INVITATION_LIST_068`: Unknown query param ignored safely, expected `200`
+- `TC_AIRLINE_INVITATION_LIST_069`: Duplicate query keys handled gracefully → `200`
+- `TC_AIRLINE_INVITATION_LIST_070`: Uppercase status filter value → `200` or `400`
 
 ---
 
@@ -192,12 +222,40 @@ This document lists all airline invitation E2E test cases extracted from the tes
 - `TC_AIRLINE_INVITATION_RESEND_024`: Token changes between resends (security validation), expected `200`
 - `TC_AIRLINE_INVITATION_RESEND_025`: Token parameter URL decodable, expected `200`
 
+#### Full Authorization Matrix
+
+- `TC_AIRLINE_INVITATION_RESEND_008`: Inactive admin (token before deactivation) → `401`/`403`
+- `TC_AIRLINE_INVITATION_RESEND_009`: STAFF with VIEW-only (no EDIT) → `403`
+- `TC_AIRLINE_INVITATION_RESEND_010`: STAFF with no permissions → `403`
+- `TC_AIRLINE_INVITATION_RESEND_011`: SUPER_ADMIN remains authorized → `200`
+
+#### Path Edge Case
+
+- `TC_AIRLINE_INVITATION_RESEND_018`: Extremely large invitationId (9999999999) → `400`/`404`
+
+#### Business Logic & Security
+
+- `TC_AIRLINE_INVITATION_RESEND_026`: Old token rejected after new resend (token rotation), expected `401`/`409`
+- `TC_AIRLINE_INVITATION_RESEND_027`: Each resend produces a different token, expected `200`
+- `TC_AIRLINE_INVITATION_RESEND_028`: Revoked invitation status returns to PENDING after resend, expected `200`
+- `TC_AIRLINE_INVITATION_RESEND_029`: Status is PENDING in detail after resend of revoked, expected `200`
+- `TC_AIRLINE_INVITATION_RESEND_030`: expiresAt is refreshed to a future date after resend, expected `200`
+- `TC_AIRLINE_INVITATION_RESEND_031`: SQL injection in path param → `400`
+- `TC_AIRLINE_INVITATION_RESEND_032`: Script injection in path param → `400`
+- `TC_AIRLINE_INVITATION_RESEND_033`: Wrong HTTP method (GET) on resend endpoint → `404`/`405`
+- `TC_AIRLINE_INVITATION_RESEND_034`: Malformed Authorization header (no Bearer prefix) → `401`
+- `TC_AIRLINE_INVITATION_RESEND_035`: STAFF with EDIT can resend SUPER_ADMIN-created invitation → `200`
+
+#### Audit Metadata
+
+- `TC_AIRLINE_INVITATION_RESEND_038`: Response success=true and message is a non-empty string, expected `200`
+- `TC_AIRLINE_INVITATION_RESEND_039`: Response includes requestId as string, expected `200`
+- `TC_AIRLINE_INVITATION_RESEND_040`: Response includes timestamp as string, expected `200`
+- `TC_AIRLINE_INVITATION_RESEND_041`: Response data includes invitationId, expiresIn, onboardingLink, expected `200`
+
 #### Deferred/TODO
 
-- `TC_AIRLINE_INVITATION_RESEND_008-011`: Remaining authorization matrix
-- `TC_AIRLINE_INVITATION_RESEND_018`: Extremely large invitationId value not found, expected `404`
-- `TC_AIRLINE_INVITATION_RESEND_026-037`: Business logic/security including concurrent resend
-- `TC_AIRLINE_INVITATION_RESEND_038-041`: Audit metadata and exact message assertions
+- `TC_AIRLINE_INVITATION_RESEND_036-037`: Concurrent resend edge cases and idempotency
 
 ---
 
@@ -240,12 +298,37 @@ This document lists all airline invitation E2E test cases extracted from the tes
 - `TC_AIRLINE_INVITATION_REVOKE_025`: Response structure validation complete, expected `200`
 - `TC_AIRLINE_INVITATION_REVOKE_026`: Response metadata present and valid, expected `200`
 
+#### Full Authorization Matrix
+
+- `TC_AIRLINE_INVITATION_REVOKE_008`: Inactive admin (token before deactivation) → `401`/`403`
+- `TC_AIRLINE_INVITATION_REVOKE_009`: STAFF with VIEW-only (no EDIT) → `403`
+- `TC_AIRLINE_INVITATION_REVOKE_010`: STAFF with no permissions → `403`
+- `TC_AIRLINE_INVITATION_REVOKE_011`: SUPER_ADMIN remains authorized → `200`
+
+#### Business Logic Deep Checks
+
+- `TC_AIRLINE_INVITATION_REVOKE_027`: Revoked invitation's onboarding token rejected → `401`/`409`
+- `TC_AIRLINE_INVITATION_REVOKE_028`: Can resend a revoked invitation → `200`
+- `TC_AIRLINE_INVITATION_REVOKE_029`: Status is REVOKED in response after revoke, expected `200`
+- `TC_AIRLINE_INVITATION_REVOKE_030`: invitationId present in revoke response, expected `200`
+- `TC_AIRLINE_INVITATION_REVOKE_031`: Idempotent — revoking already-revoked → `200`
+- `TC_AIRLINE_INVITATION_REVOKE_032`: Pending invitation can be revoked → `200`
+- `TC_AIRLINE_INVITATION_REVOKE_033`: Expired invitation can be revoked → `200`
+
+#### Security Checks
+
+- `TC_AIRLINE_INVITATION_REVOKE_035`: SQL injection in path param → `400`
+- `TC_AIRLINE_INVITATION_REVOKE_036`: Script injection in path param → `400`
+- `TC_AIRLINE_INVITATION_REVOKE_037`: Wrong HTTP method (GET) on revoke endpoint → `404`/`405`
+
+#### Audit Trail
+
+- `TC_AIRLINE_INVITATION_REVOKE_040`: History contains a REVOKED event after revoke, expected `200`
+- `TC_AIRLINE_INVITATION_REVOKE_041`: REVOKED history entry has a valid ISO createdAt timestamp, expected `200`
+
 #### Deferred/TODO
 
-- `TC_AIRLINE_INVITATION_REVOKE_008-011`: Remaining authorization matrix
-- `TC_AIRLINE_INVITATION_REVOKE_027-034`: Business logic deep checks, including resend-after-revoke
-- `TC_AIRLINE_INVITATION_REVOKE_035-039`: SQLi/script/concurrency/method robustness
-- `TC_AIRLINE_INVITATION_REVOKE_040-041`: Audit trail verification
+- `TC_AIRLINE_INVITATION_REVOKE_038-039`: Concurrent revoke edge cases
 
 ---
 
@@ -296,10 +379,30 @@ This document lists all airline invitation E2E test cases extracted from the tes
 - `TC_AIRLINE_INVITATION_MATRIX_039`: revoked count is non-negative integer, expected `200`
 - `TC_AIRLINE_INVITATION_MATRIX_040`: All counts are integers (no floats), expected `200`
 
+#### Full Authorization Matrix
+
+- `TC_AIRLINE_INVITATION_MATRIX_012`: Inactive admin (token before deactivation) → `401`/`403`
+- `TC_AIRLINE_INVITATION_MATRIX_013`: STAFF with EDIT-only (no VIEW) → `403`
+- `TC_AIRLINE_INVITATION_MATRIX_014`: STAFF with no permissions → `403`
+- `TC_AIRLINE_INVITATION_MATRIX_015`: SUPER_ADMIN remains authorized → `200`
+
+#### Lifecycle Delta Tests
+
+- `TC_AIRLINE_INVITATION_MATRIX_026`: Create invitation → totalSent +1, pending +1, expected `200`
+- `TC_AIRLINE_INVITATION_MATRIX_027`: Accept invitation → accepted +1, expected `200`
+- `TC_AIRLINE_INVITATION_MATRIX_028`: Revoke pending → revoked +1, pending back to baseline, expected `200`
+- `TC_AIRLINE_INVITATION_MATRIX_029`: Expire invitation → expired increases, expected `200`
+- `TC_AIRLINE_INVITATION_MATRIX_030`: totalSent = sum of all buckets after create, expected `200`
+- `TC_AIRLINE_INVITATION_MATRIX_034`: totalSent = sum of all buckets at every lifecycle snapshot, expected `200`
+
+#### Security & Method Checks
+
+- `TC_AIRLINE_INVITATION_MATRIX_041`: Malformed Authorization header (no Bearer prefix) → `401`
+- `TC_AIRLINE_INVITATION_MATRIX_043`: Wrong HTTP method (POST) on matrix endpoint → `404`/`405`
+
 #### Deferred/TODO
 
-- `TC_AIRLINE_INVITATION_MATRIX_012-015`: Remaining authorization matrix scenarios
-- `TC_AIRLINE_INVITATION_MATRIX_026-034`: Dynamic lifecycle updates after create/accept/revoke/resend actions
+- `TC_AIRLINE_INVITATION_MATRIX_042`: Concurrent matrix reads return consistent data
 
 ---
 
@@ -360,22 +463,42 @@ This document lists all airline invitation E2E test cases extracted from the tes
 - `TC_AIRLINE_INVITATION_DETAIL_039`: No sensitive fields like token_hash in response, expected `200`
 - `TC_AIRLINE_INVITATION_DETAIL_040`: No password_hash in response (security check), expected `200`
 
+#### Full Authorization Matrix
+
+- `TC_AIRLINE_INVITATION_DETAIL_010`: Inactive admin (token before deactivation) → `401`/`403`
+- `TC_AIRLINE_INVITATION_DETAIL_011`: STAFF with EDIT-only (no VIEW) → `403`
+- `TC_AIRLINE_INVITATION_DETAIL_012`: STAFF with no permissions → `403`
+- `TC_AIRLINE_INVITATION_DETAIL_013`: SUPER_ADMIN remains authorized → `200`
+
+#### Status & History Consistency
+
+- `TC_AIRLINE_INVITATION_DETAIL_037`: status field is one of PENDING/ACCEPTED/REVOKED, expected `200`
+- `TC_AIRLINE_INVITATION_DETAIL_038`: For PENDING status, acceptedAt is null or absent, expected `200`
+- `TC_AIRLINE_INVITATION_DETAIL_039`: After revoke, status=REVOKED and last history event=REVOKED, expected `200`
+- `TC_AIRLINE_INVITATION_DETAIL_041`: Detail invitationId appears in list endpoint response, expected `200`
+
+#### Security Checks
+
+- `TC_AIRLINE_INVITATION_DETAIL_044`: SQL injection in path param (non-numeric) → `400`
+- `TC_AIRLINE_INVITATION_DETAIL_045`: Script injection in path param (URL-encoded) → `400`
+- `TC_AIRLINE_INVITATION_DETAIL_046`: Overflow numeric path param → `400`/`404`
+
 #### Deferred/TODO
 
-- `TC_AIRLINE_INVITATION_DETAIL_041-051`: Additional data integrity and audit checks
+- `TC_AIRLINE_INVITATION_DETAIL_047`: Concurrent detail reads return consistent data
 
 ---
 
 ## Test Coverage Summary
 
-| Endpoint | File                                   | Total Tests | Status                     |
-| -------- | -------------------------------------- | ----------- | -------------------------- |
-| Create   | airline-invitations-create.e2e-spec.ts | 110+        | 94 implemented, 2 deferred |
-| List     | airline-invitations-list.e2e-spec.ts   | 70+         | 13 implemented, 4 deferred |
-| Resend   | airline-invitation-resend.e2e-spec.ts  | 41+         | 13 implemented, 4 deferred |
-| Revoke   | airline-invitation-revoke.e2e-spec.ts  | 41+         | 12 implemented, 4 deferred |
-| Matrix   | airline-invitation-matrix.e2e-spec.ts  | 43+         | 13 implemented, 3 deferred |
-| Detail   | airline-invitation-detail.e2e-spec.ts  | 51+         | 13 implemented, 3 deferred |
+| Endpoint | File                                   | Total Tests | Status                      |
+| -------- | -------------------------------------- | ----------- | --------------------------- |
+| Create   | airline-invitations-create.e2e-spec.ts | 110+        | 94 implemented, 2 deferred  |
+| List     | airline-invitations-list.e2e-spec.ts   | 70+         | 70 implemented, 0 deferred  |
+| Resend   | airline-invitation-resend.e2e-spec.ts  | 41+         | 39 implemented, 2 deferred  |
+| Revoke   | airline-invitation-revoke.e2e-spec.ts  | 41+         | 39 implemented, 2 deferred  |
+| Matrix   | airline-invitation-matrix.e2e-spec.ts  | 43+         | 42 implemented, 1 deferred  |
+| Detail   | airline-invitation-detail.e2e-spec.ts  | 51+         | 50 implemented, 1 deferred  |
 
 ---
 

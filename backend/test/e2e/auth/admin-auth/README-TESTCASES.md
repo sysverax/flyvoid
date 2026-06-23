@@ -367,7 +367,6 @@ Test cases:
 - `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_025`: Initial password reset with malformed JSON payload, expected `400`
 - `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_026`: Initial password reset with additional unknown fields, expected `400`
 - `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_027`: Initial password reset response contains success=true, expected `200`
-- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_028`: Initial password reset response contains correct success message, expected `200`
 - `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_029`: Initial password reset response contains null data object, expected `200`
 - `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_030`: Initial password reset allows subsequent signin with newly reset password, expected `200`
 - `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_031`: Initial password reset rejects signin using old password after successful reset, expected `401`

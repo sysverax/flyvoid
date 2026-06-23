@@ -34,33 +34,33 @@ Scope:
 
 ### List Invitations
 
-- Covered: baseline happy paths, auth failures, key pagination validations, sorting, and unknown query behavior
+- Covered: SUPER_ADMIN/STAFF-VIEW happy paths, expired-JWT/inactive-admin/EDIT-only/no-perm auth matrix, pagination structure (page, limit, total, currentPage, totalPages), out-of-range page → empty array, count consistency, count delta after new invite, status data integrity (ACCEPTED/REVOKED/expired), duplicate-ID guard, no sensitive fields, SQL injection in page → 400, duplicate query keys gracefully handled, unknown query param accepted
 - Deferred/TODO:
-  - remaining per-case matrix from `TC_AIRLINE_INVITATION_LIST_030` to `TC_AIRLINE_INVITATION_LIST_070`
+  - `TC_AIRLINE_INVITATION_LIST_069/070`: Duplicate query key and uppercase status filter behaviour (implementation-specific; tested with `[200, 400]` assertion)
 
 ### Resend Invitation
 
-- Covered: core success paths, auth failures, not-found, accepted conflict, invalid path params, response contract/rotation basics
+- Covered: pending/expired/revoked success paths, full auth matrix (inactive/VIEW-only/no-perm/super), large invitationId edge case, token rotation + old-token invalidation, revoked-to-PENDING transition, expiresAt refresh, SQL injection, script injection, wrong HTTP method, malformed Authorization header, STAFF-EDIT cross-authorization, response metadata fields
 - Deferred/TODO:
-  - remaining authz matrix and deeper business/security/audit scenarios from `TC_AIRLINE_INVITATION_RESEND_008` onward
+  - `TC_AIRLINE_INVITATION_RESEND_036-037` (concurrent resend edge cases)
 
 ### Revoke Invitation
 
-- Covered: core success/idempotency, auth failures, not-found, accepted conflict, invalid path params, response contract
+- Covered: pending/expired/already-revoked success paths, full auth matrix (inactive/VIEW-only/no-perm/super), revoked-token-prevents-onboard, resend-after-revoke, status-REVOKED assertion, idempotent revoke, expired-invitation revoke, SQL injection, script injection, wrong HTTP method, audit trail — history REVOKED event with ISO timestamp
 - Deferred/TODO:
-  - extended authz/business/security/audit scenarios from `TC_AIRLINE_INVITATION_REVOKE_008` onward
+  - `TC_AIRLINE_INVITATION_REVOKE_038-039` (concurrent revoke edge cases)
 
 ### Invitation Matrix
 
-- Covered: success paths, auth failures, response structure, arithmetic consistency, non-negative integer checks
+- Covered: SUPER_ADMIN/STAFF-VIEW success, full auth matrix (inactive/EDIT-only/no-perm/super), lifecycle delta tests (create→pending+1, revoke→revoked+1/pending−1, accept→accepted+1, expire→expired↑), arithmetic invariant at every delta snapshot, non-negative integer checks, malformed auth header, wrong HTTP method
 - Deferred/TODO:
-  - remaining authz and lifecycle/concurrency/method-restriction cases from `TC_AIRLINE_INVITATION_MATRIX_012` onward
+  - `TC_AIRLINE_INVITATION_MATRIX_042` (concurrent matrix reads)
 
 ### Invitation Detail
 
-- Covered: success/status variants, auth failures baseline, not-found/path validation, response contract, history ordering, metadata checks
+- Covered: all status variants, full auth matrix (inactive/EDIT-only/no-perm/super), not-found/path validation, response contract, history ordering, status-enum validity, acceptedAt null-for-non-accepted, REVOKED-status matches last history event, consistency with list endpoint, SQL injection, script injection, overflow numeric path param
 - Deferred/TODO:
-  - full authz matrix and advanced consistency/security/concurrency cases from `TC_AIRLINE_INVITATION_DETAIL_010` onward
+  - `TC_AIRLINE_INVITATION_DETAIL_047` (concurrent detail reads)
 
 ## Notes
 
@@ -68,4 +68,6 @@ Scope:
 - Admin and invitation records are cleaned by patterns:
   - admins: `%@e2e-airline.test`
   - invite-related entities: `E2E%`
-- Some tests intentionally use `it.todo` where behavior depends on environment/parser/DB collation or requires deterministic time-based orchestration.
+- **Auth matrix pattern**: For inactive-admin tests, a valid token is obtained before the admin is deactivated via SQL, ensuring the JWT is cryptographically valid but rejected by the server's `is_active` guard.
+- **Read (GET) endpoints** require `VIEW` permission; **write (POST) resend/revoke** endpoints require `EDIT` permission.
+- Some tests intentionally use `it.todo` where behaviour depends on timing, concurrency, parser specifics, or DB collation.

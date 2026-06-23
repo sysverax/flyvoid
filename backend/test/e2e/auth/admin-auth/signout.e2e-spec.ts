@@ -10,6 +10,7 @@
  *
  * TC IDs: TC_AUTH_ADMIN_SIGNOUT_001 through 030
  */
+import { Logger } from "@nestjs/common";
 import { api } from "../../../helpers/http-client.helper";
 import { endPool } from "../../../helpers/db-client.helper";
 import { deleteAdminsByEmailPattern } from "../../../helpers/db-cleanup.helper";
@@ -19,10 +20,50 @@ import { describe, it, beforeAll, afterAll, expect } from "@jest/globals";
 
 const EMAIL_PATTERN = "%@e2e-signout.test";
 const TEST_PASSWORD = "Password@123";
+const SIGNOUT_PATH = "/api/v1/auth/admin/signout";
 
 function makeEmail(prefix: string): string {
   return uniqueEmail(prefix).replace("@e2e.test", "@e2e-signout.test");
 }
+
+function logSignoutResponse(testCaseName: string, response: any): void {
+  const message = response?.body?.message ?? response?.text ?? "";
+
+  if (message) {
+    Logger.log(`[${testCaseName}] Signout response message: ${message}`, "E2E");
+  }
+}
+
+function getCurrentTestName(): string {
+  return (
+    (
+      expect as unknown as { getState?: () => { currentTestName?: string } }
+    ).getState?.()?.currentTestName ?? "unknown-test"
+  );
+}
+
+const originalApiPost = api.post.bind(api);
+(api as typeof api & { post: typeof api.post }).post = ((path: string) => {
+  const request = originalApiPost(path);
+
+  if (path !== SIGNOUT_PATH) {
+    return request;
+  }
+
+  const originalSend = request.send.bind(request);
+  const wrappedSend = (body: string | object | undefined) => {
+    return Promise.resolve(originalSend(body)).then((response: any) => {
+      const testCaseName = getCurrentTestName();
+      logSignoutResponse(testCaseName, response);
+      return response;
+    });
+  };
+
+  (request as typeof request & { send: typeof originalSend }).send =
+    wrappedSend as typeof originalSend;
+
+  return request;
+}) as typeof api.post;
 
 interface TokenPair {
   accessToken: string;

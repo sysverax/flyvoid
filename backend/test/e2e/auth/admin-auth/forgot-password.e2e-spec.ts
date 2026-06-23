@@ -17,6 +17,7 @@
  *
  * The static OTP '444444' is used for verify-otp tests in test env.
  */
+import { Logger } from "@nestjs/common";
 import { api } from "../../../helpers/http-client.helper";
 import { endPool } from "../../../helpers/db-client.helper";
 import { deleteAdminsByEmailPattern } from "../../../helpers/db-cleanup.helper";
@@ -33,10 +34,59 @@ import { describe, it, beforeAll, afterAll, expect } from "@jest/globals";
 const EMAIL_PATTERN = "%@e2e-fp.test";
 const TEST_PASSWORD = "Password@123";
 const STATIC_OTP = "444444";
+const SEND_OTP_PATH = "/api/v1/auth/admin/forgot-password/send-otp";
+const VERIFY_OTP_PATH = "/api/v1/auth/admin/forgot-password/verify-otp";
+const FORGOT_PASSWORD_PATH = "/api/v1/auth/admin/forgot-password";
 
 function makeEmail(prefix: string): string {
   return uniqueEmail(prefix).replace("@e2e.test", "@e2e-fp.test");
 }
+
+function logForgotPasswordResponse(testCaseName: string, response: any): void {
+  const message = response?.body?.message ?? response?.text ?? "";
+
+  if (message) {
+    Logger.log(
+      `[${testCaseName}] Forgot-password response message: ${message}`,
+      "E2E",
+    );
+  }
+}
+
+function getCurrentTestName(): string {
+  return (
+    (
+      expect as unknown as { getState?: () => { currentTestName?: string } }
+    ).getState?.()?.currentTestName ?? "unknown-test"
+  );
+}
+
+const originalApiPost = api.post.bind(api);
+(api as typeof api & { post: typeof api.post }).post = ((path: string) => {
+  const request = originalApiPost(path);
+
+  if (
+    path !== SEND_OTP_PATH &&
+    path !== VERIFY_OTP_PATH &&
+    path !== FORGOT_PASSWORD_PATH
+  ) {
+    return request;
+  }
+
+  const originalSend = request.send.bind(request);
+  const wrappedSend = (body: string | object | undefined) => {
+    return Promise.resolve(originalSend(body)).then((response: any) => {
+      const testCaseName = getCurrentTestName();
+      logForgotPasswordResponse(testCaseName, response);
+      return response;
+    });
+  };
+
+  (request as typeof request & { send: typeof originalSend }).send =
+    wrappedSend as typeof originalSend;
+
+  return request;
+}) as typeof api.post;
 
 // ─── Send OTP ─────────────────────────────────────────────────────────────────
 
