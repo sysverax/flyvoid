@@ -1,7 +1,26 @@
-import { Controller, Get, Req, UseGuards } from "@nestjs/common";
 import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from "@nestjs/common";
+import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiBody,
+  ApiConflictResponse,
+  ApiCreatedResponse,
+  ApiExtraModels,
   ApiForbiddenResponse,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -10,7 +29,12 @@ import {
 } from "@nestjs/swagger";
 import {
   REQUEST_ID_EXAMPLE,
+  REQUEST_ID_HEADER_SCHEMA,
   TIMESTAMP_EXAMPLE,
+  createBadRequestErrorSchema,
+  createConflictErrorSchema,
+  createForbiddenErrorSchema,
+  createNotFoundErrorSchema,
   createUnauthorizedErrorSchema,
 } from "../../common/constants/swagger.constants";
 import { BaseResponseDto } from "../../common/dto/base-response.dto";
@@ -30,16 +54,339 @@ import {
 import { AirlineRole, UserType } from "../../common/constants/user.constants";
 import {
   AirlineProfileResponseDto,
+  AirlineUserListResponseDto,
+  AirlineUserResponseDto,
   AirlineUserProfileResponseDto,
+  InviteAirlineUserRequestDto,
+  InviteAirlineUserResponseDto,
+  UpdateAirlineUserRequestDto,
 } from "../dto";
 import { AirlineService } from "../services/airline.service";
+import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
 
 @ApiTags("Airline")
+@ApiExtraModels(
+  BaseResponseDto,
+  AirlineUserResponseDto,
+  InviteAirlineUserRequestDto,
+  InviteAirlineUserResponseDto,
+  UpdateAirlineUserRequestDto,
+  AirlineUserListResponseDto,
+)
 @UseGuards(JwtAuthGuard, RbacGuard)
 @RequireUserTypes(UserType.AIRLINE)
 @Controller("airline")
 export class AirlineController {
   constructor(private readonly airlineService: AirlineService) {}
+
+  @Post("users")
+  @HttpCode(201)
+  @RequireUserRoles(AirlineRole.AIRLINE_ADMIN, AirlineRole.AIRLINE_STAFF)
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.AIRLINE_USERS,
+      access: [AccessAction.EDIT],
+    },
+  })
+  @ApiBearerAuth("access-token")
+  @ApiOperation({
+    summary: "Invite airline user",
+    description: `
+    Creates and invites a new airline user, returning a temporary password for first login.
+      Access: AIRLINE_ADMIN and AIRLINE_STAFF with EDIT access on the AIRLINE_USERS asset. Requires userType=AIRLINE.
+      Business logic validations (409 Conflict):
+        1. Email must not already exist on another airline account`,
+  })
+  @ApiBody({ type: InviteAirlineUserRequestDto })
+  @ApiCreatedResponse({
+    description: "Airline user invited successfully",
+    headers: {
+      "x-request-id": REQUEST_ID_HEADER_SCHEMA,
+    },
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(BaseResponseDto) },
+        {
+          properties: {
+            success: { type: "boolean", example: true },
+            requestId: { type: "string", example: REQUEST_ID_EXAMPLE },
+            timestamp: { type: "string", example: TIMESTAMP_EXAMPLE },
+            message: {
+              type: "string",
+              example: "Airline user invited successfully",
+            },
+            data: { $ref: getSchemaPath(InviteAirlineUserResponseDto) },
+          },
+        },
+      ],
+    },
+  })
+  @ApiBadRequestResponse({
+    description: "Validation failed",
+    schema: createBadRequestErrorSchema("/api/v1/airline/users"),
+  })
+  @ApiConflictResponse({
+    description: "Airline user email already exists",
+    schema: createConflictErrorSchema(
+      "/api/v1/airline/users",
+      "Airline user email already exists",
+    ),
+  })
+  @ApiForbiddenResponse({
+    description:
+      "Only AIRLINE_ADMIN and AIRLINE_STAFF who has the required permissions can perform this action",
+    schema: createForbiddenErrorSchema(
+      "/api/v1/airline/users",
+      "Only AIRLINE_ADMIN and AIRLINE_STAFF who has the required permissions can perform this action",
+    ),
+  })
+  async inviteAirlineUser(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: InviteAirlineUserRequestDto,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<InviteAirlineUserResponseDto>> {
+    const response = await this.airlineService.inviteAirlineUser(
+      req.user,
+      dto,
+      requestId,
+    );
+
+    return BaseResponseDto.success(
+      response,
+      requestId,
+      "Airline user invited successfully",
+    );
+  }
+
+  @Patch("users/:userId")
+  @RequireUserRoles(AirlineRole.AIRLINE_ADMIN, AirlineRole.AIRLINE_STAFF)
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.AIRLINE_USERS,
+      access: [AccessAction.EDIT],
+    },
+  })
+  @ApiBearerAuth("access-token")
+  @ApiOperation({
+    summary: "Update airline user",
+    description: `
+    Partially updates an airline user's profile (name, email, job title, role) and/or active status (suspend/activate).
+      Access: AIRLINE_ADMIN and AIRLINE_STAFF with EDIT access on the AIRLINE_USERS asset. Requires userType=AIRLINE.
+      Business logic validations:
+        1. Target airline user must exist within same airline (404 if not found)
+        2. Email must not already be in use by another user (409 Conflict)`,
+  })
+  @ApiBody({ type: UpdateAirlineUserRequestDto })
+  @ApiOkResponse({
+    description: "Airline user updated successfully",
+    headers: {
+      "x-request-id": REQUEST_ID_HEADER_SCHEMA,
+    },
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(BaseResponseDto) },
+        {
+          properties: {
+            success: { type: "boolean", example: true },
+            requestId: { type: "string", example: REQUEST_ID_EXAMPLE },
+            timestamp: { type: "string", example: TIMESTAMP_EXAMPLE },
+            message: {
+              type: "string",
+              example: "Airline user updated successfully",
+            },
+            data: { $ref: getSchemaPath(AirlineUserResponseDto) },
+          },
+        },
+      ],
+    },
+  })
+  @ApiBadRequestResponse({
+    description: "Validation failed",
+    schema: createBadRequestErrorSchema("/api/v1/airline/users/2"),
+  })
+  @ApiNotFoundResponse({
+    description: "Airline user not found",
+    schema: createNotFoundErrorSchema(
+      "/api/v1/airline/users/2",
+      "Airline user not found",
+    ),
+  })
+  @ApiConflictResponse({
+    description: "Airline user email already exists",
+    schema: createConflictErrorSchema(
+      "/api/v1/airline/users/2",
+      "Airline user email already exists",
+    ),
+  })
+  @ApiForbiddenResponse({
+    description:
+      "Only AIRLINE_ADMIN and AIRLINE_STAFF who has the required permissions can perform this action",
+    schema: createForbiddenErrorSchema(
+      "/api/v1/airline/users/2",
+      "Only AIRLINE_ADMIN and AIRLINE_STAFF who has the required permissions can perform this action",
+    ),
+  })
+  async updateAirlineUser(
+    @Req() req: AuthenticatedRequest,
+    @Param("userId", ParseIntPipe) userId: number,
+    @Body() dto: UpdateAirlineUserRequestDto,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<AirlineUserResponseDto>> {
+    const response = await this.airlineService.updateAirlineUser(
+      req.user,
+      userId,
+      dto,
+      requestId,
+    );
+
+    return BaseResponseDto.success(
+      response,
+      requestId,
+      "Airline user updated successfully",
+    );
+  }
+
+  @Delete("users/:userId")
+  @HttpCode(200)
+  @RequireUserRoles(AirlineRole.AIRLINE_ADMIN)
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.AIRLINE_USERS,
+      access: [AccessAction.EDIT],
+    },
+  })
+  @ApiBearerAuth("access-token")
+  @ApiOperation({
+    summary: "Delete airline user",
+    description: `
+    Permanently deletes an airline user account.
+      Access: AIRLINE_ADMIN with EDIT access on the AIRLINE_USERS asset. Requires userType=AIRLINE.
+      Business logic validations:
+        1. Target user must exist within same airline (404 if not found)
+        2. AIRLINE_ADMIN accounts cannot be deleted (403 Forbidden)`,
+  })
+  @ApiOkResponse({
+    description: "Airline user deleted successfully",
+    headers: {
+      "x-request-id": REQUEST_ID_HEADER_SCHEMA,
+    },
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(BaseResponseDto) },
+        {
+          properties: {
+            success: { type: "boolean", example: true },
+            requestId: { type: "string", example: REQUEST_ID_EXAMPLE },
+            timestamp: { type: "string", example: TIMESTAMP_EXAMPLE },
+            message: {
+              type: "string",
+              example: "Airline user deleted successfully",
+            },
+            data: { type: "null", example: null },
+          },
+        },
+      ],
+    },
+  })
+  @ApiBadRequestResponse({
+    description: "Validation failed",
+    schema: createBadRequestErrorSchema("/api/v1/airline/users/2"),
+  })
+  @ApiNotFoundResponse({
+    description: "Airline user not found",
+    schema: createNotFoundErrorSchema(
+      "/api/v1/airline/users/2",
+      "Airline user not found",
+    ),
+  })
+  @ApiForbiddenResponse({
+    description:
+      "Only AIRLINE_ADMIN and AIRLINE_STAFF who has the required permissions can perform this action",
+    schema: createForbiddenErrorSchema(
+      "/api/v1/airline/users/2",
+      "Only AIRLINE_ADMIN and AIRLINE_STAFF who has the required permissions can perform this action",
+    ),
+  })
+  async deleteAirlineUser(
+    @Req() req: AuthenticatedRequest,
+    @Param("userId", ParseIntPipe) userId: number,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<null>> {
+    await this.airlineService.deleteAirlineUser(req.user, userId, requestId);
+
+    return BaseResponseDto.success(
+      null,
+      requestId,
+      "Airline user deleted successfully",
+    );
+  }
+
+  @Get("users")
+  @RequireUserRoles(AirlineRole.AIRLINE_ADMIN, AirlineRole.AIRLINE_STAFF)
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.AIRLINE_USERS,
+      access: [AccessAction.VIEW],
+    },
+  })
+  @ApiBearerAuth("access-token")
+  @ApiOperation({
+    summary: "View all airline users",
+    description: `
+    Returns a paginated list of all users in the authenticated airline.
+      Access: AIRLINE_ADMIN and AIRLINE_STAFF with VIEW access on the AIRLINE_USERS asset. Requires userType=AIRLINE.
+      Filters:
+        1. page (pagination, min 1)
+        2. limit (items per page)`,
+  })
+  @ApiOkResponse({
+    description: "Airline users fetched successfully",
+    headers: {
+      "x-request-id": REQUEST_ID_HEADER_SCHEMA,
+    },
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(BaseResponseDto) },
+        {
+          properties: {
+            success: { type: "boolean", example: true },
+            requestId: { type: "string", example: REQUEST_ID_EXAMPLE },
+            timestamp: { type: "string", example: TIMESTAMP_EXAMPLE },
+            message: {
+              type: "string",
+              example: "Airline users fetched successfully",
+            },
+            data: { $ref: getSchemaPath(AirlineUserListResponseDto) },
+          },
+        },
+      ],
+    },
+  })
+  @ApiForbiddenResponse({
+    description:
+      "Only AIRLINE_ADMIN and AIRLINE_STAFF who has the required permissions can perform this action",
+    schema: createForbiddenErrorSchema(
+      "/api/v1/airline/users",
+      "Only AIRLINE_ADMIN and AIRLINE_STAFF who has the required permissions can perform this action",
+    ),
+  })
+  async listAirlineUsers(
+    @Req() req: AuthenticatedRequest,
+    @Query() pagination: PaginationQueryDto,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<AirlineUserListResponseDto>> {
+    const response = await this.airlineService.listAirlineUsers(
+      req.user,
+      pagination,
+      requestId,
+    );
+
+    return BaseResponseDto.success(
+      response,
+      requestId,
+      "Airline users fetched successfully",
+    );
+  }
 
   @Get("user/profile")
   @RequireUserRoles(AirlineRole.AIRLINE_ADMIN, AirlineRole.AIRLINE_STAFF)

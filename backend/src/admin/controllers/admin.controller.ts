@@ -339,14 +339,14 @@ export class AdminController {
   @RequireAccessControl({
     platform: {
       asset: PlatformAsset.ADMIN_USERS,
-      access: [AccessAction.DELETE],
+      access: [AccessAction.EDIT],
     },
   })
   @ApiOperation({
     summary: "Delete admin user",
     description: `
     Permanently deletes a platform admin user account.
-      Access: SUPER_ADMIN with DELETE access on the ADMIN_USERS asset. Requires userType=PLATFORM.
+      Access: SUPER_ADMIN with EDIT access on the ADMIN_USERS asset. Requires userType=PLATFORM.
       Business logic validations:
         1. Target admin must exist (404 if not found)
         2. SUPER_ADMIN accounts cannot be deleted (400 Bad Request)`,

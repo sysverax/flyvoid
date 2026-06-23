@@ -28,6 +28,7 @@ import {
 import { BaseResponseDto } from "../../common/dto/base-response.dto";
 import { RequestId } from "../../common/decorators/request-id.decorator";
 import {
+  AirlineInitialPasswordResetRequestDto,
   AirlineTwoFactorDisableRequestDto,
   AirlineTwoFactorEnableRequestDto,
   AirlineTwoFactorEnableResponseDto,
@@ -40,6 +41,7 @@ import {
   AirlineForgotPasswordVerifyOtpRequestDto,
   AirlineForgotPasswordVerifyOtpResponseDto,
   AirlineSigninRequestDto,
+  AirlineSigninPasswordResetChallengeResponseDto,
   AirlineSigninResponseDto,
   AirlineSigninTwoFactorChallengeResponseDto,
   AirlineSigninTwoFactorVerifyRequestDto,
@@ -55,6 +57,7 @@ import { AirlineAuthService } from "../services/airline-auth.service";
   AirlineAdminOnboardResponseDto,
   AirlineSigninResponseDto,
   AirlineSigninTwoFactorChallengeResponseDto,
+  AirlineSigninPasswordResetChallengeResponseDto,
   AirlineTwoFactorSetupResponseDto,
   AirlineTwoFactorEnableResponseDto,
 )
@@ -140,6 +143,7 @@ export class AirlineAuthController {
       Response variants:
         1. Tokens (accessToken + refreshToken) — on successful login with 2FA disabled
         2. requiresTwoFactor challenge — if 2FA is enabled; use signin/2fa/verify to complete
+        3. requiresPasswordReset challenge — on first login with a temporary password; use signin/reset-password to complete
       Business logic validations:
         1. Credentials must be valid (401 if invalid email or password)
         2. Airline account must be active (401 if inactive)`,
@@ -150,11 +154,19 @@ export class AirlineAuthController {
     @RequestId() requestId: string,
   ): Promise<
     BaseResponseDto<
-      AirlineSigninResponseDto | AirlineSigninTwoFactorChallengeResponseDto
+      | AirlineSigninResponseDto
+      | AirlineSigninTwoFactorChallengeResponseDto
+      | AirlineSigninPasswordResetChallengeResponseDto
     >
   > {
     const response = await this.airlineAuthService.signin(dto, requestId);
-    return BaseResponseDto.success(response, requestId, "Signin successful");
+    const message =
+      "requiresPasswordReset" in response
+        ? "Initial password reset required"
+        : "requiresTwoFactor" in response
+          ? "Signin requires two-factor authentication"
+          : "Signin successful";
+    return BaseResponseDto.success(response, requestId, message);
   }
 
   @Post("signin/2fa/verify")
@@ -172,12 +184,43 @@ export class AirlineAuthController {
   async verifyTwoFactor(
     @Body() dto: AirlineSigninTwoFactorVerifyRequestDto,
     @RequestId() requestId: string,
-  ): Promise<BaseResponseDto<AirlineSigninResponseDto>> {
+  ): Promise<
+    BaseResponseDto<
+      AirlineSigninResponseDto | AirlineSigninPasswordResetChallengeResponseDto
+    >
+  > {
     const response = await this.airlineAuthService.verifySigninTwoFactor(
       dto,
       requestId,
     );
-    return BaseResponseDto.success(response, requestId, "Signin successful");
+    const message =
+      "requiresPasswordReset" in response
+        ? "Initial password reset required"
+        : "Signin successful";
+    return BaseResponseDto.success(response, requestId, message);
+  }
+
+  @Post("signin/reset-password")
+  @HttpCode(200)
+  @ApiOperation({
+    summary: "Airline initial password reset",
+    description: `
+    Completes the mandatory first-login password reset using the resetPasswordToken from the signin challenge.
+      Access: Public endpoint — resetPasswordToken from POST /auth/airline/signin required.
+      Business logic validations:
+        1. resetPasswordToken must be valid and unexpired (401 if invalid)`,
+  })
+  @ApiBody({ type: AirlineInitialPasswordResetRequestDto })
+  async airlineInitialPasswordReset(
+    @Body() dto: AirlineInitialPasswordResetRequestDto,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<null>> {
+    await this.airlineAuthService.airlineInitialPasswordReset(dto, requestId);
+    return BaseResponseDto.success(
+      null,
+      requestId,
+      "Initial password reset successful",
+    );
   }
 
   @Post("2fa/setup")

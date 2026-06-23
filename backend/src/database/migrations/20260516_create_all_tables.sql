@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS public.airline_users (
   password_hash varchar(255) NOT NULL,
   role varchar(50) NOT NULL DEFAULT 'AIRLINE_STAFF',
   is_active boolean NOT NULL DEFAULT true,
+  require_password_reset boolean NOT NULL DEFAULT false,
   last_login_at timestamp without time zone,
   two_factor_enabled boolean NOT NULL DEFAULT false,
   two_factor_secret_encrypted text,

@@ -50,6 +50,13 @@ export class AirlineUserEntity {
   @Column({ name: "is_active", type: "boolean", default: true })
   isActive!: boolean;
 
+  @Column({
+    name: "require_password_reset",
+    type: "boolean",
+    default: false,
+  })
+  requirePasswordReset!: boolean;
+
   @Column({ name: "last_login_at", nullable: true })
   lastLoginAt?: Date;
 

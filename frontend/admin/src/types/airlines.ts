@@ -1,0 +1,35 @@
+export interface Airline {
+  id: string;
+  airlineName: string;
+  airlineCode: string;
+  country: string;
+  companyReg: string;
+  website: string;
+  contactEmail: string;
+  contactPhone: string;
+  timezone: string;
+  currency: string;
+  address: string;
+  onboardingDate: string;
+  status: "Active" | "Suspended" | "Disabled";
+  flightsCount: number;
+  passengersCount: number;
+  spend: number;
+  revenue: number;
+  stripeConnection: "Connected" | "Pending" | "Failed";
+  adminFirstName: string;
+  adminLastName: string;
+  adminEmail: string;
+  adminJobTitle: string;
+  creditLimit: number;
+  totalCancelledFlights: number;
+  totalPassengersMetric: number;
+  avgCostPerPassenger: number;
+  totalSpendMetric: number;
+  platformFeesMetric: number;
+  allowanceBalanceMetric: number;
+  failedPaymentsCount: number;
+  allocationFailuresCount: number;
+  logoUrl?: string;
+  assignedAirports?: string;
+}
