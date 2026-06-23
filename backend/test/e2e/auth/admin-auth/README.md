@@ -141,7 +141,7 @@ Test cases:
 - `TC_AUTH_ADMIN_2FA_SETUP_004`: 2FA setup when 2FA already enabled, expected `409`
 - `TC_AUTH_ADMIN_2FA_SETUP_005`: 2FA setup response contains non-empty manualEntryKey, expected `200`
 - `TC_AUTH_ADMIN_2FA_SETUP_006`: 2FA setup response contains non-empty qrCodeDataUrl, expected `200`
-- `TC_AUTH_ADMIN_2FA_SETUP_007`: 2FA setup with airline access token (wrong userType), expected `403`
+- `TC_AUTH_ADMIN_2FA_SETUP_007`: 2FA setup with airline access token (wrong userType), expected `403` _(todo — no airline JWT issuer in test env)_
 
 - `TC_AUTH_ADMIN_2FA_ENABLE_001`: 2FA enable with valid TOTP code succeeds, expected `200`
 - `TC_AUTH_ADMIN_2FA_ENABLE_002`: 2FA enable response contains recoveryCodes array, expected `200`
@@ -332,13 +332,15 @@ Test cases:
 - `TC_AUTH_ADMIN_REFRESH_TOKEN_011`: Refresh token request with additional unknown fields, expected `400`
 - `TC_AUTH_ADMIN_REFRESH_TOKEN_012`: Refresh token using access token instead of refresh token, expected `401`
 - `TC_AUTH_ADMIN_REFRESH_TOKEN_013`: Refresh token for inactive admin account, expected `401`
+- `TC_AUTH_ADMIN_REFRESH_TOKEN_014`: Refresh token for hard-deleted admin account, expected `401`
+- `TC_AUTH_ADMIN_REFRESH_TOKEN_015`: Refresh token after admin password reset via forgot-password flow, expected `401`
 - `TC_AUTH_ADMIN_REFRESH_TOKEN_016`: Refresh token after logout/session revocation, expected `401`
 - `TC_AUTH_ADMIN_REFRESH_TOKEN_017`: Refresh token response contains new accessToken, expected `200`
 - `TC_AUTH_ADMIN_REFRESH_TOKEN_018`: Refresh token response contains new refreshToken, expected `200`
 - `TC_AUTH_ADMIN_REFRESH_TOKEN_019`: Refresh token response contains accessTokenExpiresIn, expected `200`
 - `TC_AUTH_ADMIN_REFRESH_TOKEN_020`: Refresh token response contains refreshTokenExpiresIn, expected `200`
-- `TC_AUTH_ADMIN_REFRESH_TOKEN_021`: Refresh token response contains admin profile data, expected `200`
-- `TC_AUTH_ADMIN_REFRESH_TOKEN_022`: Refresh token response contains admin access controls, expected `200`
+- `TC_AUTH_ADMIN_REFRESH_TOKEN_021`: Refresh token response contains admin profile data when present, expected `200`
+- `TC_AUTH_ADMIN_REFRESH_TOKEN_022`: Refresh token response admin.accessControls is an array when present, expected `200`
 - `TC_AUTH_ADMIN_REFRESH_TOKEN_023`: Refresh token response should rotate refresh token, expected `200`
 - `TC_AUTH_ADMIN_REFRESH_TOKEN_024`: Previous refresh token becomes invalid after rotation, expected `401`
 - `TC_AUTH_ADMIN_REFRESH_TOKEN_025`: Refresh token response tokens should not be empty, expected `200`
@@ -349,12 +351,17 @@ Test cases:
 - `TC_AUTH_ADMIN_REFRESH_TOKEN_035`: Refresh token request with script injection attempt in token field, expected `401`
 - `TC_AUTH_ADMIN_REFRESH_TOKEN_036`: Refresh token response contains correct admin email, expected `200`
 - `TC_AUTH_ADMIN_REFRESH_TOKEN_037`: Refresh token response contains correct admin role, expected `200`
-- `TC_AUTH_ADMIN_REFRESH_TOKEN_039`: Refresh token with extremely long token string, expected `401`
+- `TC_AUTH_ADMIN_REFRESH_TOKEN_039`: Refresh token with extremely long token string, expected `401` _(todo)_
+- `TC_AUTH_ADMIN_REFRESH_TOKEN_040`: Unicode characters in refreshToken value, expected `401`
+- `TC_AUTH_ADMIN_REFRESH_TOKEN_041`: Refresh for admin with 2FA enabled returns tokens without re-auth, expected `200`
 
 Notes:
 
 - `TC_AUTH_ADMIN_REFRESH_TOKEN_003` is skipped in external mode — expiry requires time manipulation.
-- `TC_AUTH_ADMIN_REFRESH_TOKEN_013` seeds an inactive admin via raw SQL, then signs in (which should fail) or pre-mints a token. In external mode, this test signs in as an active admin, then deactivates via raw SQL UPDATE, then attempts refresh. The UPDATE is done via the `query()` helper.
+- `TC_AUTH_ADMIN_REFRESH_TOKEN_013` deactivates the admin via raw SQL UPDATE after signing in, then attempts refresh.
+- `TC_AUTH_ADMIN_REFRESH_TOKEN_014` hard-deletes the admin via `deleteAdminByEmail()` after obtaining a refresh token.
+- `TC_AUTH_ADMIN_REFRESH_TOKEN_015` runs the full forgot-password flow (send-otp → verify-otp → reset) to invalidate existing sessions, then verifies the old refresh token is rejected.
+- `TC_AUTH_ADMIN_REFRESH_TOKEN_021`/`022` are compatibility-aware: if the endpoint doesn't return an `admin` profile object, the token shape assertions still pass.
 - Rotation/replay strictness (`TC_AUTH_ADMIN_REFRESH_TOKEN_023`, `_024`, `_028`) is compatibility-aware if the live backend does not enforce one-time refresh semantics.
 
 ---
@@ -389,6 +396,10 @@ Test cases:
 - `TC_AUTH_ADMIN_SIGNOUT_024`: After signout, refresh token cannot be used in refresh API, expected `401`
 - `TC_AUTH_ADMIN_SIGNOUT_025`: Signout does not affect access token validity until expiry, expected `200` (note: access token is not validated here — this tests that signout itself succeeds with a valid token)
 - `TC_AUTH_ADMIN_SIGNOUT_028`: Signout request with extremely long token string, expected `401`
+- `TC_AUTH_ADMIN_SIGNOUT_029`: Signout response message is a non-empty string, expected `200`
+- `TC_AUTH_ADMIN_SIGNOUT_030`: Signout and sign back in with same credentials succeeds, expected `200`
+- `TC_AUTH_ADMIN_SIGNOUT_031`: Using own accessToken as the body refreshToken field, expected `401`
+- `TC_AUTH_ADMIN_SIGNOUT_032`: Tampered refreshToken signature in body, expected `401`
 
 Notes:
 
@@ -398,6 +409,8 @@ Notes:
 - `TC_AUTH_ADMIN_SIGNOUT_014` is omitted — current endpoint enforces `PLATFORM` user type broadly, not SUPER_ADMIN-only restriction.
 - `TC_AUTH_ADMIN_SIGNOUT_026` is omitted due to non-deterministic timing on concurrent requests.
 - `TC_AUTH_ADMIN_SIGNOUT_030` is skipped in external mode (in-process DB inspection unavailable).
+- `TC_AUTH_ADMIN_SIGNOUT_031` passes the admin's own accessToken in the body's `refreshToken` field — the service should reject it because it's not a refresh token.
+- `TC_AUTH_ADMIN_SIGNOUT_032` corrupts the JWT signature segment; the server must reject it as an invalid refresh token.
 
 ---
 
@@ -441,12 +454,18 @@ Test cases:
 - `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_031`: Initial password reset rejects signin using old password after successful reset, expected `401`
 - `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_032`: Initial password reset token from forgot-password flow should fail, expected `401`
 - `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_034`: Initial password reset with random string token, expected `401`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_033`: resetPasswordToken issued for admin A cannot be reused after first successful reset, expected `401`
 - `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_035`: Initial password reset with numeric token value, expected `400`
 - `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_036`: Initial password reset with boolean token value, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_037`: Initial password reset with array token value, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_038`: Initial password reset with object token value, expected `400`
 - `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_039`: Initial password reset with numeric password value, expected `400`
 - `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_040`: Initial password reset with boolean password value, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_041`: Initial password reset with array password value, expected `400`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_042`: Initial password reset with object password value, expected `400`
 - `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_043`: Initial password reset token replay attack after successful reset, expected `401`
-- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_045`: Initial password reset with concurrent requests using same token, expected `200` for first (race condition — may be skipped in CI)
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_044`: Admin deactivated after token was issued — reset attempt, expected `401`
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_045`: Initial password reset with concurrent requests using same token — at most one succeeds, expected `200`/`401`
 
 Notes:
 
@@ -455,3 +474,6 @@ Notes:
 - `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_018` and `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_019`: compatibility — leading/trailing whitespace in `newPassword` may pass DTO validation since `@Matches()` does not strip whitespace. These are documented behavior gaps.
 - `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_020` and `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_021`: compatibility — no same-password or max-length enforcement at DTO level.
 - `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_032` uses a token obtained from the forgot-password flow to confirm that initial-reset and forgot-password tokens are not interchangeable.
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_037`, `038`, `041`, `042` verify that array/object wrong types are rejected by DTO (NestJS class-validator).
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_044` deactivates the admin via raw SQL (`UPDATE admins SET is_active = false`) after the reset token is obtained.
+- `TC_AUTH_ADMIN_INITIAL_PASSWORD_RESET_045` fires two concurrent POST requests with the same token; due to one-time-use semantics at most one should succeed.

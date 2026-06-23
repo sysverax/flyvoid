@@ -104,6 +104,20 @@ describe("Airline forgot password flow", () => {
     expect(malformed.status).toBe(400);
   });
 
+  it("TC_AIRLINE_FORGOT_SEND_004: send-otp with unknown field -> 400", async () => {
+    const res = await api
+      .post("/api/v1/auth/airline/forgot-password/send-otp")
+      .send({ email, extra: "bad" });
+    expect(res.status).toBe(400);
+  });
+
+  it("TC_AIRLINE_FORGOT_SEND_005: send-otp missing email field -> 400", async () => {
+    const res = await api
+      .post("/api/v1/auth/airline/forgot-password/send-otp")
+      .send({});
+    expect(res.status).toBe(400);
+  });
+
   it("TC_AIRLINE_FORGOT_VERIFY_001: verify-otp with valid static OTP -> 200", async () => {
     await api
       .post("/api/v1/auth/airline/forgot-password/send-otp")
@@ -147,6 +161,20 @@ describe("Airline forgot password flow", () => {
     expect(malformed.status).toBe(400);
   });
 
+  it("TC_AIRLINE_FORGOT_VERIFY_004: verify-otp with unknown field -> 400", async () => {
+    const res = await api
+      .post("/api/v1/auth/airline/forgot-password/verify-otp")
+      .send({ email, otp: STATIC_OTP, extra: "bad" });
+    expect(res.status).toBe(400);
+  });
+
+  it("TC_AIRLINE_FORGOT_VERIFY_005: verify-otp missing otp field -> 400", async () => {
+    const res = await api
+      .post("/api/v1/auth/airline/forgot-password/verify-otp")
+      .send({ email });
+    expect(res.status).toBe(400);
+  });
+
   it("TC_AIRLINE_FORGOT_RESET_001: valid reset token + strong password -> 200", async () => {
     await api
       .post("/api/v1/auth/airline/forgot-password/send-otp")
@@ -159,7 +187,7 @@ describe("Airline forgot password flow", () => {
     const resetToken = verify.body.data.resetPasswordToken as string;
 
     const reset = await api
-      .post("/api/v1/auth/airline/forgot-password/reset")
+      .post("/api/v1/auth/airline/forgot-password")
       .send(
         validAirlineForgotPasswordResetPayload(
           resetToken,
@@ -177,7 +205,7 @@ describe("Airline forgot password flow", () => {
 
   it("TC_AIRLINE_FORGOT_RESET_002: invalid/reused token and weak password -> 401/400", async () => {
     const invalidToken = await api
-      .post("/api/v1/auth/airline/forgot-password/reset")
+      .post("/api/v1/auth/airline/forgot-password")
       .send(
         validAirlineForgotPasswordResetPayload(
           "bad.token",
@@ -195,28 +223,28 @@ describe("Airline forgot password flow", () => {
 
     const token = verify.body.data.resetPasswordToken as string;
     const first = await api
-      .post("/api/v1/auth/airline/forgot-password/reset")
+      .post("/api/v1/auth/airline/forgot-password")
       .send(
         validAirlineForgotPasswordResetPayload(token, AIRLINE_TEST_PASSWORD),
       );
     expect(first.status).toBe(200);
 
     const reused = await api
-      .post("/api/v1/auth/airline/forgot-password/reset")
+      .post("/api/v1/auth/airline/forgot-password")
       .send(
         validAirlineForgotPasswordResetPayload(token, AIRLINE_NEW_PASSWORD),
       );
     expect(reused.status).toBe(401);
 
     const weak = await api
-      .post("/api/v1/auth/airline/forgot-password/reset")
+      .post("/api/v1/auth/airline/forgot-password")
       .send(validAirlineForgotPasswordResetPayload(token, "weak"));
     expect(weak.status).toBe(400);
   });
 
   it("TC_AIRLINE_FORGOT_RESET_003: unknown field and malformed JSON -> 400", async () => {
     const unknown = await api
-      .post("/api/v1/auth/airline/forgot-password/reset")
+      .post("/api/v1/auth/airline/forgot-password")
       .send({
         resetPasswordToken: "x",
         newPassword: AIRLINE_TEST_PASSWORD,
@@ -225,9 +253,28 @@ describe("Airline forgot password flow", () => {
     expect(unknown.status).toBe(400);
 
     const malformed = await api
-      .post("/api/v1/auth/airline/forgot-password/reset")
+      .post("/api/v1/auth/airline/forgot-password")
       .set("Content-Type", "application/json")
       .send("{ bad json }");
     expect(malformed.status).toBe(400);
+  });
+
+  it("TC_AIRLINE_FORGOT_RESET_004: Missing required fields -> 400", async () => {
+    const missingToken = await api
+      .post("/api/v1/auth/airline/forgot-password")
+      .send({ newPassword: AIRLINE_TEST_PASSWORD });
+    expect(missingToken.status).toBe(400);
+
+    const missingPassword = await api
+      .post("/api/v1/auth/airline/forgot-password")
+      .send({ resetPasswordToken: "some-token" });
+    expect(missingPassword.status).toBe(400);
+  });
+
+  it("TC_AIRLINE_FORGOT_RESET_005: Type coercion — numeric resetPasswordToken -> 400", async () => {
+    const res = await api
+      .post("/api/v1/auth/airline/forgot-password")
+      .send({ resetPasswordToken: 99999, newPassword: AIRLINE_TEST_PASSWORD });
+    expect(res.status).toBe(400);
   });
 });

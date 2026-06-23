@@ -4,10 +4,14 @@ import { deleteAdminsByEmailPattern } from "../../../helpers/db-cleanup.helper";
 import { signupAndGetTokens } from "../../../helpers/auth.helper";
 import { getAirlineTokens } from "../../../helpers/airline-auth.helper";
 import {
+  AIRLINE_NEW_PASSWORD,
   AIRLINE_TEST_PASSWORD,
   uniqueAirlineEmail,
   refreshTokenPayload,
   signoutPayload,
+  validAirlineForgotPasswordSendOtpPayload,
+  validAirlineForgotPasswordVerifyOtpPayload,
+  validAirlineForgotPasswordResetPayload,
 } from "../../../fixtures/airline-auth.fixture";
 import { validInvitePayload } from "../../../fixtures/airline-invitation.fixture";
 import { deleteInvitationDataByPattern } from "../../../seeders/airline-invitation.seeder";
@@ -113,6 +117,43 @@ describe("Airline refresh and signout", () => {
     expect(malformed.status).toBe(400);
   });
 
+  it("TC_AIRLINE_REFRESH_004: Refresh token invalidated after forgot-password reset -> 401", async () => {
+    const refreshEmail = uniqueAirlineEmail("refresh-after-reset");
+    await onboardAirlineUser(superToken, refreshEmail, AIRLINE_TEST_PASSWORD);
+
+    const { refreshToken } = await getAirlineTokens(
+      refreshEmail,
+      AIRLINE_TEST_PASSWORD,
+    );
+
+    await api
+      .post("/api/v1/auth/airline/forgot-password/send-otp")
+      .send(validAirlineForgotPasswordSendOtpPayload(refreshEmail));
+
+    const verifyRes = await api
+      .post("/api/v1/auth/airline/forgot-password/verify-otp")
+      .send(validAirlineForgotPasswordVerifyOtpPayload(refreshEmail, "444444"));
+    const resetToken = (
+      verifyRes.body.data as { resetPasswordToken: string }
+    ).resetPasswordToken;
+
+    await api
+      .post("/api/v1/auth/airline/forgot-password")
+      .send(
+        validAirlineForgotPasswordResetPayload(resetToken, AIRLINE_NEW_PASSWORD),
+      );
+
+    const res = await api
+      .post("/api/v1/auth/airline/refresh")
+      .send(refreshTokenPayload(refreshToken));
+    expect(res.status).toBe(401);
+  });
+
+  it("TC_AIRLINE_REFRESH_005: Missing refreshToken field -> 400", async () => {
+    const res = await api.post("/api/v1/auth/airline/refresh").send({});
+    expect(res.status).toBe(400);
+  });
+
   it("TC_AIRLINE_SIGNOUT_001: valid bearer + valid refresh token -> 200", async () => {
     const tokens = await getAirlineTokens(email, AIRLINE_TEST_PASSWORD);
 
@@ -177,5 +218,29 @@ describe("Airline refresh and signout", () => {
       .set("Content-Type", "application/json")
       .send("{ bad json }");
     expect(malformed.status).toBe(400);
+  });
+
+  it("TC_AIRLINE_SIGNOUT_005: Using own accessToken as body refreshToken field -> 401", async () => {
+    const tokens = await getAirlineTokens(email, AIRLINE_TEST_PASSWORD);
+
+    const res = await api
+      .post("/api/v1/auth/airline/signout")
+      .set("Authorization", `Bearer ${tokens.accessToken}`)
+      .send(signoutPayload(tokens.accessToken));
+    expect(res.status).toBe(401);
+  });
+
+  it("TC_AIRLINE_SIGNOUT_006: Tampered refreshToken signature in body -> 401", async () => {
+    const tokens = await getAirlineTokens(email, AIRLINE_TEST_PASSWORD);
+
+    const parts = tokens.refreshToken.split(".");
+    parts[2] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+    const tampered = parts.join(".");
+
+    const res = await api
+      .post("/api/v1/auth/airline/signout")
+      .set("Authorization", `Bearer ${tokens.accessToken}`)
+      .send(signoutPayload(tampered));
+    expect(res.status).toBe(401);
   });
 });

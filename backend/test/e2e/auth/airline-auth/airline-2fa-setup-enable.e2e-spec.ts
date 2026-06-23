@@ -93,6 +93,30 @@ describe("POST /api/v1/auth/airline/2fa/setup & /2fa/enable", () => {
     expect(badToken.status).toBe(401);
   });
 
+  it("TC_AIRLINE_2FA_SETUP_003: 2FA already enabled — repeat setup attempt -> 409", async () => {
+    const email = uniqueAirlineEmail("setup-already-enabled");
+    await onboardAirlineUser(superToken, email, AIRLINE_TEST_PASSWORD);
+    const tokens = await getAirlineTokens(email, AIRLINE_TEST_PASSWORD);
+
+    const setup = await api
+      .post("/api/v1/auth/airline/2fa/setup")
+      .set("Authorization", `Bearer ${tokens.accessToken}`);
+    expect(setup.status).toBe(200);
+
+    const secret = setup.body.data.manualEntryKey as string;
+    const code = speakeasy.totp({ secret, encoding: "base32" });
+
+    await api
+      .post("/api/v1/auth/airline/2fa/enable")
+      .set("Authorization", `Bearer ${tokens.accessToken}`)
+      .send({ twoFactorCode: code });
+
+    const repeat = await api
+      .post("/api/v1/auth/airline/2fa/setup")
+      .set("Authorization", `Bearer ${tokens.accessToken}`);
+    expect(repeat.status).toBe(409);
+  });
+
   it("TC_AIRLINE_2FA_ENABLE_001: Enable with valid TOTP after setup -> 200", async () => {
     const email = uniqueAirlineEmail("enable-user");
     await onboardAirlineUser(superToken, email, AIRLINE_TEST_PASSWORD);
@@ -177,5 +201,37 @@ describe("POST /api/v1/auth/airline/2fa/setup & /2fa/enable", () => {
       .set("Content-Type", "application/json")
       .send("{ bad json }");
     expect(malformed.status).toBe(400);
+  });
+
+  it("TC_AIRLINE_2FA_ENABLE_005: Missing twoFactorCode field -> 400", async () => {
+    const email = uniqueAirlineEmail("enable-missing-code");
+    await onboardAirlineUser(superToken, email, AIRLINE_TEST_PASSWORD);
+    const tokens = await getAirlineTokens(email, AIRLINE_TEST_PASSWORD);
+
+    await api
+      .post("/api/v1/auth/airline/2fa/setup")
+      .set("Authorization", `Bearer ${tokens.accessToken}`);
+
+    const res = await api
+      .post("/api/v1/auth/airline/2fa/enable")
+      .set("Authorization", `Bearer ${tokens.accessToken}`)
+      .send({});
+    expect(res.status).toBe(400);
+  });
+
+  it("TC_AIRLINE_2FA_ENABLE_006: Non-string twoFactorCode (numeric) -> 400", async () => {
+    const email = uniqueAirlineEmail("enable-numeric-code");
+    await onboardAirlineUser(superToken, email, AIRLINE_TEST_PASSWORD);
+    const tokens = await getAirlineTokens(email, AIRLINE_TEST_PASSWORD);
+
+    await api
+      .post("/api/v1/auth/airline/2fa/setup")
+      .set("Authorization", `Bearer ${tokens.accessToken}`);
+
+    const res = await api
+      .post("/api/v1/auth/airline/2fa/enable")
+      .set("Authorization", `Bearer ${tokens.accessToken}`)
+      .send({ twoFactorCode: 123456 });
+    expect(res.status).toBe(400);
   });
 });

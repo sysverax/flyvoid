@@ -167,4 +167,33 @@ describe("POST /api/v1/auth/airline/signin/2fa/verify", () => {
       .send("{ bad json }");
     expect(malformed.status).toBe(400);
   });
+
+  it("TC_AIRLINE_2FA_VERIFY_007: twoFactorToken is single-use — reuse after successful verify -> 401", async () => {
+    const user = await setupEnabledTwoFactorUser(superToken);
+    const code = speakeasy.totp({ secret: user.secret, encoding: "base32" });
+
+    const first = await api
+      .post("/api/v1/auth/airline/signin/2fa/verify")
+      .send(validTwoFactorVerifyPayload(user.twoFactorToken, code));
+    expect(first.status).toBe(200);
+
+    const second = await api
+      .post("/api/v1/auth/airline/signin/2fa/verify")
+      .send(validTwoFactorVerifyPayload(user.twoFactorToken, code));
+    expect(second.status).toBe(401);
+  });
+
+  it("TC_AIRLINE_2FA_VERIFY_008: Successful response includes accessToken and refreshToken -> 200", async () => {
+    const user = await setupEnabledTwoFactorUser(superToken);
+    const code = speakeasy.totp({ secret: user.secret, encoding: "base32" });
+
+    const res = await api
+      .post("/api/v1/auth/airline/signin/2fa/verify")
+      .send(validTwoFactorVerifyPayload(user.twoFactorToken, code));
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(typeof res.body.data.accessToken).toBe("string");
+    expect(typeof res.body.data.refreshToken).toBe("string");
+  });
 });

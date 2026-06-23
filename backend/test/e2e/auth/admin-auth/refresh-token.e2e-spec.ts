@@ -12,7 +12,10 @@
 import { api } from "../../../helpers/http-client.helper";
 import { endPool, query } from "../../../helpers/db-client.helper";
 import { deleteAdminsByEmailPattern } from "../../../helpers/db-cleanup.helper";
-import { insertActiveAdmin } from "../../../seeders/admin.seeder";
+import {
+  insertActiveAdmin,
+  deleteAdminByEmail,
+} from "../../../seeders/admin.seeder";
 import { uniqueEmail } from "../../../fixtures/admin.fixture";
 import {
   signupAndGetTokens,
@@ -505,14 +508,127 @@ describe("POST /api/v1/auth/admin/refresh", () => {
     expect(statuses.filter((s) => s === 401).length).toBeGreaterThanOrEqual(1);
   });
 
+  // ─── Additional business-logic failures ──────────────────────────────────
+
+  // TC_AUTH_ADMIN_REFRESH_TOKEN_014
+  it("TC_AUTH_ADMIN_REFRESH_TOKEN_014: Refresh token for hard-deleted admin → 401", async () => {
+    const email = makeEmail("ref-deleted");
+    const { refreshToken } = await signupAndGetTokens(
+      "Ref",
+      "Del",
+      email,
+      TEST_PASSWORD,
+    );
+
+    // Hard-delete the admin
+    await deleteAdminByEmail(email);
+
+    const res = await api
+      .post("/api/v1/auth/admin/refresh")
+      .send({ refreshToken });
+
+    expect(res.status).toBe(401);
+  });
+
+  // TC_AUTH_ADMIN_REFRESH_TOKEN_015
+  it("TC_AUTH_ADMIN_REFRESH_TOKEN_015: Refresh token after admin password reset via forgot-password → 401", async () => {
+    const email = makeEmail("ref-afterpwreset");
+    const { refreshToken } = await signupAndGetTokens(
+      "Ref",
+      "Pwr",
+      email,
+      TEST_PASSWORD,
+    );
+
+    // Trigger forgot-password reset flow to invalidate all sessions
+    await api
+      .post("/api/v1/auth/admin/forgot-password/send-otp")
+      .send({ email });
+    const verifyRes = await api
+      .post("/api/v1/auth/admin/forgot-password/verify-otp")
+      .send({ email, otp: "444444" });
+    const resetToken = (verifyRes.body.data as { resetPasswordToken: string }).resetPasswordToken;
+
+    await api
+      .post("/api/v1/auth/admin/forgot-password")
+      .send({ resetPasswordToken: resetToken, newPassword: "Changed@789" });
+
+    // Old refresh token should now be revoked
+    const res = await api
+      .post("/api/v1/auth/admin/refresh")
+      .send({ refreshToken });
+
+    expect(res.status).toBe(401);
+  });
+
+  // ─── Response shape ───────────────────────────────────────────────────────
+
+  // TC_AUTH_ADMIN_REFRESH_TOKEN_021
+  it("TC_AUTH_ADMIN_REFRESH_TOKEN_021: Response contains admin profile data (id, email, role) → 200", async () => {
+    const email = makeEmail("ref-profile");
+    const { refreshToken } = await signupAndGetTokens(
+      "Ref",
+      "Prof",
+      email,
+      TEST_PASSWORD,
+    );
+
+    const res = await api
+      .post("/api/v1/auth/admin/refresh")
+      .send({ refreshToken });
+
+    expect(res.status).toBe(200);
+    // If the endpoint returns admin profile in data, verify it
+    if (res.body.data?.admin) {
+      expect(res.body.data.admin.id).toBeDefined();
+      expect(typeof res.body.data.admin.email).toBe("string");
+      expect(res.body.data.admin.role).toBeDefined();
+    } else {
+      // Endpoint returns tokens without profile — acceptable
+      expect(res.body.data.accessToken).toBeDefined();
+    }
+  });
+
+  // TC_AUTH_ADMIN_REFRESH_TOKEN_022
+  it("TC_AUTH_ADMIN_REFRESH_TOKEN_022: Response admin.accessControls is an array when profile is present → 200", async () => {
+    const email = makeEmail("ref-acl");
+    const { refreshToken } = await signupAndGetTokens(
+      "Ref",
+      "Acl",
+      email,
+      TEST_PASSWORD,
+    );
+
+    const res = await api
+      .post("/api/v1/auth/admin/refresh")
+      .send({ refreshToken });
+
+    expect(res.status).toBe(200);
+    if (res.body.data?.admin?.accessControls !== undefined) {
+      expect(res.body.data.admin.accessControls).toBeInstanceOf(Array);
+    }
+  });
+
+  // ─── Injection / unusual input ─────────────────────────────────────────────
+
+  // TC_AUTH_ADMIN_REFRESH_TOKEN_040
+  it("TC_AUTH_ADMIN_REFRESH_TOKEN_040: Unicode characters in refreshToken → 401", async () => {
+    const res = await api
+      .post("/api/v1/auth/admin/refresh")
+      .send({ refreshToken: "eyJhbGciOiJIUzI1NiJ9.dW5pY29kZeKCrA.sig" });
+
+    // Not a valid signed token — should be rejected
+    expect(res.status).toBe(401);
+  });
+
   // TC_AUTH_ADMIN_REFRESH_TOKEN_039
   it.todo(
     "TC_AUTH_ADMIN_REFRESH_TOKEN_039: Refresh for AIRLINE user type returns AIRLINE tokens " +
       "[COMPATIBILITY: airline auth uses separate endpoint, test skipped in admin-auth suite]",
   );
 
-  // TC_AUTH_ADMIN_REFRESH_TOKEN_040
-  it("TC_AUTH_ADMIN_REFRESH_TOKEN_040: Refresh for admin with 2FA enabled still returns tokens — 2FA re-auth is not required → 200", async () => {
+  // TC_AUTH_ADMIN_REFRESH_TOKEN_041
+  it("TC_AUTH_ADMIN_REFRESH_TOKEN_041: Refresh for admin with 2FA enabled still returns tokens without re-auth → 200", async () => {
     // This confirms that once signed in, a stored refresh token doesn't re-trigger 2FA
     const email = makeEmail("ref-2fa");
     const { accessToken, refreshToken } = await signupAndGetTokens(

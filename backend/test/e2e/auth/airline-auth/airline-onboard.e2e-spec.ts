@@ -232,4 +232,60 @@ describe("POST /api/v1/auth/airline/onboard", () => {
       .send("{ bad json }");
     expect(malformed.status).toBe(400);
   });
+
+  it("TC_AIRLINE_ONBOARD_010: Conflict when company registration number already exists -> 409", async () => {
+    const existingCrn = `E2ECRN-DUP-${Date.now()}`;
+
+    await insertAirlineRow({
+      name: "CRN Duplicate Airline",
+      code: `E2EDUP${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
+      countryCode: "AE",
+      companyRegistrationNumber: existingCrn,
+      contactEmail: uniqueAirlineEmail("crn-dup-contact"),
+      contactPhone: "+971500000098",
+      timezone: "Asia/Dubai",
+      address: "Duplicate CRN Address",
+      currency: "AED",
+    });
+
+    const inviteData = validInvitePayload({
+      companyRegistrationNumber: existingCrn,
+      airlineCode: `E2ECRND${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
+      adminEmail: uniqueAirlineEmail("crn-dup-admin"),
+    });
+
+    const inviteRes = await api
+      .post("/api/v1/airline/invitations")
+      .set("Authorization", `Bearer ${superToken}`)
+      .send(inviteData);
+    expect(inviteRes.status).toBe(201);
+    const token = extractToken(inviteRes.body.data.onboardingLink as string);
+
+    const res = await api
+      .post("/api/v1/auth/airline/onboard")
+      .send(validOnboardPayload(token));
+    expect(res.status).toBe(409);
+  });
+
+  it("TC_AIRLINE_ONBOARD_011: Missing password field -> 400", async () => {
+    const { token } = await createInvitationToken(superToken);
+    const res = await api
+      .post("/api/v1/auth/airline/onboard")
+      .send({ invitationToken: token });
+    expect(res.status).toBe(400);
+  });
+
+  it("TC_AIRLINE_ONBOARD_012: Non-string invitationToken (numeric) -> 400", async () => {
+    const res = await api
+      .post("/api/v1/auth/airline/onboard")
+      .send({ invitationToken: 12345, password: AIRLINE_TEST_PASSWORD });
+    expect(res.status).toBe(400);
+  });
+
+  it("TC_AIRLINE_ONBOARD_013: Non-string password (boolean) -> 400", async () => {
+    const res = await api
+      .post("/api/v1/auth/airline/onboard")
+      .send({ invitationToken: "some-token", password: true });
+    expect(res.status).toBe(400);
+  });
 });

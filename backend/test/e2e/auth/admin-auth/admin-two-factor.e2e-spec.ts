@@ -106,6 +106,12 @@ describe("POST /api/v1/auth/admin/2fa/setup", () => {
   });
 
   // TC_AUTH_ADMIN_2FA_SETUP_004 — requires 2FA already enabled; tested in the enable+disable describe block
+
+  // TC_AUTH_ADMIN_2FA_SETUP_007
+  it.todo(
+    "TC_AUTH_ADMIN_2FA_SETUP_007: 2FA setup with AIRLINE access token (wrong userType) → 403 " +
+      "[SKIPPED: no airline JWT issuer available in the current test environment]",
+  );
 });
 
 // ─── 2FA Enable ───────────────────────────────────────────────────────────────

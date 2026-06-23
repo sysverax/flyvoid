@@ -177,4 +177,52 @@ describe("POST /api/v1/auth/airline/signin/reset-password", () => {
       .send("{ bad json }");
     expect(malformed.status).toBe(400);
   });
+
+  it("TC_AIRLINE_RESET_006: Missing resetPasswordToken field -> 400", async () => {
+    const res = await api
+      .post("/api/v1/auth/airline/signin/reset-password")
+      .send({ newPassword: AIRLINE_NEW_PASSWORD });
+    expect(res.status).toBe(400);
+  });
+
+  it("TC_AIRLINE_RESET_007: Missing newPassword field -> 400", async () => {
+    const res = await api
+      .post("/api/v1/auth/airline/signin/reset-password")
+      .send({ resetPasswordToken: "some-token" });
+    expect(res.status).toBe(400);
+  });
+
+  it("TC_AIRLINE_RESET_008: Non-string resetPasswordToken (numeric) -> 400", async () => {
+    const res = await api
+      .post("/api/v1/auth/airline/signin/reset-password")
+      .send({ resetPasswordToken: 99999, newPassword: AIRLINE_NEW_PASSWORD });
+    expect(res.status).toBe(400);
+  });
+
+  it("TC_AIRLINE_RESET_009: Non-string newPassword (boolean) -> 400", async () => {
+    const res = await api
+      .post("/api/v1/auth/airline/signin/reset-password")
+      .send({ resetPasswordToken: "some-token", newPassword: true });
+    expect(res.status).toBe(400);
+  });
+
+  it("TC_AIRLINE_RESET_010: Successful reset response includes accessToken and refreshToken -> 200", async () => {
+    const challenge = await createResetChallenge(superToken);
+
+    const res = await api
+      .post("/api/v1/auth/airline/signin/reset-password")
+      .send(
+        validAirlineInitialPasswordResetPayload(
+          challenge.resetPasswordToken,
+          AIRLINE_NEW_PASSWORD,
+        ),
+      );
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    if (res.body.data?.accessToken !== undefined) {
+      expect(typeof res.body.data.accessToken).toBe("string");
+      expect(typeof res.body.data.refreshToken).toBe("string");
+    }
+  });
 });

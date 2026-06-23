@@ -215,4 +215,59 @@ describe("POST /api/v1/auth/airline/signin", () => {
       .send("{ bad json }");
     expect(malformed.status).toBe(400);
   });
+
+  it("TC_AIRLINE_SIGNIN_008: Email case insensitivity -> 200", async () => {
+    const res = await api
+      .post("/api/v1/auth/airline/signin")
+      .send(
+        validAirlineSigninPayload(
+          activeEmail.toUpperCase(),
+          AIRLINE_TEST_PASSWORD,
+        ),
+      );
+    expect(res.status).toBe(200);
+    expect(typeof res.body.data.accessToken).toBe("string");
+  });
+
+  it("TC_AIRLINE_SIGNIN_009: Successful response includes token expiry fields -> 200", async () => {
+    const res = await api
+      .post("/api/v1/auth/airline/signin")
+      .send(validAirlineSigninPayload(activeEmail, AIRLINE_TEST_PASSWORD));
+
+    expect(res.status).toBe(200);
+    expect(typeof res.body.data.accessToken).toBe("string");
+    expect(typeof res.body.data.refreshToken).toBe("string");
+    expect(typeof res.body.data.accessTokenExpiresIn).toBe("string");
+    expect(typeof res.body.data.refreshTokenExpiresIn).toBe("string");
+  });
+
+  it("TC_AIRLINE_SIGNIN_010: Inactive airline (airline-level isActive=false) signin -> 401", async () => {
+    const inactiveAirlineId = await insertAirlineRow({
+      name: "Inactive Airline Corp",
+      code: `E2EIAC${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
+      countryCode: "AE",
+      companyRegistrationNumber: `E2ECRN-IAC-${Date.now()}`,
+      contactEmail: uniqueAirlineEmail("iac-contact"),
+      contactPhone: "+971500000030",
+      timezone: "Asia/Dubai",
+      address: "Inactive Corp Address",
+      currency: "AED",
+      isActive: false,
+    });
+
+    const inactiveAirlineUserEmail = uniqueAirlineEmail("iac-user");
+    await insertAirlineUserRow({
+      airlineId: inactiveAirlineId,
+      email: inactiveAirlineUserEmail,
+      password: AIRLINE_TEST_PASSWORD,
+      isActive: true,
+    });
+
+    const res = await api
+      .post("/api/v1/auth/airline/signin")
+      .send(
+        validAirlineSigninPayload(inactiveAirlineUserEmail, AIRLINE_TEST_PASSWORD),
+      );
+    expect(res.status).toBe(401);
+  });
 });

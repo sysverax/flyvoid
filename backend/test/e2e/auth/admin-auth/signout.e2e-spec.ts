@@ -483,6 +483,36 @@ describe("POST /api/v1/auth/admin/signout", () => {
     expect(res.body.message.length).toBeGreaterThan(0);
   });
 
+  // TC_AUTH_ADMIN_SIGNOUT_031
+  it("TC_AUTH_ADMIN_SIGNOUT_031: Using own accessToken as the body refreshToken field → 401", async () => {
+    const { accessToken, refreshToken: _rt } = await freshTokens("so-at-as-rt");
+
+    // Pass the accessToken in the body where a refreshToken is expected
+    const res = await api
+      .post("/api/v1/auth/admin/signout")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ refreshToken: accessToken }); // wrong token type in body
+
+    expect(res.status).toBe(401);
+  });
+
+  // TC_AUTH_ADMIN_SIGNOUT_032
+  it("TC_AUTH_ADMIN_SIGNOUT_032: Tampered refreshToken signature in body → 401", async () => {
+    const { accessToken, refreshToken } = await freshTokens("so-tampered-rt");
+
+    const parts = refreshToken.split(".");
+    // Corrupt the signature segment
+    parts[2] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+    const tamperedToken = parts.join(".");
+
+    const res = await api
+      .post("/api/v1/auth/admin/signout")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ refreshToken: tamperedToken });
+
+    expect(res.status).toBe(401);
+  });
+
   // TC_AUTH_ADMIN_SIGNOUT_030
   it("TC_AUTH_ADMIN_SIGNOUT_030: Signout and sign back in with same credentials succeeds → 200", async () => {
     const email = makeEmail("so-relogin");

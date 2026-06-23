@@ -147,6 +147,30 @@ describe("POST /api/v1/auth/airline/2fa/disable & /2fa/recover", () => {
     expect(malformed.status).toBe(400);
   });
 
+  it("TC_AIRLINE_2FA_DISABLE_004: Unknown field in disable payload -> 400", async () => {
+    const email = uniqueAirlineEmail("disable-unknown-field");
+    await onboardAirlineUser(superToken, email, AIRLINE_TEST_PASSWORD);
+    const tokens = await getAirlineTokens(email, AIRLINE_TEST_PASSWORD);
+
+    const res = await api
+      .post("/api/v1/auth/airline/2fa/disable")
+      .set("Authorization", `Bearer ${tokens.accessToken}`)
+      .send({ twoFactorCode: "123456", extra: "bad" });
+    expect(res.status).toBe(400);
+  });
+
+  it("TC_AIRLINE_2FA_DISABLE_005: Missing twoFactorCode field -> 400", async () => {
+    const email = uniqueAirlineEmail("disable-missing-code");
+    await onboardAirlineUser(superToken, email, AIRLINE_TEST_PASSWORD);
+    const tokens = await getAirlineTokens(email, AIRLINE_TEST_PASSWORD);
+
+    const res = await api
+      .post("/api/v1/auth/airline/2fa/disable")
+      .set("Authorization", `Bearer ${tokens.accessToken}`)
+      .send({});
+    expect(res.status).toBe(400);
+  });
+
   it("TC_AIRLINE_2FA_RECOVER_001: Valid email/password/recoveryCode disables 2FA -> 200", async () => {
     const user = await setupEnabledUser(superToken);
     const recoveryCode = user.recoveryCodes[0];
@@ -226,5 +250,44 @@ describe("POST /api/v1/auth/airline/2fa/disable & /2fa/recover", () => {
       .set("Content-Type", "application/json")
       .send("{ bad json }");
     expect(malformed.status).toBe(400);
+  });
+
+  it("TC_AIRLINE_2FA_RECOVER_004: Recovery code is single-use — reuse after successful recovery -> 401", async () => {
+    const user = await setupEnabledUser(superToken);
+    const recoveryCode = user.recoveryCodes[0];
+
+    const first = await api
+      .post("/api/v1/auth/airline/2fa/recover")
+      .send(
+        validTwoFactorRecoverPayload(
+          user.email,
+          AIRLINE_TEST_PASSWORD,
+          recoveryCode,
+        ),
+      );
+    expect(first.status).toBe(200);
+
+    const second = await api
+      .post("/api/v1/auth/airline/2fa/recover")
+      .send(
+        validTwoFactorRecoverPayload(
+          user.email,
+          AIRLINE_TEST_PASSWORD,
+          recoveryCode,
+        ),
+      );
+    expect(second.status).toBe(401);
+  });
+
+  it("TC_AIRLINE_2FA_RECOVER_005: Missing required fields -> 400", async () => {
+    const missingCode = await api
+      .post("/api/v1/auth/airline/2fa/recover")
+      .send({ email: "test@example.com", password: AIRLINE_TEST_PASSWORD });
+    expect(missingCode.status).toBe(400);
+
+    const missingEmail = await api
+      .post("/api/v1/auth/airline/2fa/recover")
+      .send({ password: AIRLINE_TEST_PASSWORD, recoveryCode: "SOMECODE123" });
+    expect(missingEmail.status).toBe(400);
   });
 });
