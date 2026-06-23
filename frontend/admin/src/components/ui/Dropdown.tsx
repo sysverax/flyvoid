@@ -9,14 +9,15 @@ export interface DropdownOption {
   label: string;
 }
 
-interface DropdownProps {
+export interface DropdownProps {
   value: string;
   onChange: (value: string) => void;
   options: DropdownOption[];
-  widthClass?: string;        // Width of the open menu container (e.g., "w-60" or "w-44")
-  triggerWidthClass?: string; // Width of the trigger button container (e.g., "w-[180px]")
-  heightClass?: string;       // Height of the trigger button (e.g., "h-11" or "h-[49px]")
-  bgClass?: string;           // Background color of the trigger button (e.g., "bg-[#F3F4F6]" or "bg-white")
+  widthClass?: string;
+  triggerWidthClass?: string;
+  heightClass?: string;
+  bgClass?: string;
+  labelPrefix?: string;
 }
 
 export function Dropdown({
@@ -27,6 +28,7 @@ export function Dropdown({
   triggerWidthClass = "w-[180px]",
   heightClass = "h-11",
   bgClass = "bg-[#F3F4F6]",
+  labelPrefix,
 }: DropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);

@@ -8,7 +8,7 @@ const Table = React.forwardRef<
   <div className="relative w-full overflow-auto scrollbar-hide">
     <table
       ref={ref}
-      className={cn("w-full caption-bottom text-sm", className)}
+      className={cn("w-full border-collapse caption-bottom text-sm", className)}
       {...props}
     />
   </div>
@@ -64,7 +64,7 @@ const TableHead = React.forwardRef<
   <th
     ref={ref}
     className={cn(
-      "h-10 px-3 pt-1 text-left text-[12px] font-medium uppercase leading-[100%] tracking-[0%] text-gray-500 align-middle [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px] h-[40px]",
+      "px-3 pt-1 text-left text-[12px] font-medium uppercase leading-[100%] tracking-[0%] text-gray-500 align-middle [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px] h-[40px]",
       className,
     )}
     {...props}
@@ -79,7 +79,7 @@ const TableCell = React.forwardRef<
   <td
     ref={ref}
     className={cn(
-      "h-16 px-3 py-[13px] text-sm text-[var(--text-primary)] align-middle [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px] relative top-1",
+      "h-16 px-3 py-2 text-sm text-[var(--text-primary)] align-middle [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
       className,
     )}
     {...props}
@@ -114,7 +114,7 @@ function SortHeader<T>({
       <span
         onClick={() => onSort(field)}
         className="inline-flex cursor-pointer ml-1.5 select-none p-1 rounded transition-colors shrink-0"
-        // title={`Sort by ${label}`}
+      // title={`Sort by ${label}`}
       >
         <svg
           width="8"

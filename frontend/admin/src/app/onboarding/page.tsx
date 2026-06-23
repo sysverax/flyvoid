@@ -429,7 +429,7 @@ export default function OnboardingPage() {
 
       <div className="space-y-7">
         {/* Header */}
-        <div className="-mt-0.5 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center lg:h-[50px]">
+        <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center lg:h-[50px]">
           <div>
             <h1 className="text-2xl sm:text-[24px] font-semibold text-[#1F2937] leading-[100%] tracking-[0%]">
               Invites & Onboarding
@@ -491,7 +491,7 @@ export default function OnboardingPage() {
         </FiltersCard>
 
         {/* Table card */}
-        <div className="hidden overflow-hidden rounded-[12px] border border-[#E5E7EB] lg:block mb-6">
+        <div className="hidden overflow-hidden rounded-[12px] border border-[#E5E7EB] lg:block mb-6 pt-1.5">
           <Table>
             <TableHeader>
               <TableRow>
@@ -522,7 +522,7 @@ export default function OnboardingPage() {
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
-            <TableBody className="relative -top-1">
+            <TableBody>
               {paginatedInvitations.length === 0 ? (
                 <TableEmptyState
                   colSpan={9}
@@ -534,9 +534,9 @@ export default function OnboardingPage() {
                 paginatedInvitations.map((inv) => (
                   <TableRow
                     key={inv.id}
-                    className={cn(inv.status === "Revoked" && "opacity-50" , "relative","mt-1")}
+                    className={cn("relative", "mt-1")}
                   >
-                    <TableCell className="w-[170px]">
+                    <TableCell className={cn("w-[170px]", inv.status === "Revoked" && "opacity-50")}>
                       <p className="truncate" title={inv.airlineName}>
                         {inv.airlineName}
                       </p>
@@ -547,7 +547,7 @@ export default function OnboardingPage() {
                         {inv.airlineCode}
                       </p>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className={cn(inv.status === "Revoked" && "opacity-50")}>
                       <span
                         className="block max-w-[120px] truncate"
                         title={inv.contactEmail}
@@ -555,18 +555,18 @@ export default function OnboardingPage() {
                         {inv.contactEmail}
                       </span>
                     </TableCell>
-                    <TableCell>{inv.country}</TableCell>
-                    <TableCell>{inv.invitedBy}</TableCell>
-                    <TableCell className="whitespace-nowrap pl-5">
+                    <TableCell className={cn(inv.status === "Revoked" && "opacity-50")}>{inv.country}</TableCell>
+                    <TableCell className={cn(inv.status === "Revoked" && "opacity-50")}>{inv.invitedBy}</TableCell>
+                    <TableCell className={cn("whitespace-nowrap pl-5", inv.status === "Revoked" && "opacity-50")}>
                       {inv.invitedDate}
                     </TableCell>
-                    <TableCell className="whitespace-nowrap">
+                    <TableCell className={cn("whitespace-nowrap", inv.status === "Revoked" && "opacity-50")}>
                       {inv.expiryDate}
                     </TableCell>
-                    <TableCell className="pl-2">
+                    <TableCell className={cn("pl-2", inv.status === "Revoked" && "opacity-50")}>
                       ${inv.creditLimit.toLocaleString()}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className={cn(inv.status === "Revoked" && "opacity-50")}>
                       <StatusBadge status={inv.status} />
                     </TableCell>
                     <TableCell>
@@ -594,7 +594,8 @@ export default function OnboardingPage() {
                           </Tooltip>
                         )}
                         {(inv.status === "Pending" ||
-                          inv.status === "Expired") && (
+                          inv.status === "Expired" ||
+                          inv.status === "Revoked") && (
                             <>
                               <Tooltip>
                                 <TooltipTrigger asChild>

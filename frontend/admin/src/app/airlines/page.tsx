@@ -448,10 +448,10 @@ export default function AirlinesPage() {
                       <TableCell>
                         <span
                           className={cn(
-                            "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold relative left-1.5",
-                            airline.stripeConnection === "Connected" && "bg-emerald-50 text-emerald-700",
-                            airline.stripeConnection === "Pending" && "bg-amber-50 text-amber-700",
-                            airline.stripeConnection === "Failed" && "bg-rose-50 text-rose-700"
+                            "inline-flex items-center rounded-full px-2.5 py-0.5 text-[12px] font-medium relative left-1.5",
+                            airline.stripeConnection === "Connected" && "bg-green-100 text-green-800",
+                            airline.stripeConnection === "Pending" && "bg-yellow-100 text-yellow-800",
+                            airline.stripeConnection === "Failed" && "bg-red-100 text-red-800"
                           )}
                         >
                           {airline.stripeConnection}
