@@ -1,3 +1,4 @@
+import { Logger } from "@nestjs/common";
 import { api } from "../../../helpers/http-client.helper";
 import { endPool, query } from "../../../helpers/db-client.helper";
 import { deleteAdminsByEmailPattern } from "../../../helpers/db-cleanup.helper";
@@ -15,6 +16,52 @@ import { describe, it, beforeAll, afterAll, expect } from "@jest/globals";
 const EMAIL_PATTERN = "%@e2e-airline.test";
 const INVITE_PATTERN = "E2E%";
 const TEST_PASSWORD = "Password@123";
+const INVITATION_MATRIX_PATH = "/api/v1/airline/invitations/matrix";
+
+function logResponseMessage(testCaseName: string, response: any): void {
+  const message = response?.body?.message ?? response?.text ?? "";
+
+  if (message) {
+    Logger.log(`[${testCaseName}] Response message: ${message}`, "E2E");
+  }
+}
+
+function getCurrentTestName(): string {
+  return (
+    (
+      expect as unknown as { getState?: () => { currentTestName?: string } }
+    ).getState?.()?.currentTestName ?? "unknown-test"
+  );
+}
+
+function wrapResponseLogging(path: string) {
+  const originalGet = api.get.bind(api);
+
+  (api as typeof api & { get: typeof api.get }).get = ((
+    requestPath: string,
+  ) => {
+    const request = originalGet(requestPath);
+
+    if (requestPath !== path) {
+      return request;
+    }
+
+    const originalEnd = request.end.bind(request);
+    const wrappedEnd = (callback?: (err: any, res: any) => void) => {
+      return Promise.resolve(originalEnd(callback)).then((response: any) => {
+        logResponseMessage(getCurrentTestName(), response);
+        return response;
+      });
+    };
+
+    (request as typeof request & { end: typeof originalEnd }).end =
+      wrappedEnd as typeof originalEnd;
+
+    return request;
+  }) as typeof api.get;
+}
+
+wrapResponseLogging(INVITATION_MATRIX_PATH);
 
 async function makeToken(
   role: "SUPER_ADMIN" | "STAFF",
@@ -179,9 +226,8 @@ describe("GET /api/v1/airline/invitations/matrix", () => {
       password: TEST_PASSWORD,
       role: "SUPER_ADMIN",
     });
-    const inactiveToken = (
-      await getAdminTokens(inactiveEmail, TEST_PASSWORD)
-    ).accessToken;
+    const inactiveToken = (await getAdminTokens(inactiveEmail, TEST_PASSWORD))
+      .accessToken;
     await query("UPDATE admins SET is_active = false WHERE email = $1", [
       inactiveEmail,
     ]);
@@ -198,9 +244,8 @@ describe("GET /api/v1/airline/invitations/matrix", () => {
       role: "STAFF",
     });
     await grantInvitePermission(editOnlyAdmin.id, "EDIT");
-    const editOnlyToken = (
-      await getAdminTokens(editOnlyEmail, TEST_PASSWORD)
-    ).accessToken;
+    const editOnlyToken = (await getAdminTokens(editOnlyEmail, TEST_PASSWORD))
+      .accessToken;
     const editOnlyRes = await api
       .get("/api/v1/airline/invitations/matrix")
       .set("Authorization", `Bearer ${editOnlyToken}`);
@@ -213,9 +258,8 @@ describe("GET /api/v1/airline/invitations/matrix", () => {
       password: TEST_PASSWORD,
       role: "STAFF",
     });
-    const noPermToken = (
-      await getAdminTokens(noPermEmail, TEST_PASSWORD)
-    ).accessToken;
+    const noPermToken = (await getAdminTokens(noPermEmail, TEST_PASSWORD))
+      .accessToken;
     const noPermRes = await api
       .get("/api/v1/airline/invitations/matrix")
       .set("Authorization", `Bearer ${noPermToken}`);

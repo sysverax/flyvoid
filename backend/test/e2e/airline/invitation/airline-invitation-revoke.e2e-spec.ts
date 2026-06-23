@@ -1,3 +1,4 @@
+import { Logger } from "@nestjs/common";
 import { api } from "../../../helpers/http-client.helper";
 import { endPool, query } from "../../../helpers/db-client.helper";
 import { deleteAdminsByEmailPattern } from "../../../helpers/db-cleanup.helper";
@@ -15,6 +16,7 @@ import { describe, it, beforeAll, afterAll, expect } from "@jest/globals";
 const EMAIL_PATTERN = "%@e2e-airline.test";
 const INVITE_PATTERN = "E2E%";
 const TEST_PASSWORD = "Password@123";
+
 
 async function tokenFor(
   role: "SUPER_ADMIN" | "STAFF",
@@ -171,9 +173,8 @@ describe("POST /api/v1/airline/invitations/:invitationId/revoke", () => {
       password: TEST_PASSWORD,
       role: "SUPER_ADMIN",
     });
-    const inactiveToken = (
-      await getAdminTokens(inactiveEmail, TEST_PASSWORD)
-    ).accessToken;
+    const inactiveToken = (await getAdminTokens(inactiveEmail, TEST_PASSWORD))
+      .accessToken;
     await query("UPDATE admins SET is_active = false WHERE email = $1", [
       inactiveEmail,
     ]);
@@ -190,9 +191,8 @@ describe("POST /api/v1/airline/invitations/:invitationId/revoke", () => {
       role: "STAFF",
     });
     await grantInvitePermission(viewOnlyAdmin.id, "VIEW");
-    const viewOnlyToken = (
-      await getAdminTokens(viewOnlyEmail, TEST_PASSWORD)
-    ).accessToken;
+    const viewOnlyToken = (await getAdminTokens(viewOnlyEmail, TEST_PASSWORD))
+      .accessToken;
     const viewOnlyRes = await api
       .post(`/api/v1/airline/invitations/${id}/revoke`)
       .set("Authorization", `Bearer ${viewOnlyToken}`);
@@ -205,9 +205,8 @@ describe("POST /api/v1/airline/invitations/:invitationId/revoke", () => {
       password: TEST_PASSWORD,
       role: "STAFF",
     });
-    const noPermToken = (
-      await getAdminTokens(noPermEmail, TEST_PASSWORD)
-    ).accessToken;
+    const noPermToken = (await getAdminTokens(noPermEmail, TEST_PASSWORD))
+      .accessToken;
     const noPermRes = await api
       .post(`/api/v1/airline/invitations/${id}/revoke`)
       .set("Authorization", `Bearer ${noPermToken}`);
@@ -335,8 +334,8 @@ describe("POST /api/v1/airline/invitations/:invitationId/revoke", () => {
     expect(revokedEvent).toBeDefined();
 
     // TC_041: REVOKED event has a valid ISO timestamp
-    expect(
-      Number.isNaN(Date.parse(revokedEvent?.createdAt as string)),
-    ).toBe(false);
+    expect(Number.isNaN(Date.parse(revokedEvent?.createdAt as string))).toBe(
+      false,
+    );
   });
 });

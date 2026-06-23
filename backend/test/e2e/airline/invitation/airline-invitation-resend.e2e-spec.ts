@@ -1,3 +1,4 @@
+import { Logger } from "@nestjs/common";
 import { api } from "../../../helpers/http-client.helper";
 import { endPool, query } from "../../../helpers/db-client.helper";
 import { deleteAdminsByEmailPattern } from "../../../helpers/db-cleanup.helper";
@@ -15,6 +16,52 @@ import { describe, it, beforeAll, afterAll, expect } from "@jest/globals";
 const EMAIL_PATTERN = "%@e2e-airline.test";
 const INVITE_PATTERN = "E2E%";
 const TEST_PASSWORD = "Password@123";
+const RESEND_PATH_PREFIX = "/api/v1/airline/invitations/";
+
+function logResponseMessage(testCaseName: string, response: any): void {
+  const message = response?.body?.message ?? response?.text ?? "";
+
+  if (message) {
+    Logger.log(`[${testCaseName}] Response message: ${message}`, "E2E");
+  }
+}
+
+function getCurrentTestName(): string {
+  return (
+    (
+      expect as unknown as { getState?: () => { currentTestName?: string } }
+    ).getState?.()?.currentTestName ?? "unknown-test"
+  );
+}
+
+function wrapResponseLogging(pathPrefix: string) {
+  const originalPost = api.post.bind(api);
+
+  (api as typeof api & { post: typeof api.post }).post = ((
+    requestPath: string,
+  ) => {
+    const request = originalPost(requestPath);
+
+    if (!requestPath.startsWith(pathPrefix)) {
+      return request;
+    }
+
+    const originalSend = request.send.bind(request);
+    const wrappedSend = (body: string | object | undefined) => {
+      return Promise.resolve(originalSend(body)).then((response: any) => {
+        logResponseMessage(getCurrentTestName(), response);
+        return response;
+      });
+    };
+
+    (request as typeof request & { send: typeof originalSend }).send =
+      wrappedSend as typeof originalSend;
+
+    return request;
+  }) as typeof api.post;
+}
+
+wrapResponseLogging(RESEND_PATH_PREFIX);
 
 async function makeAdminToken(
   role: "SUPER_ADMIN" | "STAFF",
@@ -192,9 +239,8 @@ describe("POST /api/v1/airline/invitations/:invitationId/resend", () => {
       password: TEST_PASSWORD,
       role: "SUPER_ADMIN",
     });
-    const inactiveToken = (
-      await getAdminTokens(inactiveEmail, TEST_PASSWORD)
-    ).accessToken;
+    const inactiveToken = (await getAdminTokens(inactiveEmail, TEST_PASSWORD))
+      .accessToken;
     await query("UPDATE admins SET is_active = false WHERE email = $1", [
       inactiveEmail,
     ]);
@@ -211,9 +257,8 @@ describe("POST /api/v1/airline/invitations/:invitationId/resend", () => {
       role: "STAFF",
     });
     await grantInvitePermission(viewOnlyAdmin.id, "VIEW");
-    const viewOnlyToken = (
-      await getAdminTokens(viewOnlyEmail, TEST_PASSWORD)
-    ).accessToken;
+    const viewOnlyToken = (await getAdminTokens(viewOnlyEmail, TEST_PASSWORD))
+      .accessToken;
     const viewOnlyRes = await api
       .post(`/api/v1/airline/invitations/${invitationId}/resend`)
       .set("Authorization", `Bearer ${viewOnlyToken}`);
@@ -226,9 +271,8 @@ describe("POST /api/v1/airline/invitations/:invitationId/resend", () => {
       password: TEST_PASSWORD,
       role: "STAFF",
     });
-    const noPermToken = (
-      await getAdminTokens(noPermEmail, TEST_PASSWORD)
-    ).accessToken;
+    const noPermToken = (await getAdminTokens(noPermEmail, TEST_PASSWORD))
+      .accessToken;
     const noPermRes = await api
       .post(`/api/v1/airline/invitations/${invitationId}/resend`)
       .set("Authorization", `Bearer ${noPermToken}`);
