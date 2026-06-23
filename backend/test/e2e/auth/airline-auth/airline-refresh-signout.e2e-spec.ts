@@ -1,3 +1,4 @@
+import { Logger } from "@nestjs/common";
 import { api } from "../../../helpers/http-client.helper";
 import { endPool } from "../../../helpers/db-client.helper";
 import { deleteAdminsByEmailPattern } from "../../../helpers/db-cleanup.helper";
@@ -19,10 +20,58 @@ import { describe, it, beforeAll, afterAll, expect } from "@jest/globals";
 
 const ADMIN_EMAIL_PATTERN = "%@e2e-airline-auth.test";
 const INVITE_PATTERN = "E2E%";
+const REFRESH_PATH = "/api/v1/auth/airline/refresh";
+const SIGNOUT_PATH = "/api/v1/auth/airline/signout";
 
 function extractToken(onboardingLink: string): string {
   return new URL(onboardingLink).searchParams.get("token") as string;
 }
+
+function logResponseMessage(testCaseName: string, response: any): void {
+  const message = response?.body?.message ?? response?.text ?? "";
+
+  if (message) {
+    Logger.log(`[${testCaseName}] Response message: ${message}`, "E2E");
+  }
+}
+
+function getCurrentTestName(): string {
+  return (
+    (
+      expect as unknown as { getState?: () => { currentTestName?: string } }
+    ).getState?.()?.currentTestName ?? "unknown-test"
+  );
+}
+
+function wrapResponseLogging(path: string) {
+  const originalPost = api.post.bind(api);
+
+  (api as typeof api & { post: typeof api.post }).post = ((
+    requestPath: string,
+  ) => {
+    const request = originalPost(requestPath);
+
+    if (requestPath !== path) {
+      return request;
+    }
+
+    const originalSend = request.send.bind(request);
+    const wrappedSend = (body: string | object | undefined) => {
+      return Promise.resolve(originalSend(body)).then((response: any) => {
+        logResponseMessage(getCurrentTestName(), response);
+        return response;
+      });
+    };
+
+    (request as typeof request & { send: typeof originalSend }).send =
+      wrappedSend as typeof originalSend;
+
+    return request;
+  }) as typeof api.post;
+}
+
+wrapResponseLogging(REFRESH_PATH);
+wrapResponseLogging(SIGNOUT_PATH);
 
 async function makeSuperAdminToken() {
   const adminEmail = uniqueAirlineEmail("platform-super-refresh");
@@ -133,14 +182,16 @@ describe("Airline refresh and signout", () => {
     const verifyRes = await api
       .post("/api/v1/auth/airline/forgot-password/verify-otp")
       .send(validAirlineForgotPasswordVerifyOtpPayload(refreshEmail, "444444"));
-    const resetToken = (
-      verifyRes.body.data as { resetPasswordToken: string }
-    ).resetPasswordToken;
+    const resetToken = (verifyRes.body.data as { resetPasswordToken: string })
+      .resetPasswordToken;
 
     await api
       .post("/api/v1/auth/airline/forgot-password")
       .send(
-        validAirlineForgotPasswordResetPayload(resetToken, AIRLINE_NEW_PASSWORD),
+        validAirlineForgotPasswordResetPayload(
+          resetToken,
+          AIRLINE_NEW_PASSWORD,
+        ),
       );
 
     const res = await api

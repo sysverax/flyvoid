@@ -26,10 +26,50 @@ import { describe, it, beforeAll, afterAll, expect } from "@jest/globals";
 
 const EMAIL_PATTERN = "%@e2e-refresh.test";
 const TEST_PASSWORD = "Password@123";
+const REFRESH_PATH = "/api/v1/auth/admin/refresh";
 
 function makeEmail(prefix: string): string {
   return uniqueEmail(prefix).replace("@e2e.test", "@e2e-refresh.test");
 }
+
+function logRefreshResponse(testCaseName: string, response: any): void {
+  const message = response?.body?.message ?? response?.text ?? "";
+
+  if (message) {
+    Logger.log(`[${testCaseName}] Refresh response message: ${message}`, "E2E");
+  }
+}
+
+function getCurrentTestName(): string {
+  return (
+    (
+      expect as unknown as { getState?: () => { currentTestName?: string } }
+    ).getState?.()?.currentTestName ?? "unknown-test"
+  );
+}
+
+const originalApiPost = api.post.bind(api);
+(api as typeof api & { post: typeof api.post }).post = ((path: string) => {
+  const request = originalApiPost(path);
+
+  if (path !== REFRESH_PATH) {
+    return request;
+  }
+
+  const originalSend = request.send.bind(request);
+  const wrappedSend = (body: string | object | undefined) => {
+    return Promise.resolve(originalSend(body)).then((response: any) => {
+      const testCaseName = getCurrentTestName();
+      logRefreshResponse(testCaseName, response);
+      return response;
+    });
+  };
+
+  (request as typeof request & { send: typeof originalSend }).send =
+    wrappedSend as typeof originalSend;
+
+  return request;
+}) as typeof api.post;
 
 interface TokenPair {
   accessToken: string;
