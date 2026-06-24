@@ -10,7 +10,7 @@ interface MainLayoutProps {
 
 export function MainLayout({ children }: MainLayoutProps) {
   const pathname = usePathname();
-  const isAuthPage = pathname === "/login" || pathname === "/forgot-password";
+  const isAuthPage = pathname === "/login" || pathname === "/forgot-password" || pathname === "/two-factor";
 
   if (isAuthPage) {
     return (

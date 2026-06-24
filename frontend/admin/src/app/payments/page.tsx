@@ -740,14 +740,14 @@ export default function PaymentsPage() {
       label: "Platform Reserve",
       value: `$${reserveValue.toLocaleString()}`,
       subtext: "Admin-deposited funds",
-      icon: Lock,
+      icon: "/icons/bag.svg",
     },
     {
       id: "credit-issued",
       label: "Total Credit Issued",
       value: "$525,000",
       subtext: "Admin-defined limits",
-      icon: CreditCard,
+      icon: "/icons/card.svg",
     },
     {
       id: "credit-used",
@@ -927,7 +927,8 @@ export default function PaymentsPage() {
             {/* KPI Cards Row */}
             <div className="self-stretch w-full grid grid-cols-1 md:grid-cols-3 gap-3">
               {kpiCardsConfig.map((card) => {
-                const IconComponent = card.icon;
+                const isImageIcon = typeof card.icon === "string";
+                const IconComponent = !isImageIcon ? card.icon : null;
 
                 return (
                   <div
@@ -959,7 +960,15 @@ export default function PaymentsPage() {
                       </div>
 
                       <div className="size-11 p-2.5 bg-gray-100 rounded-lg flex justify-center items-center shrink-0">
-                        <IconComponent className="w-5 h-5 text-blue-950" />
+                        {isImageIcon ? (
+                          <img
+                            src={card.icon as string}
+                            alt={card.label}
+                            className="w-5 h-5 text-blue-950"
+                          />
+                        ) : (
+                          IconComponent && <IconComponent className="w-5 h-5 text-blue-950" />
+                        )}
                       </div>
                     </div>
 

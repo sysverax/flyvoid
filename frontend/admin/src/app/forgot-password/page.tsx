@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Mail, Lock, Eye, EyeOff, ShieldCheck, KeyRound, ArrowLeft, Check } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, KeyRound, ArrowLeft, Check } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 
 type Step = 1 | 2 | 3 | "success";
@@ -196,7 +196,7 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div className="w-full lg:w-[448px] flex flex-col items-center justify-center min-h-screen">
+    <div className="w-full lg:w-[480px] flex flex-col items-center justify-center min-h-screen px-4">
       {/* Top Brand Header Section */}
       <div className="flex flex-col items-center mb-8 text-center select-none animate-fadeIn">
         <div className="w-16 h-16 bg-primary rounded-[12px] flex items-center justify-center mb-6">
@@ -297,7 +297,7 @@ export default function ForgotPasswordPage() {
           <div className="flex flex-col gap-6 mt-2">
             <div className="flex flex-col gap-3">
               {/* Rounded Key Icon Box */}
-              <div className="w-12 h-12 bg-gray-100 rounded-[8px] flex items-center justify-center text-primary">
+              <div className="w-12 h-12 bg-[#192E571A] rounded-[8px] flex items-center justify-center text-primary">
                 <KeyRound className="w-6 h-6 text-primary" />
               </div>
 
@@ -326,7 +326,7 @@ export default function ForgotPasswordPage() {
                     onPaste={idx === 0 ? handlePaste : undefined}
                     disabled={isLoading}
                     className={cn(
-                      "w-[40px] h-[40px] border border-[#DDDFE3] bg-[#F9FAFB] text-center text-base font-bold font-figtree outline-none transition-all focus:bg-white focus:ring-2 focus:ring-[#0F2757]/10 focus:border-[#0F2757] focus:relative focus:z-10 disabled:opacity-70",
+                      "w-[40px] h-[40px] border border-[#DDDFE3] text-center text-base font-bold font-figtree outline-none transition-all focus:bg-white focus:ring-2 focus:ring-[#0F2757]/10 focus:border-[#0F2757] focus:relative focus:z-10 disabled:opacity-70",
                       idx === 0 && "rounded-l-[6px]",
                       idx === 5 && "rounded-r-[6px]",
                       idx !== 0 && "-ml-[1px]"
@@ -516,7 +516,7 @@ export default function ForgotPasswordPage() {
 
       {/* Footer Security Shield */}
       <div className="mt-7.5 flex items-center gap-1.5 text-gray-400 select-none animate-fadeIn">
-        <ShieldCheck className="w-4 h-4 text-gray-400" />
+        <img src={"/icons/sheild1.svg"} alt="lock" className="w-4 h-4 text-gray-400 relative bottom-[2px]" />
         <span className="text-[13px] font-normal font-figtree">
           Protected by enterprise-grade security
         </span>

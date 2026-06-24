@@ -19,6 +19,16 @@ body {
   background-color: #F3F4F6;
 }
 
+/* Custom autofill overrides to prevent browser-default blue/yellow backgrounds */
+input:-webkit-autofill,
+input:-webkit-autofill:hover, 
+input:-webkit-autofill:focus, 
+input:-webkit-autofill:active {
+  transition: background-color 5000000s ease-in-out 0s;
+  -webkit-text-fill-color: #111827 !important;
+  caret-color: #111827;
+}
+
 @layer utilities {
   .scrollbar-hide {
     -ms-overflow-style: none;

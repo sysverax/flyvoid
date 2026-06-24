@@ -513,7 +513,6 @@ export default function DashboardPage() {
             widthClass="w-45"
             triggerWidthClass="w-45"
             heightClass="h-12"
-            bgClass="bg-white"
           />
         </div>
 
@@ -560,17 +559,39 @@ export default function DashboardPage() {
 
                 <div className="self-stretch flex flex-col justify-start items-start gap-2">
                   <div className="self-stretch inline-flex justify-start items-center gap-1">
-                    <div className="flex justify-start items-center">
-                      <span
-                        className={cn(
-                          "text-sm font-normal font-figtree",
-                          card.trendType === "up" && "text-emerald-500",
-                          card.trendType === "down" && "text-rose-500",
-                          card.trendType === "neutral" && "text-gray-500"
-                        )}
-                      >
-                        {card.trend}
-                      </span>
+                    <div className="flex justify-start items-center gap-1 text-sm font-normal font-figtree">
+                      {(() => {
+                        const firstSpace = card.trend.indexOf(" ");
+                        if (firstSpace === -1) {
+                          return (
+                            <span
+                              className={cn(
+                                card.trendType === "up" && "text-emerald-500",
+                                card.trendType === "down" && "text-rose-500",
+                                card.trendType === "neutral" && "text-gray-500"
+                              )}
+                            >
+                              {card.trend}
+                            </span>
+                          );
+                        }
+                        const valuePart = card.trend.substring(0, firstSpace);
+                        const textPart = card.trend.substring(firstSpace);
+                        return (
+                          <>
+                            <span
+                              className={cn(
+                                card.trendType === "up" && "text-emerald-500",
+                                card.trendType === "down" && "text-rose-500",
+                                card.trendType === "neutral" && "text-gray-500"
+                              )}
+                            >
+                              {valuePart}
+                            </span>
+                            <span className="text-gray-500">{textPart.trim()}</span>
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                   <div className="justify-start text-gray-500 text-sm font-normal font-figtree leading-[100%] tracking-[0%]">
