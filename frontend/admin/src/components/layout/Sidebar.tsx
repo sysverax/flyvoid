@@ -15,16 +15,17 @@ import {
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { SignOutDialog } from "./SignOutDialog";
+import { useAuth } from "@/src/hooks/useAuth";
 
 const navItems = [
-  { title: "Dashboard", icon: LayoutDashboard, path: "/" },
-  { title: "Airlines", icon: Plane, path: "/airlines" },
-  { title: "Cancellation", icon: "/icons/cancel.svg", path: "/cancellation" },
-  { title: "Payments", icon: "/icons/payment.svg", path: "/payments" },
-  { title: "Onboarding", icon: "/icons/onboarding.svg", path: "/onboarding" },
-  { title: "Audit Logs", icon: FileText, path: "/audit-logs" },
-  { title: "Manage Users", icon: Users, path: "/manage-users" },
-  { title: "Admin Profile", icon: "/icons/user.svg", path: "/profile" },
+  { title: "Dashboard", icon: LayoutDashboard, path: "/", key: "dashboard" },
+  { title: "Airlines", icon: Plane, path: "/airlines", key: "airlines" },
+  { title: "Cancellation", icon: "/icons/cancel.svg", path: "/cancellation", key: "cancellation" },
+  { title: "Payments", icon: "/icons/payment.svg", path: "/payments", key: "payments" },
+  { title: "Onboarding", icon: "/icons/onboarding.svg", path: "/onboarding", key: "onboarding" },
+  { title: "Audit Logs", icon: FileText, path: "/audit-logs", key: "auditLogs" },
+  { title: "Manage Users", icon: Users, path: "/manage-users", key: "manageUsers" },
+  { title: "Admin Profile", icon: "/icons/user.svg", path: "/profile", key: "profile" },
 ];
 
 export function Sidebar() {
@@ -32,6 +33,7 @@ export function Sidebar() {
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [signOutOpen, setSignOutOpen] = useState(false);
+  const { user, hasPermission } = useAuth();
 
   const handleLogout = () => {
     setSignOutOpen(true);
@@ -39,6 +41,12 @@ export function Sidebar() {
 
   const confirmLogout = () => {
     setSignOutOpen(false);
+    authService_logout();
+  };
+
+  const authService_logout = () => {
+    // Standard logout redirect
+    sessionStorage.removeItem("flyvoid_current_user");
     router.push("/login");
   };
 
@@ -70,6 +78,8 @@ export function Sidebar() {
         <nav className="scrollbar-hide flex-1 overflow-y-auto">
           <div className="flex w-full flex-col items-start gap-3">
             {navItems.map((item) => {
+              if (!hasPermission("view", item.path)) return null;
+
               const isActive = pathname === item.path;
               return (
                 <Link

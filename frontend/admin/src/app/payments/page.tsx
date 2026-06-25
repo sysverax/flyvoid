@@ -30,6 +30,7 @@ import { DatePicker } from "@/src/components/ui/DatePicker";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell, SortHeader } from "@/src/components/ui/table";
 import { Pagination } from "@/src/components/ui/pagination";
 import { StatusBadge } from "@/src/components/ui/StatusBadge";
+import { useAuth } from "@/src/hooks/useAuth";
 
 interface AirlineRevenue {
   name: string;
@@ -446,9 +447,21 @@ const formatTreasuryTimestamp = (dateStr: string) => {
 };
 
 export default function PaymentsPage() {
+  const { hasPermission } = useAuth();
   const [activeTab, setActiveTab] = useState<
     "overview" | "detailed" | "treasury"
   >("overview");
+
+  useEffect(() => {
+    if (hasPermission("view", "platformOverview")) {
+      setActiveTab("overview");
+    } else if (hasPermission("view", "detailedAnalysis")) {
+      setActiveTab("detailed");
+    } else if (hasPermission("view", "platformTreasury")) {
+      setActiveTab("treasury");
+    }
+  }, [hasPermission]);
+
   const [timePeriod, setTimePeriod] = useState("This Month");
 
   // Global Date range states
@@ -875,6 +888,13 @@ export default function PaymentsPage() {
         {/* Navigation Tabs bar */}
         <div className="pb-2 border-b border-gray-300 inline-flex justify-start items-center gap-3">
           {TABS_CONFIG.map((tab) => {
+            const permissionKeys = {
+              overview: "platformOverview",
+              detailed: "detailedAnalysis",
+              treasury: "platformTreasury",
+            };
+            if (!hasPermission("view", permissionKeys[tab.id])) return null;
+
             const isActive = activeTab === tab.id;
             const IconComponent = tab.icon;
             return (
@@ -912,16 +932,18 @@ export default function PaymentsPage() {
                   ({dateRangeLabel})
                 </div>
               </div>
-              <div className="h-9 flex justify-start items-center">
-                <button
-                  type="button"
-                  onClick={() => setIsReserveModalOpen(true)}
-                  className="h-[38px] flex items-center justify-start gap-2 rounded-[8px] border border-[#D1D5DB] px-3.5 text-[#1F2937] outline-none cursor-pointer hover:bg-slate-100/80 transition-colors text-[14px] font-medium bg-[#F3F4F6]"
-                >
-                  <Settings className="w-3.5 h-3.5 shrink-0 text-gray-700 relative -left-0.5" />
-                  <span>Manage Reserve</span>
-                </button>
-              </div>
+              {hasPermission("edit", "platformOverview") && (
+                <div className="h-9 flex justify-start items-center">
+                  <button
+                    type="button"
+                    onClick={() => setIsReserveModalOpen(true)}
+                    className="h-[38px] flex items-center justify-start gap-2 rounded-[8px] border border-[#D1D5DB] px-3.5 text-[#1F2937] outline-none cursor-pointer hover:bg-slate-100/80 transition-colors text-[14px] font-medium bg-[#F3F4F6]"
+                  >
+                    <Settings className="w-3.5 h-3.5 shrink-0 text-gray-700 relative -left-0.5" />
+                    <span>Manage Reserve</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* KPI Cards Row */}
@@ -1680,16 +1702,18 @@ export default function PaymentsPage() {
                   ({dateRangeLabel})
                 </div>
               </div>
-              <div className="h-9 flex justify-start items-center">
-                <button
-                  type="button"
-                  onClick={() => setIsReserveModalOpen(true)}
-                  className="h-[38px] flex items-center justify-start gap-2 rounded-[8px] border border-[#D1D5DB] px-3.5 text-[#1F2937] outline-none cursor-pointer hover:bg-slate-100/80 transition-colors text-[14px] font-medium bg-[#F3F4F6]"
-                >
-                  <Settings className="w-3.5 h-3.5 shrink-0 text-gray-700 relative -left-0.5" />
-                  <span>Manage Reserve</span>
-                </button>
-              </div>
+              {hasPermission("edit", "platformTreasury") && (
+                <div className="h-9 flex justify-start items-center">
+                  <button
+                    type="button"
+                    onClick={() => setIsReserveModalOpen(true)}
+                    className="h-[38px] flex items-center justify-start gap-2 rounded-[8px] border border-[#D1D5DB] px-3.5 text-[#1F2937] outline-none cursor-pointer hover:bg-slate-100/80 transition-colors text-[14px] font-medium bg-[#F3F4F6]"
+                  >
+                    <Settings className="w-3.5 h-3.5 shrink-0 text-gray-700 relative -left-0.5" />
+                    <span>Manage Reserve</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* KPI Cards Row */}

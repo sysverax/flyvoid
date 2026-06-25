@@ -4,6 +4,7 @@ import { ArrowLeft, Edit3, AlertTriangle, PencilIcon } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { Airline } from "@/src/types/airlines";
 import { StatusBadge } from "@/src/components/ui/StatusBadge";
+import { useAuth } from "@/src/hooks/useAuth";
 
 interface AirlineDetailsViewProps {
   airline: Airline;
@@ -16,6 +17,8 @@ export function AirlineDetailsView({
   onBack,
   onEditClick,
 }: AirlineDetailsViewProps) {
+  const { hasPermission } = useAuth();
+
   return (
     <div className="space-y-[19px]">
       {/* Back button */}
@@ -41,15 +44,17 @@ export function AirlineDetailsView({
           </div>
         </div>
 
-        <button
-          onClick={onEditClick}
-          className="px-4 py-[13px] bg-[#0F2757] rounded-[10px] flex justify-center items-center gap-2 overflow-hidden hover:bg-[#1A3B75] transition-colors text-white text-base font-medium font-figtree cursor-pointer shrink-0"
-        >
-          <div className="size-5 flex items-center justify-center shrink-0">
-            <img src="/icons/edit1.svg" alt="Edit" className="h-5 w-5" />
-          </div>
-          <span>Edit Details</span>
-        </button>
+        {hasPermission("edit") && (
+          <button
+            onClick={onEditClick}
+            className="px-4 py-[13px] bg-[#0F2757] rounded-[10px] flex justify-center items-center gap-2 overflow-hidden hover:bg-[#1A3B75] transition-colors text-white text-base font-medium font-figtree cursor-pointer shrink-0"
+          >
+            <div className="size-5 flex items-center justify-center shrink-0">
+              <img src="/icons/edit1.svg" alt="Edit" className="h-5 w-5" />
+            </div>
+            <span>Edit Details</span>
+          </button>
+        )}
       </div>
 
       {/* Disabled Warning Banner */}

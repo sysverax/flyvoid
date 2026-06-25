@@ -18,6 +18,7 @@ import { ToastList } from "@/src/components/ui/ToastList";
 import { FiltersCard } from "@/src/components/ui/FiltersCard";
 import { Pagination } from "@/src/components/ui/pagination";
 import { InviteModal } from "@/src/components/onboarding/InviteModal";
+import { useAuth } from "@/src/hooks/useAuth";
 import { ViewInvitationModal } from "@/src/components/onboarding/ViewInvitationModal";
 import {
   ResendDialog,
@@ -124,14 +125,16 @@ const STATUSES = ["Pending", "Expired", "Accepted", "Revoked"] as const;
 const ALL_STATUSES = ["pending", "expired", "accepted", "revoked"];
 
 export default function OnboardingPage() {
+  const { hasPermission } = useAuth();
   const [invitations, setInvitations] =
     useState<Invitation[]>(INITIAL_INVITATIONS);
-
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCountry, setSelectedCountry] = useState("All Countries");
   const [selectedStatuses, setSelectedStatuses] = useState<Set<string>>(
     new Set(["Pending", "Expired"]),
   );
+
+  const showActionsColumn = hasPermission("edit") || selectedStatuses.has("Accepted") || selectedStatuses.size === 0;
 
   const [resultsPerPage, setResultsPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -438,13 +441,15 @@ export default function OnboardingPage() {
               Manage airline onboarding invitations
             </p>
           </div>
-          <button
-            onClick={() => setIsInviteModalOpen(true)}
-            className="group flex h-[50px] items-center justify-center gap-2 rounded-[10px] bg-primary px-4 py-[9px] text-[16px] font-medium text-white transition-colors duration-200 hover:bg-primary-hover"
-          >
-            <Send className="h-5 w-5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-            <span>Invite Airline</span>
-          </button>
+          {hasPermission("edit") && (
+            <button
+              onClick={() => setIsInviteModalOpen(true)}
+              className="group flex h-[50px] items-center justify-center gap-2 rounded-[10px] bg-primary px-4 py-[9px] text-[16px] font-medium text-white transition-colors duration-200 hover:bg-primary-hover"
+            >
+              <Send className="h-5 w-5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+              <span>Invite Airline</span>
+            </button>
+          )}
         </div>
 
         {/* Filters */}
@@ -514,12 +519,12 @@ export default function OnboardingPage() {
                   <SortHeader label="Expiry Date" field="expiryDate" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                 </TableHead>
                 <TableHead className="whitespace-nowrap min-w-[110px]">
-                  <SortHeader label="Credit Limit" field="creditLimit" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} align="right" />
+                  <SortHeader label="Credit Limit" field="creditLimit" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                 </TableHead>
                 <TableHead className="min-w-[100px]">
                   <SortHeader label="Status" field="status" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                 </TableHead>
-                <TableHead>Actions</TableHead>
+                {showActionsColumn && <TableHead>Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -569,121 +574,123 @@ export default function OnboardingPage() {
                     <TableCell className={cn(inv.status === "Revoked" && "opacity-50")}>
                       <StatusBadge status={inv.status} />
                     </TableCell>
-                    <TableCell>
-                      <div className="flex items-center justify-start min-w-[60px] gap-3">
-                        {inv.status === "Accepted" && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                className="h-5 w-5 cursor-pointer p-0"
-                                size="icon"
-                                onClick={() => setViewTarget(inv)}
-                              >
-                                <Image
-                                  src="/icons/view.svg"
-                                  alt="View"
-                                  width={20}
-                                  height={20}
-                                />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              View Invitation Details
-                            </TooltipContent>
-                          </Tooltip>
-                        )}
-                        {(inv.status === "Pending" ||
-                          inv.status === "Expired" ||
-                          inv.status === "Revoked") && (
-                            <>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    className="h-5 w-5 cursor-pointer p-0"
-                                    size="icon"
-                                    onClick={() => {
-                                      setEditTarget(inv);
-                                      setInviteForm({
-                                        airlineName: inv.airlineName,
-                                        airlineCode: inv.airlineCode,
-                                        contactEmail: inv.contactEmail,
-                                        country: inv.country,
-                                        creditLimit: String(inv.creditLimit),
-                                        expiryDate: inv.expiryDate
-                                          ? (() => {
-                                            const parts = inv.expiryDate.split("/");
-                                            if (parts.length === 3) {
-                                              return `${parts[2]}-${parts[1]}-${parts[0]}`;
-                                            }
-                                            return "";
-                                          })()
-                                          : "",
-                                        companyReg: inv.companyReg || "",
-                                        website: inv.website || "",
-                                        phone: inv.phone || "",
-                                        timezone: inv.timezone || "UTC",
-                                        logoUrl: inv.logoUrl || "",
-                                        currency: inv.currency || "USD",
-                                        address: inv.address || "",
-                                        adminFirstName: inv.adminFirstName || "",
-                                        adminLastName: inv.adminLastName || "",
-                                        adminEmail: inv.adminEmail || "",
-                                        adminJobTitle: inv.adminJobTitle || "",
-                                      });
-                                    }}
-                                  >
-                                    <Image
-                                      src="/icons/edit.svg"
-                                      alt="Edit"
-                                      width={20}
-                                      height={20}
-                                    />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>Edit Invitation</TooltipContent>
-                              </Tooltip>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    className="h-5 w-5 cursor-pointer p-0"
-                                    size="icon"
-                                    onClick={() => setResendConfirmTarget(inv)}
-                                  >
-                                    <Image
-                                      src="/icons/resend.svg"
-                                      alt="Resend"
-                                      width={20}
-                                      height={20}
-                                    />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>Resend Invitation</TooltipContent>
-                              </Tooltip>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    className="h-5 w-5 cursor-pointer p-0"
-                                    size="icon"
-                                    onClick={() => setRevokeConfirmTarget(inv)}
-                                  >
-                                    <Image
-                                      src="/icons/revoke.svg"
-                                      alt="Revoke"
-                                      width={20}
-                                      height={20}
-                                    />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>Revoke Invitation</TooltipContent>
-                              </Tooltip>
-                            </>
+                    {showActionsColumn && (
+                      <TableCell>
+                        <div className="flex items-center justify-start min-w-[60px] gap-3">
+                          {inv.status === "Accepted" && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  className="h-5 w-5 cursor-pointer p-0"
+                                  size="icon"
+                                  onClick={() => setViewTarget(inv)}
+                                >
+                                  <Image
+                                    src="/icons/view.svg"
+                                    alt="View"
+                                    width={20}
+                                    height={20}
+                                  />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                View Invitation Details
+                              </TooltipContent>
+                            </Tooltip>
                           )}
-                      </div>
-                    </TableCell>
+                          {(inv.status === "Pending" ||
+                            inv.status === "Expired" ||
+                            inv.status === "Revoked") && hasPermission("edit") && (
+                              <>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      className="h-5 w-5 cursor-pointer p-0"
+                                      size="icon"
+                                      onClick={() => {
+                                        setEditTarget(inv);
+                                        setInviteForm({
+                                          airlineName: inv.airlineName,
+                                          airlineCode: inv.airlineCode,
+                                          contactEmail: inv.contactEmail,
+                                          country: inv.country,
+                                          creditLimit: String(inv.creditLimit),
+                                          expiryDate: inv.expiryDate
+                                            ? (() => {
+                                              const parts = inv.expiryDate.split("/");
+                                              if (parts.length === 3) {
+                                                return `${parts[2]}-${parts[1]}-${parts[0]}`;
+                                              }
+                                              return "";
+                                            })()
+                                            : "",
+                                          companyReg: inv.companyReg || "",
+                                          website: inv.website || "",
+                                          phone: inv.phone || "",
+                                          timezone: inv.timezone || "UTC",
+                                          logoUrl: inv.logoUrl || "",
+                                          currency: inv.currency || "USD",
+                                          address: inv.address || "",
+                                          adminFirstName: inv.adminFirstName || "",
+                                          adminLastName: inv.adminLastName || "",
+                                          adminEmail: inv.adminEmail || "",
+                                          adminJobTitle: inv.adminJobTitle || "",
+                                        });
+                                      }}
+                                    >
+                                      <Image
+                                        src="/icons/edit.svg"
+                                        alt="Edit"
+                                        width={20}
+                                        height={20}
+                                      />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>Edit Invitation</TooltipContent>
+                                </Tooltip>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      className="h-5 w-5 cursor-pointer p-0"
+                                      size="icon"
+                                      onClick={() => setResendConfirmTarget(inv)}
+                                    >
+                                      <Image
+                                        src="/icons/resend.svg"
+                                        alt="Resend"
+                                        width={20}
+                                        height={20}
+                                      />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>Resend Invitation</TooltipContent>
+                                </Tooltip>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      className="h-5 w-5 cursor-pointer p-0"
+                                      size="icon"
+                                      onClick={() => setRevokeConfirmTarget(inv)}
+                                    >
+                                      <Image
+                                        src="/icons/revoke.svg"
+                                        alt="Revoke"
+                                        width={20}
+                                        height={20}
+                                      />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>Revoke Invitation</TooltipContent>
+                                </Tooltip>
+                              </>
+                            )}
+                        </div>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))
               )}

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { cn } from "@/src/lib/utils";
+import { authService } from "@/src/services/auth.service";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -37,12 +38,14 @@ export default function LoginPage() {
     setErrors({});
     setIsLoading(true);
 
-    // Simulate redirecting to the dedicated TFA page after a successful sign-in attempt
+    // Simulate logging in the user and redirecting directly to the home dashboard
     setTimeout(() => {
       setIsLoading(false);
-      router.push("/two-factor");
+      authService.login(email, password);
+      router.push("/");
     }, 1500);
   };
+
 
   return (
     <div className="w-full lg:w-[480px] flex flex-col items-center justify-center min-h-screen px-4">

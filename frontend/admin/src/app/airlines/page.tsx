@@ -25,6 +25,7 @@ import { Dropdown } from "@/src/components/ui/Dropdown";
 import { EditAirlineModal } from "@/src/components/airlines/EditAirlineModal";
 import { SuspendAirlineDialog } from "@/src/components/airlines/SuspendAirlineDialog";
 import { AirlineDetailsView } from "@/src/components/airlines/AirlineDetailsView";
+import { useAuth } from "@/src/hooks/useAuth";
 
 const INITIAL_AIRLINES: Airline[] = [
   {
@@ -160,9 +161,9 @@ const INITIAL_AIRLINES: Airline[] = [
     allocationFailuresCount: 8,
   },
 ];
-
 export default function AirlinesPage() {
   const [airlines, setAirlines] = useState<Airline[]>(INITIAL_AIRLINES);
+  const { hasPermission } = useAuth();
 
   // Navigation State
   const [selectedAirlineId, setSelectedAirlineId] = useState<string | null>(null);
@@ -405,9 +406,11 @@ export default function AirlinesPage() {
                   <TableHead className="min-w-[128px] relative left-1">
                     <SortHeader label="Stripe" field="stripeConnection" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                   </TableHead>
-                  <TableHead className="whitespace-nowrap min-w-[143px] relative left-1">
-                    <SortHeader label="Enable/Disable" field="status" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
-                  </TableHead>
+                  {hasPermission("edit") && (
+                    <TableHead className="whitespace-nowrap min-w-[143px] relative left-1">
+                      <SortHeader label="Enable/Disable" field="status" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                    </TableHead>
+                  )}
                   <TableHead>Action</TableHead>
                 </TableRow>
               </TableHeader>
@@ -457,24 +460,26 @@ export default function AirlinesPage() {
                           {airline.stripeConnection}
                         </span>
                       </TableCell>
-                      <TableCell>
-                        {/* Enable/Disable Toggle Switch */}
-                        <button
-                          type="button"
-                          onClick={() => handleToggleStatus(airline)}
-                          className={cn(
-                            "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none relative left-1",
-                            airline.status === "Active" ? "bg-emerald-500" : "bg-gray-200"
-                          )}
-                        >
-                          <span
-                            className={cn(
-                              "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
-                              airline.status === "Active" ? "translate-x-5" : "translate-x-0"
-                            )}
-                          />
-                        </button>
-                      </TableCell>
+                      {hasPermission("edit") && (
+                        <TableCell>
+                          {/* Enable/Disable Toggle Switch */}
+                          <button
+                            type="button"
+                            onClick={() => handleToggleStatus(airline)}
+                            className="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none relative left-1 bg-emerald-500"
+                            style={{
+                              backgroundColor: airline.status === "Active" ? "#10B981" : "#E5E7EB"
+                            }}
+                          >
+                            <span
+                              className={cn(
+                                "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+                                airline.status === "Active" ? "translate-x-5" : "translate-x-0"
+                              )}
+                            />
+                          </button>
+                        </TableCell>
+                      )}
                       <TableCell>
                         <div className="flex items-center justify-start gap-2.5">
                           <button
@@ -484,23 +489,19 @@ export default function AirlinesPage() {
                           >
                             <Eye className="h-[20px] w-[20px]" />
                           </button>
-                          <button
-                            onClick={() => handleOpenSuspendConfirm(airline)}
-                            // disabled={airline.status === "Suspended"}
-                            className={cn(
-                              "p-1 transition-colors cursor-pointer",
-                              // airline.status === "Suspended"
-                              //    ? "text-gray-200 cursor-not-allowed"
-                              //    : "text-gray-400 hover:text-rose-600"
-                            )}
-                            title="Suspend Airline"
-                          >
-                            <img
-                              src="/icons/spam.svg"
-                              alt="Spam"
-                              className="h-[20px] w-[20px]"
-                            />
-                          </button>
+                          {hasPermission("edit") && (
+                            <button
+                              onClick={() => handleOpenSuspendConfirm(airline)}
+                              className="p-1 text-gray-400 hover:text-rose-600 cursor-pointer transition-colors"
+                              title="Suspend Airline"
+                            >
+                              <img
+                                src="/icons/spam.svg"
+                                alt="Spam"
+                                className="h-[20px] w-[20px]"
+                              />
+                            </button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>

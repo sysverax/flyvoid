@@ -119,6 +119,41 @@ export function ManageUserModal({
     });
   };
 
+  const allViewChecked = PERMISSION_ROWS.every((row) => userPermissions[row.key]?.view);
+  const allEditChecked = PERMISSION_ROWS.every((row) => userPermissions[row.key]?.edit);
+  const allExportChecked = PERMISSION_ROWS.every((row) => userPermissions[row.key]?.export);
+  const allAllChecked = PERMISSION_ROWS.every((row) => userPermissions[row.key]?.all);
+
+  const toggleColumnAll = (level: "view" | "edit" | "export" | "all") => {
+    setUserPermissions((prev) => {
+      const keys = PERMISSION_ROWS.map((row) => row.key);
+      const allTrue = keys.every((key) => prev[key]?.[level]);
+      const newValue = !allTrue;
+      
+      const updated = { ...prev };
+      keys.forEach((key) => {
+        if (!updated[key]) {
+          updated[key] = { view: false, edit: false, export: false, all: false };
+        }
+        if (level === "all") {
+          updated[key] = {
+            view: newValue,
+            edit: newValue,
+            export: newValue,
+            all: newValue,
+          };
+        } else {
+          updated[key] = {
+            ...updated[key],
+            [level]: newValue,
+          };
+          updated[key].all = updated[key].view && updated[key].edit && updated[key].export;
+        }
+      });
+      return updated;
+    });
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSave(userName, userEmail, userStatus, userPermissions);
@@ -203,11 +238,92 @@ export function ManageUserModal({
               {/* Select access level Header */}
               <div className="self-stretch pb-3 border-b border-gray-300 inline-flex justify-start items-center gap-6">
                 <div className="flex-1 justify-start text-gray-800 text-base font-semibold font-figtree leading-[100%]">Select access level</div>
-                <div className="flex justify-start items-center">
-                  <div className="w-20 text-center justify-start text-gray-500 text-sm font-normal font-figtree leading-[100%]">View Only</div>
-                  <div className="w-20 text-center justify-start text-gray-500 text-sm font-normal font-figtree leading-[100%]">Edit</div>
-                  <div className="w-20 text-center justify-start text-gray-500 text-sm font-normal font-figtree leading-[100%]">Export</div>
-                  <div className="w-20 text-center justify-start text-gray-500 text-sm font-normal font-figtree leading-[100%]">All</div>
+                <div className="flex justify-start items-center gap-3">
+                  
+                  {/* View All */}
+                  <div className="w-24 flex justify-start items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleColumnAll("view")}
+                      className={cn(
+                        "size-4 rounded-[4px] flex items-center justify-center transition-all cursor-pointer border",
+                        allViewChecked
+                          ? "bg-blue-950 border-blue-950 text-white"
+                          : "bg-white border-gray-300 text-transparent"
+                      )}
+                    >
+                      {allViewChecked && (
+                        <svg className="size-2.5 stroke-[3.5px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </button>
+                    <span className="text-gray-500 text-sm font-normal font-figtree select-none">All</span>
+                  </div>
+
+                  {/* Edit All */}
+                  <div className="w-24 flex justify-start items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleColumnAll("edit")}
+                      className={cn(
+                        "size-4 rounded-[4px] flex items-center justify-center transition-all cursor-pointer border",
+                        allEditChecked
+                          ? "bg-blue-950 border-blue-950 text-white"
+                          : "bg-white border-gray-300 text-transparent"
+                      )}
+                    >
+                      {allEditChecked && (
+                        <svg className="size-2.5 stroke-[3.5px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </button>
+                    <span className="text-gray-500 text-sm font-normal font-figtree select-none">All</span>
+                  </div>
+
+                  {/* Export All */}
+                  <div className="w-24 flex justify-start items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleColumnAll("export")}
+                      className={cn(
+                        "size-4 rounded-[4px] flex items-center justify-center transition-all cursor-pointer border",
+                        allExportChecked
+                          ? "bg-blue-950 border-blue-950 text-white"
+                          : "bg-white border-gray-300 text-transparent"
+                      )}
+                    >
+                      {allExportChecked && (
+                        <svg className="size-2.5 stroke-[3.5px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </button>
+                    <span className="text-gray-500 text-sm font-normal font-figtree select-none">All</span>
+                  </div>
+
+                  {/* All All */}
+                  <div className="w-24 flex justify-start items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleColumnAll("all")}
+                      className={cn(
+                        "size-4 rounded-[4px] flex items-center justify-center transition-all cursor-pointer border",
+                        allAllChecked
+                          ? "bg-blue-950 border-blue-950 text-white"
+                          : "bg-white border-gray-300 text-transparent"
+                      )}
+                    >
+                      {allAllChecked && (
+                        <svg className="size-2.5 stroke-[3.5px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </button>
+                    <span className="text-gray-500 text-sm font-normal font-figtree select-none">All</span>
+                  </div>
+
                 </div>
               </div>
 
@@ -224,7 +340,7 @@ export function ManageUserModal({
                   >
                     <div className="flex-1 inline-flex flex-col justify-center items-start gap-px">
                       {row.category && (
-                        <div className="self-stretch justify-start text-gray-500 text-xs font-medium font-figtree uppercase leading-[102%]">
+                        <div className="self-stretch justify-start text-gray-500 text-xs font-semibold font-figtree uppercase leading-[102%] tracking-[0.05em] mb-1">
                           {row.category}
                         </div>
                       )}
@@ -233,15 +349,15 @@ export function ManageUserModal({
                       </div>
                     </div>
 
-                    <div className="flex justify-start items-center">
+                    <div className="flex justify-start items-center gap-3">
                       
                       {/* View check */}
-                      <div className="w-20 flex justify-center items-center gap-2.5">
+                      <div className="w-24 flex justify-start items-center gap-2">
                         <button
                           type="button"
                           onClick={() => togglePermission(row.key, "view")}
                           className={cn(
-                            "size-4 rounded-[4px] flex items-center justify-center transition-all cursor-pointer border relative left-1",
+                            "size-4 rounded-[4px] flex items-center justify-center transition-all cursor-pointer border shrink-0",
                             userPermissions[row.key]?.view
                               ? "bg-blue-950 border-blue-950 text-white"
                               : "bg-white border-gray-300 text-transparent"
@@ -253,15 +369,16 @@ export function ManageUserModal({
                             </svg>
                           )}
                         </button>
+                        <span className="text-gray-500 text-sm font-normal font-figtree select-none">View Only</span>
                       </div>
 
                       {/* Edit check */}
-                      <div className="w-20 flex justify-center items-center gap-2.5">
+                      <div className="w-24 flex justify-start items-center gap-2">
                         <button
                           type="button"
                           onClick={() => togglePermission(row.key, "edit")}
                           className={cn(
-                            "size-4 rounded-[4px] flex items-center justify-center transition-all cursor-pointer border relative left-1",
+                            "size-4 rounded-[4px] flex items-center justify-center transition-all cursor-pointer border shrink-0",
                             userPermissions[row.key]?.edit
                               ? "bg-blue-950 border-blue-950 text-white"
                               : "bg-white border-gray-300 text-transparent"
@@ -273,15 +390,16 @@ export function ManageUserModal({
                             </svg>
                           )}
                         </button>
+                        <span className="text-gray-500 text-sm font-normal font-figtree select-none">Edit</span>
                       </div>
 
                       {/* Export check */}
-                      <div className="w-20 flex justify-center items-center gap-2.5">
+                      <div className="w-24 flex justify-start items-center gap-2">
                         <button
                           type="button"
                           onClick={() => togglePermission(row.key, "export")}
                           className={cn(
-                            "size-4 rounded-[4px] flex items-center justify-center transition-all cursor-pointer border relative left-1",
+                            "size-4 rounded-[4px] flex items-center justify-center transition-all cursor-pointer border shrink-0",
                             userPermissions[row.key]?.export
                               ? "bg-blue-950 border-blue-950 text-white"
                               : "bg-white border-gray-300 text-transparent"
@@ -293,15 +411,16 @@ export function ManageUserModal({
                             </svg>
                           )}
                         </button>
+                        <span className="text-gray-500 text-sm font-normal font-figtree select-none">Export</span>
                       </div>
 
                       {/* All check */}
-                      <div className="w-20 flex justify-center items-center gap-2.5">
+                      <div className="w-24 flex justify-start items-center gap-2">
                         <button
                           type="button"
                           onClick={() => togglePermission(row.key, "all")}
                           className={cn(
-                            "size-4 rounded-[4px] flex items-center justify-center transition-all cursor-pointer border relative left-1",
+                            "size-4 rounded-[4px] flex items-center justify-center transition-all cursor-pointer border shrink-0",
                             userPermissions[row.key]?.all
                               ? "bg-blue-950 border-blue-950 text-white"
                               : "bg-white border-gray-300 text-transparent"
@@ -313,6 +432,7 @@ export function ManageUserModal({
                             </svg>
                           )}
                         </button>
+                        <span className="text-gray-500 text-sm font-normal font-figtree select-none">All</span>
                       </div>
 
                     </div>

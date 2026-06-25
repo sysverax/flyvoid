@@ -11,6 +11,7 @@ import { StatusBadge } from "@/src/components/ui/StatusBadge";
 import { Button } from "@/src/components/ui/button";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell, SortHeader } from "@/src/components/ui/table";
 import { ManageUserModal } from "@/src/components/manage-users/ManageUserModal";
+import { useAuth } from "@/src/hooks/useAuth";
 
 interface UserPermissions {
   [key: string]: {
@@ -66,6 +67,7 @@ const defaultMayaPermissions: UserPermissions = {
 };
 
 export default function ManageUsersPage() {
+  const { hasPermission } = useAuth();
   const [users, setUsers] = useState<User[]>([
     {
       id: "AID0001",
@@ -214,13 +216,15 @@ export default function ManageUsersPage() {
             Create and manage admin users and their module access
           </p>
         </div>
-        <Button
-          onClick={handleOpenAddModal}
-          className="h-[50px] rounded-[10px] bg-primary hover:bg-primary-hover px-4.5 py-[9px] text-[16px] font-medium font-figtree transition-colors duration-200 cursor-pointer text-white flex items-center justify-center gap-2"
-        >
-          <Plus className="h-5 w-5" />
-          <span>Add New</span>
-        </Button>
+        {hasPermission("edit") && (
+          <Button
+            onClick={handleOpenAddModal}
+            className="h-[50px] rounded-[10px] bg-primary hover:bg-primary-hover px-4.5 py-[9px] text-[16px] font-medium font-figtree transition-colors duration-200 cursor-pointer text-white flex items-center justify-center gap-2"
+          >
+            <Plus className="h-5 w-5" />
+            <span>Add New</span>
+          </Button>
+        )}
       </div>
 
       {/* Filter and Search Bar */}
@@ -268,7 +272,7 @@ export default function ManageUsersPage() {
               <TableHead className="min-w-[100px]">
                 <SortHeader label="Status" field="status" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
               </TableHead>
-              <TableHead className="min-w-[89px]">Action</TableHead>
+              {hasPermission("edit") && <TableHead className="min-w-[89px]">Action</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -284,38 +288,40 @@ export default function ManageUsersPage() {
                   <TableCell>
                     <StatusBadge status={user.status} />
                   </TableCell>
-                  <TableCell>
-                    <div className="flex items-center justify-start gap-2.5">
-                      <Button
-                        variant="ghost"
-                        className="h-5 w-5 cursor-pointer p-0"
-                        size="icon"
-                        onClick={() => handleOpenEditModal(user)}
-                        title="Edit User"
-                      >
-                        <Image
-                          src="/icons/edit.svg"
-                          alt="Edit"
-                          width={20}
-                          height={20}
-                        />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        className="h-5 w-5 cursor-pointer p-0"
-                        size="icon"
-                        onClick={() => handleDeleteUser(user.id)}
-                        title="Delete User"
-                      >
-                        <Trash2 className="h-5 w-5 text-[#6B7280] hover:text-rose-600 transition-colors" />
-                      </Button>
-                    </div>
-                  </TableCell>
+                  {hasPermission("edit") && (
+                    <TableCell>
+                      <div className="flex items-center justify-start gap-2.5">
+                        <Button
+                          variant="ghost"
+                          className="h-5 w-5 cursor-pointer p-0"
+                          size="icon"
+                          onClick={() => handleOpenEditModal(user)}
+                          title="Edit User"
+                        >
+                          <Image
+                            src="/icons/edit.svg"
+                            alt="Edit"
+                            width={20}
+                            height={20}
+                          />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          className="h-5 w-5 cursor-pointer p-0"
+                          size="icon"
+                          onClick={() => handleDeleteUser(user.id)}
+                          title="Delete User"
+                        >
+                          <Trash2 className="h-5 w-5 text-[#6B7280] hover:text-rose-600 transition-colors" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={5} className="px-6 py-10 text-center text-gray-500 font-figtree">
+                <TableCell colSpan={hasPermission("edit") ? 5 : 4} className="px-6 py-10 text-center text-gray-500 font-figtree">
                   No users found matching your search filters.
                 </TableCell>
               </TableRow>
