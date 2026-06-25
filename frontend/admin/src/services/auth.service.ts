@@ -2,7 +2,6 @@
 
 export interface User {
   email: string;
-  role: string;
   accessControl: Record<string, string[]>;
 }
 
@@ -23,11 +22,10 @@ export const getModuleKey = (path: string): string => {
   return found ? found.key : "";
 };
 
-// 5 simulated users with module-level access configurations matching the mockup grid keys
+// 5 simulated users 
 const SIMULATED_USERS: Record<string, User> = {
   "all@gmail.com": {
     email: "all@gmail.com",
-    role: "Administrator",
     accessControl: {
       dashboard: ["view", "edit", "export"],
       airlines: ["view", "edit", "export"],
@@ -43,7 +41,6 @@ const SIMULATED_USERS: Record<string, User> = {
   },
   "view@gmail.com": {
     email: "view@gmail.com",
-    role: "Viewer",
     accessControl: {
       dashboard: ["view"],
       airlines: ["view"],
@@ -59,7 +56,6 @@ const SIMULATED_USERS: Record<string, User> = {
   },
   "edit@gmail.com": {
     email: "edit@gmail.com",
-    role: "Editor",
     accessControl: {
       dashboard: ["view", "edit"],
       airlines: ["view", "edit"],
@@ -75,7 +71,6 @@ const SIMULATED_USERS: Record<string, User> = {
   },
   "export@gmail.com": {
     email: "export@gmail.com",
-    role: "Exporter",
     accessControl: {
       dashboard: ["view", "export"],
       airlines: ["view", "export"],
@@ -91,7 +86,6 @@ const SIMULATED_USERS: Record<string, User> = {
   },
   "none@gmail.com": {
     email: "none@gmail.com",
-    role: "Restricted",
     accessControl: {
       dashboard: [],
       airlines: [],
@@ -120,7 +114,6 @@ export const authService = {
     if (!user) {
       user = {
         email: email.trim(),
-        role: "Restricted",
         accessControl: {
           dashboard: [],
           airlines: [],
