@@ -65,7 +65,7 @@ export function Dropdown({
         )}
       >
         <span className="truncate text-left flex-1 mr-2">{selectedOption ? selectedOption.label : value}</span>
-        <ChevronDown 
+        <ChevronDown
           className={cn(
             "pointer-events-none h-4 w-4 text-[#6B7280] transition-transform duration-200 shrink-0",
             isOpen && "rotate-180"
@@ -75,7 +75,7 @@ export function Dropdown({
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div 
+        <div
           className={cn(
             "absolute left-0 mt-2 z-50 p-2 bg-white rounded-lg shadow-[0px_4px_8px_0px_rgba(0,0,0,0.12)] outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col justify-start items-start gap-0.5",
             widthClass

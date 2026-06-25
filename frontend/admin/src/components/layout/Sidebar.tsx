@@ -14,25 +14,40 @@ import {
   Users,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
+import { SignOutDialog } from "./SignOutDialog";
+import { useAuth } from "@/src/hooks/useAuth";
 
 const navItems = [
-  { title: "Dashboard", icon: LayoutDashboard, path: "/" },
-  { title: "Airlines", icon: Plane, path: "/airlines" },
-  { title: "Cancellation", icon: "/icons/cancel.svg", path: "/cancellation" },
-  { title: "Payments", icon: "/icons/payment.svg", path: "/payments" },
-  { title: "Onboarding", icon: "/icons/onboarding.svg", path: "/onboarding" },
-  { title: "Audit Logs", icon: FileText, path: "/audit-logs" },
-  { title: "Manage Users", icon: Users, path: "/manage-users" },
-  { title: "Admin Profile", icon: "/icons/user.svg", path: "/profile" },
+  { title: "Dashboard", icon: LayoutDashboard, path: "/", key: "dashboard" },
+  { title: "Airlines", icon: Plane, path: "/airlines", key: "airlines" },
+  { title: "Cancellation", icon: "/icons/cancel.svg", path: "/cancellation", key: "cancellation" },
+  { title: "Payments", icon: "/icons/payment.svg", path: "/payments", key: "payments" },
+  { title: "Onboarding", icon: "/icons/onboarding.svg", path: "/onboarding", key: "onboarding" },
+  { title: "Audit Logs", icon: FileText, path: "/audit-logs", key: "auditLogs" },
+  { title: "Manage Users", icon: Users, path: "/manage-users", key: "manageUsers" },
+  { title: "Admin Profile", icon: "/icons/user.svg", path: "/profile", key: "profile" },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [signOutOpen, setSignOutOpen] = useState(false);
+  const { user, hasPermission } = useAuth();
 
   const handleLogout = () => {
-    router.push("/auth");
+    setSignOutOpen(true);
+  };
+
+  const confirmLogout = () => {
+    setSignOutOpen(false);
+    authService_logout();
+  };
+
+  const authService_logout = () => {
+    // Standard logout redirect
+    sessionStorage.removeItem("flyvoid_current_user");
+    router.push("/login");
   };
 
   const renderNavContent = (mobile = false) => (
@@ -63,13 +78,15 @@ export function Sidebar() {
         <nav className="scrollbar-hide flex-1 overflow-y-auto">
           <div className="flex w-full flex-col items-start gap-3">
             {navItems.map((item) => {
+              if (!hasPermission("view", item.path)) return null;
+
               const isActive = pathname === item.path;
               return (
                 <Link
                   key={item.path}
                   href={item.path}
                   className={cn(
-                    "flex h-[46px] w-full items-center gap-3 rounded-[10px] px-4 py-3 text-[18px] leading-[22px] transition-colors duration-200",
+                    "group flex h-[46px] w-full items-center gap-3 rounded-[10px] px-4 py-3 text-[18px] leading-[22px] transition-colors duration-200",
                     isActive
                       ? "bg-[#203663] text-white"
                       : "text-[#9FA9BC] hover:bg-[#203663]/50 hover:text-white",
@@ -82,8 +99,8 @@ export function Sidebar() {
                       width={20}
                       height={20}
                       className={cn(
-                        "h-5 w-5",
-                        isActive ? "brightness-0 invert" : "opacity-90",
+                        "h-5 w-5 transition-all duration-200",
+                        isActive ? "brightness-0 invert" : "opacity-90 group-hover:brightness-0 group-hover:invert",
                       )}
                     />
                   ) : (
@@ -101,7 +118,7 @@ export function Sidebar() {
           <button
             onClick={handleLogout}
             className={cn(
-              "flex items-center gap-2 text-[18px] leading-[22px] text-[#9FA9BC] transition-colors duration-200 hover:text-white",
+              "flex items-center gap-2 text-[18px] leading-[22px] text-[#9FA9BC] transition-colors duration-200 hover:text-white cursor-pointer",
             )}
           >
             <LogOut className="h-6 w-6" strokeWidth={1.6} />
@@ -146,6 +163,12 @@ export function Sidebar() {
       >
         {renderNavContent()}
       </aside>
+
+      <SignOutDialog
+        isOpen={signOutOpen}
+        onClose={() => setSignOutOpen(false)}
+        onConfirm={confirmLogout}
+      />
     </>
   );
 }
