@@ -8,6 +8,7 @@ export interface User {
 export const NAVIGATION_ITEMS = [
   { title: "Dashboard", path: "/", key: "dashboard" },
   { title: "Airlines", path: "/airlines", key: "airlines" },
+  { title: "Airports", path: "/airports", key: "airports" },
   { title: "Cancellation", path: "/cancellation", key: "cancelledFlights" },
   { title: "Payments", path: "/payments", key: "payments" },
   { title: "Onboarding", path: "/onboarding", key: "invitesOnboarding" },
@@ -29,6 +30,7 @@ const SIMULATED_USERS: Record<string, User> = {
     accessControl: {
       dashboard: ["view", "edit", "export"],
       airlines: ["view", "edit", "export"],
+      airports: ["view", "edit", "export"],
       cancelledFlights: ["view", "edit", "export"],
       platformOverview: ["view", "edit", "export"],
       detailedAnalysis: ["view", "edit", "export"],
@@ -44,6 +46,7 @@ const SIMULATED_USERS: Record<string, User> = {
     accessControl: {
       dashboard: ["view"],
       airlines: ["view"],
+      airports: ["view"],
       cancelledFlights: ["view"],
       platformOverview: ["view"],
       detailedAnalysis: ["view"],
@@ -59,6 +62,7 @@ const SIMULATED_USERS: Record<string, User> = {
     accessControl: {
       dashboard: ["view", "edit"],
       airlines: ["view", "edit"],
+      airports: ["view", "edit"],
       cancelledFlights: ["view", "edit"],
       platformOverview: ["view", "edit"],
       detailedAnalysis: ["view", "edit"],
@@ -74,6 +78,7 @@ const SIMULATED_USERS: Record<string, User> = {
     accessControl: {
       dashboard: ["view", "export"],
       airlines: ["view", "export"],
+      airports: ["view", "export"],
       cancelledFlights: ["view", "export"],
       platformOverview: ["view", "export"],
       detailedAnalysis: ["view", "export"],
@@ -89,6 +94,7 @@ const SIMULATED_USERS: Record<string, User> = {
     accessControl: {
       dashboard: [],
       airlines: [],
+      airports: [],
       cancelledFlights: [],
       platformOverview: [],
       detailedAnalysis: [],
@@ -117,6 +123,7 @@ export const authService = {
         accessControl: {
           dashboard: [],
           airlines: [],
+          airports: [],
           cancelledFlights: [],
           platformOverview: [],
           detailedAnalysis: [],

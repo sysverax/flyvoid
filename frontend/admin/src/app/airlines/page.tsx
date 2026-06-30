@@ -492,7 +492,7 @@ export default function AirlinesPage() {
                           {hasPermission("edit") && (
                             <button
                               onClick={() => handleOpenSuspendConfirm(airline)}
-                              className="p-1 text-gray-400 hover:text-rose-600 cursor-pointer transition-colors"
+                              className="p-1 cursor-pointer transition-colors"
                               title="Suspend Airline"
                             >
                               <img
