@@ -51,27 +51,21 @@ export function PlatformReserveModal({
         style={{
           boxSizing: "border-box",
           gap: "24px",
-          width: "454px",
+          width: "448px",
           borderRadius: "16px",
         }}
       >
         {/* Form Content Group */}
         <div className="flex flex-col gap-[24px] w-full">
           {/* Header */}
-          <div className="flex flex-col gap-2 relative">
-            {/* <button
-              onClick={onClose}
-              className="absolute top-0 right-0 p-1.5 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer flex-shrink-0"
-            >
-              <X className="w-5 h-5 text-gray-500" />
-            </button> */}
+          <div className="flex flex-col gap-1 relative">
             <div className="flex items-center gap-2">
               <Lock className="w-5 h-5 text-[#0F2757]" />
               <h2 className="text-gray-800 text-lg font-semibold font-figtree leading-7">
                 Platform Reserve
               </h2>
             </div>
-            <p className="text-gray-500 text-sm font-normal font-figtree pr-8">
+            <p className="text-gray-500 text-sm font-normal font-figtree leading-tight">
               Add or withdraw funds from the platform reserve used to back airline credit.
             </p>
           </div>
@@ -135,7 +129,7 @@ export function PlatformReserveModal({
                       setReserveAmount(val);
                     }
                   }}
-                  className="w-full pl-8 pr-10 py-2.5 bg-white border border-[#D1D5DB] rounded-lg text-gray-500 text-base font-normal font-figtree outline-none focus:border-blue-900 transition-colors"
+                  className="w-full pl-6 pr-10 py-2.5 bg-white border border-[#D1D5DB] rounded-lg text-gray-500 text-base font-normal font-figtree outline-none focus:border-blue-900 transition-colors"
                 />
                 <div
                   onClick={(e) => {
@@ -167,7 +161,7 @@ export function PlatformReserveModal({
                 rows={3}
                 className="h-[89px] w-full px-3.5 py-2.5 bg-white border border-[#D1D5DB] rounded-lg text-gray-500 text-base font-normal font-figtree outline-none focus:border-blue-900 transition-colors resize-none"
               />
-              <div className="text-right text-gray-500 text-xs font-normal font-figtree -mt-0.5">
+              <div className="text-right text-gray-500 text-xs font-normal font-figtree  translate-y-1">
                 {reserveNote.length}/500
               </div>
             </div>
@@ -175,11 +169,11 @@ export function PlatformReserveModal({
         </div>
 
         {/* Footer Actions */}
-        <div className="flex gap-3 w-full">
+        <div className="flex gap-3 w-full translate-y-0.5 -translate-x-[1px] pb-1">
           <button
             type="button"
             onClick={onClose}
-            className="h-[48px] flex-1 py-2.5 rounded-lg border border-[#D1D5DB] text-gray-800 text-base font-normal font-figtree hover:bg-gray-50 transition-colors cursor-pointer bg-white"
+            className="h-[48px] flex-1 py-2.5 rounded-[10px] border border-[#D1D5DB] text-gray-800 text-base font-normal font-figtree hover:bg-gray-50 transition-colors cursor-pointer bg-white"
           >
             Cancel
           </button>
@@ -187,10 +181,10 @@ export function PlatformReserveModal({
             type="button"
             onClick={handleSubmit}
             disabled={!reserveAmount || Number(reserveAmount) <= 0}
-            className="h-[48px] flex-1 py-2.5 rounded-lg text-white text-[16px] font-normal font-figtree bg-[#0F2757] hover:bg-[#0b1d42] transition-all cursor-pointer flex items-center justify-center gap-1.5"
+            className="h-[48px] flex-1 py-2.5 rounded-[10px] text-white text-[16px] font-normal font-figtree bg-[#0F2757] hover:bg-[#0b1d42] transition-all cursor-pointer flex items-center justify-center gap-1.5"
           >
-            <Plus className="w-4 h-4 text-white" />
-            <span>Deposit</span>
+            <Plus className="relative -translate-x-2 w-4 h-4 text-white" />
+            <span className="relative -translate-x-2">Deposit</span>
           </button>
         </div>
       </div>

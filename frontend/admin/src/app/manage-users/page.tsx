@@ -11,6 +11,7 @@ import { StatusBadge } from "@/src/components/ui/StatusBadge";
 import { Button } from "@/src/components/ui/button";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell, SortHeader } from "@/src/components/ui/table";
 import { ManageUserModal } from "@/src/components/manage-users/ManageUserModal";
+import { DeleteUserDialog } from "@/src/components/manage-users/DeleteUserDialog";
 import { useAuth } from "@/src/hooks/useAuth";
 
 interface UserPermissions {
@@ -99,6 +100,7 @@ export default function ManageUsersPage() {
   // Modal control states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
 
   const showToast = (message: string, type: "success" | "warning" | "info" = "success") => {
     const id = Date.now().toString();
@@ -116,11 +118,11 @@ export default function ManageUsersPage() {
     setIsModalOpen(true);
   };
 
-  const handleDeleteUser = (userId: string) => {
-    if (confirm("Are you sure you want to delete this user?")) {
-      setUsers((prev) => prev.filter((u) => u.id !== userId));
-      showToast("User deleted successfully.", "info");
-    }
+  const handleConfirmDelete = () => {
+    if (!deleteTarget) return;
+    setUsers((prev) => prev.filter((u) => u.id !== deleteTarget.id));
+    showToast("User deleted successfully.", "info");
+    setDeleteTarget(null);
   };
 
   const handleSaveUser = (
@@ -219,7 +221,8 @@ export default function ManageUsersPage() {
         {hasPermission("edit") && (
           <Button
             onClick={handleOpenAddModal}
-            className="h-[50px] rounded-[10px] bg-primary hover:bg-primary-hover px-4.5 py-[9px] text-[16px] font-medium font-figtree transition-colors duration-200 cursor-pointer text-white flex items-center justify-center gap-2"
+            className="h-[50px] bg-primary hover:bg-primary-hover px-4.5 py-[9px] text-[16px] font-medium font-figtree transition-colors duration-200 cursor-pointer text-white flex items-center justify-center gap-2"
+            style={{ borderRadius: "10px" }}
           >
             <Plus className="h-5 w-5" />
             <span>Add New</span>
@@ -309,7 +312,7 @@ export default function ManageUsersPage() {
                           variant="ghost"
                           className="h-5 w-5 cursor-pointer p-0"
                           size="icon"
-                          onClick={() => handleDeleteUser(user.id)}
+                          onClick={() => setDeleteTarget(user)}
                           title="Delete User"
                         >
                           <Trash2 className="h-5 w-5 text-[#6B7280] hover:text-rose-600 transition-colors" />
@@ -335,6 +338,13 @@ export default function ManageUsersPage() {
         onClose={() => setIsModalOpen(false)}
         onSave={handleSaveUser}
         editingUser={editingUser}
+      />
+
+      <DeleteUserDialog
+        isOpen={!!deleteTarget}
+        user={deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleConfirmDelete}
       />
 
       {/* Global Toast list */}

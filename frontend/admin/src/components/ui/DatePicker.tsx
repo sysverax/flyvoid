@@ -12,6 +12,7 @@ interface DatePickerProps {
 export function DatePicker({ value, onChange, placeholder, align = "left" }: DatePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [alignRight, setAlignRight] = useState(false);
 
   // Parse initial value or default to current date
   const parsedDate = value ? new Date(value) : new Date();
@@ -109,11 +110,20 @@ export function DatePicker({ value, onChange, placeholder, align = "left" }: Dat
     return today.getDate() === day && today.getMonth() === viewMonth && today.getFullYear() === viewYear;
   };
 
+  const handleToggleOpen = () => {
+    if (!isOpen && containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const overflowsRight = rect.left + 280 > window.innerWidth;
+      setAlignRight(overflowsRight);
+    }
+    setIsOpen(!isOpen);
+  };
+
   return (
     <div className="relative inline-block w-[160px]" ref={containerRef}>
       {/* Trigger input */}
       <div
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={handleToggleOpen}
         className="relative h-11 w-full rounded-[8px] border border-[#D1D5DB] bg-[#F3F4F6] py-3 pl-4 pr-16 text-gray-600 cursor-pointer hover:bg-slate-100/80 transition-colors flex items-center select-none"
       >
         <span className={cn("text-[16px] overflow-hidden text-ellipsis whitespace-nowrap", !displayValue && "text-gray-400")}>
@@ -138,7 +148,7 @@ export function DatePicker({ value, onChange, placeholder, align = "left" }: Dat
       {isOpen && (
         <div className={cn(
           "absolute top-full mt-1 z-50 w-[280px] bg-white rounded-xl shadow-xl border border-gray-200 p-4 select-none",
-          align === "right" ? "right-0" : "left-0"
+          alignRight ? "right-0" : "left-0"
         )}>
           {/* Header */}
           <div className="flex items-center justify-between mb-4">

@@ -25,7 +25,7 @@ import {
 import { cn, sortData } from "@/src/lib/utils";
 import { Dropdown } from "@/src/components/ui/Dropdown";
 import { Dialog } from "@/src/components/ui/Dialog";
-import { PlatformReserveModal } from "@/src/components/PlatformReserveModal";
+import { PlatformReserveModal } from "@/src/components/payment/PlatformReserveModal";
 import { DatePicker } from "@/src/components/ui/DatePicker";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell, SortHeader } from "@/src/components/ui/table";
 import { Pagination } from "@/src/components/ui/pagination";
@@ -452,13 +452,19 @@ export default function PaymentsPage() {
     "overview" | "detailed" | "treasury"
   >("overview");
 
+  const hasInitializedTab = useRef(false);
+
   useEffect(() => {
+    if (hasInitializedTab.current) return;
     if (hasPermission("view", "platformOverview")) {
       setActiveTab("overview");
+      hasInitializedTab.current = true;
     } else if (hasPermission("view", "detailedAnalysis")) {
       setActiveTab("detailed");
+      hasInitializedTab.current = true;
     } else if (hasPermission("view", "platformTreasury")) {
       setActiveTab("treasury");
+      hasInitializedTab.current = true;
     }
   }, [hasPermission]);
 
@@ -878,7 +884,6 @@ export default function PaymentsPage() {
               setTransactionCurrentPage(1);
             }}
             placeholder="End Date"
-            align="right"
           />
         </div>
       </div>
@@ -1457,7 +1462,7 @@ export default function PaymentsPage() {
                   }}
                   options={transactionTypeOptions}
                   triggerWidthClass="w-[160px]"
-                  widthClass="w-[160px]"
+                  widthClass="w-[180px]"
                   heightClass="h-[40px]"
                 />
               </div>

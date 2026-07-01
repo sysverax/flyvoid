@@ -14,6 +14,7 @@ const AIRPORT_TYPES: DropdownOption[] = [
 ];
 
 const COUNTRIES: DropdownOption[] = [
+  { value: "", label: "Select Country" },
   { value: "United States", label: "United States" },
   { value: "United Kingdom", label: "United Kingdom" },
   { value: "Germany", label: "Germany" },
@@ -84,13 +85,15 @@ export function AddEditAirportModal({
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
+  const [validationError, setValidationError] = useState("");
+
   const [formState, setFormState] = useState({
     name: "",
     iataCode: "PA",
     icaoCode: "OMDB",
-    city: "Dubai",
-    countryCode: "AE",
-    country: "United Arab Emirates",
+    city: "",
+    countryCode: "",
+    country: "",
     timezone: "",
     type: "UTC" as "INTERNATIONAL" | "DOMESTIC" | "UTC",
     isActive: true,
@@ -135,9 +138,9 @@ export function AddEditAirportModal({
         name: "",
         iataCode: "PA",
         icaoCode: "OMDB",
-        city: "Dubai",
-        countryCode: "AE",
-        country: "United Arab Emirates",
+        city: "",
+        countryCode: "",
+        country: "",
         timezone: "",
         type: "UTC",
         isActive: true,
@@ -147,10 +150,16 @@ export function AddEditAirportModal({
         address: "",
       });
     }
+    setValidationError("");
   }, [airport, isOpen]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formState.country) {
+      setValidationError("Please select a country");
+      return;
+    }
+    setValidationError("");
     onSave(formState);
   };
 
@@ -238,13 +247,21 @@ export function AddEditAirportModal({
               <Field label="Country *">
                 <Dropdown
                   value={formState.country}
-                  onChange={handleCountryChange}
+                  onChange={(val) => {
+                    handleCountryChange(val);
+                    setValidationError("");
+                  }}
                   options={modalCountryOptions}
                   widthClass="w-full"
                   triggerWidthClass="w-full"
                   heightClass="h-[49px]"
                   bgClass="bg-white"
                 />
+                {validationError && (
+                  <span className="text-red-500 text-[14px] mt-1 block">
+                    {validationError}
+                  </span>
+                )}
               </Field>
 
               {/* Row 2 */}

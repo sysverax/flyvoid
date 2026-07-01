@@ -151,7 +151,7 @@ export default function OnboardingPage() {
     airlineName: "",
     airlineCode: "",
     contactEmail: "",
-    country: "France",
+    country: "",
     creditLimit: "",
     expiryDate: "",
     companyReg: "",
@@ -305,6 +305,7 @@ export default function OnboardingPage() {
       !inviteForm.airlineName ||
       !inviteForm.airlineCode ||
       !inviteForm.contactEmail ||
+      !inviteForm.country ||
       !inviteForm.adminFirstName ||
       !inviteForm.adminLastName ||
       !inviteForm.adminEmail ||
@@ -408,7 +409,7 @@ export default function OnboardingPage() {
       airlineName: "",
       airlineCode: "",
       contactEmail: "",
-      country: "France",
+      country: "",
       creditLimit: "",
       expiryDate: "",
       companyReg: "",
@@ -444,7 +445,7 @@ export default function OnboardingPage() {
           {hasPermission("edit") && (
             <button
               onClick={() => setIsInviteModalOpen(true)}
-              className="group flex h-[50px] items-center justify-center gap-2 rounded-[10px] bg-primary px-4 py-[9px] text-[16px] font-medium text-white transition-colors duration-200 hover:bg-primary-hover"
+              className="group flex h-[50px] items-center justify-center gap-2 rounded-[10px] bg-primary px-4 py-[9px] text-[16px] font-medium text-white transition-colors duration-200 hover:bg-primary-hover cursor-pointer"
             >
               <Send className="h-5 w-5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
               <span>Invite Airline</span>
@@ -562,13 +563,13 @@ export default function OnboardingPage() {
                     </TableCell>
                     <TableCell className={cn(inv.status === "Revoked" && "opacity-50")}>{inv.country}</TableCell>
                     <TableCell className={cn(inv.status === "Revoked" && "opacity-50")}>{inv.invitedBy}</TableCell>
-                    <TableCell className={cn("whitespace-nowrap pl-5", inv.status === "Revoked" && "opacity-50")}>
+                    <TableCell className={cn("whitespace-nowrap", inv.status === "Revoked" && "opacity-50")}>
                       {inv.invitedDate}
                     </TableCell>
                     <TableCell className={cn("whitespace-nowrap", inv.status === "Revoked" && "opacity-50")}>
                       {inv.expiryDate}
                     </TableCell>
-                    <TableCell className={cn("pl-2", inv.status === "Revoked" && "opacity-50")}>
+                    <TableCell className={cn(inv.status === "Revoked" && "opacity-50")}>
                       ${inv.creditLimit.toLocaleString()}
                     </TableCell>
                     <TableCell className={cn(inv.status === "Revoked" && "opacity-50")}>
@@ -714,6 +715,25 @@ export default function OnboardingPage() {
         onClose={() => {
           setIsInviteModalOpen(false);
           setEditTarget(null);
+          setInviteForm({
+            airlineName: "",
+            airlineCode: "",
+            contactEmail: "",
+            country: "",
+            creditLimit: "",
+            expiryDate: "",
+            companyReg: "",
+            website: "",
+            phone: "",
+            timezone: "UTC",
+            logoUrl: "",
+            currency: "USD",
+            address: "",
+            adminFirstName: "",
+            adminLastName: "",
+            adminEmail: "",
+            adminJobTitle: "",
+          });
         }}
         onSubmit={handleCreateInvitation}
         formState={inviteForm}
