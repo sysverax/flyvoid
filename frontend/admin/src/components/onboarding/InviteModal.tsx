@@ -8,6 +8,7 @@ import { cn } from "@/src/lib/utils";
 import { Dropdown, DropdownOption } from "@/src/components/ui/Dropdown";
 
 const COUNTRIES: DropdownOption[] = [
+  { value: "", label: "Select Country" },
   { value: "France", label: "France" },
   { value: "Japan", label: "Japan" },
   { value: "Switzerland", label: "Switzerland" },
@@ -133,7 +134,7 @@ export function InviteModal({
                 {/* Country — custom Dropdown */}
                 <Field label="Country" required>
                   <Dropdown
-                    value={formState.country || COUNTRIES[0].value}
+                    value={formState.country}
                     onChange={setField("country")}
                     options={COUNTRIES}
                     widthClass="w-full"

@@ -55,12 +55,12 @@ export function Pagination({
             <button
               type="button"
               onClick={() => setIsOpen(!isOpen)}
-              className="w-[75px] flex items-center justify-between border border-[#D1D5DB] text-[#6B7280] py-1.5 pl-3 pr-2.5 rounded-[8px] text-[14px] font-medium hover:bg-gray-50 cursor-pointer focus:outline-none transition-all h-[34px] font-urbanist bg-white"
+              className="w-[75px] flex items-center justify-between border border-[#D1D5DB] text-[#6B7280] py-1.5 pl-3 pr-2.5 rounded-[8px] text-[14px] font-medium hover:bg-gray-50 cursor-pointer focus:outline-none transition-all h-[34px] font-urbanist"
             >
-              <span className="text-gray-700">{resultsPerPage}</span>
+              <span className="text-gray-500 text-[14px] font-medium">{resultsPerPage}</span>
               <ChevronDown
                 className={cn(
-                  "w-3.5 h-3.5 text-[#6B7280] transition-transform duration-200 shrink-0",
+                  "w-4 h-4 text-gray-500 transition-transform duration-200 shrink-0",
                   isOpen && "rotate-180"
                 )}
               />
@@ -100,10 +100,9 @@ export function Pagination({
           <button
             type="button"
             onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-            disabled={currentPage === 1}
-            className="h-[34px] w-[34px] cursor-pointer rounded-[8px] border border-[#D1D5DB] p-1.5 text-[#1F2937] transition-colors hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="h-[34px] w-[34px] cursor-pointer rounded-[8px] border border-1 border-[#D1D5DB] p-1.5 text-[#1F2937] transition-colors hover:bg-gray-50"
           >
-            <ChevronDown className="w-4 h-4 rotate-90" />
+            <ChevronDown className="w-4 h-4 rotate-90 text-gray-500" />
           </button>
           <span className="text-[14px] text-[#1F2937] font-medium px-2">
             Page {currentPage} of {totalPages}
@@ -113,10 +112,9 @@ export function Pagination({
             onClick={() =>
               setCurrentPage(Math.min(totalPages, currentPage + 1))
             }
-            disabled={currentPage === totalPages}
-            className="h-[34px] w-[34px] cursor-pointer rounded-[8px] border border-[#D1D5DB] p-1.5 text-[#1F2937] transition-colors hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="h-[34px] w-[34px] cursor-pointer rounded-[8px] border border-1 border-[#D1D5DB] p-1.5 text-[#1F2937] transition-colors hover:bg-gray-50"
           >
-            <ChevronDown className="w-4 h-4 -rotate-90" />
+            <ChevronDown className="w-4 h-4 -rotate-90 text-gray-500" />
           </button>
         </div>
       </div>

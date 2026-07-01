@@ -219,7 +219,8 @@ export default function ManageUsersPage() {
         {hasPermission("edit") && (
           <Button
             onClick={handleOpenAddModal}
-            className="h-[50px] rounded-[10px] bg-primary hover:bg-primary-hover px-4.5 py-[9px] text-[16px] font-medium font-figtree transition-colors duration-200 cursor-pointer text-white flex items-center justify-center gap-2"
+            className="h-[50px] bg-primary hover:bg-primary-hover px-4.5 py-[9px] text-[16px] font-medium font-figtree transition-colors duration-200 cursor-pointer text-white flex items-center justify-center gap-2"
+            style={{ borderRadius: "10px" }}
           >
             <Plus className="h-5 w-5" />
             <span>Add New</span>

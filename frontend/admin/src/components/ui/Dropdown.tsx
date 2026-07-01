@@ -59,7 +59,7 @@ export function Dropdown({
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
-          "w-full flex items-center justify-between rounded-[8px] border border-[#D1D5DB] pl-4 pr-3.5 text-[#1F2937] outline-none cursor-pointer hover:bg-slate-100/80 transition-colors text-[16px] font-medium",
+          "w-full flex items-center justify-between rounded-[8px] border border-[#D1D5DB] pl-4 pr-3.5 text-[#1F2937] outline-none cursor-pointer hover:bg-slate-100/80 transition-colors text-[16px]",
           heightClass,
           bgClass
         )}
@@ -81,7 +81,7 @@ export function Dropdown({
             widthClass
           )}
         >
-          {options.map((option) => {
+          {options.filter((option) => option.value !== "").map((option) => {
             const isSelected = option.value === value;
             return (
               <button
