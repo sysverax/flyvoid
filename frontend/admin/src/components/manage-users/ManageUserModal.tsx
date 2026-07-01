@@ -129,7 +129,7 @@ export function ManageUserModal({
       const keys = PERMISSION_ROWS.map((row) => row.key);
       const allTrue = keys.every((key) => prev[key]?.[level]);
       const newValue = !allTrue;
-      
+
       const updated = { ...prev };
       keys.forEach((key) => {
         if (!updated[key]) {
@@ -179,7 +179,7 @@ export function ManageUserModal({
       >
         {/* Main Body (Header + Forms) */}
         <div ref={scrollContainerRef} className="self-stretch flex-1 flex flex-col justify-start items-start gap-6 overflow-y-auto pr-1 scrollbar-hide pb-4">
-          
+
           {/* Header */}
           <div className="self-stretch inline-flex justify-between items-start">
             <div className="inline-flex flex-col justify-start items-start gap-1">
@@ -198,9 +198,9 @@ export function ManageUserModal({
 
           {/* Form Content */}
           <form id="manage-user-form" onSubmit={handleSubmit} className="self-stretch flex flex-col justify-start items-start gap-6 w-full">
-            
+
             {/* User Name & Email inputs */}
-            <div className="self-stretch inline-flex justify-start items-center gap-5 relative -top-0.5">   
+            <div className="self-stretch inline-flex justify-start items-center gap-5 relative -top-0.5">
               {/* User Name */}
               <div className="flex-1 h-20 inline-flex flex-col justify-start items-start">
                 <div className="self-stretch flex-1 flex flex-col justify-start items-start gap-2.5">
@@ -234,19 +234,19 @@ export function ManageUserModal({
 
             {/* Access Level Grid */}
             <div className="self-stretch flex flex-col justify-start items-start gap-3.5 w-full relative -top-1">
-              
+
               {/* Select access level Header */}
               <div className="self-stretch pb-3 border-b border-gray-300 inline-flex justify-start items-center gap-6">
-                <div className="flex-1 justify-start text-gray-800 text-base font-semibold font-figtree leading-[100%]">Select access level</div>
+                <div className="min-w-[248px] flex-1 justify-start text-gray-800 text-base font-semibold font-figtree leading-[100%]">Select access level</div>
                 <div className="flex justify-start items-center gap-3">
-                  
+
                   {/* View All */}
-                  <div className="w-24 flex justify-start items-center gap-2">
+                  <div className="min-w-[92px] flex justify-start items-center gap-2">
                     <button
                       type="button"
                       onClick={() => toggleColumnAll("view")}
                       className={cn(
-                        "size-4 rounded-[4px] flex items-center justify-center transition-all cursor-pointer border",
+                        "size-4 rounded-[4px] flex items-center justify-center transition-all cursor-pointer border shrink-0",
                         allViewChecked
                           ? "bg-blue-950 border-blue-950 text-white"
                           : "bg-white border-gray-300 text-transparent"
@@ -262,12 +262,12 @@ export function ManageUserModal({
                   </div>
 
                   {/* Edit All */}
-                  <div className="w-24 flex justify-start items-center gap-2">
+                  <div className="min-w-14 flex justify-start items-center gap-2">
                     <button
                       type="button"
                       onClick={() => toggleColumnAll("edit")}
                       className={cn(
-                        "size-4 rounded-[4px] flex items-center justify-center transition-all cursor-pointer border",
+                        "size-4 rounded-[4px] flex items-center justify-center transition-all cursor-pointer border shrink-0",
                         allEditChecked
                           ? "bg-blue-950 border-blue-950 text-white"
                           : "bg-white border-gray-300 text-transparent"
@@ -283,12 +283,12 @@ export function ManageUserModal({
                   </div>
 
                   {/* Export All */}
-                  <div className="w-24 flex justify-start items-center gap-2">
+                  <div className="min-w-18 flex justify-start items-center gap-2">
                     <button
                       type="button"
                       onClick={() => toggleColumnAll("export")}
                       className={cn(
-                        "size-4 rounded-[4px] flex items-center justify-center transition-all cursor-pointer border",
+                        "size-4 rounded-[4px] flex items-center justify-center transition-all cursor-pointer border shrink-0",
                         allExportChecked
                           ? "bg-blue-950 border-blue-950 text-white"
                           : "bg-white border-gray-300 text-transparent"
@@ -304,12 +304,12 @@ export function ManageUserModal({
                   </div>
 
                   {/* All All */}
-                  <div className="w-24 flex justify-start items-center gap-2">
+                  <div className="min-w-[62px] flex justify-start items-center gap-2">
                     <button
                       type="button"
                       onClick={() => toggleColumnAll("all")}
                       className={cn(
-                        "size-4 rounded-[4px] flex items-center justify-center transition-all cursor-pointer border",
+                        "size-4 rounded-[4px] flex items-center justify-center transition-all cursor-pointer border shrink-0",
                         allAllChecked
                           ? "bg-blue-950 border-blue-950 text-white"
                           : "bg-white border-gray-300 text-transparent"
@@ -334,25 +334,25 @@ export function ManageUserModal({
                   <div
                     key={row.key}
                     className={cn(
-                      "self-stretch pb-3.5 inline-flex justify-start items-center gap-6",
+                      "self-stretch pb-[13px] inline-flex justify-start items-center gap-6 -translate-y-1.5",
                       !isLast && "border-b border-gray-300"
                     )}
                   >
-                    <div className="flex-1 inline-flex flex-col justify-center items-start gap-px">
+                    <div className="min-w-[248px] flex-1 inline-flex flex-col justify-center items-start gap-px ">
                       {row.category && (
-                        <div className="self-stretch justify-start text-gray-500 text-xs font-semibold font-figtree uppercase leading-[102%] tracking-[0.05em] mb-1">
+                        <div className="self-stretch justify-start text-gray-500 text-xs font-semibold font-figtree uppercase ">
                           {row.category}
                         </div>
                       )}
-                      <div className="self-stretch justify-start text-gray-800 text-base font-medium font-figtree leading-[120%]">
+                      <div className="self-stretch justify-start text-gray-800 text-base font-medium font-figtree leading-[110%]">
                         {row.label}
                       </div>
                     </div>
 
                     <div className="flex justify-start items-center gap-3">
-                      
+
                       {/* View check */}
-                      <div className="w-24 flex justify-start items-center gap-2">
+                      <div className="min-w-[92px] flex justify-start items-center gap-2">
                         <button
                           type="button"
                           onClick={() => togglePermission(row.key, "view")}
@@ -373,7 +373,7 @@ export function ManageUserModal({
                       </div>
 
                       {/* Edit check */}
-                      <div className="w-24 flex justify-start items-center gap-2">
+                      <div className="min-w-14 flex justify-start items-center gap-2">
                         <button
                           type="button"
                           onClick={() => togglePermission(row.key, "edit")}
@@ -394,7 +394,7 @@ export function ManageUserModal({
                       </div>
 
                       {/* Export check */}
-                      <div className="w-24 flex justify-start items-center gap-2">
+                      <div className="min-w-18 flex justify-start items-center gap-2">
                         <button
                           type="button"
                           onClick={() => togglePermission(row.key, "export")}
@@ -415,7 +415,7 @@ export function ManageUserModal({
                       </div>
 
                       {/* All check */}
-                      <div className="w-24 flex justify-start items-center gap-2">
+                      <div className="min-w-[62px] flex justify-start items-center gap-2">
                         <button
                           type="button"
                           onClick={() => togglePermission(row.key, "all")}
@@ -443,7 +443,7 @@ export function ManageUserModal({
             </div>
 
             {/* Status Switch Block */}
-            <div className="w-[592px] max-w-full h-[82px] p-5 bg-gray-100 rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 inline-flex justify-between items-center relative -top-1">
+            <div className="w-[592px] max-w-full h-[82px] p-5 bg-gray-100 rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 inline-flex justify-between items-center relative -top-3">
               <div className="flex justify-start items-center gap-3">
                 <button
                   type="button"
@@ -462,7 +462,7 @@ export function ManageUserModal({
               </div>
               <div className={cn(
                 "px-2.5 py-0.5 rounded-2xl flex justify-center items-center font-inter text-xs font-medium leading-4",
-                userStatus === "Active" ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"
+                userStatus === "Active" ? "bg-green-100 text-green-800" : "bg-gray-200 text-gray-800"
               )}>
                 {userStatus}
               </div>
@@ -472,18 +472,18 @@ export function ManageUserModal({
         </div>
 
         {/* Footer */}
-        <div className="self-stretch inline-flex justify-start items-start gap-3 shrink-0">
+        <div className="self-stretch inline-flex justify-start items-start gap-3 shrink-0 relative -top-4.5">
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 px-6 py-4 rounded-[10px] outline outline-1 outline-offset-[-1px] outline-gray-300 flex justify-center items-center overflow-hidden text-gray-800 text-lg font-normal font-figtree bg-white transition-colors cursor-pointer hover:bg-gray-50"
+            className="h-[54px] flex-1 px-6 py-4 rounded-[10px] outline outline-1 outline-offset-[-1px] outline-gray-300 flex justify-center items-center overflow-hidden text-gray-800 text-lg font-normal font-figtree bg-white transition-colors cursor-pointer hover:bg-gray-50"
           >
             Cancel
           </button>
           <button
             type="submit"
             form="manage-user-form"
-            className="flex-1 px-6 py-4 bg-blue-950 rounded-[10px] flex justify-center items-center overflow-hidden text-white text-lg font-normal font-figtree transition-colors cursor-pointer hover:bg-blue-900"
+            className="h-[54px] flex-1 px-6 py-4 bg-blue-950 rounded-[10px] flex justify-center items-center overflow-hidden text-white text-lg font-normal font-figtree transition-colors cursor-pointer hover:bg-blue-900"
           >
             {editingUser ? "Save Changes" : "Add Now"}
           </button>
