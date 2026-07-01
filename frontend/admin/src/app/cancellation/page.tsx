@@ -337,7 +337,6 @@ export default function CancellationPage() {
                   setCurrentPage(1);
                 }}
                 placeholder="End Date"
-                align="right"
               />
             </div>
           </div>

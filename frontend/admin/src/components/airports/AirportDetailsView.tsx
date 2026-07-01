@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { Airport } from "@/src/types/airports";
 import { useLockBodyScroll } from "@/src/hooks/useLockBodyScroll";
+import { useAuth } from "@/src/hooks/useAuth";
 
 interface AirportDetailsViewProps {
   isOpen: boolean;
@@ -19,6 +20,7 @@ export function AirportDetailsView({
   onEditClick,
 }: AirportDetailsViewProps) {
   useLockBodyScroll(isOpen);
+  const { hasPermission } = useAuth();
 
   if (!isOpen) return null;
 
@@ -88,19 +90,23 @@ export function AirportDetailsView({
               </div>
             </div>
 
-            {/* Divider */}
-            <div className="self-stretch h-0 border-t border-gray-300"></div>
+            {hasPermission("edit") && (
+              <>
+                {/* Divider */}
+                <div className="self-stretch h-0 border-t border-gray-300"></div>
 
-            {/* Footer Edit Button */}
-            <div className="self-stretch inline-flex justify-end items-center gap-2.5 translate-y-0.5">
-              <button
-                type="button"
-                onClick={onEditClick}
-                className="h-[42px] w-[128px] px-4 py-2.5 bg-primary hover:bg-[#1A3B75] text-white text-lg font-normal font-figtree rounded-[10px] transition-colors cursor-pointer"
-              >
-                Edit Details
-              </button>
-            </div>
+                {/* Footer Edit Button */}
+                <div className="self-stretch inline-flex justify-end items-center gap-2.5 translate-y-0.5">
+                  <button
+                    type="button"
+                    onClick={onEditClick}
+                    className="h-[42px] w-[128px] px-4 py-2.5 bg-primary hover:bg-[#1A3B75] text-white text-lg font-normal font-figtree rounded-[10px] transition-colors cursor-pointer"
+                  >
+                    Edit Details
+                  </button>
+                </div>
+              </>
+            )}
 
           </div>
         </div>
