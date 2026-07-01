@@ -46,7 +46,7 @@ export function AirportDetailsView({
             <button
               type="button"
               onClick={onClose}
-              className="p-1 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
+              className="p-1 rounded-lg transition-colors cursor-pointer"
             >
               <X className="w-5 h-5 text-gray-955" />
             </button>

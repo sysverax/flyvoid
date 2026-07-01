@@ -1462,7 +1462,7 @@ export default function PaymentsPage() {
                   }}
                   options={transactionTypeOptions}
                   triggerWidthClass="w-[160px]"
-                  widthClass="w-[160px]"
+                  widthClass="w-[180px]"
                   heightClass="h-[40px]"
                 />
               </div>
