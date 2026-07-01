@@ -20,6 +20,7 @@ import { useAuth } from "@/src/hooks/useAuth";
 const navItems = [
   { title: "Dashboard", icon: LayoutDashboard, path: "/", key: "dashboard" },
   { title: "Airlines", icon: Plane, path: "/airlines", key: "airlines" },
+  { title: "Airports", icon: "/icons/airport.svg", path: "/airports", key: "airports" },
   { title: "Cancellation", icon: "/icons/cancel.svg", path: "/cancellation", key: "cancellation" },
   { title: "Payments", icon: "/icons/payment.svg", path: "/payments", key: "payments" },
   { title: "Onboarding", icon: "/icons/onboarding.svg", path: "/onboarding", key: "onboarding" },
