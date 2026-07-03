@@ -69,6 +69,11 @@ import { config } from "../config/config";
             config.db.mode === "automation_test" ? true : config.db.synchronize,
           logging: config.db.logging,
           autoLoadEntities: true,
+          extra: {
+            ssl: {
+              rejectUnauthorized: config.db.ssl,
+            },
+          },
         };
       },
 

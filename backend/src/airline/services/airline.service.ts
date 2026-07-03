@@ -1,32 +1,20 @@
 import {
   ConflictException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
-  UnauthorizedException,
 } from "@nestjs/common";
-import * as bcrypt from "bcrypt";
-import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
-import { AuthenticatedUser } from "../../auth/interfaces/authenticated-request.interface";
-import {
-  AccessAction,
-  AirlineAsset,
-} from "../../common/constants/access-control.constants";
-import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
-import { AirlineRole, UserType } from "../../common/constants/user.constants";
+import { DataSource } from "typeorm";
 import { LoggerService } from "../../common/logger/logger.service";
 import {
-  AirlineProfileResponseDto,
-  AirlineUserListResponseDto,
-  AirlineUserResponseDto,
-  AirlineUserProfileResponseDto,
-  InviteAirlineUserRequestDto,
-  InviteAirlineUserResponseDto,
-  UpdateAirlineUserRequestDto,
+  AdminAirlineListResponseDto,
+  AdminAirlineQueryDto,
+  AdminAirlineResponseDto,
+  AirlineAdminUserDto,
+  UpdateAirlineRequestDto,
 } from "../dto";
 import { AirlineEntity } from "../entities/airline.entity";
 import { AirlineUserEntity } from "../entities/airline-user.entity";
+import { AirlineRepository } from "../repositories/airline.repository";
 import { AirlineUserRepository } from "../repositories/airline-user.repository";
 
 @Injectable()
@@ -34,339 +22,263 @@ export class AirlineService {
   private readonly context = "AirlineService";
 
   constructor(
-    @InjectRepository(AirlineEntity)
-    private readonly airlineRepository: Repository<AirlineEntity>,
+    private readonly airlineRepository: AirlineRepository,
     private readonly airlineUserRepository: AirlineUserRepository,
     private readonly logger: LoggerService,
+    private readonly dataSource: DataSource,
   ) {}
 
-  async inviteAirlineUser(
-    authenticatedUser: AuthenticatedUser,
-    dto: InviteAirlineUserRequestDto,
+  async listAirlines(
+    query: AdminAirlineQueryDto,
     requestId: string,
-  ): Promise<InviteAirlineUserResponseDto> {
-    const actor = await this.ensureAirlineAdmin(authenticatedUser, requestId);
-
-    const email = dto.email.toLowerCase().trim();
-    const existingUser = await this.airlineUserRepository.findByEmail(
-      email,
-      requestId,
-    );
-    if (existingUser) {
-      throw new ConflictException("Airline user email already exists");
-    }
-
-    const temporaryPassword = this.generateTemporaryPassword();
-    const passwordHash = await bcrypt.hash(temporaryPassword, 10);
-
-    const createdUser = await this.airlineUserRepository.create(
-      {
-        airlineId: actor.airlineId,
-        firstName: dto.firstName.trim(),
-        lastName: dto.lastName.trim(),
-        email,
-        jobTitle: dto.jobTitle.trim(),
-        passwordHash,
-        role: AirlineRole.AIRLINE_STAFF,
-        isActive: dto.isActive ?? true,
-        requirePasswordReset: true,
-      },
-      requestId,
-      this.airlineRepository.manager,
-    );
-
-    await this.airlineUserRepository.replaceAirlineAccessControls(
-      createdUser.id,
-      this.normalizeAirlineAccessControls(dto.accessControls),
+  ): Promise<AdminAirlineListResponseDto> {
+    const { airlines, total } = await this.airlineRepository.findAll(
+      query,
       requestId,
     );
 
-    this.logger.info(
-      "Airline user invited successfully",
-      this.context,
-      requestId,
-      {
-        airlineUserId: createdUser.id,
-        airlineId: createdUser.airlineId,
-        email,
-        role: createdUser.role,
-      },
-    );
-
-    return {
-      user: this.toAirlineUserResponse(createdUser),
-      temporaryPassword,
-    };
-  }
-
-  async updateAirlineUser(
-    authenticatedUser: AuthenticatedUser,
-    userId: number,
-    dto: UpdateAirlineUserRequestDto,
-    requestId: string,
-  ): Promise<AirlineUserResponseDto> {
-    const actor = await this.ensureAirlineAdmin(authenticatedUser, requestId);
-
-    const user = await this.airlineUserRepository.findById(userId, requestId);
-    if (!user || user.airlineId !== actor.airlineId) {
-      throw new NotFoundException("Airline user not found");
-    }
-
-    if (user.role === AirlineRole.AIRLINE_ADMIN && actor.id !== user.id) {
-      throw new ForbiddenException(
-        "Only self-update is allowed for AIRLINE_ADMIN",
-      );
-    }
-
-    if (user.role === AirlineRole.AIRLINE_ADMIN && dto.isActive === false) {
-      throw new ForbiddenException("AIRLINE_ADMIN cannot be suspended");
-    }
-
-    await this.airlineUserRepository.updateAirlineUser(
-      userId,
-      {
-        firstName: dto.firstName?.trim(),
-        lastName: dto.lastName?.trim(),
-        jobTitle: dto.jobTitle?.trim(),
-        isActive: dto.isActive,
-      },
+    const airlineIds = airlines.map((a) => a.id);
+    const adminUsers = await this.batchFindAdminsByAirlineIds(
+      airlineIds,
       requestId,
     );
-
-    if (dto.accessControls) {
-      await this.airlineUserRepository.replaceAirlineAccessControls(
-        userId,
-        this.normalizeAirlineAccessControls(dto.accessControls),
-        requestId,
-      );
-    }
-
-    const updated = await this.airlineUserRepository.findById(
-      userId,
-      requestId,
-    );
-    if (!updated || updated.airlineId !== actor.airlineId) {
-      throw new NotFoundException("Airline user not found");
-    }
-
-    return this.toAirlineUserResponse(updated);
-  }
-
-  async deleteAirlineUser(
-    authenticatedUser: AuthenticatedUser,
-    userId: number,
-    requestId: string,
-  ): Promise<void> {
-    const actor = await this.ensureAirlineAdmin(authenticatedUser, requestId);
-
-    const user = await this.airlineUserRepository.findById(userId, requestId);
-    if (!user || user.airlineId !== actor.airlineId) {
-      throw new NotFoundException("Airline user not found");
-    }
-
-    if (user.id === actor.id) {
-      throw new ForbiddenException("You cannot delete your own account");
-    }
-
-    if (user.role === AirlineRole.AIRLINE_ADMIN) {
-      throw new ForbiddenException("Deleting AIRLINE_ADMIN is not allowed");
-    }
-
-    await this.airlineUserRepository.deleteAirlineUser(userId, requestId);
-  }
-
-  async listAirlineUsers(
-    authenticatedUser: AuthenticatedUser,
-    pagination: PaginationQueryDto,
-    requestId: string,
-  ): Promise<AirlineUserListResponseDto> {
-    const actor = await this.ensureAirlineAdmin(authenticatedUser, requestId);
-
-    const { users, total } =
-      await this.airlineUserRepository.findAllByAirlineId(
-        actor.airlineId,
-        pagination,
-        requestId,
-      );
 
     return {
       total,
-      currentPage: pagination.page,
-      limit: pagination.limit,
-      users: users.map((user) => this.toAirlineUserResponse(user)),
+      currentPage: query.page,
+      limit: query.limit,
+      airlines: airlines.map((airline) =>
+        this.toAirlineResponse(airline, adminUsers.get(airline.id) ?? null),
+      ),
     };
   }
 
-  async getUserProfile(
-    authenticatedUser: AuthenticatedUser,
+  async getAirlineById(
+    airlineId: number,
     requestId: string,
-  ): Promise<AirlineUserProfileResponseDto> {
-    const user = await this.requireAirlineUser(authenticatedUser, requestId);
+  ): Promise<AdminAirlineResponseDto> {
+    const airline = await this.airlineRepository.findById(airlineId, requestId);
+    if (!airline) {
+      throw new NotFoundException("Airline not found");
+    }
+
+    const adminUser = await this.airlineUserRepository.findAdminByAirlineId(
+      airlineId,
+      requestId,
+    );
+
+    return this.toAirlineResponse(airline, adminUser);
+  }
+
+  async updateAirline(
+    airlineId: number,
+    dto: UpdateAirlineRequestDto,
+    requestId: string,
+  ): Promise<AdminAirlineResponseDto> {
+    // ── Reads & validation (outside transaction) ──────────────────────────
+
+    const airline = await this.airlineRepository.findById(airlineId, requestId);
+    if (!airline) {
+      throw new NotFoundException("Airline not found");
+    }
+
+    if (dto.code !== undefined) {
+      const normalizedCode = dto.code.trim().toUpperCase();
+      if (normalizedCode !== airline.code) {
+        const existing = await this.airlineRepository.findByCode(
+          normalizedCode,
+          requestId,
+        );
+        if (existing) {
+          throw new ConflictException("Airline code already exists");
+        }
+      }
+    }
+
+    if (dto.companyRegistrationNumber !== undefined) {
+      const normalizedCRN = dto.companyRegistrationNumber.trim();
+      if (normalizedCRN !== airline.companyRegistrationNumber) {
+        const existing =
+          await this.airlineRepository.findByCompanyRegistrationNumber(
+            normalizedCRN,
+            requestId,
+          );
+        if (existing) {
+          throw new ConflictException(
+            "Company registration number already exists",
+          );
+        }
+      }
+    }
+
+    const airlineUpdate: Parameters<
+      typeof this.airlineRepository.updateAirline
+    >[1] = {};
+
+    if (dto.name !== undefined) airlineUpdate.name = dto.name.trim();
+    if (dto.code !== undefined)
+      airlineUpdate.code = dto.code.trim().toUpperCase();
+    if (dto.countryCode !== undefined)
+      airlineUpdate.countryCode = dto.countryCode.trim().toUpperCase();
+    if (dto.companyRegistrationNumber !== undefined)
+      airlineUpdate.companyRegistrationNumber =
+        dto.companyRegistrationNumber.trim();
+    if (dto.website !== undefined)
+      airlineUpdate.website =
+        dto.website === null || dto.website === "" ? null : dto.website.trim();
+    if (dto.contactEmail !== undefined)
+      airlineUpdate.contactEmail = dto.contactEmail;
+    if (dto.contactPhone !== undefined)
+      airlineUpdate.contactPhone = dto.contactPhone.trim();
+    if (dto.timezone !== undefined)
+      airlineUpdate.timezone = dto.timezone.trim();
+    if (dto.logo !== undefined)
+      airlineUpdate.logo =
+        dto.logo === null || dto.logo === "" ? null : dto.logo.trim();
+    if (dto.currency !== undefined)
+      airlineUpdate.currency = dto.currency.trim().toUpperCase();
+    if (dto.address !== undefined) airlineUpdate.address = dto.address.trim();
+    if (dto.isActive !== undefined) airlineUpdate.isActive = dto.isActive;
+    if (dto.isSuspended !== undefined)
+      airlineUpdate.isSuspended = dto.isSuspended;
+
+    const adminUpdate: Parameters<
+      typeof this.airlineUserRepository.updateAirlineUser
+    >[1] = {};
+    let adminUserId: number | null = null;
+
+    const hasAdminUpdate =
+      dto.adminFirstName !== undefined ||
+      dto.adminLastName !== undefined ||
+      dto.adminEmail !== undefined ||
+      dto.adminJobTitle !== undefined;
+
+    if (hasAdminUpdate) {
+      const adminUser = await this.airlineUserRepository.findAdminByAirlineId(
+        airlineId,
+        requestId,
+      );
+      if (!adminUser) {
+        throw new NotFoundException("Airline admin user not found");
+      }
+
+      if (dto.adminEmail !== undefined && dto.adminEmail !== adminUser.email) {
+        const existing = await this.airlineUserRepository.findByEmail(
+          dto.adminEmail,
+          requestId,
+        );
+        if (existing) {
+          throw new ConflictException("Admin email already exists");
+        }
+      }
+
+      adminUserId = adminUser.id;
+      if (dto.adminFirstName !== undefined)
+        adminUpdate.firstName = dto.adminFirstName.trim();
+      if (dto.adminLastName !== undefined)
+        adminUpdate.lastName = dto.adminLastName.trim();
+      if (dto.adminEmail !== undefined) adminUpdate.email = dto.adminEmail;
+      if (dto.adminJobTitle !== undefined)
+        adminUpdate.jobTitle = dto.adminJobTitle.trim();
+    }
+
+    // ── Writes (atomic transaction) ───────────────────────────────────────
+
+    await this.dataSource.transaction(async (manager) => {
+      if (Object.keys(airlineUpdate).length > 0) {
+        await this.airlineRepository.updateAirline(
+          airlineId,
+          airlineUpdate,
+          requestId,
+          manager,
+        );
+      }
+
+      if (adminUserId !== null && Object.keys(adminUpdate).length > 0) {
+        await this.airlineUserRepository.updateAirlineUser(
+          adminUserId,
+          adminUpdate,
+          requestId,
+          manager,
+        );
+      }
+    });
+
+    this.logger.info("Airline updated successfully", this.context, requestId, {
+      airlineId,
+    });
+
+    return this.getAirlineById(airlineId, requestId);
+  }
+
+  private async batchFindAdminsByAirlineIds(
+    airlineIds: number[],
+    requestId: string,
+  ): Promise<Map<number, AirlineUserEntity>> {
+    if (airlineIds.length === 0) {
+      return new Map();
+    }
+
+    this.logger.debug(
+      "Batch finding airline admins by airline ids",
+      this.context,
+      requestId,
+      { count: airlineIds.length },
+    );
+
+    const admins = await Promise.all(
+      airlineIds.map((id) =>
+        this.airlineUserRepository.findAdminByAirlineId(id, requestId),
+      ),
+    );
+
+    const map = new Map<number, AirlineUserEntity>();
+    admins.forEach((admin, index) => {
+      if (admin) {
+        map.set(airlineIds[index], admin);
+      }
+    });
+
+    return map;
+  }
+
+  private toAdminUserDto(
+    user: AirlineUserEntity | null,
+  ): AirlineAdminUserDto | null {
+    if (!user) return null;
 
     return {
       id: user.id,
-      airlineId: user.airlineId,
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
-      role: user.role,
+      jobTitle: user.jobTitle,
+      isActive: user.isActive,
     };
   }
 
-  async getAirlineProfile(
-    authenticatedUser: AuthenticatedUser,
-    requestId: string,
-  ): Promise<AirlineProfileResponseDto> {
-    const user = await this.requireAirlineUser(authenticatedUser, requestId);
-
-    const airline = await this.airlineRepository.findOne({
-      where: { id: user.airlineId, isActive: true },
-    });
-
-    if (!airline) {
-      throw new UnauthorizedException("Airline not found");
-    }
-
+  private toAirlineResponse(
+    airline: AirlineEntity,
+    adminUser: AirlineUserEntity | null,
+  ): AdminAirlineResponseDto {
     return {
       id: airline.id,
       name: airline.name,
       code: airline.code,
       countryCode: airline.countryCode,
-      contactEmail: airline.contactEmail ?? null,
-      contactPhone: airline.contactPhone ?? null,
+      companyRegistrationNumber: airline.companyRegistrationNumber,
+      website: airline.website ?? null,
+      contactEmail: airline.contactEmail,
+      contactPhone: airline.contactPhone,
+      timezone: airline.timezone,
+      logo: airline.logo ?? null,
+      currency: airline.currency,
+      address: airline.address,
+      isActive: airline.isActive,
+      isSuspended: airline.isSuspended,
+      adminUser: this.toAdminUserDto(adminUser),
+      createdAt: airline.createdAt.toISOString(),
+      updatedAt: airline.updatedAt.toISOString(),
     };
-  }
-
-  private async requireAirlineUser(
-    authenticatedUser: AuthenticatedUser,
-    requestId: string,
-  ): Promise<AirlineUserEntity> {
-    if (authenticatedUser.userType !== UserType.AIRLINE) {
-      throw new UnauthorizedException("Unauthorized");
-    }
-
-    const user = await this.airlineUserRepository.findById(
-      authenticatedUser.sub,
-      requestId,
-    );
-
-    if (!user || !user.isActive) {
-      this.logger.warn("Airline user not found", this.context, requestId, {
-        airlineUserId: authenticatedUser.sub,
-      });
-      throw new UnauthorizedException("Airline user not found");
-    }
-
-    return user;
-  }
-
-  private async ensureAirlineAdmin(
-    authenticatedUser: AuthenticatedUser,
-    requestId: string,
-  ): Promise<AirlineUserEntity> {
-    const actor = await this.airlineUserRepository.findById(
-      authenticatedUser.sub,
-      requestId,
-    );
-
-    if (!actor || !actor.isActive) {
-      throw new UnauthorizedException("Unauthorized");
-    }
-
-    if (actor.role !== AirlineRole.AIRLINE_ADMIN) {
-      throw new ForbiddenException(
-        "Only AIRLINE_ADMIN can perform this action",
-      );
-    }
-
-    return actor;
-  }
-
-  private toAirlineUserResponse(user: {
-    id: number;
-    airlineId: number;
-    firstName: string;
-    lastName: string;
-    email: string;
-    jobTitle: string;
-    role: AirlineRole;
-    isActive: boolean;
-    lastLoginAt?: Date;
-    createdAt: Date;
-    updatedAt: Date;
-  }): AirlineUserResponseDto {
-    return {
-      id: user.id,
-      airlineId: user.airlineId,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
-      jobTitle: user.jobTitle,
-      role: user.role,
-      isActive: user.isActive,
-      lastLoginAt: user.lastLoginAt ? user.lastLoginAt.toISOString() : null,
-      createdAt: user.createdAt.toISOString(),
-      updatedAt: user.updatedAt.toISOString(),
-    };
-  }
-
-  private generateTemporaryPassword(length = 12): string {
-    const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
-    const lower = "abcdefghijkmnpqrstuvwxyz";
-    const digits = "23456789";
-    const symbols = "!@#$%^&*";
-    const all = upper + lower + digits + symbols;
-
-    const pick = (pool: string) =>
-      pool[Math.floor(Math.random() * pool.length)];
-
-    const chars = [pick(upper), pick(lower), pick(digits), pick(symbols)];
-    while (chars.length < length) {
-      chars.push(pick(all));
-    }
-
-    for (let i = chars.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [chars[i], chars[j]] = [chars[j], chars[i]];
-    }
-
-    return chars.join("");
-  }
-
-  private normalizeAirlineAccessControls(
-    controls: Array<{ asset: AirlineAsset; access: AccessAction[] }>,
-  ): Array<{ asset: AirlineAsset; access: AccessAction[] }> {
-    const grouped = new Map<AirlineAsset, Set<AccessAction>>();
-
-    for (const control of controls) {
-      const normalizedActions = this.withImpliedView(control.access);
-      const existing = grouped.get(control.asset);
-      if (!existing) {
-        grouped.set(control.asset, new Set(normalizedActions));
-        continue;
-      }
-
-      for (const action of normalizedActions) {
-        existing.add(action);
-      }
-    }
-
-    return Array.from(grouped.entries()).map(([asset, actionSet]) => ({
-      asset,
-      access: Array.from(actionSet),
-    }));
-  }
-
-  private withImpliedView(access: AccessAction[]): AccessAction[] {
-    const actionSet = new Set(access);
-
-    if (
-      actionSet.has(AccessAction.EDIT) ||
-      actionSet.has(AccessAction.EXPORT)
-    ) {
-      actionSet.add(AccessAction.VIEW);
-    }
-
-    return Array.from(actionSet);
   }
 }

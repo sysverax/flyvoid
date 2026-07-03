@@ -103,6 +103,7 @@ export class AirlineUserRepository {
       >
     >,
     requestId: string,
+    manager?: EntityManager,
   ): Promise<void> {
     this.logger.debug(
       "Updating airline user",
@@ -114,7 +115,11 @@ export class AirlineUserRepository {
       },
     );
 
-    await this.airlineUserRepository.update({ id }, payload);
+    const repository = manager
+      ? manager.getRepository(AirlineUserEntity)
+      : this.airlineUserRepository;
+
+    await repository.update({ id }, payload);
   }
 
   async deleteAirlineUser(id: number, requestId: string): Promise<void> {
@@ -235,6 +240,22 @@ export class AirlineUserRepository {
       asset,
       access: Array.from(accessSet),
     }));
+  }
+
+  async findAdminByAirlineId(
+    airlineId: number,
+    requestId: string,
+  ): Promise<AirlineUserEntity | null> {
+    this.logger.debug(
+      "Finding airline admin user by airline id",
+      "AirlineUserRepository",
+      requestId,
+      { airlineId },
+    );
+
+    return this.airlineUserRepository.findOne({
+      where: { airlineId, role: AirlineRole.AIRLINE_ADMIN },
+    });
   }
 
   async countActiveAirlineAdminsByAirlineId(

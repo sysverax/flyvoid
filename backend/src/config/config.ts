@@ -33,6 +33,7 @@ export const config = {
     mode: process.env.DB_MODE ?? "development",
     synchronize: process.env.DB_SYNCHRONIZE === "true",
     logging: process.env.DB_LOGGING === "true",
+    ssl: process.env.DB_SSL === "true",
   },
   log: {
     logging: process.env.APP_LOGGING === "true",
