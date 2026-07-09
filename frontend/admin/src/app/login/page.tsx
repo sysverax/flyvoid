@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { authService } from "@/src/services/auth.service";
+import { toast } from "react-toastify";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -12,40 +13,100 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  const [touched, setTouched] = useState<{ email?: boolean; password?: boolean }>({});
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
 
-  const handleSignIn = (e: React.FormEvent) => {
+  const validateField = (name: "email" | "password", value: string): string => {
+    if (name === "email") {
+      if (!value) {
+        return "Email is required";
+      }
+      if (!/\S+@\S+\.\S+/.test(value)) {
+        return "Please enter a valid email address";
+      }
+    } else if (name === "password") {
+      if (!value) {
+        return "Password is required";
+      }
+      const hasMinLength = value.length >= 8;
+      const hasUppercase = /[A-Z]/.test(value);
+      const hasLowercase = /[a-z]/.test(value);
+      const hasNumber = /\d/.test(value);
+      const hasSpecial = /[@#$!%*?&]/.test(value);
+      const hasForbidden = /[^a-zA-Z\d@#$!%*?&]/.test(value);
+
+      if (!hasMinLength || !hasUppercase || !hasLowercase || !hasNumber || !hasSpecial || hasForbidden) {
+        return "Password must be at least 8 characters and include uppercase, lowercase, number, and special character (@#$!%*?&)";
+      }
+    }
+    return "";
+  };
+
+  const handleEmailChange = (val: string) => {
+    setEmail(val);
+    if (touched.email) {
+      setErrors((prev) => ({
+        ...prev,
+        email: validateField("email", val) || undefined,
+      }));
+    }
+  };
+
+  const handlePasswordChange = (val: string) => {
+    setPassword(val);
+    if (touched.password) {
+      setErrors((prev) => ({
+        ...prev,
+        password: validateField("password", val) || undefined,
+      }));
+    }
+  };
+
+  const handleBlur = (name: "email" | "password") => {
+    setTouched((prev) => ({ ...prev, [name]: true }));
+    const value = name === "email" ? email : password;
+    setErrors((prev) => ({
+      ...prev,
+      [name]: validateField(name, value) || undefined,
+    }));
+  };
+
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newErrors: { email?: string; password?: string } = {};
 
-    if (!email) {
-      newErrors.email = "Email address is required";
-    } else if (!/\S+@\S+\.\S+/.test(email)) {
-      newErrors.email = "Please enter a valid email address";
-    }
+    setTouched({ email: true, password: true });
 
-    if (!password) {
-      newErrors.password = "Password is required";
-    } else if (password.length < 6) {
-      newErrors.password = "Password must be at least 6 characters";
-    }
+    const emailErr = validateField("email", email);
+    const passwordErr = validateField("password", password);
 
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors);
+    if (emailErr || passwordErr) {
+      setErrors({
+        email: emailErr || undefined,
+        password: passwordErr || undefined,
+      });
       return;
     }
 
     setErrors({});
     setIsLoading(true);
 
-    // Simulate logging in the user and redirecting directly to the home dashboard
-    setTimeout(() => {
-      setIsLoading(false);
-      authService.login(email, password);
+    try {
+      const result = await authService.login(email, password);
+      if (result?.requiresTwoFactor) {
+        sessionStorage.setItem("two_factor_token", result.twoFactorToken || "");
+        sessionStorage.setItem("two_factor_email", email);
+        sessionStorage.setItem("two_factor_password", password);
+        router.push("/two-factor");
+        return;
+      }
+      toast.success(result?.message || "Successfully signed in");
       router.push("/");
-    }, 1500);
+    } catch (err: any) {
+      setIsLoading(false);
+      toast.error(err.message || "Failed to sign in. Please check your credentials.");
+    }
   };
-
 
   return (
     <div className="w-full lg:w-[480px] flex flex-col items-center justify-center min-h-screen px-4">
@@ -79,7 +140,7 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <form onSubmit={handleSignIn} className="flex flex-col gap-5">
+        <form onSubmit={handleSignIn} className="flex flex-col gap-5" noValidate>
           {/* Email input field */}
           <div className="flex flex-col gap-2">
             <label className="text-gray-800 text-base font-semibold font-figtree leading-tight">
@@ -87,23 +148,22 @@ export default function LoginPage() {
             </label>
             <div className={cn(
               "relative h-[47px] w-full rounded-[6px] border bg-[#F9FAFB] transition-all flex items-center px-3 focus-within:bg-white focus-within:ring-2 focus-within:ring-[#0F2757]/10",
-              errors.email ? "border-rose-300 focus-within:ring-rose-500/10 focus-within:border-rose-400" : "border-gray-200 focus-within:border-[#0F2757]"
+              errors.email ? "border-red-500 focus-within:ring-red-500/10 focus-within:border-red-500" : "border-gray-200 focus-within:border-[#0F2757]"
             )}>
-              <Mail className={cn("w-4 h-4 text-gray-500 shrink-0 transition-colors", errors.email ? "text-rose-400" : "text-gray-400")} />
+              <Mail className="w-4 h-4 text-gray-400 shrink-0 transition-colors" />
               <input
                 type="email"
                 placeholder="you@flyvoid.com"
                 value={email}
-                onChange={(e) => {
-                  setEmail(e.target.value);
-                  if (errors.email) setErrors((prev) => ({ ...prev, email: undefined }));
-                }}
+                onChange={(e) => handleEmailChange(e.target.value)}
+                onBlur={() => handleBlur("email")}
+                onInvalid={(e) => e.preventDefault()}
                 disabled={isLoading}
                 className="w-full h-full bg-transparent pl-[13px] pr-2 outline-none text-gray-800 font-figtree text-[16px] placeholder-gray-500"
               />
             </div>
             {errors.email && (
-              <span className="text-rose-500 text-xs font-medium font-figtree mt-0.5 pl-1">
+              <span className="text-red-500 text-xs font-medium font-figtree pl-1">
                 {errors.email}
               </span>
             )}
@@ -116,17 +176,15 @@ export default function LoginPage() {
             </label>
             <div className={cn(
               "relative h-[47px] w-full rounded-[6px] border bg-[#F9FAFB] transition-all flex items-center px-3 focus-within:bg-white focus-within:ring-2 focus-within:ring-[#0F2757]/10",
-              errors.password ? "border-rose-300 focus-within:ring-rose-500/10 focus-within:border-rose-400" : "border-gray-200 focus-within:border-[#0F2757]"
+              errors.password ? "border-red-500 focus-within:ring-red-500/10 focus-within:border-red-500" : "border-gray-200 focus-within:border-[#0F2757]"
             )}>
-              <Lock className={cn("w-4 h-4 text-gray-500 shrink-0 transition-colors", errors.password ? "text-rose-400" : "text-gray-400")} />
+              <Lock className="w-4 h-4 text-gray-400 shrink-0 transition-colors" />
               <input
                 type={showPassword ? "text" : "password"}
                 placeholder="Enter your password"
                 value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  if (errors.password) setErrors((prev) => ({ ...prev, password: undefined }));
-                }}
+                onChange={(e) => handlePasswordChange(e.target.value)}
+                onBlur={() => handleBlur("password")}
                 disabled={isLoading}
                 className="w-full h-full bg-transparent pl-[13px] pr-2 outline-none text-gray-800 font-figtree text-[16px]"
               />
@@ -139,7 +197,7 @@ export default function LoginPage() {
               </button>
             </div>
             {errors.password && (
-              <span className="text-rose-500 text-xs font-medium font-figtree mt-0.5 pl-1">
+              <span className="text-red-500 text-xs font-medium font-figtree pl-1">
                 {errors.password}
               </span>
             )}
@@ -156,11 +214,10 @@ export default function LoginPage() {
             </button>
           </div>
 
-          {/* Sign in Button */}
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full h-[48px] rounded-[10px] bg-primary hover:bg-[#1a3465] active:bg-[#091a3c] text-white text-lg transition-all duration-150 flex items-center justify-center gap-2 shadow-lg shadow-[#0F2757]/10 cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed font-figtree -translate-y-0.5"
+            className="w-full h-[48px] rounded-[10px] bg-primary hover:bg-[#1a3465] active:bg-[#091a3c] text-white text-lg transition-all duration-150 flex items-center justify-center gap-2 shadow-lg shadow-[#0F2757]/10 cursor-pointer disabled:opacity-75 disabled:cursor-default font-figtree -translate-y-0.5"
           >
             {isLoading ? (
               <>

@@ -4,6 +4,8 @@ import "./globals.css";
 import { MainLayout } from "@/src/components/layout/MainLayout";
 import { cn } from "@/src/lib/utils";
 import { TooltipProvider } from "@radix-ui/react-tooltip";
+import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -33,6 +35,7 @@ export default function RootLayout({
         <TooltipProvider>
           <MainLayout>{children}</MainLayout>
         </TooltipProvider>
+        <ToastContainer position="top-right" autoClose={3000} />
       </body>
     </html>
   );

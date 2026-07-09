@@ -4,6 +4,8 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Mail, Lock, Eye, EyeOff, KeyRound, ArrowLeft, Check } from "lucide-react";
 import { cn } from "@/src/lib/utils";
+import { toast } from "react-toastify";
+import { authService } from "@/src/services/auth.service";
 
 type Step = 1 | 2 | 3 | "success";
 
@@ -17,8 +19,13 @@ export default function ForgotPasswordPage() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [resetPasswordToken, setResetPasswordToken] = useState("");
 
-  // Validation errors
+  const [touched, setTouched] = useState<{
+    email?: boolean;
+    newPassword?: boolean;
+    confirmPassword?: boolean;
+  }>({});
   const [errors, setErrors] = useState<{
     email?: string;
     code?: string;
@@ -26,7 +33,6 @@ export default function ForgotPasswordPage() {
     confirmPassword?: string;
   }>({});
 
-  // Input refs for 6-digit code auto-focus
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   // Auto-focus first input on step 2
@@ -36,26 +42,57 @@ export default function ForgotPasswordPage() {
     }
   }, [step]);
 
-  // Handle email submission (Step 1)
-  const handleEmailSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email) {
-      setErrors({ email: "Email address is required" });
-      return;
+  const validateEmail = (val: string): string => {
+    if (!val) {
+      return "Email address is required";
     }
-    if (!/\S+@\S+\.\S+/.test(email)) {
-      setErrors({ email: "Please enter a valid email address" });
+    if (!/\S+@\S+\.\S+/.test(val)) {
+      return "Please enter a valid email address";
+    }
+    return "";
+  };
+
+  const handleEmailChange = (val: string) => {
+    setEmail(val);
+    if (touched.email) {
+      setErrors((prev) => ({
+        ...prev,
+        email: validateEmail(val) || undefined,
+      }));
+    }
+  };
+
+  const handleEmailBlur = () => {
+    setTouched((prev) => ({ ...prev, email: true }));
+    setErrors((prev) => ({
+      ...prev,
+      email: validateEmail(email) || undefined,
+    }));
+  };
+
+  // Handle email submission (Step 1)
+  const handleEmailSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setTouched((prev) => ({ ...prev, email: true }));
+    const emailErr = validateEmail(email);
+
+    if (emailErr) {
+      setErrors((prev) => ({ ...prev, email: emailErr }));
       return;
     }
 
-    setErrors({});
+    setErrors((prev) => ({ ...prev, email: undefined }));
     setIsLoading(true);
 
-    // Simulate sending verification code
-    setTimeout(() => {
-      setIsLoading(false);
+    try {
+      const successMsg = await authService.sendForgotPasswordOtp(email);
+      toast.success(successMsg);
       setStep(2);
-    }, 1500);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to send verification code.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Handle code change (Step 2)
@@ -73,21 +110,25 @@ export default function ForgotPasswordPage() {
     }
   };
 
-  // Handle backspace key on code inputs
+  // Handle backspace and arrow navigation between inputs
   const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Backspace") {
       if (code[index] === "" && index > 0) {
-        // Empty box backspace: focus previous and clear it
         inputRefs.current[index - 1]?.focus();
         const newCode = [...code];
         newCode[index - 1] = "";
         setCode(newCode);
       } else {
-        // Filled box backspace: just clear it
         const newCode = [...code];
         newCode[index] = "";
         setCode(newCode);
       }
+    } else if (e.key === "ArrowLeft" && index > 0) {
+      e.preventDefault();
+      inputRefs.current[index - 1]?.focus();
+    } else if (e.key === "ArrowRight" && index < 5) {
+      e.preventDefault();
+      inputRefs.current[index + 1]?.focus();
     }
   };
 
@@ -103,7 +144,7 @@ export default function ForgotPasswordPage() {
   };
 
   // Handle code verification submission (Step 2)
-  const handleCodeVerify = (e: React.FormEvent) => {
+  const handleCodeVerify = async (e: React.FormEvent) => {
     e.preventDefault();
     const enteredCode = code.join("");
     if (enteredCode.length < 6) {
@@ -114,42 +155,117 @@ export default function ForgotPasswordPage() {
     setErrors({});
     setIsLoading(true);
 
-    // Simulate verification
-    setTimeout(() => {
-      setIsLoading(false);
+    try {
+      const result = await authService.verifyForgotPasswordOtp(email, enteredCode);
+      setResetPasswordToken(result.resetPasswordToken);
+      toast.success(result.message);
       setStep(3);
-    }, 1500);
+    } catch (err: any) {
+      toast.error(err.message || "Invalid or expired verification code.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
 
+  const validatePassword = (value: string): string => {
+    if (!value) {
+      return "Password is required";
+    }
+    const hasMinLength = value.length >= 8;
+    const hasUppercase = /[A-Z]/.test(value);
+    const hasLowercase = /[a-z]/.test(value);
+    const hasNumber = /\d/.test(value);
+    const hasSpecial = /[@#$!%*?&]/.test(value);
+    const hasForbidden = /[^a-zA-Z\d@#$!%*?&]/.test(value);
+
+    if (!hasMinLength || !hasUppercase || !hasLowercase || !hasNumber || !hasSpecial || hasForbidden) {
+      return "Password must be at least 8 characters and include uppercase, lowercase, number, and special character (@#$!%*?&)";
+    }
+    return "";
+  };
+
+  const validateConfirmPassword = (confirmVal: string, passwordVal: string): string => {
+    if (!confirmVal) {
+      return "Please confirm your password";
+    }
+    if (confirmVal !== passwordVal) {
+      return "Passwords do not match";
+    }
+    return "";
+  };
+
+  const handleNewPasswordChange = (val: string) => {
+    setNewPassword(val);
+    if (touched.newPassword) {
+      setErrors((prev) => ({
+        ...prev,
+        password: validatePassword(val) || undefined,
+      }));
+    }
+    if (touched.confirmPassword) {
+      setErrors((prev) => ({
+        ...prev,
+        confirmPassword: validateConfirmPassword(confirmPassword, val) || undefined,
+      }));
+    }
+  };
+
+  const handleConfirmPasswordChange = (val: string) => {
+    setConfirmPassword(val);
+    if (touched.confirmPassword) {
+      setErrors((prev) => ({
+        ...prev,
+        confirmPassword: validateConfirmPassword(val, newPassword) || undefined,
+      }));
+    }
+  };
+
+  const handleNewPasswordBlur = () => {
+    setTouched((prev) => ({ ...prev, newPassword: true }));
+    setErrors((prev) => ({
+      ...prev,
+      password: validatePassword(newPassword) || undefined,
+    }));
+  };
+
+  const handleConfirmPasswordBlur = () => {
+    setTouched((prev) => ({ ...prev, confirmPassword: true }));
+    setErrors((prev) => ({
+      ...prev,
+      confirmPassword: validateConfirmPassword(confirmPassword, newPassword) || undefined,
+    }));
+  };
+
   // Handle password reset submission (Step 3)
-  const handlePasswordReset = (e: React.FormEvent) => {
+  const handlePasswordReset = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newErrors: typeof errors = {};
+    setTouched((prev) => ({ ...prev, newPassword: true, confirmPassword: true }));
 
-    if (!newPassword) {
-      newErrors.password = "New password is required";
-    } else if (newPassword.length < 6) {
-      newErrors.password = "Password must be at least 6 characters";
-    }
+    const passwordErr = validatePassword(newPassword);
+    const confirmPasswordErr = validateConfirmPassword(confirmPassword, newPassword);
 
-    if (newPassword !== confirmPassword) {
-      newErrors.confirmPassword = "Passwords do not match";
-    }
-
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors);
+    if (passwordErr || confirmPasswordErr) {
+      setErrors((prev) => ({
+        ...prev,
+        password: passwordErr || undefined,
+        confirmPassword: confirmPasswordErr || undefined,
+      }));
       return;
     }
 
-    setErrors({});
+    setErrors((prev) => ({ ...prev, password: undefined, confirmPassword: undefined }));
     setIsLoading(true);
 
-    // Simulate password updates
-    setTimeout(() => {
-      setIsLoading(false);
+    try {
+      const successMsg = await authService.resetPassword(resetPasswordToken, newPassword);
+      toast.success(successMsg);
       setStep("success");
-    }, 1500);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to reset password.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Render step circles at the top of the card
@@ -231,7 +347,7 @@ export default function ForgotPasswordPage() {
               </p>
             </div>
 
-            <form onSubmit={handleEmailSubmit} className="flex flex-col gap-5">
+            <form onSubmit={handleEmailSubmit} className="flex flex-col gap-5" noValidate>
               <div className="flex flex-col gap-2 mb-1.5">
                 <label className="text-gray-800 text-base font-semibold font-figtree leading-tight">
                   Email Address
@@ -240,21 +356,20 @@ export default function ForgotPasswordPage() {
                   "relative h-[47px] w-full rounded-[6px] border bg-[#F9FAFB] transition-all flex items-center px-3 focus-within:bg-white focus-within:ring-2 focus-within:ring-[#0F2757]/10",
                   errors.email ? "border-rose-300 focus-within:ring-rose-500/10 focus-within:border-rose-400" : "border-gray-200 focus-within:border-[#0F2757]"
                 )}>
-                  <Mail className={cn("w-4 h-4 text-gray-500 shrink-0 transition-colors", errors.email ? "text-rose-400" : "text-gray-400")} />
+                  <Mail className={cn("w-4 h-4 text-gray-500 shrink-0 transition-colors text-gray-400")} />
                   <input
                     type="email"
                     placeholder="you@flyvoid.com"
                     value={email}
-                    onChange={(e) => {
-                      setEmail(e.target.value);
-                      if (errors.email) setErrors((prev) => ({ ...prev, email: undefined }));
-                    }}
+                    onChange={(e) => handleEmailChange(e.target.value)}
+                    onBlur={handleEmailBlur}
+                    onInvalid={(e) => e.preventDefault()}
                     disabled={isLoading}
                     className="w-full h-full bg-transparent pl-[13px] pr-2 outline-none text-gray-800 font-figtree text-[16px] placeholder-gray-500"
                   />
                 </div>
                 {errors.email && (
-                  <span className="text-rose-500 text-xs font-medium font-figtree mt-0.5 pl-1">
+                  <span className="text-rose-500 text-xs font-medium font-figtree pl-1">
                     {errors.email}
                   </span>
                 )}
@@ -263,7 +378,7 @@ export default function ForgotPasswordPage() {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full h-[48px] rounded-[10px] bg-primary hover:bg-[#1a3465] active:bg-[#091a3c] text-white text-base transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed font-figtree font-medium"
+                className="w-full h-[48px] rounded-[10px] bg-primary hover:bg-[#1a3465] active:bg-[#091a3c] text-white text-base transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-75 font-figtree font-medium"
               >
                 {isLoading ? (
                   <>
@@ -283,7 +398,8 @@ export default function ForgotPasswordPage() {
               <button
                 type="button"
                 onClick={() => router.push("/login")}
-                className="text-gray-500 hover:text-gray-800 transition-colors text-sm flex items-center gap-1.5 cursor-pointer font-figtree"
+                disabled={isLoading}
+                className="text-gray-500 hover:text-gray-800 transition-colors text-sm flex items-center gap-1.5 cursor-pointer font-figtree disabled:opacity-50"
               >
                 <ArrowLeft className="w-3 h-3" />
                 <span>Back to login</span>
@@ -311,7 +427,7 @@ export default function ForgotPasswordPage() {
               </div>
             </div>
 
-            <form onSubmit={handleCodeVerify} className="flex flex-col gap-6">
+            <form onSubmit={handleCodeVerify} className="flex flex-col gap-6" noValidate>
               {/* 6 Digit Input Group */}
               <div className="flex items-center justify-center">
                 {code.map((digit, idx) => (
@@ -326,7 +442,8 @@ export default function ForgotPasswordPage() {
                     onPaste={idx === 0 ? handlePaste : undefined}
                     disabled={isLoading}
                     className={cn(
-                      "w-[40px] h-[40px] border border-[#DDDFE3] text-center text-base font-bold font-figtree outline-none transition-all focus:bg-white focus:ring-2 focus:ring-[#0F2757]/10 focus:border-[#0F2757] focus:relative focus:z-10 disabled:opacity-70",
+                      "w-[40px] h-[40px] border text-center text-base font-bold font-figtree outline-none transition-all focus:bg-white focus:ring-2 focus:relative focus:z-10 disabled:opacity-70",
+                      errors.code ? "border-rose-300 focus:border-rose-400 focus:ring-rose-500/10" : "border-[#DDDFE3] focus:border-[#0F2757] focus:ring-[#0F2757]/10",
                       idx === 0 && "rounded-l-[6px]",
                       idx === 5 && "rounded-r-[6px]",
                       idx !== 0 && "-ml-[1px]"
@@ -343,7 +460,7 @@ export default function ForgotPasswordPage() {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full h-[48px] rounded-[10px] bg-primary hover:bg-[#1a3465] active:bg-[#091a3c] text-white text-base transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed font-figtree mt-0.5"
+                className="w-full h-[48px] rounded-[10px] bg-primary hover:bg-[#1a3465] active:bg-[#091a3c] text-white text-base transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-75 font-figtree mt-0.5"
               >
                 {isLoading ? (
                   <>
@@ -366,9 +483,10 @@ export default function ForgotPasswordPage() {
                   setStep(1);
                   setCode(Array(6).fill(""));
                 }}
-                className="text-gray-500 hover:text-gray-800 transition-colors text-sm flex items-center gap-1.5 cursor-pointer font-figtree translate-y-1"
+                disabled={isLoading}
+                className="text-gray-500 hover:text-gray-800 transition-colors text-sm flex items-center gap-1.5 cursor-pointer font-figtree translate-y-1 disabled:opacity-50"
               >
-                <ArrowLeft className="w-3 h-3" />
+                <ArrowLeft className="w-3.5 h-3.5" />
                 <span>Use a different email</span>
               </button>
             </div>
@@ -392,7 +510,7 @@ export default function ForgotPasswordPage() {
               </div>
             </div>
 
-            <form onSubmit={handlePasswordReset} className="flex flex-col gap-5">
+            <form onSubmit={handlePasswordReset} className="flex flex-col gap-5" noValidate>
               {/* New Password field */}
               <div className="flex flex-col gap-2">
                 <label className="text-gray-800 text-base font-semibold font-figtree leading-tight">
@@ -407,10 +525,8 @@ export default function ForgotPasswordPage() {
                     type={showNewPassword ? "text" : "password"}
                     placeholder="At least 8 characters"
                     value={newPassword}
-                    onChange={(e) => {
-                      setNewPassword(e.target.value);
-                      if (errors.password) setErrors((prev) => ({ ...prev, password: undefined }));
-                    }}
+                    onChange={(e) => handleNewPasswordChange(e.target.value)}
+                    onBlur={handleNewPasswordBlur}
                     disabled={isLoading}
                     className="w-full h-full bg-transparent pl-[13px] pr-10 outline-none text-gray-800 font-figtree text-[16px] placeholder-gray-500"
                   />
@@ -423,7 +539,7 @@ export default function ForgotPasswordPage() {
                   </button>
                 </div>
                 {errors.password && (
-                  <span className="text-rose-500 text-xs font-medium font-figtree mt-0.5 pl-1">
+                  <span className="text-rose-500 text-xs font-medium font-figtree pl-1">
                     {errors.password}
                   </span>
                 )}
@@ -443,10 +559,8 @@ export default function ForgotPasswordPage() {
                     type={showConfirmPassword ? "text" : "password"}
                     placeholder="Re-enter new password"
                     value={confirmPassword}
-                    onChange={(e) => {
-                      setConfirmPassword(e.target.value);
-                      if (errors.confirmPassword) setErrors((prev) => ({ ...prev, confirmPassword: undefined }));
-                    }}
+                    onChange={(e) => handleConfirmPasswordChange(e.target.value)}
+                    onBlur={handleConfirmPasswordBlur}
                     disabled={isLoading}
                     className="w-full h-full bg-transparent pl-[13px] pr-10 outline-none text-gray-800 font-figtree text-[16px] placeholder-gray-500"
                   />
@@ -459,7 +573,7 @@ export default function ForgotPasswordPage() {
                   </button>
                 </div>
                 {errors.confirmPassword && (
-                  <span className="text-rose-500 text-xs font-medium font-figtree mt-0.5 pl-1">
+                  <span className="text-rose-500 text-xs font-medium font-figtree pl-1">
                     {errors.confirmPassword}
                   </span>
                 )}
@@ -468,7 +582,7 @@ export default function ForgotPasswordPage() {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full h-[48px] rounded-[10px] bg-primary hover:bg-[#1a3465] active:bg-[#091a3c] text-white text-base transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed font-figtree mt-1.5"
+                className="w-full h-[48px] rounded-[10px] bg-primary hover:bg-[#1a3465] active:bg-[#091a3c] text-white text-base transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-75 font-figtree mt-1.5"
               >
                 {isLoading ? (
                   <>

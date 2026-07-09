@@ -100,7 +100,7 @@ export function AirportDetailsView({
                   <button
                     type="button"
                     onClick={onEditClick}
-                    className="h-[42px] w-[128px] px-4 py-2.5 bg-primary hover:bg-[#1A3B75] text-white text-lg font-normal font-figtree rounded-[10px] transition-colors cursor-pointer"
+                    className="h-[42px] w-[128px] flex items-center justify-center bg-primary hover:bg-[#1A3B75] text-white text-lg font-normal font-figtree rounded-[10px] transition-colors cursor-pointer"
                   >
                     Edit Details
                   </button>

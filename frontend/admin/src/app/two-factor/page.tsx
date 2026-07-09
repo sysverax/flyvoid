@@ -4,6 +4,8 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { KeyRound, ArrowLeft } from "lucide-react";
 import { cn } from "@/src/lib/utils";
+import { authService } from "@/src/services/auth.service";
+import { toast } from "react-toastify";
 
 type ViewType = "tfa" | "recovery";
 
@@ -43,7 +45,7 @@ export default function TwoFactorPage() {
     }
   };
 
-  // Handle backspace navigation between inputs
+  // Handle backspace and arrow navigation between inputs
   const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Backspace") {
       if (code[index] === "" && index > 0) {
@@ -58,6 +60,12 @@ export default function TwoFactorPage() {
         newCode[index] = "";
         setCode(newCode);
       }
+    } else if (e.key === "ArrowLeft" && index > 0) {
+      e.preventDefault();
+      inputRefs.current[index - 1]?.focus();
+    } else if (e.key === "ArrowRight" && index < 5) {
+      e.preventDefault();
+      inputRefs.current[index + 1]?.focus();
     }
   };
 
@@ -74,7 +82,7 @@ export default function TwoFactorPage() {
   };
 
   // Handle 6-digit code submission
-  const handleCodeSubmit = (e: React.FormEvent) => {
+  const handleCodeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const enteredCode = code.join("");
     if (enteredCode.length < 6) {
@@ -85,29 +93,81 @@ export default function TwoFactorPage() {
     setErrors({});
     setIsLoading(true);
 
-    // Simulate verification and redirect to home
-    setTimeout(() => {
-      setIsLoading(false);
+    try {
+      const token = sessionStorage.getItem("two_factor_token") || "";
+      const email = sessionStorage.getItem("two_factor_email") || "";
+      const result = await authService.verifySigninTfa(token, enteredCode);
+
+      if (email) {
+        sessionStorage.setItem(`tfa_enabled_${email}`, "true");
+        sessionStorage.setItem(`tfa_method_${email}`, "authenticator");
+
+        const today = new Date();
+        const day = String(today.getDate()).padStart(2, "0");
+        const month = String(today.getMonth() + 1).padStart(2, "0");
+        const year = today.getFullYear();
+        sessionStorage.setItem(`tfa_date_${email}`, `${day}/${month}/${year}`);
+      }
+
+      sessionStorage.removeItem("two_factor_token");
+      sessionStorage.removeItem("two_factor_email");
+      sessionStorage.removeItem("two_factor_password");
+
+      toast.success(result.message || "Successfully verified");
       router.push("/");
-    }, 1500);
+    } catch (err: any) {
+      const errorMsg = err.message || "Verification failed.";
+      toast.error(errorMsg);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Handle recovery code submission
-  const handleRecoverySubmit = (e: React.FormEvent) => {
+  const handleRecoverySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!recoveryCode.trim()) {
+    const cleanedCode = recoveryCode.replace(/[\s-]/g, "").toUpperCase();
+    if (!cleanedCode) {
       setErrors({ recoveryCode: "Recovery code is required" });
+      return;
+    }
+    if (cleanedCode.length !== 10 || /[^A-Z0-9]/.test(cleanedCode)) {
+      setErrors({ recoveryCode: "Recovery code must be exactly 10 alphanumeric characters" });
       return;
     }
 
     setErrors({});
     setIsLoading(true);
 
-    // Simulate recovery verification and redirect to home
-    setTimeout(() => {
+    try {
+      const email = sessionStorage.getItem("two_factor_email") || "";
+      const password = sessionStorage.getItem("two_factor_password") || "";
+      const result = await authService.recoverSigninTfa(email, password, cleanedCode);
+
+      if (email) {
+        sessionStorage.removeItem(`tfa_enabled_${email}`);
+        sessionStorage.removeItem(`tfa_method_${email}`);
+        sessionStorage.removeItem(`tfa_date_${email}`);
+      }
+
+      sessionStorage.removeItem("two_factor_token");
+      sessionStorage.removeItem("two_factor_email");
+      sessionStorage.removeItem("two_factor_password");
+
+      toast.success(result.message || "2FA recovered and disabled. Please sign in again.");
+      router.push("/login");
+    } catch (err: any) {
+      const errorMsg = err.message || "Recovery failed.";
+      toast.error(errorMsg);
+      if (err.status === 401) {
+        sessionStorage.removeItem("two_factor_token");
+        sessionStorage.removeItem("two_factor_email");
+        sessionStorage.removeItem("two_factor_password");
+        router.push("/login");
+      }
+    } finally {
       setIsLoading(false);
-      router.push("/");
-    }, 1500);
+    }
   };
 
   return (
@@ -186,7 +246,7 @@ export default function TwoFactorPage() {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full h-[48px] rounded-[10px] bg-primary hover:bg-[#1a3465] active:bg-[#091a3c] text-white text-base transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed mt-0.5"
+                className="w-full h-[48px] rounded-[10px] bg-primary hover:bg-[#1a3465] active:bg-[#091a3c] active:scale-[0.98] text-white text-base transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-75 disabled:cursor-default shadow-lg shadow-[#0F2757]/10 mt-0.5"
               >
                 {isLoading ? (
                   <>
@@ -209,7 +269,8 @@ export default function TwoFactorPage() {
                   setView("recovery");
                   setErrors({});
                 }}
-                className="text-[#1F2937] hover:text-[#1a3465] transition-colors text-[13px] underline cursor-pointer"
+                disabled={isLoading}
+                className="text-[#1F2937] hover:text-[#1a3465] transition-colors text-[13px] underline cursor-pointer disabled:opacity-50"
               >
                 Use a recovery code instead
               </button>
@@ -268,7 +329,7 @@ export default function TwoFactorPage() {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full h-[48px] rounded-[10px] bg-primary hover:bg-[#1a3465] active:bg-[#091a3c] text-white text-base transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed -translate-y-0.5"
+                className="w-full h-[48px] rounded-[10px] bg-primary hover:bg-[#1a3465] active:bg-[#091a3c] active:scale-[0.98] text-white text-base transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-75 disabled:cursor-default shadow-lg shadow-[#0F2757]/10 -translate-y-0.5"
               >
                 {isLoading ? (
                   <>
@@ -291,7 +352,8 @@ export default function TwoFactorPage() {
             <button
               type="button"
               onClick={() => router.push("/login")}
-              className="text-gray-500 hover:text-gray-800 transition-colors text-sm flex items-center gap-1.5 cursor-pointer"
+              disabled={isLoading}
+              className="text-gray-500 hover:text-gray-800 transition-colors text-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Back to login</span>
@@ -303,7 +365,8 @@ export default function TwoFactorPage() {
                 setView("tfa");
                 setErrors({});
               }}
-              className="text-gray-500 hover:text-gray-800 transition-colors text-[13px] flex items-center gap-1.5 cursor-pointer"
+              disabled={isLoading}
+              className="text-gray-500 hover:text-gray-800 transition-colors text-[13px] flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Back to verification</span>

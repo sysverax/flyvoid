@@ -3,7 +3,8 @@
 import { Sidebar } from "./Sidebar";
 import { cn } from "@/src/lib/utils";
 import { usePathname, useRouter } from "next/navigation";
-import { authService, NAVIGATION_ITEMS, getModuleKey } from "@/src/services/auth.service";
+import { authService } from "@/src/services/auth.service";
+import { NAVIGATION_ITEMS, getModuleKey } from "@/src/lib/navigation";
 import { useEffect, useState } from "react";
 
 interface MainLayoutProps {

@@ -16,6 +16,7 @@ import {
 import { cn } from "@/src/lib/utils";
 import { SignOutDialog } from "./SignOutDialog";
 import { useAuth } from "@/src/hooks/useAuth";
+import { authService } from "@/src/services/auth.service";
 
 const navItems = [
   { title: "Dashboard", icon: LayoutDashboard, path: "/", key: "dashboard" },
@@ -40,14 +41,9 @@ export function Sidebar() {
     setSignOutOpen(true);
   };
 
-  const confirmLogout = () => {
+  const confirmLogout = async () => {
     setSignOutOpen(false);
-    authService_logout();
-  };
-
-  const authService_logout = () => {
-    // Standard logout redirect
-    sessionStorage.removeItem("flyvoid_current_user");
+    await authService.logout();
     router.push("/login");
   };
 
@@ -74,7 +70,7 @@ export function Sidebar() {
         )}
       </div>
 
-      <div className="flex flex-1 flex-col justify-between pb-3">
+      <div className="flex flex-1 flex-col justify-between pb-1 md:pb-3">
         {/* Navigation */}
         <nav className="scrollbar-hide flex-1 overflow-y-auto">
           <div className="flex w-full flex-col items-start gap-3">
@@ -115,15 +111,13 @@ export function Sidebar() {
         </nav>
 
         {/* Logout Button */}
-        <div className="flex h-6 w-full items-center px-4">
+        <div className="w-full mt-1.5">
           <button
             onClick={handleLogout}
-            className={cn(
-              "flex items-center gap-2 text-[18px] leading-[22px] text-[#9FA9BC] transition-colors duration-200 hover:text-white cursor-pointer",
-            )}
+            className="group flex w-full items-center gap-3 rounded-[10px] px-4 pt-3 text-[18px] leading-[22px] text-[#9FA9BC] transition-colors duration-200 hover:bg-[#203663]/50 hover:text-white cursor-pointer"
           >
-            <LogOut className="h-6 w-6" strokeWidth={1.6} />
-            <span>Sign out</span>
+            <LogOut className="h-5 w-5" strokeWidth={1.8} />
+            <span className="text-left flex-1">Sign out</span>
           </button>
         </div>
       </div>
