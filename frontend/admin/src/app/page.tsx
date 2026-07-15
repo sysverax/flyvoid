@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Image from "next/image";
 import {
   Plane,
@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { Dropdown } from "@/src/components/ui/Dropdown";
 import { cn } from "@/src/lib/utils";
+import { useAuth } from "@/src/hooks/useAuth";
 import {
   ResponsiveContainer,
   BarChart,
@@ -415,7 +416,13 @@ const FILTER_OPTIONS = [
 ];
 
 export default function DashboardPage() {
+  const { hasPermission } = useAuth();
+  const [mounted, setMounted] = useState(false);
   const [selectedPeriod, setSelectedPeriod] = useState<string>("This Month");
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Get active data based on dropdown selection
   const activeData = useMemo(() => {
@@ -486,6 +493,9 @@ export default function DashboardPage() {
       tickFormatter: (val: any) => `$${val}K`,
     };
   }, [selectedPeriod]);
+
+  if (!mounted) return null;
+  if (!hasPermission("view", "/")) return null;
 
   return (
     <div className="flex min-h-screen flex-1 flex-col pb-16 lg:w-full lg:max-w-[calc(100vw-304px)]">

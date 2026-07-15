@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Search,
   Eye,
   AlertTriangle,
+  Loader2,
 } from "lucide-react";
 import {
   Table,
@@ -164,6 +165,12 @@ const INITIAL_AIRLINES: Airline[] = [
 export default function AirlinesPage() {
   const [airlines, setAirlines] = useState<Airline[]>(INITIAL_AIRLINES);
   const { hasPermission } = useAuth();
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setIsLoading(false), 500);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Navigation State
   const [selectedAirlineId, setSelectedAirlineId] = useState<string | null>(null);
@@ -415,7 +422,19 @@ export default function AirlinesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paginatedAirlines.length === 0 ? (
+                {isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={10} className="px-6 py-12 text-center text-gray-500 font-figtree">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <svg className="animate-spin h-8 w-8 text-primary" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        <span>Loading airlines...</span>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : paginatedAirlines.length === 0 ? (
                   <TableEmptyState
                     colSpan={10}
                     icon={Search}
@@ -485,7 +504,6 @@ export default function AirlinesPage() {
                           <button
                             onClick={() => setSelectedAirlineId(airline.id)}
                             className="p-1 text-[#6B7280] hover:text-primary transition-colors cursor-pointer"
-                            title="View Profile"
                           >
                             <Eye className="h-[20px] w-[20px]" />
                           </button>
@@ -493,12 +511,13 @@ export default function AirlinesPage() {
                             <button
                               onClick={() => handleOpenSuspendConfirm(airline)}
                               className="p-1 cursor-pointer transition-colors"
-                              title="Suspend Airline"
                             >
                               <img
                                 src="/icons/spam.svg"
                                 alt="Spam"
-                                className="h-[20px] w-[20px]"
+                                width={20}
+                                height={20}
+                                className={airline.status === "Active" ? "opacity-100 hover:brightness-75" : "opacity-50"}
                               />
                             </button>
                           )}

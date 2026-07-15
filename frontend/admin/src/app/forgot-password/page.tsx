@@ -176,11 +176,11 @@ export default function ForgotPasswordPage() {
     const hasUppercase = /[A-Z]/.test(value);
     const hasLowercase = /[a-z]/.test(value);
     const hasNumber = /\d/.test(value);
-    const hasSpecial = /[@#$!%*?&]/.test(value);
-    const hasForbidden = /[^a-zA-Z\d@#$!%*?&]/.test(value);
+    const hasSpecial = /[!@#$%^&*?]/.test(value);
+    const hasForbidden = /[^a-zA-Z\d!@#$%^&*?]/.test(value);
 
     if (!hasMinLength || !hasUppercase || !hasLowercase || !hasNumber || !hasSpecial || hasForbidden) {
-      return "Password must be at least 8 characters and include uppercase, lowercase, number, and special character (@#$!%*?&)";
+      return "Password must be at least 8 characters and include uppercase, lowercase, number, and special character (!@#$%^&*?)";
     }
     return "";
   };

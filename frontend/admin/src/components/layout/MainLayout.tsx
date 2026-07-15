@@ -22,7 +22,7 @@ export function MainLayout({ children }: MainLayoutProps) {
     setUser(authService.getCurrentUser());
   }, [pathname]);
 
-  const isAuthPage = pathname === "/login" || pathname === "/forgot-password" || pathname === "/two-factor";
+  const isAuthPage = pathname === "/login" || pathname === "/forgot-password" || pathname === "/verify";
 
   // Guard routing check & access redirect
   useEffect(() => {

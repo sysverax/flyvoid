@@ -33,11 +33,11 @@ export default function LoginPage() {
       const hasUppercase = /[A-Z]/.test(value);
       const hasLowercase = /[a-z]/.test(value);
       const hasNumber = /\d/.test(value);
-      const hasSpecial = /[@#$!%*?&]/.test(value);
-      const hasForbidden = /[^a-zA-Z\d@#$!%*?&]/.test(value);
+      const hasSpecial = /[!@#$%^&*?]/.test(value);
+      const hasForbidden = /[^a-zA-Z\d!@#$%^&*?]/.test(value);
 
       if (!hasMinLength || !hasUppercase || !hasLowercase || !hasNumber || !hasSpecial || hasForbidden) {
-        return "Password must be at least 8 characters and include uppercase, lowercase, number, and special character (@#$!%*?&)";
+        return "Password must be at least 8 characters and include uppercase, lowercase, number, and special character (!@#$%^&*?)";
       }
     }
     return "";
@@ -93,11 +93,22 @@ export default function LoginPage() {
 
     try {
       const result = await authService.login(email, password);
+      if (result?.requiresPasswordReset) {
+        sessionStorage.setItem("reset_password_token", result.resetPasswordToken || "");
+        sessionStorage.removeItem("two_factor_token");
+        sessionStorage.removeItem("two_factor_email");
+        sessionStorage.removeItem("two_factor_password");
+        toast.info(result.message);
+        router.push("/verify");
+        return;
+      }
       if (result?.requiresTwoFactor) {
         sessionStorage.setItem("two_factor_token", result.twoFactorToken || "");
         sessionStorage.setItem("two_factor_email", email);
         sessionStorage.setItem("two_factor_password", password);
-        router.push("/two-factor");
+        sessionStorage.removeItem("reset_password_token");
+        toast.info(result.message);
+        router.push("/verify");
         return;
       }
       toast.success(result?.message || "Successfully signed in");

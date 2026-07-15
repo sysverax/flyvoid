@@ -35,7 +35,7 @@ function mapAccessControls(admin: any): Record<string, string[]> {
     invitesOnboarding: [],
     systemSettings: [],
     auditLogs: [],
-    profile: [],
+    profile: ["view", "edit", "export"],
   };
 
   if (admin.role === "SUPER_ADMIN") {
@@ -63,7 +63,7 @@ function mapAccessControls(admin: any): Record<string, string[]> {
 }
 
 export const authService = {
-  async login(email: string, password?: string): Promise<{ user: User; message: string; requiresTwoFactor?: boolean; twoFactorToken?: string } | null> {
+  async login(email: string, password?: string): Promise<{ user: User; message: string; requiresTwoFactor?: boolean; twoFactorToken?: string; requiresPasswordReset?: boolean; resetPasswordToken?: string } | null> {
     if (typeof window === "undefined") return null;
     const trimmedEmail = email.toLowerCase().trim();
 
@@ -72,6 +72,18 @@ export const authService = {
         email: trimmedEmail,
         password,
       });
+
+      if (response.data.data?.requiresPasswordReset) {
+        return {
+          requiresPasswordReset: true,
+          resetPasswordToken: response.data.data.resetPasswordToken,
+          message: response.data.message || "Initial password reset required",
+          user: {
+            email: response.data.data.admin.email,
+            accessControl: mapAccessControls(response.data.data.admin),
+          },
+        };
+      }
 
       if (response.data.data?.requiresTwoFactor) {
         const admin = response.data.data.admin;
@@ -103,12 +115,24 @@ export const authService = {
     }
   },
 
-  async verifySigninTfa(twoFactorToken: string, twoFactorCode: string): Promise<{ user: User; message: string }> {
+  async verifySigninTfa(twoFactorToken: string, twoFactorCode: string): Promise<{ user: User; message: string; requiresPasswordReset?: boolean; resetPasswordToken?: string }> {
     try {
       const response = await apiClient.post("/auth/admin/signin/2fa/verify", {
         twoFactorToken,
         twoFactorCode,
       });
+
+      if (response.data.data?.requiresPasswordReset) {
+        return {
+          requiresPasswordReset: true,
+          resetPasswordToken: response.data.data.resetPasswordToken,
+          message: response.data.message || "Initial password reset required",
+          user: {
+            email: response.data.data.admin.email,
+            accessControl: mapAccessControls(response.data.data.admin),
+          },
+        };
+      }
 
       const { accessToken, refreshToken, admin } = response.data.data;
       const user: User = {
@@ -124,6 +148,18 @@ export const authService = {
       return { user, message: response.data.message || "Successfully signed in." };
     } catch (error: any) {
       throw new Error(extractErrorMessage(error, "Invalid 2FA code."));
+    }
+  },
+
+  async resetInitialPassword(resetPasswordToken: string, newPassword: string): Promise<string> {
+    try {
+      const response = await apiClient.post("/auth/admin/signin/reset-password", {
+        resetPasswordToken,
+        newPassword,
+      });
+      return response.data.message || "Initial password reset successful";
+    } catch (error: any) {
+      throw new Error(extractErrorMessage(error, "Failed to reset password."));
     }
   },
 

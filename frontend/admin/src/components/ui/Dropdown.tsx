@@ -18,6 +18,9 @@ export interface DropdownProps {
   heightClass?: string;
   bgClass?: string;
   labelPrefix?: string;
+  disabled?: boolean;
+  maxListHeightClass?: string;
+  error?: boolean;
 }
 
 export function Dropdown({
@@ -29,6 +32,9 @@ export function Dropdown({
   heightClass = "h-11",
   bgClass = "bg-[#F3F4F6]",
   labelPrefix,
+  disabled = false,
+  maxListHeightClass,
+  error = false,
 }: DropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -57,11 +63,14 @@ export function Dropdown({
     <div ref={dropdownRef} className={cn("relative select-none", heightClass, triggerWidthClass)}>
       <button
         type="button"
-        onClick={() => setIsOpen(!isOpen)}
+        disabled={disabled}
+        onClick={() => !disabled && setIsOpen(!isOpen)}
         className={cn(
-          "w-full flex items-center justify-between rounded-[8px] border border-[#D1D5DB] pl-4 pr-3.5 text-[#1F2937] outline-none cursor-pointer hover:bg-slate-100/80 transition-colors text-[16px]",
+          "w-full flex items-center justify-between rounded-[8px] border pl-4 pr-3.5 text-[#1F2937] outline-none cursor-pointer hover:bg-slate-100/80 transition-colors text-[16px]",
+          error ? "border-rose-500 bg-rose-50/10 focus:border-rose-500" : "border-[#D1D5DB]",
           heightClass,
-          bgClass
+          bgClass,
+          disabled && "opacity-50 cursor-not-allowed hover:bg-transparent"
         )}
       >
         <span className="truncate text-left flex-1 mr-2">{selectedOption ? selectedOption.label : value}</span>
@@ -78,7 +87,8 @@ export function Dropdown({
         <div
           className={cn(
             "absolute left-0 mt-2 z-50 p-2 bg-white rounded-lg shadow-[0px_4px_8px_0px_rgba(0,0,0,0.12)] outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col justify-start items-start gap-0.5",
-            widthClass
+            widthClass,
+            maxListHeightClass && `${maxListHeightClass} overflow-y-auto`
           )}
         >
           {options.filter((option) => option.value !== "").map((option) => {
