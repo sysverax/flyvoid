@@ -58,13 +58,13 @@ export function AirportDetailsView({
               {[
                 ["Name", airport.name],
                 ["IATA", airport.iataCode],
-                ["Country", airport.city],
+                ["Country", airport.country],
                 ["Latitude", airport.latitude],
                 ["Longitude", airport.longitude],
                 ["Timezone", airport.timezone],
                 ["Type", airport.type.toLowerCase()],
               ].map(([label, value]) => (
-                <div key={label} className="self-stretch flex justify-between items-center">
+                <div key={String(label)} className="self-stretch flex justify-between items-center">
                   <div className="text-gray-500 text-[16px] font-normal font-figtree h-[19px] leading-normal">{label}</div>
                   <div className="text-right text-gray-900 text-[16px] font-medium font-figtree h-[19px] leading-normal capitalize">
                     {value}

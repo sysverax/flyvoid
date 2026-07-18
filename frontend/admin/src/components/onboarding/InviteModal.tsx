@@ -44,7 +44,10 @@ function validate(key: keyof InviteFormState, value: string): string {
     case "airlineName": return v ? "" : "Airline Name is required";
     case "companyReg": return v ? "" : "Company Registration Number is required";
     case "adminFirstName": return v ? "" : "First Name is required";
-    case "adminLastName": return v ? "" : "Last Name is required";
+    case "adminLastName":
+      if (!v) return "Last Name is required";
+      if (v.length < 2) return "Last Name must be longer than or equal to 2 characters";
+      return "";
     case "adminJobTitle": return v ? "" : "Job Title is required";
     case "address": return v ? "" : "Address is required";
     case "country": return v ? "" : "Country is required";
@@ -197,7 +200,7 @@ export function InviteModal({
           <button
             onClick={onClose}
             disabled={isLoading}
-            className="p-1.5 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            className="p-1.5 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
           >
             <X className="w-5 h-5 text-[#1F2937]" />
           </button>
@@ -331,14 +334,14 @@ export function InviteModal({
               type="button"
               onClick={onClose}
               disabled={isLoading}
-              className="flex-1 py-3 px-6 rounded-lg border border-[#D1D5DB] text-[#09090B] text-[18px] hover:bg-[#F9FAFB] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 py-3 px-6 rounded-lg border border-[#D1D5DB] text-[#09090B] text-[18px] hover:bg-[#F9FAFB] transition-colors cursor-pointer disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isLoading}
-              className="flex-1 py-3 px-6 rounded-lg bg-[#0F2757] hover:bg-[#162259] text-white text-[18px] transition-colors cursor-pointer flex items-center justify-center disabled:opacity-75 disabled:cursor-not-allowed"
+              className="flex-1 py-3 px-6 rounded-lg bg-[#0F2757] hover:bg-[#162259] text-white text-[18px] transition-colors cursor-pointer flex items-center justify-center disabled:opacity-60"
             >
               {isLoading ? (
                 <div className="flex items-center justify-center gap-2">

@@ -128,8 +128,8 @@ export default function OnboardingPage() {
     "Canada"
   ];
 
-  const fetchInvitations = async (page = currentPage, limit = resultsPerPage) => {
-    setIsLoading(true);
+  const fetchInvitations = async (page = currentPage, limit = resultsPerPage, showLoader = true) => {
+    if (showLoader) setIsLoading(true);
     try {
       const res = await onboardingService.getInvitations(page, limit);
       const mapped = res.invitations.map((inv: any) => ({
@@ -149,7 +149,7 @@ export default function OnboardingPage() {
     } catch (err: any) {
       toast.error(err.message || "Failed to load invitations");
     } finally {
-      setIsLoading(false);
+      if (showLoader) setIsLoading(false);
     }
   };
 
@@ -269,7 +269,7 @@ export default function OnboardingPage() {
       const response = await onboardingService.resendInvitation(Number(inv.id));
       toast.success(response.message || `Invitation resent to ${inv.airlineName}`);
       setResendConfirmTarget(null);
-      fetchInvitations(currentPage, resultsPerPage);
+      fetchInvitations(currentPage, resultsPerPage, false);
     } catch (err: any) {
       toast.error(err.message || "Failed to resend invitation");
     } finally {
@@ -284,7 +284,7 @@ export default function OnboardingPage() {
       const response = await onboardingService.revokeInvitation(Number(revokeConfirmTarget.id));
       toast.success(response.message || `Invitation for ${revokeConfirmTarget.airlineName} revoked`);
       setRevokeConfirmTarget(null);
-      fetchInvitations(currentPage, resultsPerPage);
+      fetchInvitations(currentPage, resultsPerPage, false);
     } catch (err: any) {
       toast.error(err.message || "Failed to revoke invitation");
     } finally {
@@ -347,7 +347,7 @@ export default function OnboardingPage() {
       const response = await onboardingService.inviteAirline(payload);
       toast.success(response.message || `Successfully invited ${inviteForm.airlineName}!`);
       setIsInviteModalOpen(false);
-      fetchInvitations(currentPage, resultsPerPage);
+      fetchInvitations(currentPage, resultsPerPage, false);
 
       setInviteForm({
         airlineName: "",
@@ -443,7 +443,7 @@ export default function OnboardingPage() {
         </FiltersCard>
 
         {/* Table card */}
-        <div className="hidden overflow-hidden rounded-[12px] border border-[#E5E7EB] lg:block mb-6 pt-1.5 bg-white">
+        <div className="hidden overflow-hidden rounded-[12px] border border-[#E5E7EB] lg:block mb-6 translate-y-1.5 bg-white">
           <Table>
             <TableHeader>
               <TableRow>
