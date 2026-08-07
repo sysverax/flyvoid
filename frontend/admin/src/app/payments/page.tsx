@@ -151,7 +151,7 @@ interface AirlineHealth {
   outstanding: number;
   creditLimit: number;
   remainingCredit: number;
-  status: "Healthy" | "Overdue" | "Warning" | "Good";
+  status: "Fees outstanding" | "credit exceeded" | "settled";
 }
 
 interface PaymentApproval {
@@ -203,7 +203,7 @@ const DETAILED_AIRLINE_HEALTH_DATA: AirlineHealth[] = [
     outstanding: 22500,
     creditLimit: 50000,
     remainingCredit: 27500,
-    status: "Healthy",
+    status: "Fees outstanding",
   },
   {
     id: "AH002",
@@ -217,7 +217,7 @@ const DETAILED_AIRLINE_HEALTH_DATA: AirlineHealth[] = [
     outstanding: 12500,
     creditLimit: 40000,
     remainingCredit: 27500,
-    status: "Healthy",
+    status: "Fees outstanding",
   },
   {
     id: "AH003",
@@ -229,9 +229,9 @@ const DETAILED_AIRLINE_HEALTH_DATA: AirlineHealth[] = [
     totalPlatformFees: 175500,
     paymentsReceived: 140000,
     outstanding: 35500,
-    creditLimit: 60000,
-    remainingCredit: 24500,
-    status: "Warning",
+    creditLimit: 30000,
+    remainingCredit: -5500,
+    status: "credit exceeded",
   },
   {
     id: "AH004",
@@ -245,7 +245,7 @@ const DETAILED_AIRLINE_HEALTH_DATA: AirlineHealth[] = [
     outstanding: 0,
     creditLimit: 30000,
     remainingCredit: 30000,
-    status: "Healthy",
+    status: "settled",
   },
 ];
 
@@ -1407,10 +1407,10 @@ export default function PaymentsPage() {
             {/* Airline Billing Health Section */}
             <div className="self-stretch p-6 bg-white rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col justify-start items-start text-left">
               <div className="self-stretch justify-start text-gray-800 relative top-1">
-                <span className="text-[20px] font-semibold">
+                <span className="text-[20px] font-semibold font-figtree">
                   Airline Billing Health
                 </span>
-                <span className="text-[16px] font-normal ml-1">
+                <span className="text-[16px] font-normal ml-1.5 text-gray-500 font-figtree">
                   ({filteredFinancialData.length}{" "}
                   {filteredFinancialData.length === 1 ? "airline" : "airlines"})
                 </span>
@@ -1420,57 +1420,201 @@ export default function PaymentsPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="min-w-[110px] text-xs font-semibold text-gray-500 uppercase">SUBMITTED</TableHead>
-                      <TableHead className="min-w-[140px] text-xs font-semibold text-gray-500 uppercase">AIRLINE</TableHead>
-                      <TableHead className="min-w-[120px] text-xs font-semibold text-gray-500 uppercase">COUNTRY</TableHead>
-                      <TableHead className="min-w-[140px] text-xs font-semibold text-gray-500 uppercase">METHOD</TableHead>
-                      <TableHead className="min-w-[170px] text-xs font-semibold text-gray-500 uppercase">REFERENCE NUMBER</TableHead>
-                      <TableHead className="min-w-[110px] text-xs font-semibold text-gray-500 uppercase">AMOUNT</TableHead>
-                      <TableHead className="min-w-[140px] text-xs font-semibold text-gray-500 uppercase">STATUS</TableHead>
-                      <TableHead className="min-w-[280px] text-xs font-semibold text-gray-500 uppercase text-right">ACTIONS</TableHead>
+                      <TableHead className="min-w-[140px] whitespace-nowrap">
+                        <SortHeader
+                          label="Airline"
+                          field="airline"
+                          sortField={financialSortField}
+                          sortOrder={financialSortOrder}
+                          onSort={(f) => {
+                            if (financialSortField === f) {
+                              setFinancialSortOrder(financialSortOrder === "asc" ? "desc" : "asc");
+                            } else {
+                              setFinancialSortField(f as keyof AirlineHealth);
+                              setFinancialSortOrder("asc");
+                            }
+                          }}
+                        />
+                      </TableHead>
+                      <TableHead className="min-w-[130px] whitespace-nowrap">
+                        <SortHeader
+                          label="Country"
+                          field="country"
+                          sortField={financialSortField}
+                          sortOrder={financialSortOrder}
+                          onSort={(f) => {
+                            if (financialSortField === f) {
+                              setFinancialSortOrder(financialSortOrder === "asc" ? "desc" : "asc");
+                            } else {
+                              setFinancialSortField(f as keyof AirlineHealth);
+                              setFinancialSortOrder("asc");
+                            }
+                          }}
+                        />
+                      </TableHead>
+                      <TableHead className="min-w-[160px] whitespace-nowrap">
+                        <SortHeader
+                          label="Total Bookings"
+                          field="totalBookings"
+                          sortField={financialSortField}
+                          sortOrder={financialSortOrder}
+                          onSort={(f) => {
+                            if (financialSortField === f) {
+                              setFinancialSortOrder(financialSortOrder === "asc" ? "desc" : "asc");
+                            } else {
+                              setFinancialSortField(f as keyof AirlineHealth);
+                              setFinancialSortOrder("asc");
+                            }
+                          }}
+                        />
+                      </TableHead>
+                      <TableHead className="min-w-[155px] whitespace-nowrap">
+                        <SortHeader
+                          label="Booking Value"
+                          field="bookingValue"
+                          sortField={financialSortField}
+                          sortOrder={financialSortOrder}
+                          onSort={(f) => {
+                            if (financialSortField === f) {
+                              setFinancialSortOrder(financialSortOrder === "asc" ? "desc" : "asc");
+                            } else {
+                              setFinancialSortField(f as keyof AirlineHealth);
+                              setFinancialSortOrder("asc");
+                            }
+                          }}
+                        />
+                      </TableHead>
+                      <TableHead className="min-w-[165px] whitespace-nowrap">
+                        <SortHeader
+                          label="Platform Fee %"
+                          field="platformFeePercent"
+                          sortField={financialSortField}
+                          sortOrder={financialSortOrder}
+                          onSort={(f) => {
+                            if (financialSortField === f) {
+                              setFinancialSortOrder(financialSortOrder === "asc" ? "desc" : "asc");
+                            } else {
+                              setFinancialSortField(f as keyof AirlineHealth);
+                              setFinancialSortOrder("asc");
+                            }
+                          }}
+                        />
+                      </TableHead>
+                      <TableHead className="min-w-[195px] whitespace-nowrap">
+                        <SortHeader
+                          label="Total Platform Fees"
+                          field="totalPlatformFees"
+                          sortField={financialSortField}
+                          sortOrder={financialSortOrder}
+                          onSort={(f) => {
+                            if (financialSortField === f) {
+                              setFinancialSortOrder(financialSortOrder === "asc" ? "desc" : "asc");
+                            } else {
+                              setFinancialSortField(f as keyof AirlineHealth);
+                              setFinancialSortOrder("asc");
+                            }
+                          }}
+                        />
+                      </TableHead>
+                      <TableHead className="min-w-[195px] whitespace-nowrap">
+                        <SortHeader
+                          label="Payments Received"
+                          field="paymentsReceived"
+                          sortField={financialSortField}
+                          sortOrder={financialSortOrder}
+                          onSort={(f) => {
+                            if (financialSortField === f) {
+                              setFinancialSortOrder(financialSortOrder === "asc" ? "desc" : "asc");
+                            } else {
+                              setFinancialSortField(f as keyof AirlineHealth);
+                              setFinancialSortOrder("asc");
+                            }
+                          }}
+                        />
+                      </TableHead>
+                      <TableHead className="min-w-[145px] whitespace-nowrap">
+                        <SortHeader
+                          label="Outstanding"
+                          field="outstanding"
+                          sortField={financialSortField}
+                          sortOrder={financialSortOrder}
+                          onSort={(f) => {
+                            if (financialSortField === f) {
+                              setFinancialSortOrder(financialSortOrder === "asc" ? "desc" : "asc");
+                            } else {
+                              setFinancialSortField(f as keyof AirlineHealth);
+                              setFinancialSortOrder("asc");
+                            }
+                          }}
+                        />
+                      </TableHead>
+                      <TableHead className="min-w-[145px] whitespace-nowrap">
+                        <SortHeader
+                          label="Credit Limit"
+                          field="creditLimit"
+                          sortField={financialSortField}
+                          sortOrder={financialSortOrder}
+                          onSort={(f) => {
+                            if (financialSortField === f) {
+                              setFinancialSortOrder(financialSortOrder === "asc" ? "desc" : "asc");
+                            } else {
+                              setFinancialSortField(f as keyof AirlineHealth);
+                              setFinancialSortOrder("asc");
+                            }
+                          }}
+                        />
+                      </TableHead>
+                      <TableHead className="min-w-[190px] whitespace-nowrap">
+                        <SortHeader
+                          label="Remaining Credit"
+                          field="remainingCredit"
+                          sortField={financialSortField}
+                          sortOrder={financialSortOrder}
+                          onSort={(f) => {
+                            if (financialSortField === f) {
+                              setFinancialSortOrder(financialSortOrder === "asc" ? "desc" : "asc");
+                            } else {
+                              setFinancialSortField(f as keyof AirlineHealth);
+                              setFinancialSortOrder("asc");
+                            }
+                          }}
+                        />
+                      </TableHead>
+                      <TableHead className="min-w-[160px] whitespace-nowrap">
+                        <SortHeader
+                          label="Status"
+                          field="status"
+                          sortField={financialSortField}
+                          sortOrder={financialSortOrder}
+                          onSort={(f) => {
+                            if (financialSortField === f) {
+                              setFinancialSortOrder(financialSortOrder === "asc" ? "desc" : "asc");
+                            } else {
+                              setFinancialSortField(f as keyof AirlineHealth);
+                              setFinancialSortOrder("asc");
+                            }
+                          }}
+                        />
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {PAYMENT_APPROVALS_DATA.map((row) => (
+                    {paginatedFinancialData.map((row) => (
                       <TableRow key={row.id} className="h-16 hover:bg-gray-50/50">
-                        <TableCell className="text-gray-500 text-sm">{row.submitted}</TableCell>
-                        <TableCell>
-                          <div className="text-[#1e293b] text-[15px]">{row.airline}</div>
-                        </TableCell>
+                        <TableCell className="text-[#1e293b] font-medium text-[15px]">{row.airline}</TableCell>
                         <TableCell className="text-gray-500 text-sm">{row.country}</TableCell>
+                        <TableCell className="text-gray-700">{row.totalBookings.toLocaleString()}</TableCell>
+                        <TableCell className="text-gray-900 font-medium">${row.bookingValue.toLocaleString()}</TableCell>
+                        <TableCell className="text-gray-700">{row.platformFeePercent}%</TableCell>
+                        <TableCell className="text-gray-900 font-medium">${row.totalPlatformFees.toLocaleString()}</TableCell>
+                        <TableCell className="text-emerald-600 font-semibold">${row.paymentsReceived.toLocaleString()}</TableCell>
+                        <TableCell className={cn("font-semibold", row.outstanding > 0 ? "text-amber-600" : "text-gray-500")}>
+                          ${row.outstanding.toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-gray-700">${row.creditLimit.toLocaleString()}</TableCell>
+                        <TableCell className="text-gray-700">${row.remainingCredit.toLocaleString()}</TableCell>
                         <TableCell>
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-gray-200 bg-gray-50 text-gray-600 text-xs font-medium">
-                            <Landmark className="w-3.5 h-3.5" />
-                            {row.method}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <div className="text-gray-500 text-[13px] leading-snug">
-                            <span className="text-gray-600 font-medium">{row.reference}</span>
-                            <br />
-                            {row.bankInfo}
-                          </div>
-                        </TableCell>
-                        <TableCell className="font-semibold text-gray-900 text-[15px]">
-                          ${row.amount.toLocaleString()}
-                        </TableCell>
-                        <TableCell>
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-600 border border-amber-200/60">
-                            {row.status}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <button className="h-8 px-3 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 rounded-md text-[13px] font-medium flex items-center gap-1.5 transition-colors">
-                              <Receipt className="w-3.5 h-3.5" /> Receipt
-                            </button>
-                            <button className="h-8 px-3 bg-[#1e293b] text-white hover:bg-slate-800 rounded-md text-[13px] font-medium flex items-center gap-1.5 transition-colors">
-                              <Check className="w-3.5 h-3.5" /> Approve
-                            </button>
-                            <button className="h-8 px-3 bg-[#dc2626] text-white hover:bg-red-700 rounded-md text-[13px] font-medium flex items-center gap-1.5 transition-colors">
-                              <X className="w-3.5 h-3.5" /> Reject
-                            </button>
-                          </div>
+                          <StatusBadge status={row.status} className="whitespace-nowrap h-auto py-1 px-2.5" />
                         </TableCell>
                       </TableRow>
                     ))}
@@ -1767,15 +1911,8 @@ export default function PaymentsPage() {
               </div>
             </div>
 
-            {/* Payment Approvals Section */}
-            <div className="self-stretch p-6 bg-white rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col justify-start items-start text-left">
-              <div className="self-stretch justify-start text-gray-800 relative top-1">
-                <span className="text-[20px] font-semibold">
-                  Payment Approvals
-                </span>
-              </div>
-
-              <div className="w-full overflow-x-auto rounded-[12px] border border-[#E5E7EB] bg-white mt-7">
+            {/* Payment Approvals Table */}
+            <div className="w-full overflow-x-auto rounded-[12px] border border-[#E5E7EB] bg-white">
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-[#F8FAFC]">
@@ -2008,7 +2145,6 @@ export default function PaymentsPage() {
                   totalPages={approvalTotalPages}
                 />
               </div>
-            </div>
           </div>
         )}
       </div>
