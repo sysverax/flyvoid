@@ -1,24 +1,28 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Save, Mail, Smartphone } from "lucide-react";
-import { Toast } from "@/src/types/common";
-import { ToastList } from "@/src/components/ui/ToastList";
 import { cn } from "@/src/lib/utils";
+import { toast } from "react-toastify";
 import { InputField } from "@/src/components/ui/InputField";
 import { TfaVerification } from "@/src/components/profile/TfaVerification";
+import { authService } from "@/src/services/auth.service";
 
 export default function AdminProfilePage() {
-  const [fullName, setFullName] = useState("John Smith");
-  const [email] = useState("john@flyvoid.com");
+  const [email, setEmail] = useState("");
+  const [fullName, setFullName] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [tfaMethod, setTfaMethod] = useState<"email" | "authenticator">(
     "email",
   );
-  const [toasts, setToasts] = useState<Toast[]>([]);
   const [isConfiguringTfa, setIsConfiguringTfa] = useState(false);
+  const [isGeneratingSetup, setIsGeneratingSetup] = useState(false);
+  const [tfaSetupData, setTfaSetupData] = useState<{
+    manualEntryKey: string;
+    qrCodeDataUrl: string;
+  } | null>(null);
 
   // TFA State Machine states
   const [isTfaEnabled, setIsTfaEnabled] = useState(false);
@@ -28,9 +32,35 @@ export default function AdminProfilePage() {
   const [tfaEnabledDate, setTfaEnabledDate] = useState("");
   const [isShowingRecoveryCodes, setIsShowingRecoveryCodes] = useState(false);
 
+  useEffect(() => {
+    const user = authService.getCurrentUser();
+    if (user?.email) {
+      setEmail(user.email);
+      const parts = user.email.split("@")[0].split(/[._-]/);
+      setFullName(parts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" "));
+
+      const enabled = sessionStorage.getItem(`tfa_enabled_${user.email}`) === "true";
+      const method = sessionStorage.getItem(`tfa_method_${user.email}`) as "email" | "authenticator";
+      const date = sessionStorage.getItem(`tfa_date_${user.email}`);
+
+      setTimeout(() => {
+        if (enabled) {
+          setIsTfaEnabled(true);
+        }
+        if (method) {
+          setTfaEnabledMethod(method);
+        }
+        if (date) {
+          setTfaEnabledDate(date);
+        }
+      }, 0);
+    }
+  }, []);
+
   const handleCancelTfa = () => {
     setIsConfiguringTfa(false);
     setIsShowingRecoveryCodes(false);
+    setTfaSetupData(null);
   };
 
   const handleCompleteSetup = () => {
@@ -40,29 +70,58 @@ export default function AdminProfilePage() {
     const day = String(today.getDate()).padStart(2, "0");
     const month = String(today.getMonth() + 1).padStart(2, "0");
     const year = today.getFullYear();
-    setTfaEnabledDate(`${day}/${month}/${year}`);
+    const dateStr = `${day}/${month}/${year}`;
+    setTfaEnabledDate(dateStr);
     setIsShowingRecoveryCodes(false);
     setIsConfiguringTfa(false);
-    showToast("Two-Factor Authentication enabled successfully!", "success");
+
+    const user = authService.getCurrentUser();
+    if (user?.email) {
+      sessionStorage.setItem(`tfa_enabled_${user.email}`, "true");
+      sessionStorage.setItem(`tfa_method_${user.email}`, tfaMethod);
+      sessionStorage.setItem(`tfa_date_${user.email}`, dateStr);
+    }
   };
 
-  const handleDisableTfa = () => {
-    setIsTfaEnabled(false);
-    setIsConfiguringTfa(false);
-    setIsShowingRecoveryCodes(false);
-    showToast("Two-Factor Authentication disabled.", "info");
+  const handleDisableTfa = async () => {
+    const code = window.prompt("Enter your 6-digit verification code to disable Two-Factor Authentication:");
+    if (code === null) return; // User cancelled
+    if (code.length < 6 || isNaN(Number(code))) {
+      showToast("Please enter a valid 6-digit code.", "warning");
+      return;
+    }
+
+    try {
+      const result = await authService.disableTfa(code);
+      setIsTfaEnabled(false);
+      setIsConfiguringTfa(false);
+      setIsShowingRecoveryCodes(false);
+
+      const user = authService.getCurrentUser();
+      if (user?.email) {
+        sessionStorage.removeItem(`tfa_enabled_${user.email}`);
+        sessionStorage.removeItem(`tfa_method_${user.email}`);
+        sessionStorage.removeItem(`tfa_date_${user.email}`);
+      }
+
+      showToast(result.message, "success");
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : "Failed to disable 2FA.";
+      showToast(errorMsg, "warning");
+    }
   };
 
   const showToast = (
     message: string,
     type: "success" | "warning" | "info" = "success",
   ) => {
-    const id = Date.now().toString();
-    setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(
-      () => setToasts((prev) => prev.filter((t) => t.id !== id)),
-      3000,
-    );
+    if (type === "success") {
+      toast.success(message);
+    } else if (type === "warning") {
+      toast.error(message);
+    } else {
+      toast(message);
+    }
   };
 
   const handleSaveChanges = () => {
@@ -92,12 +151,26 @@ export default function AdminProfilePage() {
     setConfirmPassword("");
   };
 
-  const handleSendOtp = () => {
-    setIsConfiguringTfa(true);
-    if (tfaMethod === "email") {
-      showToast(`Verification OTP sent successfully to ${email}!`, "success");
+  const handleSendOtp = async () => {
+    if (tfaMethod === "authenticator") {
+      setIsGeneratingSetup(true);
+      try {
+        const result = await authService.setupTfa();
+        setTfaSetupData({
+          manualEntryKey: result.manualEntryKey,
+          qrCodeDataUrl: result.qrCodeDataUrl,
+        });
+        setIsConfiguringTfa(true);
+        showToast(result.message, "success");
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : "Failed to generate Authenticator QR code.";
+        showToast(errorMsg, "warning");
+      } finally {
+        setIsGeneratingSetup(false);
+      }
     } else {
-      showToast("Authenticator QR code generated successfully.", "success");
+      setIsConfiguringTfa(true);
+      showToast(`Verification OTP sent successfully to ${email}!`, "success");
     }
   };
 
@@ -428,9 +501,20 @@ export default function AdminProfilePage() {
                       <div className="self-stretch h-px bg-gray-200"></div>
                       <button
                         onClick={handleSendOtp}
-                        className="h-[43px] px-4 py-3 bg-blue-950 hover:bg-primary-hover text-white text-base font-medium font-figtree rounded-[10px] inline-flex justify-center items-center overflow-hidden cursor-pointer transition-colors relative top-0.5"
+                        disabled={isGeneratingSetup}
+                        className="h-[43px] px-4 py-3 bg-primary hover:bg-[#1a3465] active:bg-[#091a3c] active:scale-[0.98] text-white text-base font-medium font-figtree rounded-[10px] inline-flex justify-center items-center overflow-hidden cursor-pointer transition-all relative top-0.5 disabled:opacity-75 disabled:cursor-default shadow-lg shadow-[#0F2757]/10"
                       >
-                        {tfaMethod === "email" ? "Send OTP" : "Generate Setup"}
+                        {isGeneratingSetup ? (
+                          <span className="flex items-center gap-2">
+                            <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                            </svg>
+                            {tfaMethod === "email" ? "Sending..." : "Generating..."}
+                          </span>
+                        ) : (
+                          tfaMethod === "email" ? "Send OTP" : "Generate Setup"
+                        )}
                       </button>
                     </div>
                   )}
@@ -447,6 +531,8 @@ export default function AdminProfilePage() {
                   showToast={showToast}
                   isShowingRecoveryCodes={isShowingRecoveryCodes}
                   setIsShowingRecoveryCodes={setIsShowingRecoveryCodes}
+                  manualEntryKey={tfaSetupData?.manualEntryKey}
+                  qrCodeDataUrl={tfaSetupData?.qrCodeDataUrl}
                 />
               )}
             </>
@@ -454,8 +540,6 @@ export default function AdminProfilePage() {
         </div>
       </div>
 
-      {/* Global Toast stack */}
-      <ToastList toasts={toasts} />
     </div>
   );
 }

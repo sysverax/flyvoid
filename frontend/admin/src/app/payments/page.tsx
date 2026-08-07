@@ -8,10 +8,15 @@ import {
   TrendingDown,
   TrendingUp,
   DollarSign,
+  Receipt,
+  HandCoins,
+  CircleAlert,
+  Gauge,
   LineChart as LineChartIcon,
   BarChart3,
   Landmark,
   Check,
+  ClipboardCheck,
   Settings,
   Plane,
   X,
@@ -46,6 +51,16 @@ interface CountryRevenue {
   amount: string;
   percentage: string;
   widthClass: string;
+}
+
+interface KpiCardItem {
+  id: string;
+  label: string;
+  value: string;
+  subtext: string;
+  icon: any;
+  valueColor?: string;
+  badge?: string;
 }
 
 const AIRLINE_REVENUE_DATA: AirlineRevenue[] = [
@@ -128,13 +143,27 @@ interface AirlineHealth {
   id: string;
   airline: string;
   country: string;
-  topups: number;
-  bookingSpend: number;
-  revenue: number;
-  walletBalance: number;
+  totalBookings: number;
+  bookingValue: number;
+  platformFeePercent: number;
+  totalPlatformFees: number;
+  paymentsReceived: number;
+  outstanding: number;
   creditLimit: number;
-  creditUsed: number;
-  remaining: number;
+  remainingCredit: number;
+  status: "Healthy" | "Overdue" | "Warning" | "Good";
+}
+
+interface PaymentApproval {
+  id: string;
+  submitted: string;
+  airline: string;
+  country: string;
+  method: string;
+  reference: string;
+  bankInfo: string;
+  amount: number;
+  status: "Pending Approval" | "Approved" | "Rejected";
 }
 
 interface Transaction {
@@ -166,49 +195,57 @@ const DETAILED_AIRLINE_HEALTH_DATA: AirlineHealth[] = [
     id: "AH001",
     airline: "SkyLine Airways",
     country: "United States",
-    topups: 800000,
-    bookingSpend: 2450000,
-    revenue: 122500,
-    walletBalance: 80000,
+    totalBookings: 1420,
+    bookingValue: 2450000,
+    platformFeePercent: 5,
+    totalPlatformFees: 122500,
+    paymentsReceived: 100000,
+    outstanding: 22500,
     creditLimit: 50000,
-    creditUsed: 25000,
-    remaining: 50000,
+    remainingCredit: 27500,
+    status: "Healthy",
   },
   {
     id: "AH002",
-    airline: "SkyLine Airways",
-    country: "United States",
-    topups: 500000,
-    bookingSpend: 2450000,
-    revenue: 122500,
-    walletBalance: 80000,
-    creditLimit: 50000,
-    creditUsed: 25000,
-    remaining: 50000,
+    airline: "Pacific Airways",
+    country: "Canada",
+    totalBookings: 980,
+    bookingValue: 1850000,
+    platformFeePercent: 5,
+    totalPlatformFees: 92500,
+    paymentsReceived: 80000,
+    outstanding: 12500,
+    creditLimit: 40000,
+    remainingCredit: 27500,
+    status: "Healthy",
   },
   {
     id: "AH003",
-    airline: "SkyLine Airways",
+    airline: "Global Airlines",
     country: "United States",
-    topups: 800000,
-    bookingSpend: 2450000,
-    revenue: 122500,
-    walletBalance: 80000,
-    creditLimit: 50000,
-    creditUsed: 25000,
-    remaining: 50000,
+    totalBookings: 2150,
+    bookingValue: 3900000,
+    platformFeePercent: 4.5,
+    totalPlatformFees: 175500,
+    paymentsReceived: 140000,
+    outstanding: 35500,
+    creditLimit: 60000,
+    remainingCredit: 24500,
+    status: "Warning",
   },
   {
     id: "AH004",
-    airline: "SkyLine Airways",
-    country: "United States",
-    topups: 800000,
-    bookingSpend: 2450000,
-    revenue: 122500,
-    walletBalance: 80000,
-    creditLimit: 50000,
-    creditUsed: 25000,
-    remaining: 50000,
+    airline: "AeroTravel Co.",
+    country: "France",
+    totalBookings: 640,
+    bookingValue: 1120000,
+    platformFeePercent: 5,
+    totalPlatformFees: 56000,
+    paymentsReceived: 56000,
+    outstanding: 0,
+    creditLimit: 30000,
+    remainingCredit: 30000,
+    status: "Healthy",
   },
 ];
 
@@ -386,6 +423,53 @@ const TREASURY_AUDIT_DATA: TreasuryAudit[] = [
   },
 ];
 
+const PAYMENT_APPROVALS_DATA: PaymentApproval[] = [
+  {
+    id: "PA001",
+    submitted: "2/18/2025",
+    airline: "SkyLine Airways",
+    country: "United States",
+    method: "Bank Transfer",
+    reference: "TRF-8845-2201",
+    bankInfo: "First National Bank",
+    amount: 45000,
+    status: "Pending Approval",
+  },
+  {
+    id: "PA002",
+    submitted: "2/19/2025",
+    airline: "Pacific Airways",
+    country: "Canada",
+    method: "Bank Transfer",
+    reference: "TRF-8845-2202",
+    bankInfo: "Royal Bank of Canada",
+    amount: 12500,
+    status: "Pending Approval",
+  },
+  {
+    id: "PA003",
+    submitted: "2/20/2025",
+    airline: "Oceanic Air",
+    country: "United Kingdom",
+    method: "Wire Transfer",
+    reference: "TRF-8845-2203",
+    bankInfo: "Barclays Bank",
+    amount: 85000,
+    status: "Approved",
+  },
+  {
+    id: "PA004",
+    submitted: "2/21/2025",
+    airline: "EuroFly Services",
+    country: "Germany",
+    method: "Bank Transfer",
+    reference: "TRF-8845-2204",
+    bankInfo: "Deutsche Bank",
+    amount: 32000,
+    status: "Rejected",
+  },
+];
+
 const TABS_CONFIG = [
   {
     id: "overview",
@@ -399,7 +483,7 @@ const TABS_CONFIG = [
   },
   {
     id: "treasury",
-    label: "Platform Treasury",
+    label: "Payment Approvals",
     icon: Landmark,
   },
 ] as const;
@@ -447,6 +531,13 @@ const formatTreasuryTimestamp = (dateStr: string) => {
 };
 
 export default function PaymentsPage() {
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setIsLoading(false), 500);
+    return () => clearTimeout(timer);
+  }, []);
+
   const { hasPermission } = useAuth();
   const [activeTab, setActiveTab] = useState<
     "overview" | "detailed" | "treasury"
@@ -511,13 +602,27 @@ export default function PaymentsPage() {
   const [transactionCurrentPage, setTransactionCurrentPage] = useState(1);
   const [transactionPerPage, setTransactionPerPage] = useState(10);
 
-  // Treasury Sorting state
-  const [treasurySortField, setTreasurySortField] = useState<keyof TreasuryAudit | null>(null);
-  const [treasurySortOrder, setTreasurySortOrder] = useState<"asc" | "desc">("asc");
+  // Payment Approvals state
+  const [paymentApprovals, setPaymentApprovals] = useState<PaymentApproval[]>(PAYMENT_APPROVALS_DATA);
+  const [statusFilter, setStatusFilter] = useState("All");
+  const [approvalSortField, setApprovalSortField] = useState<keyof PaymentApproval | null>(null);
+  const [approvalSortOrder, setApprovalSortOrder] = useState<"asc" | "desc">("asc");
 
-  // Treasury Pagination state
-  const [treasuryCurrentPage, setTreasuryCurrentPage] = useState(1);
-  const [treasuryPerPage, setTreasuryPerPage] = useState(10);
+  // Payment Approvals Pagination state
+  const [approvalCurrentPage, setApprovalCurrentPage] = useState(1);
+  const [approvalPerPage, setApprovalPerPage] = useState(10);
+
+  const handleApprovePayment = (id: string) => {
+    setPaymentApprovals((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, status: "Approved" } : item))
+    );
+  };
+
+  const handleRejectPayment = (id: string) => {
+    setPaymentApprovals((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, status: "Rejected" } : item))
+    );
+  };
 
   // Dynamic filter lists
   const airlineOptions = useMemo(() => {
@@ -557,6 +662,13 @@ export default function PaymentsPage() {
     { value: "Airline Top-up", label: "Airline Top-up" },
     { value: "Platform Credit", label: "Platform Credit" },
     { value: "Hotel Booking", label: "Hotel Booking" },
+  ];
+
+  const approvalStatusOptions = [
+    { value: "All", label: "All Status" },
+    { value: "Pending Approval", label: "Pending Approval" },
+    { value: "Approved", label: "Approved" },
+    { value: "Rejected", label: "Rejected" },
   ];
 
   // Filtering calculations
@@ -648,65 +760,76 @@ export default function PaymentsPage() {
     return sortedTransactions.slice(start, start + transactionPerPage);
   }, [sortedTransactions, transactionCurrentPage, transactionPerPage]);
 
-  // Treasury Filtering calculations
-  const filteredTreasuryData = useMemo(() => {
-    return treasuryAudits.filter((tx) => {
+  // Payment Approvals Filtering calculations
+  const filteredApprovalsData = useMemo(() => {
+    return paymentApprovals.filter((item) => {
+      const matchesStatus = statusFilter === "All" || item.status === statusFilter;
       let matchesDate = true;
       if (startDate || endDate) {
-        const txTime = new Date(tx.timestamp).getTime();
+        const parts = item.submitted.split("/");
+        if (parts.length === 3) {
+          const itemTime = new Date(
+            Number(parts[2]),
+            Number(parts[0]) - 1,
+            Number(parts[1])
+          ).getTime();
 
-        if (startDate) {
-          const startLimit = new Date(startDate).getTime();
-          if (txTime < startLimit) matchesDate = false;
-        }
-        if (endDate) {
-          const adjustedEndLimit = new Date(endDate);
-          adjustedEndLimit.setHours(23, 59, 59, 999);
-          if (txTime > adjustedEndLimit.getTime()) matchesDate = false;
+          if (startDate) {
+            const startLimit = new Date(startDate).getTime();
+            if (itemTime < startLimit) matchesDate = false;
+          }
+          if (endDate) {
+            const adjustedEndLimit = new Date(endDate);
+            adjustedEndLimit.setHours(23, 59, 59, 999);
+            if (itemTime > adjustedEndLimit.getTime()) matchesDate = false;
+          }
         }
       }
-      return matchesDate;
+      return matchesStatus && matchesDate;
     });
-  }, [startDate, endDate]);
+  }, [paymentApprovals, statusFilter, startDate, endDate]);
 
-  // Treasury KPI summaries
+  // Payment Approvals KPI summaries
   const { treasuryBalance, treasuryDeposited, treasuryWithdrawn } = useMemo(() => {
-    const deposits = filteredTreasuryData
-      .filter((t) => t.type === "Deposit")
+    const approved = filteredApprovalsData
+      .filter((t) => t.status === "Approved")
       .reduce((sum, t) => sum + t.amount, 0);
-    const withdrawals = filteredTreasuryData
-      .filter((t) => t.type === "Withdrawal")
+    const pending = filteredApprovalsData
+      .filter((t) => t.status === "Pending Approval")
+      .reduce((sum, t) => sum + t.amount, 0);
+    const total = filteredApprovalsData
       .reduce((sum, t) => sum + t.amount, 0);
 
     return {
-      treasuryBalance: deposits - withdrawals,
-      treasuryDeposited: deposits,
-      treasuryWithdrawn: withdrawals,
+      treasuryBalance: total > 0 ? total : 355000,
+      treasuryDeposited: approved > 0 ? approved : 555000,
+      treasuryWithdrawn: pending > 0 ? pending : 200000,
     };
-  }, [filteredTreasuryData]);
+  }, [filteredApprovalsData]);
 
-  // Treasury Sorting
-  const sortedTreasuryData = useMemo(() => {
-    return sortData(filteredTreasuryData, treasurySortField, treasurySortOrder, ["timestamp"]);
-  }, [filteredTreasuryData, treasurySortField, treasurySortOrder]);
+  // Payment Approvals Sorting
+  const sortedApprovalsData = useMemo(() => {
+    return sortData(filteredApprovalsData, approvalSortField, approvalSortOrder, ["submitted"]);
+  }, [filteredApprovalsData, approvalSortField, approvalSortOrder]);
 
-  // Treasury Pagination
-  const treasuryTotalPages = Math.ceil(sortedTreasuryData.length / treasuryPerPage) || 1;
-  const paginatedTreasuryData = useMemo(() => {
-    const start = (treasuryCurrentPage - 1) * treasuryPerPage;
-    return sortedTreasuryData.slice(start, start + treasuryPerPage);
-  }, [sortedTreasuryData, treasuryCurrentPage, treasuryPerPage]);
+  // Payment Approvals Pagination
+  const approvalTotalPages = Math.ceil(sortedApprovalsData.length / approvalPerPage) || 1;
+  const paginatedApprovalsData = useMemo(() => {
+    const start = (approvalCurrentPage - 1) * approvalPerPage;
+    return sortedApprovalsData.slice(start, start + approvalPerPage);
+  }, [sortedApprovalsData, approvalCurrentPage, approvalPerPage]);
 
   const handleClearFilters = () => {
     setAirlineFilter("All");
     setAirportFilter("All");
     setCountryFilter("All");
     setTxTypeFilter("All");
+    setStatusFilter("All");
     setStartDate("");
     setEndDate("");
     setFinancialCurrentPage(1);
     setTransactionCurrentPage(1);
-    setTreasuryCurrentPage(1);
+    setApprovalCurrentPage(1);
   };
 
   const handleReserveSubmit = (
@@ -745,51 +868,48 @@ export default function PaymentsPage() {
   // Platform Reserve state
   const [reserveValue, setReserveValue] = useState(250000);
 
+  // Revenue by Airline filter state (Top 5 / All)
+  const [airlineView, setAirlineView] = useState<"top5" | "all">("top5");
+
   // Define KPI Cards data dynamically based on the current state values
-  const kpiCardsConfig = [
+  const kpiCardsConfig: KpiCardItem[] = [
     {
-      id: "topup",
-      label: "Total Top-up Balance",
-      value: "$480,000",
-      subtext: "Real money available",
-      icon: Wallet,
+      id: "fees-billed",
+      label: "Platform Fees Billed",
+      value: "$476,000",
+      subtext: "Fees charged to airlines",
+      icon: DollarSign,
     },
     {
-      id: "reserve",
-      label: "Platform Reserve",
-      value: `$${reserveValue.toLocaleString()}`,
-      subtext: "Admin-deposited funds",
-      icon: "/icons/bag.svg",
+      id: "payments-received",
+      label: "Payments Received",
+      value: "$371,000",
+      subtext: "Settled by airlines",
+      icon: HandCoins,
+      valueColor: "text-emerald-600",
+    },
+    {
+      id: "outstanding-fees",
+      label: "Outstanding Fees",
+      value: "$105,000",
+      subtext: "Awaiting settlement",
+      icon: CircleAlert,
+      valueColor: "text-amber-500",
     },
     {
       id: "credit-issued",
       label: "Total Credit Issued",
-      value: "$525,000",
-      subtext: "Admin-defined limits",
-      icon: "/icons/card.svg",
+      value: "$415,000",
+      subtext: "Max outstanding fees allowed",
+      icon: CreditCard,
     },
     {
-      id: "credit-used",
-      label: "Total Credit Used",
-      value: "$190,000",
-      subtext: "Negative balances",
-      icon: TrendingDown,
-      valueColor: "text-amber-400",
-    },
-    {
-      id: "exposure",
-      label: "Net Exposure",
-      value: "$60,000",
-      subtext: "Fully covered",
-      icon: TrendingUp,
-    },
-    {
-      id: "revenue",
-      label: "Platform Revenue",
-      value: "$476,000",
-      subtext: "Platform fees only",
-      icon: DollarSign,
-      badge: "+18%",
+      id: "credit-utilization",
+      label: "Credit Utilization",
+      value: "25.3%",
+      subtext: "Outstanding vs credit limits",
+      icon: Gauge,
+      badge: "Healthy",
     },
   ];
 
@@ -804,7 +924,7 @@ export default function PaymentsPage() {
     {
       id: "used",
       value: "$190,000",
-      label: "Total Credit Allowed",
+      label: "Outstanding Platform Fees",
       valueColor: "text-amber-500",
     },
     {
@@ -817,7 +937,7 @@ export default function PaymentsPage() {
     {
       id: "users",
       value: "3",
-      label: "Airlines Using Credit",
+      label: "Airlines With Unpaid Fees",
       valueColor: "text-gray-800",
     },
   ];
@@ -825,9 +945,13 @@ export default function PaymentsPage() {
   // Define Revenue Column configurations dynamically for Row 3
   const revenueColumnsConfig = [
     {
-      title: "Revenue by Airline",
+      id: "airline",
+      title: `Revenue by Airline${airlineView === "top5" ? " (Top 5)" : ""}`,
+      hasToggle: true,
+      currentView: airlineView,
+      setView: setAirlineView,
       progressBarColor: "bg-blue-950",
-      data: AIRLINE_REVENUE_DATA.map((item) => ({
+      data: (airlineView === "top5" ? AIRLINE_REVENUE_DATA.slice(0, 5) : AIRLINE_REVENUE_DATA).map((item) => ({
         name: item.name,
         amount: item.amount,
         percentage: item.percentage,
@@ -839,7 +963,9 @@ export default function PaymentsPage() {
       })),
     },
     {
+      id: "country",
       title: "Revenue by Country",
+      hasToggle: false,
       progressBarColor: "bg-emerald-600",
       data: COUNTRY_REVENUE_DATA.map((item) => ({
         name: item.country,
@@ -979,9 +1105,9 @@ export default function PaymentsPage() {
                           </div>
 
                           {card.badge && (
-                            <div className="text-emerald-500 text-sm font-normal">
+                            <span className="text-emerald-500 text-sm font-semibold">
                               {card.badge}
-                            </div>
+                            </span>
                           )}
                         </div>
                       </div>
@@ -1014,8 +1140,38 @@ export default function PaymentsPage() {
                   key={idx}
                   className="flex-1 p-6 bg-white rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 inline-flex flex-col justify-start items-start gap-6 text-left"
                 >
-                  <div className="self-stretch justify-start text-gray-800 text-xl font-semibold leading-[100%]">
-                    {col.title}
+                  <div className="self-stretch inline-flex justify-between items-center gap-4">
+                    <div className="justify-start text-gray-800 text-xl font-semibold leading-[100%]">
+                      {col.title}
+                    </div>
+                    {col.hasToggle && col.setView && col.currentView && (
+                      <div className="flex items-center gap-1 bg-gray-100/80 p-1 rounded-lg border border-gray-200/60">
+                        <button
+                          type="button"
+                          onClick={() => col.setView("top5")}
+                          className={cn(
+                            "px-3 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer",
+                            col.currentView === "top5"
+                              ? "bg-blue-950 text-white shadow-sm"
+                              : "text-gray-600 hover:text-gray-900 bg-transparent"
+                          )}
+                        >
+                          Top 5
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => col.setView("all")}
+                          className={cn(
+                            "px-3 py-1 rounded-md text-xs font-medium transition-all cursor-pointer",
+                            col.currentView === "all"
+                              ? "bg-blue-950 text-white shadow-sm"
+                              : "text-gray-600 hover:text-gray-900 bg-transparent"
+                          )}
+                        >
+                          All
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <div className="self-stretch flex flex-col justify-start items-start gap-[22px]">
                     {col.data.map((item, itemIdx) => (
@@ -1181,78 +1337,78 @@ export default function PaymentsPage() {
 
             {/* KPI Cards Row */}
             <div className="self-stretch w-full grid grid-cols-1 md:grid-cols-3 gap-3">
-              {/* Total Bookings Card */}
+              {/* Platform Fees Billed Card */}
               <div className="w-full p-4 bg-white rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col gap-2.5">
                 <div className="flex justify-start items-start gap-5">
                   <div className="flex-1 flex flex-col gap-1 text-left">
                     <div className="text-gray-500 text-base font-normal">
-                      Total Bookings
+                      Platform Fees Billed
                     </div>
                     <div className="flex items-center gap-1.5 relative -top-0.5">
                       <div className="text-2xl font-semibold text-gray-800">
-                        ${bookingsSum.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="size-11 p-2.5 bg-gray-100 text-[#0F2757] rounded-lg flex justify-center items-center shrink-0">
-                    <Plane className="w-5 h-5" />
-                  </div>
-                </div>
-                <div className="text-gray-500 text-sm font-normal text-left">
-                  {bookingsCount} {bookingsCount === 1 ? "booking" : "bookings"}
-                </div>
-              </div>
-
-              {/* Total Top-ups Card */}
-              <div className="w-full p-4 bg-white rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col gap-2.5">
-                <div className="flex justify-start items-start gap-5">
-                  <div className="flex-1 flex flex-col gap-1 text-left">
-                    <div className="text-gray-500 text-base font-normal">
-                      Total Top-ups
-                    </div>
-                    <div className="flex items-center gap-1.5 relative -top-0.5">
-                      <div className="text-2xl font-semibold text-emerald-600">
-                        ${topupsSum.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="size-11 p-2.5 bg-gray-100 text-[#0F2757] rounded-lg flex justify-center items-center shrink-0">
-                    <TrendingUp className="w-5 h-5 text-[#0F2757]" />
-                  </div>
-                </div>
-                <div className="text-gray-500 text-sm font-normal text-left">
-                  {topupsCount} {topupsCount === 1 ? "transaction" : "transactions"}
-                </div>
-              </div>
-
-              {/* Total Revenue Card */}
-              <div className="w-full p-4 bg-white rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col gap-2.5">
-                <div className="flex justify-start items-start gap-5">
-                  <div className="flex-1 flex flex-col gap-1 text-left">
-                    <div className="text-gray-500 text-base font-normal">
-                      Total Revenue
-                    </div>
-                    <div className="flex items-center gap-1.5 relative -top-0.5">
-                      <div className="text-2xl font-semibold text-gray-800">
-                        ${revenueSum.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        $13,120
                       </div>
                     </div>
                   </div>
                   <div className="size-11 p-2.5 bg-gray-100 rounded-lg flex justify-center items-center shrink-0">
-                    <DollarSign className="w-5 h-5 text-[#0F2757]" />
+                    <DollarSign className="w-5 h-5 text-blue-950" />
                   </div>
                 </div>
                 <div className="text-gray-500 text-sm font-normal text-left">
-                  Platform fees
+                  5 fee charges
+                </div>
+              </div>
+
+              {/* Payments Received Card */}
+              <div className="w-full p-4 bg-white rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col gap-2.5">
+                <div className="flex justify-start items-start gap-5">
+                  <div className="flex-1 flex flex-col gap-1 text-left">
+                    <div className="text-gray-500 text-base font-normal">
+                      Payments Received
+                    </div>
+                    <div className="flex items-center gap-1.5 relative -top-0.5">
+                      <div className="text-2xl font-semibold text-emerald-600">
+                        $304,000
+                      </div>
+                    </div>
+                  </div>
+                  <div className="size-11 p-2.5 bg-gray-100 rounded-lg flex justify-center items-center shrink-0">
+                    <HandCoins className="w-5 h-5 text-blue-950" />
+                  </div>
+                </div>
+                <div className="text-gray-500 text-sm font-normal text-left">
+                  3 payments
+                </div>
+              </div>
+
+              {/* Outstanding Fees Card */}
+              <div className="w-full p-4 bg-white rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col gap-2.5">
+                <div className="flex justify-start items-start gap-5">
+                  <div className="flex-1 flex flex-col gap-1 text-left">
+                    <div className="text-gray-500 text-base font-normal">
+                      Outstanding Fees
+                    </div>
+                    <div className="flex items-center gap-1.5 relative -top-0.5">
+                      <div className="text-2xl font-semibold text-amber-500">
+                        $105,000
+                      </div>
+                    </div>
+                  </div>
+                  <div className="size-11 p-2.5 bg-gray-100 rounded-lg flex justify-center items-center shrink-0">
+                    <CircleAlert className="w-5 h-5 text-blue-950" />
+                  </div>
+                </div>
+                <div className="text-gray-500 text-sm font-normal text-left">
+                  Unsettled platform fees
                 </div>
               </div>
             </div>
 
-            {/* Airline Financial Health Section */}
+            {/* Airline Billing Health Section */}
             <div className="self-stretch p-6 bg-white rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col justify-start items-start text-left">
               <div className="self-stretch justify-start text-gray-800 relative top-1">
                 <span className="text-[20px] font-semibold">
-                  Airline Financial Health
+                  Airline Billing Health
                 </span>
                 <span className="text-[16px] font-normal ml-1">
                   ({filteredFinancialData.length}{" "}
@@ -1264,174 +1420,60 @@ export default function PaymentsPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="min-w-[110px]">
-                        <SortHeader
-                          label="Airline"
-                          field="airline"
-                          sortField={financialSortField}
-                          sortOrder={financialSortOrder}
-                          onSort={(f) => {
-                            if (financialSortField === f) {
-                              setFinancialSortOrder(financialSortOrder === "asc" ? "desc" : "asc");
-                            } else {
-                              setFinancialSortField(f as keyof AirlineHealth);
-                              setFinancialSortOrder("asc");
-                            }
-                          }}
-                        />
-                      </TableHead>
-                      <TableHead className="min-w-[115px]">
-                        <SortHeader
-                          label="Country"
-                          field="country"
-                          sortField={financialSortField}
-                          sortOrder={financialSortOrder}
-                          onSort={(f) => {
-                            if (financialSortField === f) {
-                              setFinancialSortOrder(financialSortOrder === "asc" ? "desc" : "asc");
-                            } else {
-                              setFinancialSortField(f as keyof AirlineHealth);
-                              setFinancialSortOrder("asc");
-                            }
-                          }}
-                        />
-                      </TableHead>
-                      <TableHead className="min-w-[110px]">
-                        <SortHeader
-                          label="Top-ups"
-                          field="topups"
-                          sortField={financialSortField}
-                          sortOrder={financialSortOrder}
-                          onSort={(f) => {
-                            if (financialSortField === f) {
-                              setFinancialSortOrder(financialSortOrder === "asc" ? "desc" : "asc");
-                            } else {
-                              setFinancialSortField(f as keyof AirlineHealth);
-                              setFinancialSortOrder("asc");
-                            }
-                          }}
-                        />
-                      </TableHead>
-                      <TableHead className="min-w-[130px] whitespace-nowrap">
-                        <SortHeader
-                          label="Booking Spend"
-                          field="bookingSpend"
-                          sortField={financialSortField}
-                          sortOrder={financialSortOrder}
-                          onSort={(f) => {
-                            if (financialSortField === f) {
-                              setFinancialSortOrder(financialSortOrder === "asc" ? "desc" : "asc");
-                            } else {
-                              setFinancialSortField(f as keyof AirlineHealth);
-                              setFinancialSortOrder("asc");
-                            }
-                          }}
-                        />
-                      </TableHead>
-                      <TableHead className="min-w-[105px]">
-                        <SortHeader
-                          label="Revenue"
-                          field="revenue"
-                          sortField={financialSortField}
-                          sortOrder={financialSortOrder}
-                          onSort={(f) => {
-                            if (financialSortField === f) {
-                              setFinancialSortOrder(financialSortOrder === "asc" ? "desc" : "asc");
-                            } else {
-                              setFinancialSortField(f as keyof AirlineHealth);
-                              setFinancialSortOrder("asc");
-                            }
-                          }}
-                        />
-                      </TableHead>
-                      <TableHead className="min-w-[145px] whitespace-nowrap">
-                        <SortHeader
-                          label="Wallet Balance"
-                          field="walletBalance"
-                          sortField={financialSortField}
-                          sortOrder={financialSortOrder}
-                          onSort={(f) => {
-                            if (financialSortField === f) {
-                              setFinancialSortOrder(financialSortOrder === "asc" ? "desc" : "asc");
-                            } else {
-                              setFinancialSortField(f as keyof AirlineHealth);
-                              setFinancialSortOrder("asc");
-                            }
-                          }}
-                        />
-                      </TableHead>
-                      <TableHead className="min-w-[120px] whitespace-nowrap">
-                        <SortHeader
-                          label="Credit Limit"
-                          field="creditLimit"
-                          sortField={financialSortField}
-                          sortOrder={financialSortOrder}
-                          onSort={(f) => {
-                            if (financialSortField === f) {
-                              setFinancialSortOrder(financialSortOrder === "asc" ? "desc" : "asc");
-                            } else {
-                              setFinancialSortField(f as keyof AirlineHealth);
-                              setFinancialSortOrder("asc");
-                            }
-                          }}
-                        />
-                      </TableHead>
-                      <TableHead className="min-w-[120px] whitespace-nowrap">
-                        <SortHeader
-                          label="Credit Used"
-                          field="creditUsed"
-                          sortField={financialSortField}
-                          sortOrder={financialSortOrder}
-                          onSort={(f) => {
-                            if (financialSortField === f) {
-                              setFinancialSortOrder(financialSortOrder === "asc" ? "desc" : "asc");
-                            } else {
-                              setFinancialSortField(f as keyof AirlineHealth);
-                              setFinancialSortOrder("asc");
-                            }
-                          }}
-                        />
-                      </TableHead>
-                      <TableHead className="min-w-[120px]">
-                        <SortHeader
-                          label="Remaining"
-                          field="remaining"
-                          sortField={financialSortField}
-                          sortOrder={financialSortOrder}
-                          onSort={(f) => {
-                            if (financialSortField === f) {
-                              setFinancialSortOrder(financialSortOrder === "asc" ? "desc" : "asc");
-                            } else {
-                              setFinancialSortField(f as keyof AirlineHealth);
-                              setFinancialSortOrder("asc");
-                            }
-                          }}
-                        />
-                      </TableHead>
+                      <TableHead className="min-w-[110px] text-xs font-semibold text-gray-500 uppercase">SUBMITTED</TableHead>
+                      <TableHead className="min-w-[140px] text-xs font-semibold text-gray-500 uppercase">AIRLINE</TableHead>
+                      <TableHead className="min-w-[120px] text-xs font-semibold text-gray-500 uppercase">COUNTRY</TableHead>
+                      <TableHead className="min-w-[140px] text-xs font-semibold text-gray-500 uppercase">METHOD</TableHead>
+                      <TableHead className="min-w-[170px] text-xs font-semibold text-gray-500 uppercase">REFERENCE NUMBER</TableHead>
+                      <TableHead className="min-w-[110px] text-xs font-semibold text-gray-500 uppercase">AMOUNT</TableHead>
+                      <TableHead className="min-w-[140px] text-xs font-semibold text-gray-500 uppercase">STATUS</TableHead>
+                      <TableHead className="min-w-[280px] text-xs font-semibold text-gray-500 uppercase text-right">ACTIONS</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {paginatedFinancialData.length > 0 ? (
-                      paginatedFinancialData.map((row) => (
-                        <TableRow key={row.id} className="translate-y-1 translate-x-0.5">
-                          <TableCell>{row.airline}</TableCell>
-                          <TableCell>{row.country}</TableCell>
-                          <TableCell>${row.topups.toLocaleString()}</TableCell>
-                          <TableCell>${row.bookingSpend.toLocaleString()}</TableCell>
-                          <TableCell className="!text-[#059669]">${row.revenue.toLocaleString()}</TableCell>
-                          <TableCell>${row.walletBalance.toLocaleString()}</TableCell>
-                          <TableCell>${row.creditLimit.toLocaleString()}</TableCell>
-                          <TableCell className="!text-[#F59E0B]">${row.creditUsed.toLocaleString()}</TableCell>
-                          <TableCell>${row.remaining.toLocaleString()}</TableCell>
-                        </TableRow>
-                      ))
-                    ) : (
-                      <TableRow>
-                        <TableCell colSpan={9} className="px-6 py-10 text-center text-gray-500">
-                          No financial health data matches your filters.
+                    {PAYMENT_APPROVALS_DATA.map((row) => (
+                      <TableRow key={row.id} className="h-16 hover:bg-gray-50/50">
+                        <TableCell className="text-gray-500 text-sm">{row.submitted}</TableCell>
+                        <TableCell>
+                          <div className="text-[#1e293b] text-[15px]">{row.airline}</div>
+                        </TableCell>
+                        <TableCell className="text-gray-500 text-sm">{row.country}</TableCell>
+                        <TableCell>
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-gray-200 bg-gray-50 text-gray-600 text-xs font-medium">
+                            <Landmark className="w-3.5 h-3.5" />
+                            {row.method}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-gray-500 text-[13px] leading-snug">
+                            <span className="text-gray-600 font-medium">{row.reference}</span>
+                            <br />
+                            {row.bankInfo}
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-semibold text-gray-900 text-[15px]">
+                          ${row.amount.toLocaleString()}
+                        </TableCell>
+                        <TableCell>
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-600 border border-amber-200/60">
+                            {row.status}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button className="h-8 px-3 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 rounded-md text-[13px] font-medium flex items-center gap-1.5 transition-colors">
+                              <Receipt className="w-3.5 h-3.5" /> Receipt
+                            </button>
+                            <button className="h-8 px-3 bg-[#1e293b] text-white hover:bg-slate-800 rounded-md text-[13px] font-medium flex items-center gap-1.5 transition-colors">
+                              <Check className="w-3.5 h-3.5" /> Approve
+                            </button>
+                            <button className="h-8 px-3 bg-[#dc2626] text-white hover:bg-red-700 rounded-md text-[13px] font-medium flex items-center gap-1.5 transition-colors">
+                              <X className="w-3.5 h-3.5" /> Reject
+                            </button>
+                          </div>
                         </TableCell>
                       </TableRow>
-                    )}
+                    ))}
                   </TableBody>
                 </Table>
               </div>
@@ -1618,7 +1660,19 @@ export default function PaymentsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {paginatedTransactions.length > 0 ? (
+                    {isLoading ? (
+                      <TableRow>
+                        <TableCell colSpan={9} className="px-6 py-12 text-center text-gray-500 font-figtree">
+                          <div className="flex flex-col items-center justify-center gap-2">
+                            <svg className="animate-spin h-8 w-8 text-primary" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                            </svg>
+                            <span>Loading transactions...</span>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ) : paginatedTransactions.length > 0 ? (
                       paginatedTransactions.map((tx) => {
                         let typeBadgeStyles = "bg-gray-100 text-gray-700";
                         let typePrefix = "";
@@ -1694,269 +1748,249 @@ export default function PaymentsPage() {
           </div>
         )}
 
-        {/* Tab 3: Platform Treasury */}
+        {/* Tab 3: Payment Approvals */}
         {activeTab === "treasury" && (
           <div className="self-stretch flex flex-col justify-start items-start gap-5 animate-fadeIn">
-            {/* Header */}
-            <div className="self-stretch inline-flex justify-between items-center">
-              <div className="flex justify-start items-center gap-2">
-                <div className="justify-start text-gray-800 text-lg font-semibold leading-[100%]">
-                  Platform Reserve Summary
-                </div>
-                <div className="justify-start text-gray-500 text-sm font-normal">
-                  ({dateRangeLabel})
-                </div>
-              </div>
-              {hasPermission("edit", "platformTreasury") && (
-                <div className="h-9 flex justify-start items-center">
-                  <button
-                    type="button"
-                    onClick={() => setIsReserveModalOpen(true)}
-                    className="h-[38px] flex items-center justify-start gap-2 rounded-[8px] border border-[#D1D5DB] px-3.5 text-[#1F2937] outline-none cursor-pointer hover:bg-slate-100/80 transition-colors text-[14px] font-medium bg-[#F3F4F6]"
-                  >
-                    <Settings className="w-3.5 h-3.5 shrink-0 text-gray-700 relative -left-0.5" />
-                    <span>Manage Reserve</span>
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* KPI Cards Row */}
-            <div className="self-stretch w-full grid grid-cols-1 md:grid-cols-3 gap-3">
-              {/* Current Balance Card */}
-              <div className="w-full p-4 bg-white rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col gap-2.5">
-                <div className="flex justify-start items-start gap-5">
-                  <div className="flex-1 flex flex-col gap-1 text-left">
-                    <div className="text-gray-500 text-base font-normal">
-                      Current Balance
-                    </div>
-                    <div className="flex items-center gap-1.5 relative -top-0.5">
-                      <div className="text-2xl font-semibold text-gray-800">
-                        ${treasuryBalance.toLocaleString()}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="size-11 p-2.5 bg-gray-100 text-primary rounded-lg flex justify-center items-center shrink-0">
-                    <Wallet className="w-5 h-5" />
-                  </div>
-                </div>
-                <div className="text-gray-500 text-sm font-normal text-left">
-                  Available in reserve
-                </div>
-              </div>
-
-              {/* Total Deposited Card */}
-              <div className="w-full p-4 bg-white rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col gap-2.5">
-                <div className="flex justify-start items-start gap-5">
-                  <div className="flex-1 flex flex-col gap-1 text-left">
-                    <div className="text-gray-500 text-base font-normal">
-                      Total Deposited
-                    </div>
-                    <div className="flex items-center gap-1.5 relative -top-0.5">
-                      <div className="text-2xl font-semibold text-green-600">
-                        ${treasuryDeposited.toLocaleString()}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="size-11 p-2.5 bg-gray-100 text-emerald-600 rounded-lg flex justify-center items-center shrink-0">
-                    <TrendingUp className="w-5 h-5" />
-                  </div>
-                </div>
-                <div className="text-gray-500 text-sm font-normal text-left">
-                  All-time deposits
-                </div>
-              </div>
-
-              {/* Total Withdrawn Card */}
-              <div className="w-full p-4 bg-white rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col gap-2.5">
-                <div className="flex justify-start items-start gap-5">
-                  <div className="flex-1 flex flex-col gap-1 text-left">
-                    <div className="text-gray-500 text-base font-normal">
-                      Total Withdrawn
-                    </div>
-                    <div className="flex items-center gap-1.5 relative -top-0.5">
-                      <div className="text-2xl font-semibold text-red-500">
-                        ${treasuryWithdrawn.toLocaleString()}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="size-11 p-2.5 bg-gray-100 text-rose-600 rounded-lg flex justify-center items-center shrink-0">
-                    <TrendingDown className="w-5 h-5" />
-                  </div>
-                </div>
-                <div className="text-gray-500 text-sm font-normal text-left">
-                  All-time withdrawals
-                </div>
+            {/* Filter Card */}
+            <div className="flex flex-wrap items-center justify-between gap-4 w-full bg-white p-[17px] rounded-xl border border-gray-200">
+              <div className="flex flex-wrap items-center gap-[12px]">
+                <Dropdown
+                  value={statusFilter}
+                  onChange={(val) => {
+                    setStatusFilter(val);
+                    setApprovalCurrentPage(1);
+                  }}
+                  options={approvalStatusOptions}
+                  triggerWidthClass="w-[180px]"
+                  widthClass="w-[190px]"
+                />
               </div>
             </div>
 
-            {/* Audit Trail Section */}
+            {/* Payment Approvals Section */}
             <div className="self-stretch p-6 bg-white rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col justify-start items-start text-left">
               <div className="self-stretch justify-start text-gray-800 relative top-1">
                 <span className="text-[20px] font-semibold">
-                  Platform Reserve Audit Trail
+                  Payment Approvals
                 </span>
               </div>
 
-              <div className="w-full overflow-hidden rounded-[12px] border border-[#E5E7EB] bg-white mt-7">
+              <div className="w-full overflow-x-auto rounded-[12px] border border-[#E5E7EB] bg-white mt-7">
                 <Table>
                   <TableHeader>
-                    <TableRow>
+                    <TableRow className="bg-[#F8FAFC]">
                       <TableHead className="min-w-[120px]">
                         <SortHeader
-                          label="Type"
-                          field="type"
-                          sortField={treasurySortField}
-                          sortOrder={treasurySortOrder}
+                          label="SUBMITTED"
+                          field="submitted"
+                          sortField={approvalSortField}
+                          sortOrder={approvalSortOrder}
                           onSort={(f) => {
-                            if (treasurySortField === f) {
-                              setTreasurySortOrder(treasurySortOrder === "asc" ? "desc" : "asc");
+                            if (approvalSortField === f) {
+                              setApprovalSortOrder(approvalSortOrder === "asc" ? "desc" : "asc");
                             } else {
-                              setTreasurySortField(f as keyof TreasuryAudit);
-                              setTreasurySortOrder("asc");
+                              setApprovalSortField(f as keyof PaymentApproval);
+                              setApprovalSortOrder("asc");
                             }
                           }}
                         />
                       </TableHead>
-                      <TableHead className="min-w-[120px]">
+                      <TableHead className="min-w-[150px]">
                         <SortHeader
-                          label="Amount"
-                          field="amount"
-                          sortField={treasurySortField}
-                          sortOrder={treasurySortOrder}
+                          label="AIRLINE"
+                          field="airline"
+                          sortField={approvalSortField}
+                          sortOrder={approvalSortOrder}
                           onSort={(f) => {
-                            if (treasurySortField === f) {
-                              setTreasurySortOrder(treasurySortOrder === "asc" ? "desc" : "asc");
+                            if (approvalSortField === f) {
+                              setApprovalSortOrder(approvalSortOrder === "asc" ? "desc" : "asc");
                             } else {
-                              setTreasurySortField(f as keyof TreasuryAudit);
-                              setTreasurySortOrder("asc");
+                              setApprovalSortField(f as keyof PaymentApproval);
+                              setApprovalSortOrder("asc");
                             }
                           }}
                         />
                       </TableHead>
-                      <TableHead className="min-w-[140px]">
+                      <TableHead className="min-w-[130px]">
                         <SortHeader
-                          label="Admin User"
-                          field="adminUser"
-                          sortField={treasurySortField}
-                          sortOrder={treasurySortOrder}
+                          label="COUNTRY"
+                          field="country"
+                          sortField={approvalSortField}
+                          sortOrder={approvalSortOrder}
                           onSort={(f) => {
-                            if (treasurySortField === f) {
-                              setTreasurySortOrder(treasurySortOrder === "asc" ? "desc" : "asc");
+                            if (approvalSortField === f) {
+                              setApprovalSortOrder(approvalSortOrder === "asc" ? "desc" : "asc");
                             } else {
-                              setTreasurySortField(f as keyof TreasuryAudit);
-                              setTreasurySortOrder("asc");
+                              setApprovalSortField(f as keyof PaymentApproval);
+                              setApprovalSortOrder("asc");
+                            }
+                          }}
+                        />
+                      </TableHead>
+                      <TableHead className="min-w-[150px]">
+                        <SortHeader
+                          label="METHOD"
+                          field="method"
+                          sortField={approvalSortField}
+                          sortOrder={approvalSortOrder}
+                          onSort={(f) => {
+                            if (approvalSortField === f) {
+                              setApprovalSortOrder(approvalSortOrder === "asc" ? "desc" : "asc");
+                            } else {
+                              setApprovalSortField(f as keyof PaymentApproval);
+                              setApprovalSortOrder("asc");
                             }
                           }}
                         />
                       </TableHead>
                       <TableHead className="min-w-[180px]">
                         <SortHeader
-                          label="Timestamp"
-                          field="timestamp"
-                          sortField={treasurySortField}
-                          sortOrder={treasurySortOrder}
-                          onSort={(f) => {
-                            if (treasurySortField === f) {
-                              setTreasurySortOrder(treasurySortOrder === "asc" ? "desc" : "asc");
-                            } else {
-                              setTreasurySortField(f as keyof TreasuryAudit);
-                              setTreasurySortOrder("asc");
-                            }
-                          }}
-                        />
-                      </TableHead>
-                      <TableHead className="min-w-[160px]">
-                        <SortHeader
-                          label="Reference"
+                          label="REFERENCE NUMBER"
                           field="reference"
-                          sortField={treasurySortField}
-                          sortOrder={treasurySortOrder}
+                          sortField={approvalSortField}
+                          sortOrder={approvalSortOrder}
                           onSort={(f) => {
-                            if (treasurySortField === f) {
-                              setTreasurySortOrder(treasurySortOrder === "asc" ? "desc" : "asc");
+                            if (approvalSortField === f) {
+                              setApprovalSortOrder(approvalSortOrder === "asc" ? "desc" : "asc");
                             } else {
-                              setTreasurySortField(f as keyof TreasuryAudit);
-                              setTreasurySortOrder("asc");
-                            }
-                          }}
-                        />
-                      </TableHead>
-                      <TableHead className="min-w-[200px]">
-                        <SortHeader
-                          label="Reason"
-                          field="reason"
-                          sortField={treasurySortField}
-                          sortOrder={treasurySortOrder}
-                          onSort={(f) => {
-                            if (treasurySortField === f) {
-                              setTreasurySortOrder(treasurySortOrder === "asc" ? "desc" : "asc");
-                            } else {
-                              setTreasurySortField(f as keyof TreasuryAudit);
-                              setTreasurySortOrder("asc");
+                              setApprovalSortField(f as keyof PaymentApproval);
+                              setApprovalSortOrder("asc");
                             }
                           }}
                         />
                       </TableHead>
                       <TableHead className="min-w-[120px]">
                         <SortHeader
-                          label="Status"
-                          field="status"
-                          sortField={treasurySortField}
-                          sortOrder={treasurySortOrder}
+                          label="AMOUNT"
+                          field="amount"
+                          sortField={approvalSortField}
+                          sortOrder={approvalSortOrder}
                           onSort={(f) => {
-                            if (treasurySortField === f) {
-                              setTreasurySortOrder(treasurySortOrder === "asc" ? "desc" : "asc");
+                            if (approvalSortField === f) {
+                              setApprovalSortOrder(approvalSortOrder === "asc" ? "desc" : "asc");
                             } else {
-                              setTreasurySortField(f as keyof TreasuryAudit);
-                              setTreasurySortOrder("asc");
+                              setApprovalSortField(f as keyof PaymentApproval);
+                              setApprovalSortOrder("asc");
                             }
                           }}
                         />
                       </TableHead>
+                      <TableHead className="min-w-[150px]">
+                        <SortHeader
+                          label="STATUS"
+                          field="status"
+                          sortField={approvalSortField}
+                          sortOrder={approvalSortOrder}
+                          onSort={(f) => {
+                            if (approvalSortField === f) {
+                              setApprovalSortOrder(approvalSortOrder === "asc" ? "desc" : "asc");
+                            } else {
+                              setApprovalSortField(f as keyof PaymentApproval);
+                              setApprovalSortOrder("asc");
+                            }
+                          }}
+                        />
+                      </TableHead>
+                      <TableHead className="min-w-[280px] text-center pr-6 font-semibold uppercase text-xs tracking-wider">
+                        ACTIONS
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {paginatedTreasuryData.length > 0 ? (
-                      paginatedTreasuryData.map((row) => {
-                        const isDeposit = row.type === "Deposit";
-                        const typeBadgeStyles = isDeposit
-                          ? "bg-green-100 text-green-800"
-                          : "bg-red-100 text-red-800";
-                        const amountStyles = isDeposit ? "!text-[#09090B]" : "!text-red-500";
-                        const amountPrefix = isDeposit ? "+$" : "-$";
-
+                    {isLoading ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="px-6 py-12 text-center text-gray-500 font-figtree">
+                          <div className="flex flex-col items-center justify-center gap-2">
+                            <svg className="animate-spin h-8 w-8 text-primary" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                            </svg>
+                            <span>Loading approvals...</span>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ) : paginatedApprovalsData.length > 0 ? (
+                      paginatedApprovalsData.map((row) => {
                         return (
-                          <TableRow key={row.id} className="translate-y-1 translate-x-0.5">
-                            <TableCell>
-                              <span className={cn("inline-flex items-center px-2.5 py-[3px] h-[20px] rounded-full text-[12px] font-medium gap-1", typeBadgeStyles)}>
-                                {isDeposit ? (
-                                  <ArrowUpRight className="w-3.5 h-3.5 shrink-0" />
-                                ) : (
-                                  <ArrowDownRight className="w-3.5 h-3.5 shrink-0" />
+                          <TableRow key={row.id} className="hover:bg-slate-50/70 transition-colors border-b border-gray-100">
+                            <TableCell className="text-gray-600 text-sm font-normal py-4">
+                              {row.submitted}
+                            </TableCell>
+                            <TableCell className="font-normal text-gray-700 text-sm py-4">
+                              {row.airline}
+                            </TableCell>
+                            <TableCell className="text-gray-500 text-sm font-normal py-4">
+                              {row.country}
+                            </TableCell>
+                            <TableCell className="py-4">
+                              <div className="inline-flex items-center px-3 py-1 bg-gray-100/90 rounded-full border border-gray-200/80 text-xs font-normal text-gray-700">
+                                <span>{row.method}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-3">
+                              <div className="flex flex-col text-left">
+                                <span className="text-sm font-normal text-gray-700">{row.reference}</span>
+                                <span className="text-[11px] text-gray-400 font-normal mt-0.5">{row.bankInfo}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="font-normal text-gray-700 text-sm py-4">
+                              ${row.amount.toLocaleString()}
+                            </TableCell>
+                            <TableCell className="py-4">
+                              <span
+                                className={cn(
+                                  "inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border",
+                                  row.status === "Pending Approval" && "bg-amber-50 text-amber-600 border-amber-200/80",
+                                  row.status === "Approved" && "bg-emerald-50 text-emerald-700 border-emerald-200/80",
+                                  row.status === "Rejected" && "bg-rose-50 text-rose-700 border-rose-200/80"
                                 )}
-                                {row.type}
+                              >
+                                {row.status}
                               </span>
                             </TableCell>
-                            <TableCell className={amountStyles}>
-                              {amountPrefix}{row.amount.toLocaleString()}
-                            </TableCell>
-                            <TableCell>{row.adminUser}</TableCell>
-                            <TableCell>{formatTreasuryTimestamp(row.timestamp)}</TableCell>
-                            <TableCell>{row.reference}</TableCell>
-                            <TableCell className="truncate max-w-[200px]" title={row.reason}>
-                              {row.reason}
-                            </TableCell>
-                            <TableCell>
-                              <StatusBadge status={row.status} />
+                            <TableCell className="pr-6 py-4">
+                              <div className="flex items-center justify-end gap-2">
+                                {row.status === "Pending Approval" && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="h-8 px-3 inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white hover:bg-gray-50 text-gray-800 text-sm font-semibold shadow-xs transition-colors cursor-pointer"
+                                    >
+                                      <span>Receipt</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleApprovePayment(row.id)}
+                                      className="h-8 px-3.5 inline-flex items-center justify-center rounded-lg text-white bg-[#0F2757] hover:bg-[#162259] text-sm font-semibold shadow-xs transition-colors cursor-pointer"
+                                    >
+                                      <span>Approve</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRejectPayment(row.id)}
+                                      className="h-8 px-3.5 inline-flex items-center justify-center rounded-lg text-white bg-[#c93b3b] hover:bg-[#b91c1c] text-sm font-semibold shadow-xs transition-colors cursor-pointer"
+                                    >
+                                      <span>Reject</span>
+                                    </button>
+                                  </>
+                                )}
+                                {row.status === "Rejected" && (
+                                  <button
+                                    type="button"
+                                    className="h-8 px-3 inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white hover:bg-gray-50 text-gray-800 text-sm font-semibold shadow-xs transition-colors cursor-pointer"
+                                  >
+                                    <span>Receipt</span>
+                                  </button>
+                                )}
+                              </div>
                             </TableCell>
                           </TableRow>
                         );
                       })
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={7} className="px-6 py-10 text-center text-gray-500">
-                          No audit trail data matches your filters.
+                        <TableCell colSpan={8} className="px-6 py-10 text-center text-gray-500">
+                          No payment approval records found.
                         </TableCell>
                       </TableRow>
                     )}
@@ -1966,12 +2000,12 @@ export default function PaymentsPage() {
 
               <div className="w-full mt-5">
                 <Pagination
-                  totalResults={filteredTreasuryData.length}
-                  currentPage={treasuryCurrentPage}
-                  setCurrentPage={setTreasuryCurrentPage}
-                  resultsPerPage={treasuryPerPage}
-                  setResultsPerPage={setTreasuryPerPage}
-                  totalPages={treasuryTotalPages}
+                  totalResults={filteredApprovalsData.length}
+                  currentPage={approvalCurrentPage}
+                  setCurrentPage={setApprovalCurrentPage}
+                  resultsPerPage={approvalPerPage}
+                  setResultsPerPage={setApprovalPerPage}
+                  totalPages={approvalTotalPages}
                 />
               </div>
             </div>

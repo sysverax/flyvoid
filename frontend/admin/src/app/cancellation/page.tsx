@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { Search, Plane, Users, DollarSign, Calendar } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
+import { Search, Plane, Users, DollarSign, Calendar, Loader2 } from "lucide-react";
 import {
   Table,
   TableHeader,
@@ -19,6 +19,8 @@ import { FiltersCard } from "@/src/components/ui/FiltersCard";
 import { StatusBadge } from "@/src/components/ui/StatusBadge";
 import { Dropdown } from "@/src/components/ui/Dropdown";
 import { DatePicker } from "@/src/components/ui/DatePicker";
+import { cancellationService } from "@/src/services/cancellation.service";
+import { toast } from "react-toastify";
 
 const INITIAL_FLIGHTS: CancelledFlight[] = [
   {
@@ -72,7 +74,24 @@ const INITIAL_FLIGHTS: CancelledFlight[] = [
 ];
 
 export default function CancellationPage() {
-  const [flights] = useState<CancelledFlight[]>(INITIAL_FLIGHTS);
+  const [flights, setFlights] = useState<CancelledFlight[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchFlights = async () => {
+    setIsLoading(true);
+    try {
+      const data = await cancellationService.getCancelledFlights();
+      setFlights(data);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to load cancelled flights");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchFlights();
+  }, []);
 
   // State for search and filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -227,19 +246,19 @@ export default function CancellationPage() {
   const statsConfig = [
     {
       title: "Total Cancellations",
-      value: "5",
+      value: String(totalCancellations),
       description: "Matching current filters",
       icon: <img src="/icons/plane.svg" alt="Plane" />,
     },
     {
       title: "Total Passengers",
-      value: "628",
+      value: totalPassengers.toLocaleString(),
       description: "Across cancelled flights",
       icon: <Users className="h-5 w-5" />,
     },
     {
       title: "Platform Revenue",
-      value: "$6,188",
+      value: `$${platformRevenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`,
       description: "5% of total cost",
       icon: <DollarSign className="h-5 w-5" />,
     },
@@ -423,7 +442,19 @@ export default function CancellationPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {paginatedFlights.length === 0 ? (
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={8} className="px-6 py-12 text-center text-gray-500 font-figtree">
+                  <div className="flex flex-col items-center justify-center gap-2">
+                    <svg className="animate-spin h-8 w-8 text-primary" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    <span>Loading cancellations...</span>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : paginatedFlights.length === 0 ? (
               <TableEmptyState
                 colSpan={8}
                 icon={Search}

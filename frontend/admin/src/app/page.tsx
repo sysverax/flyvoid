@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Image from "next/image";
 import {
   Plane,
@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { Dropdown } from "@/src/components/ui/Dropdown";
 import { cn } from "@/src/lib/utils";
+import { useAuth } from "@/src/hooks/useAuth";
 import {
   ResponsiveContainer,
   BarChart,
@@ -26,8 +27,8 @@ import {
 interface KpiCardData {
   title: string;
   value: string;
-  trend: string;
-  trendType: "up" | "down" | "neutral";
+  trend?: string;
+  trendType?: "up" | "down" | "neutral";
   subtext: string;
   icon: React.ComponentType<{ className?: string }> | string;
 }
@@ -92,6 +93,30 @@ const PERIOD_DATA: Record<string, DashboardState> = {
         trendType: "up",
         subtext: "Platform fees only",
         icon: DollarSign,
+      },
+      {
+        title: "Total Platform Revenue",
+        value: "$9.2K",
+        subtext: "Platform fees earned",
+        icon: DollarSign,
+      },
+      {
+        title: "Outstanding Platform Fees",
+        value: "$2.1K",
+        subtext: "Billed but unsettled",
+        icon: DollarSign,
+      },
+      {
+        title: "Total Credit Issued",
+        value: "$15.0K",
+        subtext: "Max outstanding fees allowed",
+        icon: DollarSign,
+      },
+      {
+        title: "Credit Utilization",
+        value: "14.0%",
+        subtext: "Outstanding vs credit limits",
+        icon: TrendingUp,
       },
     ],
     cancellations: [
@@ -164,6 +189,30 @@ const PERIOD_DATA: Record<string, DashboardState> = {
         subtext: "Platform fees only",
         icon: DollarSign,
       },
+      {
+        title: "Total Platform Revenue",
+        value: "$58.2K",
+        subtext: "Platform fees earned",
+        icon: DollarSign,
+      },
+      {
+        title: "Outstanding Platform Fees",
+        value: "$14.5K",
+        subtext: "Billed but unsettled",
+        icon: DollarSign,
+      },
+      {
+        title: "Total Credit Issued",
+        value: "$85.0K",
+        subtext: "Max outstanding fees allowed",
+        icon: DollarSign,
+      },
+      {
+        title: "Credit Utilization",
+        value: "17.1%",
+        subtext: "Outstanding vs credit limits",
+        icon: TrendingUp,
+      },
     ],
     cancellations: [
       { month: "Mon", value: 2 },
@@ -224,6 +273,30 @@ const PERIOD_DATA: Record<string, DashboardState> = {
         trendType: "up",
         subtext: "Platform fees only",
         icon: DollarSign,
+      },
+      {
+        title: "Total Platform Revenue",
+        value: "$476K",
+        subtext: "Platform fees earned",
+        icon: DollarSign,
+      },
+      {
+        title: "Outstanding Platform Fees",
+        value: "$105K",
+        subtext: "Billed but unsettled",
+        icon: DollarSign,
+      },
+      {
+        title: "Total Credit Issued",
+        value: "$410K",
+        subtext: "Max outstanding fees allowed",
+        icon: DollarSign,
+      },
+      {
+        title: "Credit Utilization",
+        value: "25.6%",
+        subtext: "Outstanding vs credit limits",
+        icon: TrendingUp,
       },
     ],
     cancellations: [
@@ -296,6 +369,30 @@ const PERIOD_DATA: Record<string, DashboardState> = {
         subtext: "Platform fees only",
         icon: DollarSign,
       },
+      {
+        title: "Total Platform Revenue",
+        value: "$2.4M",
+        subtext: "Platform fees earned",
+        icon: DollarSign,
+      },
+      {
+        title: "Outstanding Platform Fees",
+        value: "$520K",
+        subtext: "Billed but unsettled",
+        icon: DollarSign,
+      },
+      {
+        title: "Total Credit Issued",
+        value: "$2.1M",
+        subtext: "Max outstanding fees allowed",
+        icon: DollarSign,
+      },
+      {
+        title: "Credit Utilization",
+        value: "24.8%",
+        subtext: "Outstanding vs credit limits",
+        icon: TrendingUp,
+      },
     ],
     cancellations: [
       { month: "Jan", value: 50 },
@@ -367,6 +464,30 @@ const PERIOD_DATA: Record<string, DashboardState> = {
         subtext: "Platform fees only",
         icon: DollarSign,
       },
+      {
+        title: "Total Platform Revenue",
+        value: "$8.4M",
+        subtext: "Platform fees earned",
+        icon: DollarSign,
+      },
+      {
+        title: "Outstanding Platform Fees",
+        value: "$1.8M",
+        subtext: "Billed but unsettled",
+        icon: DollarSign,
+      },
+      {
+        title: "Total Credit Issued",
+        value: "$7.2M",
+        subtext: "Max outstanding fees allowed",
+        icon: DollarSign,
+      },
+      {
+        title: "Credit Utilization",
+        value: "25.0%",
+        subtext: "Outstanding vs credit limits",
+        icon: TrendingUp,
+      },
     ],
     cancellations: [
       { month: "Jan", value: 65 },
@@ -415,7 +536,13 @@ const FILTER_OPTIONS = [
 ];
 
 export default function DashboardPage() {
+  const { hasPermission } = useAuth();
+  const [mounted, setMounted] = useState(false);
   const [selectedPeriod, setSelectedPeriod] = useState<string>("This Month");
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Get active data based on dropdown selection
   const activeData = useMemo(() => {
@@ -486,6 +613,9 @@ export default function DashboardPage() {
       tickFormatter: (val: any) => `$${val}K`,
     };
   }, [selectedPeriod]);
+
+  if (!mounted) return null;
+  if (!hasPermission("view", "/")) return null;
 
   return (
     <div className="flex min-h-screen flex-1 flex-col pb-16 lg:w-full lg:max-w-[calc(100vw-304px)]">
@@ -558,42 +688,44 @@ export default function DashboardPage() {
                 </div>
 
                 <div className="self-stretch flex flex-col justify-start items-start gap-2">
-                  <div className="self-stretch inline-flex justify-start items-center gap-1">
-                    <div className="flex justify-start items-center gap-1 text-sm font-normal font-figtree">
-                      {(() => {
-                        const firstSpace = card.trend.indexOf(" ");
-                        if (firstSpace === -1) {
+                  {card.trend && (
+                    <div className="self-stretch inline-flex justify-start items-center gap-1">
+                      <div className="flex justify-start items-center gap-1 text-sm font-normal font-figtree">
+                        {(() => {
+                          const firstSpace = card.trend.indexOf(" ");
+                          if (firstSpace === -1) {
+                            return (
+                              <span
+                                className={cn(
+                                  card.trendType === "up" && "text-emerald-500",
+                                  card.trendType === "down" && "text-rose-500",
+                                  card.trendType === "neutral" && "text-gray-500"
+                                )}
+                              >
+                                {card.trend}
+                              </span>
+                            );
+                          }
+                          const valuePart = card.trend.substring(0, firstSpace);
+                          const textPart = card.trend.substring(firstSpace);
                           return (
-                            <span
-                              className={cn(
-                                card.trendType === "up" && "text-emerald-500",
-                                card.trendType === "down" && "text-rose-500",
-                                card.trendType === "neutral" && "text-gray-500"
-                              )}
-                            >
-                              {card.trend}
-                            </span>
+                            <>
+                              <span
+                                className={cn(
+                                  card.trendType === "up" && "text-emerald-500",
+                                  card.trendType === "down" && "text-rose-500",
+                                  card.trendType === "neutral" && "text-gray-500"
+                                )}
+                              >
+                                {valuePart}
+                              </span>
+                              <span className="text-gray-500">{textPart.trim()}</span>
+                            </>
                           );
-                        }
-                        const valuePart = card.trend.substring(0, firstSpace);
-                        const textPart = card.trend.substring(firstSpace);
-                        return (
-                          <>
-                            <span
-                              className={cn(
-                                card.trendType === "up" && "text-emerald-500",
-                                card.trendType === "down" && "text-rose-500",
-                                card.trendType === "neutral" && "text-gray-500"
-                              )}
-                            >
-                              {valuePart}
-                            </span>
-                            <span className="text-gray-500">{textPart.trim()}</span>
-                          </>
-                        );
-                      })()}
+                        })()}
+                      </div>
                     </div>
-                  </div>
+                  )}
                   <div className="justify-start text-gray-500 text-sm font-normal font-figtree leading-[100%] tracking-[0%]">
                     {card.subtext}
                   </div>
@@ -604,7 +736,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Charts Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-0.5">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-1.5">
 
           <div className="animate-fade-in self-stretch pl-6 pr-4.5 pt-6 pb-3 bg-white rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col justify-start items-start gap-5">
             <div className="self-stretch justify-start text-gray-800 text-xl font-semibold font-figtree">
@@ -727,7 +859,7 @@ export default function DashboardPage() {
         <div className="self-stretch px-6 py-5 bg-white rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col md:flex-row justify-start items-stretch gap-6">
           {[
             {
-              label: "REVENUE TO SPEND RATIO",
+              label: "Fee Collection Rate",
               value: activeData.ratios.revenueToSpend,
               icon: TrendingUp,
             },

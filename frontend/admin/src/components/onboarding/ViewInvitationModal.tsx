@@ -71,7 +71,7 @@ export function ViewInvitationModal({
         {invitation && (
           <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-6 py-6 space-y-6 scrollbar-hide">
 
-             {/* Airline Details section */}
+            {/* Airline Details section */}
             <section>
               <h3 className="text-[18px] font-semibold text-[#1F2937] mb-2.5">
                 Airline Details
@@ -200,43 +200,6 @@ export function ViewInvitationModal({
                 </Field>
               </div>
             </section>
-
-            {/* Invitation Info section */}
-            <section>
-              <h3 className="text-[18px] font-semibold text-[#1F2937] mb-2.5">
-                Invitation Info
-              </h3>
-              <div className="grid grid-cols-2 gap-7">
-                <Field label="Invited By">
-                  <input
-                    disabled
-                    value={invitation.invitedBy || ""}
-                    className={readonlyCls}
-                  />
-                </Field>
-                <Field label="Invited Date">
-                  <input
-                    disabled
-                    value={invitation.invitedDate || ""}
-                    className={readonlyCls}
-                  />
-                </Field>
-                <Field label="Expiry Date">
-                  <input
-                    disabled
-                    value={invitation.expiryDate || ""}
-                    className={readonlyCls}
-                  />
-                </Field>
-                <Field label="Status">
-                  <input
-                    disabled
-                    value={invitation.status || ""}
-                    className={cn(readonlyCls, statusColor(invitation.status))}
-                  />
-                </Field>
-              </div>
-            </section>
           </div>
         )}
 
@@ -262,11 +225,11 @@ const readonlyCls =
 
 function statusColor(status: string) {
   switch (status) {
-    case "Accepted":  return "text-green-700";
-    case "Pending":   return "text-amber-700";
-    case "Expired":   return "text-gray-500";
-    case "Revoked":   return "text-rose-700";
-    default:          return "";
+    case "Accepted": return "text-green-700";
+    case "Pending": return "text-amber-700";
+    case "Expired": return "text-gray-500";
+    case "Revoked": return "text-rose-700";
+    default: return "";
   }
 }
 
