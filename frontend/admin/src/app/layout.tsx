@@ -30,7 +30,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={cn("font-sans", figtree.variable, geist.variable, urbanist.variable)}>
+    <html lang="en" suppressHydrationWarning className={cn("font-sans", figtree.variable, geist.variable, urbanist.variable)}>
       <body className={`${figtree.className} min-h-screen flex flex-col antialiased`}>
         <TooltipProvider>
           <MainLayout>{children}</MainLayout>

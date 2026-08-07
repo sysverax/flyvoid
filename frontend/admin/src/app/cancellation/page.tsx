@@ -19,6 +19,8 @@ import { FiltersCard } from "@/src/components/ui/FiltersCard";
 import { StatusBadge } from "@/src/components/ui/StatusBadge";
 import { Dropdown } from "@/src/components/ui/Dropdown";
 import { DatePicker } from "@/src/components/ui/DatePicker";
+import { cancellationService } from "@/src/services/cancellation.service";
+import { toast } from "react-toastify";
 
 const INITIAL_FLIGHTS: CancelledFlight[] = [
   {
@@ -72,12 +74,23 @@ const INITIAL_FLIGHTS: CancelledFlight[] = [
 ];
 
 export default function CancellationPage() {
-  const [flights, setFlights] = useState<CancelledFlight[]>(INITIAL_FLIGHTS);
+  const [flights, setFlights] = useState<CancelledFlight[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  const fetchFlights = async () => {
+    setIsLoading(true);
+    try {
+      const data = await cancellationService.getCancelledFlights();
+      setFlights(data);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to load cancelled flights");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), 500);
-    return () => clearTimeout(timer);
+    fetchFlights();
   }, []);
 
   // State for search and filters
@@ -233,19 +246,19 @@ export default function CancellationPage() {
   const statsConfig = [
     {
       title: "Total Cancellations",
-      value: "5",
+      value: String(totalCancellations),
       description: "Matching current filters",
       icon: <img src="/icons/plane.svg" alt="Plane" />,
     },
     {
       title: "Total Passengers",
-      value: "628",
+      value: totalPassengers.toLocaleString(),
       description: "Across cancelled flights",
       icon: <Users className="h-5 w-5" />,
     },
     {
       title: "Platform Revenue",
-      value: "$6,188",
+      value: `$${platformRevenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`,
       description: "5% of total cost",
       icon: <DollarSign className="h-5 w-5" />,
     },
