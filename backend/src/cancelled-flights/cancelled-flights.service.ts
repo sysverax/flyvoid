@@ -18,6 +18,9 @@ import {
   SpecialNote,
   TravelClass,
 } from "./entities/enums";
+import { GroqService } from "../common/groq/groq.service";
+import { HotelPartnerService } from "./hotel-partner.service";
+import { AllocateHotelDto } from "./dto/allocate-hotel.dto";
 
 @Injectable()
 export class CancelledFlightsService {
@@ -26,6 +29,8 @@ export class CancelledFlightsService {
   constructor(
     private readonly repo: CancelledFlightsRepository,
     private readonly logger: LoggerService,
+    private readonly groqService: GroqService,
+    private readonly hotelPartnerService: HotelPartnerService,
   ) {}
 
   // ── Create cancelled flight ──────────────────────────────────────────────
@@ -462,5 +467,121 @@ export class CancelledFlightsService {
       (b) => b.travelClass === TravelClass.BUSINESS,
     ).length;
     return { total_bookings, total_passengers, est_rooms, business_count };
+  }
+
+  // ── AI Hotel Recommendations & Allocation ───────────────────────────────
+
+  async getHotelRecommendations(flightId: string, bookingId: string, requestId: string) {
+    const flight = await this.repo.findFlightWithRelations(flightId, requestId);
+    if (!flight) {
+      throw new NotFoundException(`Cancelled flight '${flightId}' not found`);
+    }
+
+    const booking = await this.requireBookingForFlight(bookingId, flightId, requestId);
+
+    const departureAirport = flight.departureAirport || {
+      iataCode: "LAX",
+      latitude: 33.9416,
+      longitude: -118.4085,
+    };
+
+    // Calculate stay dates: check-in is flight cancellation date, check-out is check-in + 1 day
+    const checkIn = flight.cancellationDate || new Date().toISOString().split("T")[0];
+    const checkInDateObj = new Date(checkIn);
+    const finalCheckIn = isNaN(checkInDateObj.getTime())
+      ? new Date().toISOString().split("T")[0]
+      : checkIn;
+    
+    const finalCheckInDateObj = new Date(finalCheckIn);
+    finalCheckInDateObj.setDate(finalCheckInDateObj.getDate() + 1);
+    const finalCheckOut = finalCheckInDateObj.toISOString().split("T")[0];
+
+    const candidateHotels = await this.hotelPartnerService.searchNearbyHotels(
+      {
+        iataCode: departureAirport.iataCode,
+        latitude: Number(departureAirport.latitude),
+        longitude: Number(departureAirport.longitude),
+      },
+      finalCheckIn,
+      finalCheckOut,
+      requestId,
+    );
+
+    const groqResult = await this.groqService.getHotelRecommendations(
+      {
+        firstName: booking.firstName,
+        lastName: booking.lastName,
+        travelClass: booking.travelClass,
+        adults: booking.adults,
+        children: booking.children,
+        specialNotes: booking.specialNotes,
+        additionalNotes: booking.additionalNotes,
+      },
+      candidateHotels,
+      requestId,
+    );
+
+    // Map recommendation scores and reasoning to hotel objects
+    const recommendedHotels = candidateHotels.map((hotel) => {
+      const recommendation = groqResult.recommendations?.find(
+        (r: any) => r.hotelId === hotel.id,
+      );
+      return {
+        ...hotel,
+        score: recommendation?.score ?? 50,
+        suitabilityReason: recommendation?.suitabilityReason ?? "No reasoning provided by AI.",
+      };
+    }).sort((a, b) => b.score - a.score);
+
+    return {
+      passenger: `${booking.firstName} ${booking.lastName}`,
+      travelClass: booking.travelClass,
+      specialNotes: booking.specialNotes || [],
+      airportCode: departureAirport.iataCode,
+      recommendations: recommendedHotels,
+    };
+  }
+
+  async allocateHotel(
+    flightId: string,
+    bookingId: string,
+    dto: AllocateHotelDto,
+    requestId: string,
+  ) {
+    await this.requireFlight(flightId, requestId);
+    await this.requireBookingForFlight(bookingId, flightId, requestId);
+
+    const allocation = await this.repo.saveHotelAllocation(
+      {
+        cancelledFlightId: flightId,
+        hotelName: dto.hotelName,
+        hotelAddress: dto.hotelAddress ?? null,
+        checkInDate: dto.checkInDate,
+        checkOutDate: dto.checkOutDate,
+        totalRooms: dto.totalRooms ?? 1,
+        costPerRoom: dto.costPerRoom ?? 0,
+      },
+      requestId,
+    );
+
+    this.logger.info("Hotel allocated to booking", this.context, requestId, {
+      flightId,
+      bookingId,
+      allocationId: allocation.id,
+      hotelName: dto.hotelName,
+    });
+
+    return {
+      message: "Hotel allocated successfully",
+      allocation: {
+        id: allocation.id,
+        hotelName: allocation.hotelName,
+        hotelAddress: allocation.hotelAddress,
+        checkInDate: allocation.checkInDate,
+        checkOutDate: allocation.checkOutDate,
+        totalRooms: allocation.totalRooms,
+        costPerRoom: allocation.costPerRoom,
+      },
+    };
   }
 }

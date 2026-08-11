@@ -4,6 +4,7 @@ import { Repository } from "typeorm";
 import { LoggerService } from "../common/logger/logger.service";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
 import { BookingEntity } from "./entities/booking.entity";
+import { HotelAllocationEntity } from "./entities/hotel-allocation.entity";
 
 @Injectable()
 export class CancelledFlightsRepository {
@@ -12,6 +13,8 @@ export class CancelledFlightsRepository {
     private readonly flightRepo: Repository<CancelledFlightEntity>,
     @InjectRepository(BookingEntity)
     private readonly bookingRepo: Repository<BookingEntity>,
+    @InjectRepository(HotelAllocationEntity)
+    private readonly allocationRepo: Repository<HotelAllocationEntity>,
     private readonly logger: LoggerService,
   ) {}
 
@@ -156,5 +159,21 @@ export class CancelledFlightsRepository {
     );
     const entities = payloads.map((p) => this.bookingRepo.create(p));
     return this.bookingRepo.save(entities);
+  }
+
+  // ── HotelAllocation ──────────────────────────────────────────────────────
+
+  async saveHotelAllocation(
+    payload: Partial<HotelAllocationEntity>,
+    requestId: string,
+  ): Promise<HotelAllocationEntity> {
+    this.logger.debug(
+      "Saving hotel allocation",
+      "CancelledFlightsRepository",
+      requestId,
+      { cancelledFlightId: payload.cancelledFlightId, hotelName: payload.hotelName },
+    );
+    const entity = this.allocationRepo.create(payload);
+    return this.allocationRepo.save(entity);
   }
 }

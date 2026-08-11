@@ -55,6 +55,7 @@ import { CreateCancelledFlightDto } from "./dto/create-cancelled-flight.dto";
 import { CreateBookingDto } from "./dto/create-booking.dto";
 import { UpdateBookingDto } from "./dto/update-booking.dto";
 import { ImportBookingsConfirmDto } from "./dto/import-bookings.dto";
+import { AllocateHotelDto } from "./dto/allocate-hotel.dto";
 
 @ApiTags("Cancelled Flights")
 @ApiBearerAuth("access-token")
@@ -383,6 +384,76 @@ export class CancelledFlightsController {
       data,
       requestId,
       "Flight review fetched successfully",
+    );
+  }
+
+  // ── GET /cancelled-flights/:id/bookings/:bookingId/hotel-recommendations ──
+
+  @Get(":id/bookings/:bookingId/hotel-recommendations")
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.VIEW],
+    },
+  })
+  @ApiOperation({
+    summary: "Get AI-recommended hotels for a passenger on a cancelled flight",
+    description:
+      "Fetches a list of local candidate hotels and scores them dynamically using Groq's Llama model based on the passenger's class and special needs.",
+  })
+  @ApiParam({ name: "id", description: "Cancelled flight UUID" })
+  @ApiParam({ name: "bookingId", description: "Booking UUID" })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/cancelled-flights/:id/bookings/:bookingId/hotel-recommendations",
+      "Cancelled flight or booking not found",
+    ),
+  })
+  async getHotelRecommendations(
+    @Param("id") id: string,
+    @Param("bookingId") bookingId: string,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<object>> {
+    const data = await this.service.getHotelRecommendations(id, bookingId, requestId);
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "AI Hotel recommendations fetched successfully",
+    );
+  }
+
+  // ── POST /cancelled-flights/:id/bookings/:bookingId/allocate-hotel ───────
+
+  @Post(":id/bookings/:bookingId/allocate-hotel")
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.EDIT],
+    },
+  })
+  @ApiOperation({
+    summary: "Allocate a hotel to a passenger booking",
+    description: "Saves hotel details for a passenger's allocation record.",
+  })
+  @ApiParam({ name: "id", description: "Cancelled flight UUID" })
+  @ApiParam({ name: "bookingId", description: "Booking UUID" })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/cancelled-flights/:id/bookings/:bookingId/allocate-hotel",
+      "Cancelled flight or booking not found",
+    ),
+  })
+  async allocateHotel(
+    @Param("id") id: string,
+    @Param("bookingId") bookingId: string,
+    @Body() dto: AllocateHotelDto,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<object>> {
+    const data = await this.service.allocateHotel(id, bookingId, dto, requestId);
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Hotel allocated successfully",
     );
   }
 }
