@@ -17,7 +17,7 @@ import { SignOutDialog } from "./SignOutDialog";
 
 const navItems = [
   { title: "Dashboard", icon: LayoutDashboard, path: "/", key: "dashboard" },
-  { title: "Airports", icon: "/icons/airport.svg", path: "/airports", key: "airports" },
+  { title: "Airports", icon: "/icons/plane1.svg", path: "/airports", key: "airports" },
   { title: "Cancelled Flights", icon: "/icons/cancel.svg", path: "/cancellation", key: "cancellation" },
   { title: "Bookings", icon: Plane, path: "/bookings", key: "bookings" },
   { title: "Billing", icon: "/icons/payment.svg", path: "/billing", key: "billing" },

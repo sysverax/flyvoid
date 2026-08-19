@@ -7,12 +7,12 @@ interface StatusBadgeProps {
 
 const statusStyles: Record<string, { bg: string; text: string }> = {
   Published: {
-    bg: "bg-[#E0F2FE]",
-    text: "text-[#0369A1]",
+    bg: "bg-[#D1FAE5]",
+    text: "text-[#065F46]",
   },
   published: {
-    bg: "bg-[#E0F2FE]",
-    text: "text-[#0369A1]",
+    bg: "bg-[#D1FAE5]",
+    text: "text-[#065F46]",
   },
   "In Progress": {
     bg: "bg-[#FEF3C7]",
@@ -58,6 +58,14 @@ const statusStyles: Record<string, { bg: string; text: string }> = {
     bg: "bg-[#D1FAE5]",
     text: "text-[#065F46]",
   },
+  Success: {
+    bg: "bg-[#D1FAE5]",
+    text: "text-[#065F46]",
+  },
+  success: {
+    bg: "bg-[#D1FAE5]",
+    text: "text-[#065F46]",
+  },
   Failed: {
     bg: "bg-[#FEE2E2]",
     text: "text-[#991B1B]",
@@ -67,6 +75,10 @@ const statusStyles: Record<string, { bg: string; text: string }> = {
     text: "text-[#065F46]",
   },
   Inactive: {
+    bg: "bg-[#E5E7EB]",
+    text: "text-[#374151]",
+  },
+  Draft: {
     bg: "bg-[#E5E7EB]",
     text: "text-[#374151]",
   },

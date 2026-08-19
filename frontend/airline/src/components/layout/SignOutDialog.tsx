@@ -1,5 +1,8 @@
 "use client";
 
+import { useState } from "react";
+import { Dialog } from "@/src/components/ui/Dialog";
+
 interface SignOutDialogProps {
   isOpen: boolean;
   onClose: () => void;
@@ -11,38 +14,39 @@ export function SignOutDialog({
   onClose,
   onConfirm,
 }: SignOutDialogProps) {
-  if (!isOpen) return null;
+  const [isSigningOut, setIsSigningOut] = useState(false);
+
+  const handleConfirm = () => {
+    setIsSigningOut(true);
+    // Simulate API call for signing out before confirming
+    setTimeout(() => {
+      setIsSigningOut(false);
+      onConfirm();
+    }, 1500);
+  };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-fadeIn p-4">
-      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl border border-gray-200 flex flex-col gap-4 text-left">
-        <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-          <h3 className="text-lg font-semibold text-gray-900">Sign Out?</h3>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-md cursor-pointer"
-          >
-            ✕
-          </button>
-        </div>
-        <p className="text-sm text-gray-600">
-          You&rsquo;re about to sign out of your Airline Portal account.
-        </p>
-        <div className="flex items-center justify-end gap-3 pt-2">
-          <button
-            onClick={onClose}
-            className="h-9 px-4 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 text-sm font-medium transition-colors cursor-pointer"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            className="h-9 px-4 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-medium transition-colors cursor-pointer"
-          >
-            Sign out
-          </button>
-        </div>
-      </div>
-    </div>
+    <Dialog.Root isOpen={isOpen} onClose={isSigningOut ? () => {} : onClose}>
+      <Dialog.Header title="Sign Out?" onClose={isSigningOut ? () => {} : onClose} />
+      <Dialog.Body>
+        You&rsquo;re about to sign out of your Airline Portal account.
+      </Dialog.Body>
+      <Dialog.Footer>
+        <Dialog.Cancel onClick={onClose} disabled={isSigningOut} />
+        <Dialog.Action variant="danger" onClick={handleConfirm} disabled={isSigningOut}>
+          {isSigningOut ? (
+            <>
+              <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+              <span>Signing out...</span>
+            </>
+          ) : (
+            "Sign out"
+          )}
+        </Dialog.Action>
+      </Dialog.Footer>
+    </Dialog.Root>
   );
 }

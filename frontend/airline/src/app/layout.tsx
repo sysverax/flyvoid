@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Figtree } from "next/font/google";
 import "./globals.css";
 import { MainLayout } from "@/src/components/layout/MainLayout";
+import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 
 const figtree = Figtree({
   subsets: ["latin"],
@@ -25,6 +27,7 @@ export default function RootLayout({
     >
       <body className={`${figtree.className} font-figtree min-h-screen flex flex-col antialiased`}>
         <MainLayout>{children}</MainLayout>
+        <ToastContainer position="top-right" autoClose={3000} />
       </body>
     </html>
   );

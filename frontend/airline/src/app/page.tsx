@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import {
   DollarSign,
   CreditCard,
@@ -10,7 +11,9 @@ import {
   Plane,
   TrendingUp,
   Wallet,
+  ArrowRight,
 } from "lucide-react";
+import { toast } from "react-toastify";
 import { Header } from "@/src/components/layout/Header";
 import {
   Table,
@@ -22,6 +25,7 @@ import {
   SortHeader,
 } from "@/src/components/ui/table";
 import { StatusBadge } from "@/src/components/ui/StatusBadge";
+import { PaymentDrawer } from "@/src/components/ui/PaymentDrawer";
 import {
   ResponsiveContainer,
   LineChart,
@@ -157,6 +161,60 @@ export default function DashboardPage() {
   const [sortField, setSortField] = useState<keyof RecentCancellation | null>(null);
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
 
+  // Payment state
+  const [outstandingBalance, setOutstandingBalance] = useState(6287);
+  const [isPaymentDrawerOpen, setIsPaymentDrawerOpen] = useState(false);
+
+  const creditLimit = 25000;
+  const remainingCredit = creditLimit - outstandingBalance;
+  const utilizationPercent = (outstandingBalance / creditLimit) * 100;
+
+  const dashboardCards = useMemo<KpiCardData[]>(() => [
+    {
+      title: "Outstanding Balance",
+      value: `$${outstandingBalance.toLocaleString()}`,
+      subtext: "Platform fees payable",
+      icon: DollarSign,
+    },
+    {
+      title: "Remaining Credit",
+      value: `$${remainingCredit.toLocaleString()}`,
+      subtext: `of $${creditLimit.toLocaleString()} limit`,
+      icon: CreditCard,
+    },
+    {
+      title: "Platform Fee Rate",
+      value: "5%",
+      subtext: "Of each hotel booking",
+      icon: Percent,
+    },
+    {
+      title: "Platform Fees (Last 30 Days)",
+      value: "$4,112",
+      subtext: "Fees charged to your balance",
+      icon: DollarSign,
+    },
+    {
+      title: "Payments Made (Last 30 Days)",
+      value: "$3,500",
+      subtext: "Paid against your balance",
+      icon: HandCoins,
+    },
+    {
+      title: "Booking Count",
+      value: "1,847",
+      subtext: "Total hotel bookings",
+      icon: Plane,
+    },
+  ], [outstandingBalance, remainingCredit]);
+
+  const handlePaymentComplete = (amount: number, method: "card" | "bank", title: string, description: string) => {
+    if (method === "card") {
+      setOutstandingBalance((prev) => Math.max(0, prev - amount));
+    }
+    toast.success(title);
+  };
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -185,6 +243,7 @@ export default function DashboardPage() {
 
   return (
     <div className="flex min-h-screen flex-1 flex-col pb-16 lg:w-full lg:max-w-[calc(100vw-304px)]">
+
       <div className="space-y-4.5">
 
         {/* Header Title Section */}
@@ -195,7 +254,7 @@ export default function DashboardPage() {
 
         {/* 6 KPI Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {DASHBOARD_CARDS.map((card, index) => {
+          {dashboardCards.map((card, index) => {
             const isImageIcon = typeof card.icon === "string";
             const IconComponent = !isImageIcon
               ? (card.icon as React.ComponentType<{ className?: string }>)
@@ -326,10 +385,10 @@ export default function DashboardPage() {
               {/* Amount and Subtext */}
               <div className="flex flex-col gap-1 mt-1">
                 <div className="text-4xl font-bold text-gray-900 font-figtree">
-                  $6,287
+                  ${outstandingBalance.toLocaleString()}
                 </div>
                 <div className="text-sm text-gray-500 font-figtree">
-                  of $25,000 credit limit used
+                  of ${creditLimit.toLocaleString()} credit limit used
                 </div>
               </div>
 
@@ -338,18 +397,21 @@ export default function DashboardPage() {
                 <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
                   <div
                     className="bg-[#203764] h-full rounded-full transition-all duration-500"
-                    style={{ width: "25%" }}
+                    style={{ width: `${utilizationPercent}%` }}
                   />
                 </div>
                 <div className="flex justify-between items-center text-sm font-figtree">
-                  <span className="text-gray-500">25% of limit</span>
-                  <span className="font-semibold text-gray-900">$18,713 remaining</span>
+                  <span className="text-gray-500">{Math.round(utilizationPercent)}% of limit</span>
+                  <span className="font-semibold text-gray-900">${remainingCredit.toLocaleString()} remaining</span>
                 </div>
               </div>
             </div>
 
             {/* Pay Now Button */}
-            <button className="w-full bg-[#203764] hover:bg-[#162747] text-white font-medium py-3 px-4 rounded-lg transition-colors flex items-center justify-center text-base cursor-pointer">
+            <button
+              onClick={() => setIsPaymentDrawerOpen(true)}
+              className="w-full bg-[#203764] hover:bg-[#162747] text-white font-medium py-3 px-4 rounded-lg transition-colors flex items-center justify-center text-base cursor-pointer"
+            >
               Pay Now
             </button>
           </div>
@@ -361,6 +423,13 @@ export default function DashboardPage() {
             <h2 className="text-xl font-semibold text-gray-900 font-figtree">
               Recent Cancellations
             </h2>
+            <Link
+              href="/cancellation"
+              className="text-sm font-semibold text-[#0F2757] hover:text-[#162259] transition-colors flex items-center gap-1 group"
+            >
+              View all
+              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+            </Link>
           </div>
 
           <div className="w-full overflow-hidden rounded-[12px] border border-[#E5E7EB] bg-white">
@@ -452,6 +521,13 @@ export default function DashboardPage() {
         </div>
 
       </div>
+
+      <PaymentDrawer
+        isOpen={isPaymentDrawerOpen}
+        onClose={() => setIsPaymentDrawerOpen(false)}
+        balance={outstandingBalance}
+        onPaymentComplete={handlePaymentComplete}
+      />
     </div>
   );
 }
