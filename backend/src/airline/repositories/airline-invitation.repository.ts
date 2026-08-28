@@ -10,6 +10,7 @@ import {
   AirlineAdminInviteHistoryEntity,
 } from "../entities/airline-admin-invite-history.entity";
 import { MetaAirlineInviteEntity } from "../entities/meta-airline-invite.entity";
+import { AirlineInvitationListRequestDto } from "../dto/airline-invitation/airline-invitation-list-request.dto";
 
 export interface AirlineInvitationMatrixCounts {
   totalSent: number;
@@ -299,7 +300,6 @@ export class AirlineInvitationRepository {
       where: { id: inviteId },
       relations: {
         meta: true,
-        airline: true,
         history: {
           performedByAdmin: true,
         },
@@ -313,7 +313,7 @@ export class AirlineInvitationRepository {
   }
 
   async findAllInvitations(
-    pagination: PaginationQueryDto,
+    query: AirlineInvitationListRequestDto,
     requestId: string,
   ): Promise<{ invitations: AirlineAdminInviteEntity[]; total: number }> {
     this.logger.debug(
@@ -321,27 +321,98 @@ export class AirlineInvitationRepository {
       "AirlineInvitationRepository",
       requestId,
       {
-        page: pagination.page,
-        limit: pagination.limit,
+        page: query.page,
+        limit: query.limit,
       },
     );
 
-    const skip = (pagination.page - 1) * pagination.limit;
+    const skip = (query.page - 1) * query.limit;
 
-    const [invitations, total] =
-      await this.airlineAdminInviteRepository.findAndCount({
-        relations: {
-          airline: true,
-          meta: true,
-        },
-        order: {
-          createdAt: "DESC",
-        },
-        skip,
-        take: pagination.limit,
+    const queryBuilder = this.airlineAdminInviteRepository
+      .createQueryBuilder("invite")
+      .innerJoinAndSelect("invite.meta", "meta")
+      .select([
+        "invite.id",
+        "invite.airlineId",
+        "invite.metaId",
+        "invite.expiresAt",
+        "invite.status",
+        "invite.acceptedAt",
+        "invite.revokedAt",
+        "invite.createdAt",
+        "invite.updatedAt",
+        "invite.invitedByAdminId",
+        "meta.id",
+        "meta.airlineName",
+        "meta.airlineCode",
+        "meta.countryCode",
+        "meta.companyRegistrationNumber",
+        "meta.contactEmail",
+        "meta.creditLimit",
+      ]);
+
+    if (query.countryCode) {
+      queryBuilder.andWhere("meta.country_code = :countryCode", {
+        countryCode: query.countryCode,
       });
+    }
 
-    return { invitations, total };
+    if (query.validStatuses && query.validStatuses.length > 0) {
+      const hasPending = query.validStatuses.includes(
+        AIRLINE_INVITATION_STATUSES.PENDING,
+      );
+      const hasExpired = query.validStatuses.includes(
+        AIRLINE_INVITATION_STATUSES.EXPIRED,
+      );
+      const otherStatuses = query.validStatuses.filter(
+        (s) =>
+          s !== AIRLINE_INVITATION_STATUSES.PENDING &&
+          s !== AIRLINE_INVITATION_STATUSES.EXPIRED,
+      );
+
+      const conditions: string[] = [];
+      const params: Record<string, unknown> = {};
+
+      // PENDING and EXPIRED both map to status='PENDING' rows, split by expires_at
+      if (hasPending && hasExpired) {
+        conditions.push("invite.status = :pendingStatus");
+        params.pendingStatus = AIRLINE_INVITATION_STATUSES.PENDING;
+      } else if (hasPending) {
+        conditions.push(
+          "(invite.status = :pendingStatus AND invite.expires_at > :now)",
+        );
+        params.pendingStatus = AIRLINE_INVITATION_STATUSES.PENDING;
+        params.now = new Date();
+      } else if (hasExpired) {
+        conditions.push(
+          "(invite.status = :pendingStatus AND invite.expires_at <= :now)",
+        );
+        params.pendingStatus = AIRLINE_INVITATION_STATUSES.PENDING;
+        params.now = new Date();
+      }
+
+      if (otherStatuses.length > 0) {
+        conditions.push("invite.status IN (:...otherStatuses)");
+        params.otherStatuses = otherStatuses;
+      }
+
+      queryBuilder.andWhere(`(${conditions.join(" OR ")})`, params);
+    }
+
+    if (query.search) {
+      const searchTerm = `%${query.search.toLowerCase()}%`;
+      queryBuilder.andWhere(
+        "(LOWER(meta.contact_email) LIKE :searchTerm OR LOWER(meta.airline_name) LIKE :searchTerm)",
+        { searchTerm },
+      );
+    }
+
+    return queryBuilder
+      .orderBy("invite.createdAt", "DESC")
+      .skip(skip)
+      .take(query.limit)
+      .getManyAndCount()
+      .then(([invitations, total]) => ({ invitations, total }));
   }
 
   async revokeAirlineAdminInvite(

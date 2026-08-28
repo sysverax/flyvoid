@@ -61,6 +61,7 @@ import {
   AccessAction,
   PlatformAsset,
 } from "../../common/constants/access-control.constants";
+import { AirlineInvitationListRequestDto } from "../dto/airline-invitation/airline-invitation-list-request.dto";
 
 @ApiTags("Airline Invitations")
 @ApiExtraModels(
@@ -184,7 +185,10 @@ export class AirlineInvitationController {
       Access: SUPER_ADMIN and STAFF with VIEW access on the INVITES_ONBOARDING asset. Requires userType=PLATFORM.
       Filters:
         1. page (pagination, min 1)
-        2. limit (items per page)`,
+        2. limit (items per page)
+        3. countryCode (ISO alpha-2)
+        4. status (comma-separated values)
+        5. search (email or name)`,
   })
   @ApiOkResponse({
     description: "Airline invitations fetched successfully",
@@ -221,11 +225,13 @@ export class AirlineInvitationController {
     description: "Insufficient permissions. PLATFORM user type is required.",
   })
   async listInvitations(
-    @Query() pagination: PaginationQueryDto,
+    @Query() query: AirlineInvitationListRequestDto,
     @RequestId() requestId: string,
   ): Promise<BaseResponseDto<AirlineInvitationListResponseDto>> {
+    query.validate();
+    console.log("Validated query:", query);
     const response = await this.airlineInvitationService.listInvitations(
-      pagination,
+      query,
       requestId,
     );
 
