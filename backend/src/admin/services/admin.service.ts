@@ -17,6 +17,7 @@ import { AdminRole } from "../../common/constants/user.constants";
 import {
   AdminProfileDto,
   AdminUserListResponseDto,
+  AdminUserQueryDto,
   AdminUserResponseDto,
   InviteAdminUserRequestDto,
   InviteAdminUserResponseDto,
@@ -237,7 +238,7 @@ export class AdminService {
 
   async listAdminUsers(
     authenticatedUser: AuthenticatedUser,
-    pagination: PaginationQueryDto,
+    pagination: AdminUserQueryDto,
     requestId: string,
   ): Promise<AdminUserListResponseDto> {
     await this.ensureSuperAdmin(authenticatedUser, requestId);

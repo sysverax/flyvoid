@@ -38,22 +38,42 @@ export default function ManageUsersPage() {
 
   const totalPages = Math.ceil(totalResults / resultsPerPage);
 
-  const fetchUsers = async (page = currentPage, limit = resultsPerPage) => {
-    setIsLoading(true);
-    try {
-      const res = await usersService.getUsers(page, limit);
-      setUsers(res.users);
-      setTotalResults(res.total);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to load users");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   useEffect(() => {
-    fetchUsers(currentPage, resultsPerPage);
-  }, [currentPage, resultsPerPage]);
+    let isMounted = true;
+
+    const fetchUsersData = async () => {
+      setIsLoading(true);
+      try {
+        let isActive: boolean | undefined = undefined;
+        if (statusFilter === "Active") isActive = true;
+        else if (statusFilter === "Inactive") isActive = false;
+
+        const res = await usersService.getUsers(currentPage, resultsPerPage, searchQuery || undefined, isActive);
+
+        if (isMounted) {
+          setUsers(res.users);
+          setTotalResults(res.total);
+        }
+      } catch (err: any) {
+        if (isMounted) {
+          toast.error(err.message || "Failed to load users");
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    const timeoutId = setTimeout(() => {
+      fetchUsersData();
+    }, 300);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, [currentPage, resultsPerPage, searchQuery, statusFilter]);
 
   const handleOpenAddModal = () => {
     setEditingUser(null);
@@ -81,7 +101,9 @@ export default function ManageUsersPage() {
       if (users.length === 1 && currentPage > 1) {
         setCurrentPage((prev) => prev - 1);
       } else {
-        fetchUsers(currentPage, resultsPerPage);
+        const res = await usersService.getUsers(currentPage, resultsPerPage, searchQuery || undefined, statusFilter === "Active" ? true : statusFilter === "Inactive" ? false : undefined);
+        setUsers(res.users);
+        setTotalResults(res.total);
       }
     } catch (err: any) {
       toast.error(err.message || "Failed to delete user.");
@@ -134,7 +156,9 @@ export default function ManageUsersPage() {
           accessControls,
         });
 
-        fetchUsers(currentPage, resultsPerPage);
+        const res = await usersService.getUsers(currentPage, resultsPerPage, searchQuery || undefined, statusFilter === "Active" ? true : statusFilter === "Inactive" ? false : undefined);
+        setUsers(res.users);
+        setTotalResults(res.total);
         toast.success(message);
       }
       setIsModalOpen(false);
@@ -162,27 +186,10 @@ export default function ManageUsersPage() {
     }
   };
 
-  // Search and status filtering
-  const filteredUsers = useMemo(() => {
-    return users.filter((u) => {
-      const query = searchQuery.toLowerCase();
-      const name = `${u.firstName} ${u.lastName}`.toLowerCase();
-      const matchesSearch =
-        String(u.id).toLowerCase().includes(query) ||
-        name.includes(query) ||
-        u.email.toLowerCase().includes(query);
-
-      const status = u.isActive ? "Active" : "Inactive";
-      const matchesStatus = statusFilter === "All" || status === statusFilter;
-
-      return matchesSearch && matchesStatus;
-    });
-  }, [users, searchQuery, statusFilter]);
-
   // Sort Data
   const sortedUsers = useMemo(() => {
-    return sortData(filteredUsers, sortField, sortOrder, []);
-  }, [filteredUsers, sortField, sortOrder]);
+    return sortData(users, sortField, sortOrder, []);
+  }, [users, sortField, sortOrder]);
 
   return (
     <div className="flex min-h-screen flex-1 flex-col pb-16 lg:w-full lg:max-w-[calc(100vw-304px)]">
@@ -218,14 +225,20 @@ export default function ManageUsersPage() {
             type="text"
             placeholder="Search by User ID, Name, Email"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
+            }}
             className="w-full h-[48px] pl-[46px] pr-4 border border-[#D1D5DB] bg-[#F3F4F6] rounded-[10px] text-[16px] font-figtree focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-white transition-all text-gray-800 placeholder-[#6B7280]"
           />
         </div>
 
         <Dropdown
           value={statusFilter}
-          onChange={(val) => setStatusFilter(val as any)}
+          onChange={(val) => {
+            setStatusFilter(val as any);
+            setCurrentPage(1);
+          }}
           options={[
             { value: "All", label: "All Status" },
             { value: "Active", label: "Active" },

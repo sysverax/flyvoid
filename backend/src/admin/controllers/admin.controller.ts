@@ -55,6 +55,7 @@ import {
 import {
   AdminProfileDto,
   AdminUserListResponseDto,
+  AdminUserQueryDto,
   AdminUserResponseDto,
   InviteAdminUserRequestDto,
   InviteAdminUserResponseDto,
@@ -417,8 +418,10 @@ export class AdminController {
     Returns a paginated list of all platform admin users.
       Access: SUPER_ADMIN and STAFF with VIEW access on the ADMIN_USERS asset. Requires userType=PLATFORM.
       Filters:
-        1. page (pagination, min 1)
-        2. limit (items per page)`,
+        1. search (match on first name, last name, or email)
+        2. isActive (filter by active status)
+        3. page (pagination, min 1)
+        4. limit (items per page)`,
   })
   @ApiOkResponse({
     description: "Admin users fetched successfully",
@@ -453,7 +456,7 @@ export class AdminController {
   })
   async listAdminUsers(
     @Req() req: AuthenticatedRequest,
-    @Query() pagination: PaginationQueryDto,
+    @Query() pagination: AdminUserQueryDto,
     @RequestId() requestId: string,
   ): Promise<BaseResponseDto<AdminUserListResponseDto>> {
     const response = await this.adminService.listAdminUsers(
