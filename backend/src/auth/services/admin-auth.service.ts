@@ -45,6 +45,7 @@ import { AuthRepository } from "../repositories/auth.repository";
 import {
   AccessAction,
   PlatformAsset,
+  UserAccessControlEntry,
 } from "../../common/constants/access-control.constants";
 
 @Injectable()
@@ -521,6 +522,11 @@ export class AuthService {
       requestId,
     );
     await this.authRepository.updateLastLogin(admin.id, new Date(), requestId);
+    const accessControls =
+      await this.authRepository.findPlatformAccessControlsByAdminId(
+        admin.id,
+        requestId,
+      );
 
     this.logger.info("Admin signin success", this.context, requestId, {
       adminId: admin.id,
@@ -532,7 +538,7 @@ export class AuthService {
       refreshToken,
       accessTokenExpiresIn: config.jwt.accessExpiresIn,
       refreshTokenExpiresIn: config.jwt.refreshExpiresIn,
-      admin: this.toAdminProfile(admin),
+      admin: this.toAdminProfile(admin, accessControls),
     };
   }
 
@@ -1146,14 +1152,20 @@ export class AuthService {
     return Buffer.from(keyHex, "hex");
   }
 
-  private toAdminProfile(admin: AdminEntity): AdminSigninResponseDto["admin"] {
+  private toAdminProfile(
+    admin: AdminEntity,
+    accessControls?: UserAccessControlEntry[],
+  ): AdminSigninResponseDto["admin"] {
     return {
       id: admin.id,
       firstName: admin.firstName,
       lastName: admin.lastName,
       email: admin.email,
       role: admin.role,
-      accessControls: [],
+      accessControls: (accessControls ?? []).map((ac) => ({
+        asset: ac.moduleKey as PlatformAsset,
+        access: ac.permissions as AccessAction[],
+      })),
     };
   }
 
