@@ -30,6 +30,7 @@ import { AIRLINE_INVITATION_HISTORY_EVENTS } from "../entities/airline-admin-inv
 import { AirlineRepository } from "../repositories/airline.repository";
 import { AirlineUserRepository } from "../repositories/airline-user.repository";
 import { AirlineInvitationRepository } from "../repositories/airline-invitation.repository";
+import { AirlineInvitationListRequestDto } from "../dto/airline-invitation/airline-invitation-list-request.dto";
 
 @Injectable()
 export class AirlineInvitationService {
@@ -202,19 +203,19 @@ export class AirlineInvitationService {
   }
 
   async listInvitations(
-    pagination: PaginationQueryDto,
+    query: AirlineInvitationListRequestDto,
     requestId: string,
   ): Promise<AirlineInvitationListResponseDto> {
     const { invitations, total } =
       await this.airlineInvitationRepository.findAllInvitations(
-        pagination,
+        query,
         requestId,
       );
 
     return {
       total,
-      currentPage: pagination.page,
-      limit: pagination.limit,
+      currentPage: query.page,
+      limit: query.limit,
       invitations: invitations.map((invite) =>
         this.toInvitationResponse(invite),
       ),
@@ -368,16 +369,22 @@ export class AirlineInvitationService {
     return {
       invitationId: invite.id,
       airlineId: invite.airlineId,
-      airlineName: airline?.name ?? meta?.airlineName ?? "",
-      airlineCode: airline?.code ?? meta?.airlineCode ?? "",
-      companyRegistrationNumber:
-        airline?.companyRegistrationNumber ??
-        meta?.companyRegistrationNumber ??
-        "",
-      firstName: meta?.adminFirstName ?? "",
-      lastName: meta?.adminLastName ?? "",
-      email: meta?.adminEmail ?? "",
-      jobTitle: meta?.adminJobTitle ?? "",
+      airlineName: meta.airlineName,
+      airlineCode: meta.airlineCode,
+      countryCode: meta.countryCode,
+      companyRegistrationNumber: meta.companyRegistrationNumber,
+      website: meta.website ?? undefined,
+      contactEmail: meta.contactEmail,
+      contactPhone: meta.contactPhone,
+      timezone: meta.timezone,
+      currency: meta.currency,
+      address: meta.address,
+      logo: meta.logo ?? undefined,
+      creditLimit: meta.creditLimit ?? undefined,
+      adminFirstName: meta.adminFirstName,
+      adminLastName: meta.adminLastName,
+      adminEmail: meta.adminEmail,
+      adminJobTitle: meta.adminJobTitle,
       invitedByAdminId: invite.invitedByAdminId,
       status: this.resolveInvitationStatus(invite),
       expiresAt: invite.expiresAt.toISOString(),
@@ -405,17 +412,17 @@ export class AirlineInvitationService {
     return {
       invitationId: invite.id,
       airlineId: invite.airlineId,
-      airlineName: invite.meta?.airlineName ?? invite.airline?.name ?? "",
-      airlineCode: invite.meta?.airlineCode ?? invite.airline?.code ?? "",
-      firstName: invite.meta?.adminFirstName ?? "",
-      lastName: invite.meta?.adminLastName ?? "",
-      email: invite.meta?.adminEmail ?? "",
-      jobTitle: invite.meta?.adminJobTitle ?? "",
-      invitedByAdminId: invite.invitedByAdminId,
+      airlineName: invite.meta.airlineName,
+      airlineCode: invite.meta.airlineCode,
+      countryCode: invite.meta.countryCode,
+      companyRegistrationNumber: invite.meta.companyRegistrationNumber,
+      contactEmail: invite.meta.contactEmail,
+      creditLimit: invite.meta.creditLimit ?? undefined,
       status: this.resolveInvitationStatus(invite),
       expiresAt: invite.expiresAt.toISOString(),
       createdAt: invite.createdAt.toISOString(),
       updatedAt: invite.updatedAt.toISOString(),
+      invitedByAdminId: invite.invitedByAdminId,
     };
   }
 

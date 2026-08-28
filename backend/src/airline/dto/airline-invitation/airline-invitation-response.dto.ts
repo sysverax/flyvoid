@@ -1,4 +1,4 @@
-import { ApiProperty } from "@nestjs/swagger";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { AIRLINE_INVITATION_STATUSES } from "../../constants";
 
 export class AirlineInvitationResponseDto {
@@ -19,26 +19,27 @@ export class AirlineInvitationResponseDto {
   @ApiProperty({ description: "Airline code", example: "SJ" })
   airlineCode!: string;
 
-  @ApiProperty({ description: "Invited admin first name", example: "Aisha" })
-  firstName!: string;
-
-  @ApiProperty({ description: "Invited admin last name", example: "Khan" })
-  lastName!: string;
+  @ApiProperty({ description: "Airline country code", example: "AE" })
+  countryCode!: string;
 
   @ApiProperty({
-    description: "Invited admin email",
-    example: "aisha@skyjet.com",
+    description: "Airline company registration number",
+    example: "1234567890",
   })
-  email!: string;
+  companyRegistrationNumber!: string;
 
   @ApiProperty({
-    description: "Invited admin job title",
-    example: "Operations Lead",
+    description: "Airline contact email",
+    example: "contact@skyjet.com",
   })
-  jobTitle!: string;
+  contactEmail!: string;
 
-  @ApiProperty({ description: "Invitation creator admin id", example: 1 })
-  invitedByAdminId!: number;
+  @ApiPropertyOptional({
+    description: "Airline credit limit",
+    example: 100000,
+    required: false,
+  })
+  creditLimit?: number;
 
   @ApiProperty({
     description: "Invitation status",
@@ -64,4 +65,10 @@ export class AirlineInvitationResponseDto {
     example: "2026-05-26T13:50:00.000Z",
   })
   updatedAt!: string;
+
+  @ApiProperty({
+    description: "Invitation creator admin id",
+    example: 1,
+  })
+  invitedByAdminId!: number;
 }
