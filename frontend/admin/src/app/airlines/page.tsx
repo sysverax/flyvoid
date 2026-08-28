@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Search,
   Eye,
   AlertTriangle,
+  Loader2,
 } from "lucide-react";
 import {
   Table,
@@ -26,6 +27,9 @@ import { EditAirlineModal } from "@/src/components/airlines/EditAirlineModal";
 import { SuspendAirlineDialog } from "@/src/components/airlines/SuspendAirlineDialog";
 import { AirlineDetailsView } from "@/src/components/airlines/AirlineDetailsView";
 import { useAuth } from "@/src/hooks/useAuth";
+import { toast } from "react-toastify";
+import { countries } from "countries-list";
+import { airlinesService, UpdateAirlineRequest } from "@/src/services/airlines.service";
 
 const INITIAL_AIRLINES: Airline[] = [
   {
@@ -161,12 +165,82 @@ const INITIAL_AIRLINES: Airline[] = [
     allocationFailuresCount: 8,
   },
 ];
-export default function AirlinesPage() {
-  const [airlines, setAirlines] = useState<Airline[]>(INITIAL_AIRLINES);
-  const { hasPermission } = useAuth();
+const getCountryCode = (countryName: string): string => {
+  const entry = Object.entries(countries).find(
+    ([_, c]) => c.name.toLowerCase() === countryName.toLowerCase()
+  );
+  return entry ? entry[0] : "US";
+};
 
-  // Navigation State
-  const [selectedAirlineId, setSelectedAirlineId] = useState<string | null>(null);
+const formatDate = (dateStr?: string) => {
+  if (!dateStr) return "N/A";
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return "N/A";
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
+};
+
+function mapAirlineDTOToAirline(dto: any): Airline {
+  const countryName = countries[dto.countryCode as keyof typeof countries]?.name || dto.countryCode || "N/A";
+
+  const isSuspendedBool = Boolean(dto.isSuspended);
+  const isActiveBool = dto.isActive !== undefined ? Boolean(dto.isActive) : true;
+
+  let status: "Active" | "Suspended" | "Disabled" = "Active";
+  if (isSuspendedBool) {
+    status = "Suspended";
+  } else if (!isActiveBool) {
+    status = "Disabled";
+  }
+
+  return {
+    id: String(dto.id),
+    airlineName: dto.name,
+    airlineCode: dto.code,
+    country: countryName,
+    companyReg: dto.companyRegistrationNumber,
+    website: dto.website || "",
+    contactEmail: dto.contactEmail,
+    contactPhone: dto.contactPhone,
+    timezone: dto.timezone,
+    currency: dto.currency,
+    address: dto.address,
+    onboardingDate: formatDate(dto.createdAt),
+    status,
+    flightsCount: 0,
+    passengersCount: 0,
+    spend: 0,
+    revenue: 0,
+    stripeConnection: "Pending",
+    adminFirstName: dto.adminUser?.firstName || "",
+    adminLastName: dto.adminUser?.lastName || "",
+    adminEmail: dto.adminUser?.email || "",
+    adminJobTitle: dto.adminUser?.jobTitle || "",
+    creditLimit: 0,
+    totalCancelledFlights: 0,
+    totalPassengersMetric: 0,
+    avgCostPerPassenger: 0,
+    totalSpendMetric: 0,
+    platformFeesMetric: 0,
+    allowanceBalanceMetric: 0,
+    failedPaymentsCount: 0,
+    allocationFailuresCount: 0,
+    logoUrl: dto.logo,
+    isActive: isActiveBool,
+    isSuspended: isSuspendedBool,
+  };
+}
+
+export default function AirlinesPage() {
+  const [airlines, setAirlines] = useState<Airline[]>([]);
+  const { hasPermission } = useAuth();
+  const [isLoading, setIsLoading] = useState(true);
+  const [isViewingDetail, setIsViewingDetail] = useState<string | null>(null);
+
+  // Navigation State / Detailed View Object
+  const [selectedAirlineDetail, setSelectedAirlineDetail] = useState<Airline | null>(null);
 
   // Search & Filter States
   const [searchQuery, setSearchQuery] = useState("");
@@ -176,6 +250,7 @@ export default function AirlinesPage() {
   // Pagination States
   const [resultsPerPage, setResultsPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
+  const [totalResults, setTotalResults] = useState(0);
 
   // Sorting States
   const [sortField, setSortField] = useState<keyof Airline | null>(null);
@@ -184,8 +259,8 @@ export default function AirlinesPage() {
   // Modals & Confirmation States
   const [editTarget, setEditTarget] = useState<Airline | null>(null);
   const [suspendTarget, setSuspendTarget] = useState<Airline | null>(null);
-
-  // Form states for Edit modal removed (handled internally by EditAirlineModal component)
+  const [isSuspending, setIsSuspending] = useState(false);
+  const [togglingAirlineId, setTogglingAirlineId] = useState<string | null>(null);
 
   const statusOptions = [
     { value: "All Status", label: "All Status" },
@@ -205,46 +280,63 @@ export default function AirlinesPage() {
     { value: "Australia", label: "Australia" },
   ];
 
-  // Current selected airline object
-  const selectedAirline = useMemo(() => {
-    return airlines.find((a) => a.id === selectedAirlineId) || null;
-  }, [airlines, selectedAirlineId]);
+  const fetchAirlines = async (showLoading = true) => {
+    if (showLoading) setIsLoading(true);
+    try {
+      let isActive: boolean | undefined = undefined;
+      let isSuspended: boolean | undefined = undefined;
+
+      if (selectedStatus === "Active") {
+        isActive = true;
+        isSuspended = false;
+      } else if (selectedStatus === "Inactive") {
+        isActive = false;
+        isSuspended = false;
+      } else if (selectedStatus === "Suspended") {
+        isSuspended = true;
+      }
+
+      const res = await airlinesService.getAirlines({
+        search: searchQuery || undefined,
+        isActive,
+        isSuspended,
+        page: currentPage,
+        limit: resultsPerPage,
+      });
+
+      const mapped = res.airlines.map(mapAirlineDTOToAirline);
+      setAirlines(mapped);
+      setTotalResults(res.total);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to load airlines");
+    } finally {
+      if (showLoading) setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAirlines();
+  }, [searchQuery, selectedStatus, currentPage, resultsPerPage]);
 
   // Filtration logic
   const filteredAirlines = useMemo(() => {
     return airlines.filter((airline) => {
-      const matchesSearch =
-        airline.airlineName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        airline.airlineCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        airline.contactEmail.toLowerCase().includes(searchQuery.toLowerCase());
-
-      const matchesStatus =
-        selectedStatus === "All Status" ||
-        airline.status === selectedStatus ||
-        (selectedStatus === "Inactive" && airline.status === "Disabled");
-
       const matchesCountry =
         selectedCountry === "All Countries" || airline.country === selectedCountry;
-
-      return matchesSearch && matchesStatus && matchesCountry;
+      return matchesCountry;
     });
-  }, [airlines, searchQuery, selectedStatus, selectedCountry]);
+  }, [airlines, selectedCountry]);
 
   // Sort Data
   const sortedAirlines = useMemo(() => {
-    return sortData(filteredAirlines, sortField, sortOrder, []);
+    return sortData(filteredAirlines, sortField, sortOrder, ["onboardingDate"]);
   }, [filteredAirlines, sortField, sortOrder]);
 
   // Paginated Data
   const totalPages = Math.max(
     1,
-    Math.ceil(sortedAirlines.length / resultsPerPage)
+    Math.ceil(totalResults / resultsPerPage)
   );
-
-  const paginatedAirlines = useMemo(() => {
-    const startIndex = (currentPage - 1) * resultsPerPage;
-    return sortedAirlines.slice(startIndex, startIndex + resultsPerPage);
-  }, [sortedAirlines, currentPage, resultsPerPage]);
 
   const handleClearAll = () => {
     setSearchQuery("");
@@ -269,17 +361,58 @@ export default function AirlinesPage() {
     setCurrentPage(1);
   };
 
+  const handleViewDetails = async (id: string) => {
+    if (isViewingDetail === id) return;
+    setIsViewingDetail(id);
+    try {
+      const dto = await airlinesService.getAirlineDetail(Number(id));
+      const mapped = mapAirlineDTOToAirline(dto);
+      setSelectedAirlineDetail(mapped);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to load airline details");
+    } finally {
+      setIsViewingDetail(null);
+    }
+  };
+
   // Toggle active/disable status from the toggle switch in the table
-  const handleToggleStatus = (airline: Airline) => {
-    setAirlines((prev) =>
-      prev.map((item) => {
-        if (item.id === airline.id) {
-          const newStatus = item.status === "Disabled" ? "Active" : "Disabled";
-          return { ...item, status: newStatus };
-        }
-        return item;
-      })
-    );
+  const handleToggleStatus = async (airline: Airline) => {
+    if (togglingAirlineId) return;
+    const targetIsActive = !airline.isActive;
+
+    setTogglingAirlineId(airline.id);
+    try {
+      const response = await airlinesService.updateAirline(Number(airline.id), {
+        isActive: targetIsActive,
+      });
+
+      toast.success(response.message || `Successfully ${targetIsActive ? "enabled" : "disabled"} ${airline.airlineName}`);
+
+      if (response?.data) {
+        const updatedMapped = mapAirlineDTOToAirline(response.data);
+        setAirlines((prev) =>
+          prev.map((item) => (item.id === airline.id ? updatedMapped : item))
+        );
+      } else {
+        setAirlines((prev) =>
+          prev.map((item) =>
+            item.id === airline.id
+              ? {
+                ...item,
+                isActive: targetIsActive,
+                status: item.isSuspended ? "Suspended" : targetIsActive ? "Active" : "Disabled",
+              }
+              : item
+          )
+        );
+      }
+
+      fetchAirlines(false);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update airline status");
+    } finally {
+      setTogglingAirlineId(null);
+    }
   };
 
   // Trigger suspend flow
@@ -287,17 +420,24 @@ export default function AirlinesPage() {
     setSuspendTarget(airline);
   };
 
-  const handleConfirmSuspend = () => {
+  const handleConfirmSuspend = async () => {
     if (!suspendTarget) return;
-    setAirlines((prev) =>
-      prev.map((item) => {
-        if (item.id === suspendTarget.id) {
-          return { ...item, status: "Suspended" };
-        }
-        return item;
-      })
-    );
-    setSuspendTarget(null);
+
+    setIsSuspending(true);
+    try {
+      const response = await airlinesService.updateAirline(Number(suspendTarget.id), {
+        isActive: false,
+        isSuspended: true,
+      });
+
+      toast.success(response.message || `Successfully suspended ${suspendTarget.airlineName}`);
+      setSuspendTarget(null);
+      fetchAirlines();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to suspend airline");
+    } finally {
+      setIsSuspending(false);
+    }
   };
 
   // Trigger edit modal
@@ -305,30 +445,59 @@ export default function AirlinesPage() {
     setEditTarget(airline);
   };
 
-  const handleSaveEdit = (updatedFields: Partial<Airline>) => {
+  const handleSaveEdit = async (updatedFields: Partial<Airline>) => {
     if (!editTarget) return;
 
-    setAirlines((prev) =>
-      prev.map((item) => {
-        if (item.id === editTarget.id) {
-          return {
-            ...item,
-            ...updatedFields,
-          };
-        }
-        return item;
-      })
-    );
-    setEditTarget(null);
+    setIsLoading(true);
+    try {
+      const status = editTarget.status;
+      const isActive = status === "Active";
+      const isSuspended = status === "Suspended";
+
+      const payload: Partial<UpdateAirlineRequest> = {
+        name: updatedFields.airlineName,
+        code: updatedFields.airlineCode,
+        countryCode: getCountryCode(updatedFields.country || "United States"),
+        companyRegistrationNumber: updatedFields.companyReg,
+        website: updatedFields.website || undefined,
+        contactEmail: updatedFields.contactEmail,
+        contactPhone: updatedFields.contactPhone,
+        timezone: updatedFields.timezone,
+        logo: updatedFields.logoUrl || undefined,
+        currency: updatedFields.currency,
+        address: updatedFields.address,
+        isActive,
+        isSuspended,
+        adminFirstName: updatedFields.adminFirstName,
+        adminLastName: updatedFields.adminLastName,
+        adminEmail: updatedFields.adminEmail,
+        adminJobTitle: updatedFields.adminJobTitle,
+      };
+
+      const response = await airlinesService.updateAirline(Number(editTarget.id), payload);
+      toast.success(response.message || "Airline updated successfully");
+      setEditTarget(null);
+
+      const mapped = mapAirlineDTOToAirline(response.data);
+      if (selectedAirlineDetail && selectedAirlineDetail.id === editTarget.id) {
+        setSelectedAirlineDetail(mapped);
+      }
+
+      fetchAirlines();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update airline");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
     <div className="flex min-h-screen flex-1 flex-col pb-16 lg:w-full lg:max-w-[calc(100vw-304px)]">
-      {selectedAirline ? (
+      {selectedAirlineDetail ? (
         <AirlineDetailsView
-          airline={selectedAirline}
-          onBack={() => setSelectedAirlineId(null)}
-          onEditClick={() => handleOpenEditModal(selectedAirline)}
+          airline={selectedAirlineDetail}
+          onBack={() => setSelectedAirlineDetail(null)}
+          onEditClick={() => handleOpenEditModal(selectedAirlineDetail)}
         />
       ) : (
         <div className="space-y-7">
@@ -394,20 +563,20 @@ export default function AirlinesPage() {
                   <TableHead className="min-w-[90px]">
                     <SortHeader label="Flights" field="flightsCount" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                   </TableHead>
-                  <TableHead className="min-w-[121px] relative -left-1">
+                  <TableHead className="min-w-[121px] -translate-x-1">
                     <SortHeader label="Passengers" field="passengersCount" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                   </TableHead>
-                  <TableHead className="min-w-[124px] relative -left-1">
+                  <TableHead className="min-w-[124px] -translate-x-1">
                     <SortHeader label="Spend" field="spend" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                   </TableHead>
-                  <TableHead className="min-w-[115px] relative -left-1.5">
+                  <TableHead className="min-w-[115px] -translate-x-1.5">
                     <SortHeader label="Revenue" field="revenue" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                   </TableHead>
-                  <TableHead className="min-w-[128px] relative left-1">
+                  <TableHead className="min-w-[128px] -translate-x-1">
                     <SortHeader label="Stripe" field="stripeConnection" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                   </TableHead>
                   {hasPermission("edit") && (
-                    <TableHead className="whitespace-nowrap min-w-[143px] relative left-1">
+                    <TableHead className="whitespace-nowrap min-w-[143px] -translate-x-1">
                       <SortHeader label="Enable/Disable" field="status" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                     </TableHead>
                   )}
@@ -415,7 +584,19 @@ export default function AirlinesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paginatedAirlines.length === 0 ? (
+                {isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={10} className="px-6 py-12 text-center text-gray-500 font-figtree">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <svg className="animate-spin h-8 w-8 text-primary" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        <span>Loading airlines...</span>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : sortedAirlines.length === 0 ? (
                   <TableEmptyState
                     colSpan={10}
                     icon={Search}
@@ -423,7 +604,7 @@ export default function AirlinesPage() {
                     message="Try adjusting your filters or search query."
                   />
                 ) : (
-                  paginatedAirlines.map((airline) => (
+                  sortedAirlines.map((airline) => (
                     <TableRow key={airline.id}>
                       <TableCell className="font-medium text-[#1F2937]">
                         {airline.airlineName}
@@ -465,40 +646,51 @@ export default function AirlinesPage() {
                           {/* Enable/Disable Toggle Switch */}
                           <button
                             type="button"
+                            disabled={!hasPermission("edit") || togglingAirlineId === airline.id}
                             onClick={() => handleToggleStatus(airline)}
-                            className="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none relative left-1 bg-emerald-500"
-                            style={{
-                              backgroundColor: airline.status === "Active" ? "#10B981" : "#E5E7EB"
-                            }}
+                            className={cn(
+                              "relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none relative left-1",
+                              hasPermission("edit") && togglingAirlineId !== airline.id ? "cursor-pointer" : "cursor-not-allowed opacity-70",
+                              airline.isActive ? "bg-emerald-500" : "bg-gray-200"
+                            )}
                           >
                             <span
                               className={cn(
-                                "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
-                                airline.status === "Active" ? "translate-x-5" : "translate-x-0"
+                                "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out flex items-center justify-center",
+                                airline.isActive ? "translate-x-5" : "translate-x-0"
                               )}
-                            />
+                            >
+                              {togglingAirlineId === airline.id && (
+                                <Loader2 className="h-3 w-3 animate-spin text-gray-500" />
+                              )}
+                            </span>
                           </button>
                         </TableCell>
                       )}
                       <TableCell>
                         <div className="flex items-center justify-start gap-2.5">
                           <button
-                            onClick={() => setSelectedAirlineId(airline.id)}
+                            onClick={() => handleViewDetails(airline.id)}
                             className="p-1 text-[#6B7280] hover:text-primary transition-colors cursor-pointer"
-                            title="View Profile"
+                            disabled={isViewingDetail === airline.id}
                           >
-                            <Eye className="h-[20px] w-[20px]" />
+                            {isViewingDetail === airline.id ? (
+                              <Loader2 className="h-[20px] w-[20px] animate-spin text-[#6B7280]" />
+                            ) : (
+                              <Eye className="h-[20px] w-[20px]" />
+                            )}
                           </button>
                           {hasPermission("edit") && (
                             <button
                               onClick={() => handleOpenSuspendConfirm(airline)}
                               className="p-1 cursor-pointer transition-colors"
-                              title="Suspend Airline"
                             >
                               <img
                                 src="/icons/spam.svg"
                                 alt="Spam"
-                                className="h-[20px] w-[20px]"
+                                width={20}
+                                height={20}
+                              // className={airline.status === "Active" ? "opacity-100 hover:brightness-75" : "opacity-50"}
                               />
                             </button>
                           )}
@@ -512,7 +704,7 @@ export default function AirlinesPage() {
           </div>
 
           <Pagination
-            totalResults={filteredAirlines.length}
+            totalResults={totalResults}
             currentPage={currentPage}
             setCurrentPage={setCurrentPage}
             resultsPerPage={resultsPerPage}
@@ -532,7 +724,8 @@ export default function AirlinesPage() {
       <SuspendAirlineDialog
         isOpen={!!suspendTarget}
         airline={suspendTarget}
-        onClose={() => setSuspendTarget(null)}
+        isSuspending={isSuspending}
+        onClose={() => !isSuspending && setSuspendTarget(null)}
         onConfirm={handleConfirmSuspend}
       />
     </div>

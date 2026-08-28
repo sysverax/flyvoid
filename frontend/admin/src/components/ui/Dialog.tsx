@@ -85,11 +85,17 @@ function DialogFooter({ children }: { children: React.ReactNode }) {
   return <div className="flex gap-3 px-6 w-full mt-4">{children}</div>;
 }
 
-function DialogCancelButton({ onClick }: { onClick: () => void }) {
+function DialogCancelButton({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) {
   return (
     <button
       onClick={onClick}
-      className="flex-1 py-2.5 rounded-lg border border-[#D1D5DB] text-[#1F2937] hover:bg-[#F9FAFB] transition-colors cursor-pointer"
+      disabled={disabled}
+      className={cn(
+        "flex-1 py-2.5 rounded-lg border border-[#D1D5DB] text-[#1F2937] transition-colors",
+        disabled
+          ? "opacity-50 cursor-default"
+          : "hover:bg-[#F9FAFB] cursor-pointer"
+      )}
       style={{
         fontFamily: "Figtree, sans-serif",
         fontSize: 18,
@@ -104,20 +110,26 @@ function DialogCancelButton({ onClick }: { onClick: () => void }) {
 function DialogActionButton({
   onClick,
   variant = "primary",
+  disabled,
   children,
 }: {
   onClick: () => void;
   variant?: "primary" | "danger";
+  disabled?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       className={cn(
-        "flex-1 py-2.5 rounded-lg text-white transition-colors cursor-pointer",
+        "flex-1 py-2.5 rounded-lg text-white transition-colors flex items-center justify-center gap-2",
         variant === "danger"
           ? "bg-[#EF4444] hover:bg-[#dc2626]"
           : "bg-[#1B2B6B] hover:bg-[#162259]",
+        disabled
+          ? "opacity-75 cursor-default"
+          : "cursor-pointer"
       )}
       style={{
         fontFamily: "Figtree, sans-serif",

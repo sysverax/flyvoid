@@ -6,6 +6,18 @@ interface StatusBadgeProps {
 }
 
 const statusStyles: Record<string, { bg: string; text: string }> = {
+  "Fees outstanding": {
+    bg: "bg-[#FEF3C7]",
+    text: "text-[#92400E]",
+  },
+  "credit exceeded": {
+    bg: "bg-[#FEE2E2]",
+    text: "text-[#991B1B]",
+  },
+  settled: {
+    bg: "bg-[#D1FAE5]",
+    text: "text-[#065F46]",
+  },
   Pending: {
     bg: "bg-[#FEF3C7]",
     text: "text-[#92400E]",

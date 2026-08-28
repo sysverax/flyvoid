@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { cn } from "@/src/lib/utils";
+import { authService } from "@/src/services/auth.service";
 
 interface TfaVerificationProps {
   tfaMethod: "email" | "authenticator";
@@ -11,20 +12,11 @@ interface TfaVerificationProps {
   showToast: (message: string, type?: "success" | "warning" | "info") => void;
   isShowingRecoveryCodes: boolean;
   setIsShowingRecoveryCodes: (val: boolean) => void;
+  manualEntryKey?: string;
+  qrCodeDataUrl?: string;
 }
 
-const RECOVERY_CODES = [
-  "G7E9K-67G5D",
-  "Y2T4X-89W1V",
-  "H8F0L-78H6E",
-  "Z3U5Y-90X2W",
-  "I9G1M-89I7F",
-  "A4V6Z-01Y3X",
-  "J0H2N-90J8G",
-  "B5W7A-12Z4Y",
-  "K1I3O-01K9H",
-  "C6X8B-23A5Z",
-];
+
 
 export function TfaVerification({
   tfaMethod,
@@ -34,15 +26,27 @@ export function TfaVerification({
   showToast,
   isShowingRecoveryCodes,
   setIsShowingRecoveryCodes,
+  manualEntryKey,
+  qrCodeDataUrl,
 }: TfaVerificationProps) {
   const [otpValues, setOtpValues] = useState<string[]>(Array(6).fill(""));
   const [isRecoveryCodesChecked, setIsRecoveryCodesChecked] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
+  const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [hasError, setHasError] = useState(false);
+  const [areCodesCopied, setAreCodesCopied] = useState(false);
+  const [areCodesDownloaded, setAreCodesDownloaded] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [isCompletingSetup, setIsCompletingSetup] = useState(false);
 
   const handleOtpChange = (index: number, val: string) => {
     if (/[^0-9]/.test(val)) return;
     const newOtp = [...otpValues];
     newOtp[index] = val;
     setOtpValues(newOtp);
+    setError(null);
+    setHasError(false);
     if (val && index < 5) {
       const nextInput = document.getElementById(`otp-${index + 1}`);
       nextInput?.focus();
@@ -53,40 +57,126 @@ export function TfaVerification({
     index: number,
     e: React.KeyboardEvent<HTMLInputElement>,
   ) => {
-    if (e.key === "Backspace" && !otpValues[index] && index > 0) {
+    if (e.key === "Backspace") {
+      if (!otpValues[index] && index > 0) {
+        const prevInput = document.getElementById(`otp-${index - 1}`);
+        prevInput?.focus();
+        const newOtp = [...otpValues];
+        newOtp[index - 1] = "";
+        setOtpValues(newOtp);
+      } else {
+        const newOtp = [...otpValues];
+        newOtp[index] = "";
+        setOtpValues(newOtp);
+      }
+    } else if (e.key === "ArrowLeft" && index > 0) {
+      e.preventDefault();
       const prevInput = document.getElementById(`otp-${index - 1}`);
       prevInput?.focus();
+    } else if (e.key === "ArrowRight" && index < 5) {
+      e.preventDefault();
+      const nextInput = document.getElementById(`otp-${index + 1}`);
+      nextInput?.focus();
     }
   };
 
-  const handleVerify = () => {
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const pasteData = e.clipboardData.getData("text").trim();
+    if (pasteData.length === 6 && /^\d+$/.test(pasteData)) {
+      const splitCode = pasteData.split("");
+      setOtpValues(splitCode);
+      setError(null);
+      setHasError(false);
+      const targetInput = document.getElementById("otp-5");
+      targetInput?.focus();
+    }
+  };
+
+  const handleVerify = async () => {
     const code = otpValues.join("");
     if (code.length < 6) {
-      showToast("Please enter a valid 6-digit code.", "warning");
+      setError("Please enter a valid 6-digit code.");
+      setHasError(true);
       return;
     }
+    setError(null);
+    setHasError(false);
     if (tfaMethod === "email") {
-      onCompleteSetup();
+      setIsVerifying(true);
+      try {
+        onCompleteSetup();
+      } finally {
+        setIsVerifying(false);
+      }
     } else {
-      setIsShowingRecoveryCodes(true);
-      setIsRecoveryCodesChecked(false);
+      setIsVerifying(true);
+      try {
+        const result = await authService.enableTfa(code);
+
+        const today = new Date();
+        const day = String(today.getDate()).padStart(2, "0");
+        const month = String(today.getMonth() + 1).padStart(2, "0");
+        const year = today.getFullYear();
+        const dateStr = `${day}/${month}/${year}`;
+
+        sessionStorage.setItem(`tfa_enabled_${email}`, "true");
+        sessionStorage.setItem(`tfa_method_${email}`, tfaMethod);
+        sessionStorage.setItem(`tfa_date_${email}`, dateStr);
+
+        setRecoveryCodes(result.recoveryCodes);
+        showToast(result.message, "success");
+        setIsShowingRecoveryCodes(true);
+        setIsRecoveryCodesChecked(false);
+      } catch (err: any) {
+        const errMsg = err.message || "Failed to enable 2FA.";
+        setError(null);
+        setHasError(true);
+        showToast(errMsg, "warning");
+      } finally {
+        setIsVerifying(false);
+      }
     }
+  };
+
+  const handleCompleteSetupClick = () => {
+    setIsCompletingSetup(true);
+    setTimeout(() => {
+      setIsCompletingSetup(false);
+      onCompleteSetup();
+    }, 1500);
   };
 
   const handleCopyCodes = () => {
-    navigator.clipboard.writeText(RECOVERY_CODES.join("\n"));
-    showToast("Recovery codes copied to clipboard!", "success");
+    navigator.clipboard.writeText(recoveryCodes.join("\n"));
+    setAreCodesCopied(true);
+    setTimeout(() => setAreCodesCopied(false), 2000);
+  };
+
+  const handleDownloadQr = () => {
+    if (!qrCodeDataUrl) {
+      showToast("No QR code available to download.", "warning");
+      return;
+    }
+    const element = document.createElement("a");
+    element.href = qrCodeDataUrl;
+    element.download = "flyvoid-2fa-qr.png";
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+    showToast("QR code downloaded successfully", "success");
   };
 
   const handleDownloadCodes = () => {
     const element = document.createElement("a");
-    const file = new Blob([RECOVERY_CODES.join("\n")], { type: "text/plain" });
+    const file = new Blob([recoveryCodes.join("\n")], { type: "text/plain" });
     element.href = URL.createObjectURL(file);
     element.download = "flyvoid-recovery-codes.txt";
     document.body.appendChild(element);
     element.click();
     document.body.removeChild(element);
-    showToast("Recovery codes downloaded successfully!", "success");
+    setAreCodesDownloaded(true);
+    setTimeout(() => setAreCodesDownloaded(false), 2000);
   };
 
   if (isShowingRecoveryCodes) {
@@ -116,54 +206,72 @@ export function TfaVerification({
             </div>
           </div>
           <div className="self-stretch flex flex-col justify-start items-start gap-3 w-full">
-            {Array.from({ length: 5 }, (_, i) => (
+            {Array.from({ length: Math.ceil(recoveryCodes.length / 2) }, (_, i) => (
               <div
                 key={i}
                 className="self-stretch inline-flex justify-start items-center gap-3"
               >
                 <div className="h-[35px] flex-1 px-3 py-2 bg-white rounded-lg outline outline-1 outline-offset-[-1px] outline-gray-300 flex justify-center items-center gap-2.5">
                   <div className="justify-start text-gray-800 text-base font-medium font-figtree">
-                    {RECOVERY_CODES[i * 2]}
+                    {recoveryCodes[i * 2]}
                   </div>
                 </div>
-                <div className="h-[35px] flex-1 px-3 py-2 bg-white rounded-lg outline outline-1 outline-offset-[-1px] outline-gray-300 flex justify-center items-center gap-2.5">
-                  <div className="justify-start text-gray-800 text-base font-medium font-figtree">
-                    {RECOVERY_CODES[i * 2 + 1]}
+                {recoveryCodes[i * 2 + 1] && (
+                  <div className="h-[35px] flex-1 px-3 py-2 bg-white rounded-lg outline outline-1 outline-offset-[-1px] outline-gray-300 flex justify-center items-center gap-2.5">
+                    <div className="justify-start text-gray-800 text-base font-medium font-figtree">
+                      {recoveryCodes[i * 2 + 1]}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             ))}
           </div>
         </div>
         <div className="inline-flex justify-start items-start gap-3">
-          <button
-            type="button"
-            onClick={handleCopyCodes}
-            className="h-10 pl-3.5 pr-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-[10px] outline outline-1 outline-offset-[-1px] outline-gray-300 flex justify-center items-center gap-2 overflow-hidden cursor-pointer transition-colors"
-          >
-            <img
-              src="/icons/paste.svg"
-              alt="copy"
-              className="size-5 shrink-0"
-            />
-            <div className="justify-start text-gray-800 text-base font-medium font-figtree">
-              Copy
-            </div>
-          </button>
-          <button
-            type="button"
-            onClick={handleDownloadCodes}
-            className="h-10 pl-3.5 pr-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-[10px] outline outline-1 outline-offset-[-1px] outline-gray-300 flex justify-center items-center gap-2 overflow-hidden cursor-pointer transition-colors"
-          >
-            <img
-              src="/icons/download.svg"
-              alt="download"
-              className="size-5 shrink-0"
-            />
-            <div className="justify-start text-gray-800 text-base font-medium font-figtree">
-              Download
-            </div>
-          </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={handleCopyCodes}
+              className="h-10 pl-3.5 pr-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-[10px] outline outline-1 outline-offset-[-1px] outline-gray-300 flex justify-center items-center gap-2 overflow-hidden cursor-pointer transition-colors"
+            >
+              <img
+                src="/icons/paste.svg"
+                alt="copy"
+                className="size-5 shrink-0"
+              />
+              <div className="justify-start text-gray-800 text-base font-medium font-figtree">
+                Copy
+              </div>
+            </button>
+            {areCodesCopied && (
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1 bg-gray-500 text-white text-xs font-medium font-figtree rounded-full whitespace-nowrap shadow-lg animate-fadeIn z-20">
+                Codes Copied!
+                <div className="absolute top-[85%] left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-gray-500 rotate-45"></div>
+              </div>
+            )}
+          </div>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={handleDownloadCodes}
+              className="h-10 pl-3.5 pr-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-[10px] outline outline-1 outline-offset-[-1px] outline-gray-300 flex justify-center items-center gap-2 overflow-hidden cursor-pointer transition-colors"
+            >
+              <img
+                src="/icons/download.svg"
+                alt="download"
+                className="size-5 shrink-0"
+              />
+              <div className="justify-start text-gray-800 text-base font-medium font-figtree">
+                Download
+              </div>
+            </button>
+            {areCodesDownloaded && (
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1 bg-gray-500 text-white text-xs font-medium font-figtree rounded-full whitespace-nowrap shadow-lg animate-fadeIn z-20">
+                Downloaded!
+                <div className="absolute top-[85%] left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-gray-500 rotate-45"></div>
+              </div>
+            )}
+          </div>
         </div>
         <label className="inline-flex justify-start items-center gap-2.5 cursor-pointer select-none">
           <input
@@ -199,18 +307,28 @@ export function TfaVerification({
         </label>
         <button
           type="button"
-          onClick={onCompleteSetup}
-          disabled={!isRecoveryCodesChecked}
+          onClick={handleCompleteSetupClick}
+          disabled={!isRecoveryCodesChecked || isCompletingSetup}
           className={cn(
-            "px-4 py-3 bg-blue-950 rounded-[10px] inline-flex justify-center items-center overflow-hidden transition-all duration-200 cursor-pointer relative -top-1.5",
-            !isRecoveryCodesChecked
-              ? "opacity-40 pointer-events-none"
-              : "hover:bg-primary-hover opacity-100",
+            "px-4 py-3 text-white rounded-[10px] inline-flex justify-center items-center overflow-hidden transition-all duration-150 relative -top-1.5 active:scale-[0.98] shadow-lg shadow-[#0F2757]/10",
+            (!isRecoveryCodesChecked || isCompletingSetup)
+              ? "bg-[#0F2757]/40 cursor-default"
+              : "bg-primary hover:bg-[#1a3465] active:bg-[#091a3c] cursor-pointer",
           )}
         >
-          <div className="justify-start text-white text-base font-medium font-figtree">
-            Complete Setup
-          </div>
+          {isCompletingSetup ? (
+            <span className="flex items-center gap-2">
+              <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+              <span>Saving...</span>
+            </span>
+          ) : (
+            <span className="justify-start text-white text-base font-medium font-figtree">
+              Complete Setup
+            </span>
+          )}
         </button>
       </>
     );
@@ -232,15 +350,13 @@ export function TfaVerification({
             {/* QR Code and Download Button */}
             <div className="w-[177px] flex flex-col justify-start items-start gap-2 shrink-0">
               <img
-                className="self-stretch h-[177px] rounded-[10px] border border-gray-300"
-                src="/icons/qr1.png"
+                className="self-stretch h-[177px] rounded-[10px] border border-gray-300 object-contain p-2 bg-white"
+                src={qrCodeDataUrl || "/icons/qr1.png"}
                 alt="QR Code"
               />
               <button
                 type="button"
-                onClick={() =>
-                  showToast("QR code downloaded successfully!", "success")
-                }
+                onClick={handleDownloadQr}
                 className="self-stretch h-[42px] px-3.5 pr-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-[10px] outline outline-1 outline-offset-[-1px] outline-gray-300 flex justify-center items-center gap-2 cursor-pointer transition-colors"
               >
                 <svg
@@ -289,22 +405,31 @@ export function TfaVerification({
                 <div className="self-stretch flex justify-start items-center gap-2 w-full">
                   <div className="flex-1 px-3 py-2 bg-white rounded-lg outline outline-1 outline-offset-[-1px] outline-gray-300 flex justify-start items-start">
                     <span className="text-gray-800 text-base font-medium font-figtree select-all break-all">
-                      JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP
+                      {manualEntryKey || "JBSWY3DPEHPK3PXP"}
                     </span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      navigator.clipboard.writeText(
-                        "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
-                      );
-                      showToast("Secret key copied to clipboard!", "success");
-                    }}
-                    className="size-9 p-2 bg-gray-100 hover:bg-gray-200 rounded-md outline outline-1 outline-offset-[-1px] outline-gray-300 flex justify-center items-center shrink-0 cursor-pointer transition-colors"
-                    title="Copy Secret Key"
-                  >
-                    <img src="/icons/paste.svg" alt="copy" className="size-4" />
-                  </button>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(
+                          manualEntryKey || "JBSWY3DPEHPK3PXP",
+                        );
+                        setIsCopied(true);
+                        setTimeout(() => setIsCopied(false), 2000);
+                      }}
+                      className="size-9 p-2 bg-gray-100 hover:bg-gray-200 rounded-md outline outline-1 outline-offset-[-1px] outline-gray-300 flex justify-center items-center shrink-0 cursor-pointer transition-colors"
+                      title="Copy Secret Key"
+                    >
+                      <img src="/icons/paste.svg" alt="copy" className="size-4" />
+                    </button>
+                    {isCopied && (
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1 bg-gray-500 text-white text-xs font-medium font-figtree rounded-full whitespace-nowrap shadow-lg animate-fadeIn z-20">
+                        Key Copied!
+                        <div className="absolute top-[85%] left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-gray-500 rotate-45"></div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -333,21 +458,36 @@ export function TfaVerification({
           </div>
         </div>
 
-        <div className="self-stretch flex flex-wrap justify-start items-center gap-3 w-full">
-          {/* OTP Input Fields */}
-          <div className="h-11 rounded-lg outline outline-1 outline-gray-300 inline-flex items-center overflow-hidden bg-gray-50/50">
-            {otpValues.map((digit, idx) => (
-              <input
-                key={idx}
-                id={`otp-${idx}`}
-                type="text"
-                maxLength={1}
-                value={digit}
-                onChange={(e) => handleOtpChange(idx, e.target.value)}
-                onKeyDown={(e) => handleOtpKeyDown(idx, e)}
-                className="w-11 h-11 text-center bg-transparent border-r last:border-r-0 border-gray-300 outline-none text-gray-800 font-semibold font-figtree text-lg focus:bg-white transition-colors"
-              />
-            ))}
+        <div className="self-stretch flex flex-wrap justify-start items-start gap-3 w-full">
+          {/* OTP Input Fields Wrapper */}
+          <div className="flex flex-col items-start gap-2">
+            <div className={cn(
+              "h-11 rounded-lg outline outline-1 inline-flex items-center overflow-hidden bg-gray-50/50 transition-all",
+              hasError ? "outline-rose-300 focus-within:ring-2 focus-within:ring-rose-500/10 focus-within:outline-rose-400" : "outline-gray-300 focus-within:ring-2 focus-within:ring-[#0F2757]/10 focus-within:outline-[#0F2757]"
+            )}>
+              {otpValues.map((digit, idx) => (
+                <input
+                  key={idx}
+                  id={`otp-${idx}`}
+                  type="text"
+                  maxLength={1}
+                  value={digit}
+                  onChange={(e) => handleOtpChange(idx, e.target.value)}
+                  onKeyDown={(e) => handleOtpKeyDown(idx, e)}
+                  onPaste={idx === 0 ? handlePaste : undefined}
+                  disabled={isVerifying}
+                  className={cn(
+                    "w-11 h-11 text-center bg-transparent border-r last:border-r-0 outline-none text-gray-800 font-semibold font-figtree text-lg focus:bg-white transition-colors disabled:opacity-70",
+                    hasError ? "border-rose-200" : "border-gray-300"
+                  )}
+                />
+              ))}
+            </div>
+            {error && (
+              <span className="text-rose-500 text-xs font-medium font-figtree pl-1 animate-fadeIn">
+                {error}
+              </span>
+            )}
           </div>
 
           {/* Actions */}
@@ -355,14 +495,26 @@ export function TfaVerification({
             <button
               type="button"
               onClick={handleVerify}
-              className="h-11 px-4 py-3 bg-blue-950 hover:bg-primary-hover text-white text-base font-medium font-figtree rounded-[10px] flex justify-center items-center cursor-pointer transition-colors shadow-sm"
+              disabled={isVerifying}
+              className="h-11 px-4 py-3 bg-primary hover:bg-[#1a3465] active:bg-[#091a3c] active:scale-[0.98] text-white text-base font-medium font-figtree rounded-[10px] flex justify-center items-center cursor-pointer transition-all shadow-lg shadow-[#0F2757]/10 disabled:opacity-75 disabled:cursor-default"
             >
-              Verify & Enable
+              {isVerifying ? (
+                <span className="flex items-center gap-2">
+                  <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  <span>Verifying...</span>
+                </span>
+              ) : (
+                <span>Verify & Enable</span>
+              )}
             </button>
             <button
               type="button"
               onClick={onCancel}
-              className="h-11 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-500 hover:text-gray-800 text-base font-medium font-figtree rounded-[10px] outline outline-1 outline-offset-[-1px] outline-gray-200 flex justify-center items-center cursor-pointer transition-colors"
+              disabled={isVerifying}
+              className="h-11 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-500 hover:text-gray-800 text-base font-medium font-figtree rounded-[10px] outline outline-1 outline-offset-[-1px] outline-gray-200 flex justify-center items-center cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-default"
             >
               Cancel
             </button>

@@ -6,71 +6,24 @@ import { useLockBodyScroll } from "@/src/hooks/useLockBodyScroll";
 import { Airport } from "@/src/types/airports";
 import { cn } from "@/src/lib/utils";
 import { Dropdown, DropdownOption } from "@/src/components/ui/Dropdown";
+import { countries } from "countries-list";
 
 const AIRPORT_TYPES: DropdownOption[] = [
   { value: "INTERNATIONAL", label: "INTERNATIONAL" },
   { value: "DOMESTIC", label: "DOMESTIC" },
-  { value: "UTC", label: "UTC" },
 ];
 
 const COUNTRIES: DropdownOption[] = [
   { value: "", label: "Select Country" },
-  { value: "United States", label: "United States" },
-  { value: "United Kingdom", label: "United Kingdom" },
-  { value: "Germany", label: "Germany" },
-  { value: "France", label: "France" },
-  { value: "India", label: "India" },
-  { value: "Canada", label: "Canada" },
-  { value: "Australia", label: "Australia" },
+  ...Object.entries(countries)
+    .map(([_, c]) => ({ value: c.name, label: c.name }))
+    .sort((a, b) => a.label.localeCompare(b.label)),
 ];
-
-const IATAS: DropdownOption[] = [
-  { value: "PA", label: "PA" },
-  { value: "LHR", label: "LHR" },
-  { value: "HND", label: "HND" },
-  { value: "LAX", label: "LAX" },
-  { value: "JFK", label: "JFK" },
-  { value: "SIN", label: "SIN" },
-];
-
-const COUNTRY_TO_CODE: Record<string, string> = {
-  "United States": "US",
-  "United Kingdom": "GB",
-  Germany: "DE",
-  France: "FR",
-  India: "IN",
-  Canada: "CA",
-  Australia: "AU",
-  "United Arab Emirates": "AE",
-  Japan: "JP",
-  Singapore: "SG",
-};
-
-const COUNTRY_TO_CITY: Record<string, string> = {
-  "United States": "New York",
-  "United Kingdom": "London",
-  Germany: "Berlin",
-  France: "Paris",
-  India: "Mumbai",
-  Canada: "Toronto",
-  Australia: "Sydney",
-  "United Arab Emirates": "Dubai",
-  Japan: "Tokyo",
-  Singapore: "Singapore",
-};
-
-const IATA_TO_ICAO: Record<string, string> = {
-  PA: "OMDB",
-  LHR: "EGLL",
-  HND: "RJTT",
-  LAX: "KLAX",
-  JFK: "KJFK",
-  SIN: "WSSS",
-};
 
 interface AddEditAirportModalProps {
   isOpen: boolean;
   airport: Airport | null;
+  isSaving?: boolean;
   onClose: () => void;
   onSave: (updatedFields: Partial<Airport>) => void;
 }
@@ -78,6 +31,7 @@ interface AddEditAirportModalProps {
 export function AddEditAirportModal({
   isOpen,
   airport,
+  isSaving = false,
   onClose,
   onSave,
 }: AddEditAirportModalProps) {
@@ -85,30 +39,40 @@ export function AddEditAirportModal({
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  const [validationError, setValidationError] = useState("");
-
   const [formState, setFormState] = useState({
     name: "",
-    iataCode: "PA",
-    icaoCode: "OMDB",
-    city: "",
+    iataCode: "",
     countryCode: "",
     country: "",
+    type: "INTERNATIONAL" as "INTERNATIONAL" | "DOMESTIC" | "UTC",
     timezone: "",
-    type: "UTC" as "INTERNATIONAL" | "DOMESTIC" | "UTC",
     isActive: true,
-    latitude: 0,
-    longitude: 0,
+    latitude: "",
+    longitude: "",
     postalCode: "",
     address: "",
   });
 
-  const modalCountryOptions = useMemo(() => {
-    if (formState.country && !COUNTRIES.find((c) => c.value === formState.country)) {
-      return [...COUNTRIES, { value: formState.country, label: formState.country }];
-    }
-    return COUNTRIES;
-  }, [formState.country]);
+  const [touched, setTouched] = useState<Partial<Record<keyof typeof formState, boolean>>>({});
+  const [errors, setErrors] = useState<Partial<Record<keyof typeof formState, string>>>({});
+
+  // Compute if any fields have changed when editing an existing airport
+  const hasChanges = useMemo(() => {
+    if (!airport) return true;
+    return (
+      formState.name.trim() !== (airport.name || "").trim() ||
+      formState.iataCode.trim() !== (airport.iataCode || "").trim() ||
+      formState.countryCode.trim() !== (airport.countryCode || "").trim() ||
+      formState.country.trim() !== (airport.country || "").trim() ||
+      formState.type !== (airport.type || "INTERNATIONAL") ||
+      formState.timezone.trim() !== (airport.timezone || "").trim() ||
+      formState.isActive !== (airport.isActive !== undefined ? airport.isActive : true) ||
+      Number(formState.latitude) !== Number(airport.latitude || 0) ||
+      Number(formState.longitude) !== Number(airport.longitude || 0) ||
+      formState.postalCode.trim() !== (airport.postalCode || "").trim() ||
+      formState.address.trim() !== (airport.address || "").trim()
+    );
+  }, [formState, airport]);
 
   useEffect(() => {
     if (isOpen && scrollContainerRef.current) {
@@ -120,69 +84,175 @@ export function AddEditAirportModal({
     if (airport) {
       setFormState({
         name: airport.name || "",
-        iataCode: airport.iataCode || "PA",
-        icaoCode: airport.icaoCode || "OMDB",
-        city: airport.city || "Dubai",
-        countryCode: airport.countryCode || "AE",
-        country: airport.country || "United Arab Emirates",
+        iataCode: airport.iataCode || "",
+        countryCode: airport.countryCode || "",
+        country: airport.country || "",
+        type: airport.type || "INTERNATIONAL",
         timezone: airport.timezone || "",
-        type: airport.type || "UTC",
         isActive: airport.isActive !== undefined ? airport.isActive : true,
-        latitude: airport.latitude || 0,
-        longitude: airport.longitude || 0,
+        latitude: airport.latitude !== undefined ? String(airport.latitude) : "",
+        longitude: airport.longitude !== undefined ? String(airport.longitude) : "",
         postalCode: airport.postalCode || "",
         address: airport.address || "",
       });
     } else {
       setFormState({
         name: "",
-        iataCode: "PA",
-        icaoCode: "OMDB",
-        city: "",
+        iataCode: "",
         countryCode: "",
         country: "",
+        type: "INTERNATIONAL",
         timezone: "",
-        type: "UTC",
         isActive: true,
-        latitude: 0,
-        longitude: 0,
+        latitude: "",
+        longitude: "",
         postalCode: "",
         address: "",
       });
     }
-    setValidationError("");
+    setTouched({});
+    setErrors({});
   }, [airport, isOpen]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formState.country) {
-      setValidationError("Please select a country");
-      return;
+  const validateField = (name: string, value: any): string => {
+    const v = String(value ?? "").trim();
+    switch (name) {
+      case "name":
+        return v ? "" : "Airport Name is required";
+      case "country":
+        return v ? "" : "Country is required";
+      case "timezone":
+        return v ? "" : "Timezone is required";
+      case "iataCode":
+        if (!v) return "IATA Code is required";
+        if (!/^[A-Z]{3}$/.test(v)) return "IATA Code must be exactly 3 uppercase letters";
+        return "";
+      case "postalCode":
+        return v ? "" : "Postal Code is required";
+      case "address":
+        return v ? "" : "Address is required";
+      case "latitude": {
+        const strVal = v.trim();
+        if (strVal === "") return "Latitude is required";
+        const latNum = parseFloat(strVal);
+        if (isNaN(latNum)) return "Latitude must be a valid number";
+        if (latNum < -90 || latNum > 90) return "Latitude must be between -90 and 90";
+        return "";
+      }
+      case "longitude": {
+        const strVal = v.trim();
+        if (strVal === "") return "Longitude is required";
+        const lngNum = parseFloat(strVal);
+        if (isNaN(lngNum)) return "Longitude must be a valid number";
+        if (lngNum < -180 || lngNum > 180) return "Longitude must be between -180 and 180";
+        return "";
+      }
+      default:
+        return "";
     }
-    setValidationError("");
-    onSave(formState);
   };
 
-  const field = (key: "name" | "postalCode" | "address" | "timezone") => ({
-    value: formState[key],
-    onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
-      setFormState({ ...formState, [key]: e.target.value }),
-  });
-
-  const handleCountryChange = (val: string) => {
-    setFormState((prev) => ({
+  const handleBlur = (key: keyof typeof formState) => () => {
+    setTouched((prev) => ({ ...prev, [key]: true }));
+    setErrors((prev) => ({
       ...prev,
-      country: val,
-      countryCode: COUNTRY_TO_CODE[val] || "US",
-      city: COUNTRY_TO_CITY[val] || val,
+      [key]: validateField(key, formState[key]) || undefined,
     }));
   };
 
-  const handleIataChange = (val: string) => {
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const allFields = Object.keys(formState) as Array<keyof typeof formState>;
+    const newErrors: Partial<Record<keyof typeof formState, string>> = {};
+    const newTouched: Partial<Record<keyof typeof formState, boolean>> = {};
+
+    allFields.forEach((key) => {
+      newTouched[key] = true;
+      const errorMsg = validateField(key, formState[key]);
+      if (errorMsg) {
+        newErrors[key] = errorMsg;
+      }
+    });
+
+    setTouched(newTouched);
+    setErrors(newErrors);
+
+    if (Object.keys(newErrors).length > 0) {
+      const firstErrorKey = Object.keys(newErrors)[0];
+      const errorEl = document.getElementsByName(firstErrorKey)[0];
+      if (errorEl) {
+        errorEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      return;
+    }
+
+    // Auto-compute required schema fields not present in visual form state (ICAO Code and city)
+    const upperIata = formState.iataCode.toUpperCase();
+    const computedIcao = "Y" + upperIata;
+
+    const submissionFields = {
+      ...formState,
+      city: airport?.city || formState.country || "Dubai",
+      icaoCode: airport?.icaoCode || computedIcao,
+      latitude: parseFloat(formState.latitude) || 0,
+      longitude: parseFloat(formState.longitude) || 0,
+    };
+
+    onSave(submissionFields);
+  };
+
+  const handleTextChange = (key: "name" | "timezone" | "postalCode" | "address") => (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const val = e.target.value;
+    setFormState((prev) => ({ ...prev, [key]: val }));
+    if (touched[key]) {
+      setErrors((prev) => ({
+        ...prev,
+        [key]: validateField(key, val) || undefined,
+      }));
+    }
+  };
+
+  const handleCodeChange = (key: "iataCode") => (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const val = e.target.value.toUpperCase();
+    setFormState((prev) => ({ ...prev, [key]: val }));
+    if (touched[key]) {
+      setErrors((prev) => ({
+        ...prev,
+        [key]: validateField(key, val) || undefined,
+      }));
+    }
+  };
+
+  const handleCoordinateChange = (key: "latitude" | "longitude") => (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const val = e.target.value;
+    setFormState((prev) => ({ ...prev, [key]: val }));
+    if (touched[key]) {
+      setErrors((prev) => ({
+        ...prev,
+        [key]: validateField(key, val) || undefined,
+      }));
+    }
+  };
+
+  const handleCountryChange = (val: string) => {
+    const entry = Object.entries(countries).find(([_, c]) => c.name === val);
+    const code = entry ? entry[0] : "";
     setFormState((prev) => ({
       ...prev,
-      iataCode: val,
-      icaoCode: IATA_TO_ICAO[val] || "OMDB",
+      country: val,
+      countryCode: code,
+    }));
+    setTouched((prev) => ({ ...prev, country: true }));
+    setErrors((prev) => ({
+      ...prev,
+      country: validateField("country", val) || undefined,
     }));
   };
 
@@ -201,7 +271,7 @@ export function AddEditAirportModal({
           "fixed inset-0 bg-black/40 z-40 transition-opacity duration-300",
           isOpen ? "opacity-100" : "opacity-0 pointer-events-none"
         )}
-        onClick={onClose}
+        onClick={() => !isSaving && onClose()}
       />
 
       {/* Slide-in panel */}
@@ -224,7 +294,8 @@ export function AddEditAirportModal({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg transition-colors cursor-pointer"
+            disabled={isSaving}
+            className="p-1.5 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
           >
             <X className="w-6 h-6 text-[#1F2937]" />
           </button>
@@ -235,45 +306,50 @@ export function AddEditAirportModal({
         </div>
 
         {/* Scrollable body */}
-        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden" noValidate>
           <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-6 py-7 space-y-6 scrollbar-hide">
 
             <div className="grid grid-cols-2 gap-[23px] -translate-y-1">
               {/* Row 1 */}
-              <Field label="Airport Name *">
-                <input placeholder="" {...field("name")} required className={inputCls} />
+              <Field label="Airport Name *" error={errors.name}>
+                <input
+                  name="name"
+                  placeholder=""
+                  value={formState.name}
+                  onChange={handleTextChange("name")}
+                  onBlur={handleBlur("name")}
+                  required
+                  disabled={isSaving}
+                  className={cn(inputCls, errors.name && "border-rose-500 focus:ring-rose-500/20 focus:border-rose-500")}
+                />
               </Field>
 
-              <Field label="Country *">
+              <Field label="Country *" error={errors.country}>
                 <Dropdown
                   value={formState.country}
-                  onChange={(val) => {
-                    handleCountryChange(val);
-                    setValidationError("");
-                  }}
-                  options={modalCountryOptions}
+                  onChange={handleCountryChange}
+                  options={COUNTRIES}
                   widthClass="w-full"
                   triggerWidthClass="w-full"
                   heightClass="h-[49px]"
                   bgClass="bg-white"
+                  error={!!errors.country}
+                  disabled={isSaving}
                 />
-                {validationError && (
-                  <span className="text-red-500 text-[14px] mt-1 block">
-                    {validationError}
-                  </span>
-                )}
               </Field>
 
               {/* Row 2 */}
-              <Field label="IATA *">
-                <Dropdown
+              <Field label="IATA *" error={errors.iataCode}>
+                <input
+                  name="iataCode"
+                  placeholder=""
+                  maxLength={3}
                   value={formState.iataCode}
-                  onChange={handleIataChange}
-                  options={IATAS}
-                  widthClass="w-full"
-                  triggerWidthClass="w-full"
-                  heightClass="h-[49px]"
-                  bgClass="bg-white"
+                  onChange={handleCodeChange("iataCode")}
+                  onBlur={handleBlur("iataCode")}
+                  required
+                  disabled={isSaving}
+                  className={cn(inputCls, errors.iataCode && "border-rose-500 focus:ring-rose-500/20 focus:border-rose-500")}
                 />
               </Field>
 
@@ -286,43 +362,79 @@ export function AddEditAirportModal({
                   triggerWidthClass="w-full"
                   heightClass="h-[49px]"
                   bgClass="bg-white"
+                  disabled={isSaving}
                 />
               </Field>
 
               {/* Row 3 */}
-              <Field label="Latitude *">
+              <Field label="Latitude *" error={errors.latitude}>
                 <input
+                  name="latitude"
                   type="number"
                   step="any"
-                  value={formState.latitude || ""}
-                  onChange={(e) => setFormState({ ...formState, latitude: parseFloat(e.target.value) || 0 })}
+                  placeholder=""
+                  value={formState.latitude}
+                  onChange={handleCoordinateChange("latitude")}
+                  onBlur={handleBlur("latitude")}
                   required
-                  className={inputCls}
+                  disabled={isSaving}
+                  className={cn(inputCls, errors.latitude && "border-rose-500 focus:ring-rose-500/20 focus:border-rose-500")}
                 />
               </Field>
-              <Field label="Longitude *">
+              <Field label="Longitude *" error={errors.longitude}>
                 <input
+                  name="longitude"
                   type="number"
                   step="any"
-                  value={formState.longitude || ""}
-                  onChange={(e) => setFormState({ ...formState, longitude: parseFloat(e.target.value) || 0 })}
+                  placeholder=""
+                  value={formState.longitude}
+                  onChange={handleCoordinateChange("longitude")}
+                  onBlur={handleBlur("longitude")}
                   required
-                  className={inputCls}
+                  disabled={isSaving}
+                  className={cn(inputCls, errors.longitude && "border-rose-500 focus:ring-rose-500/20 focus:border-rose-500")}
                 />
               </Field>
 
               {/* Row 4 */}
-              <Field label="Address *" className="col-span-2">
-                <input placeholder="" {...field("address")} required className={inputCls} />
+              <Field label="Address *" className="col-span-2" error={errors.address}>
+                <input
+                  name="address"
+                  placeholder=""
+                  value={formState.address}
+                  onChange={handleTextChange("address")}
+                  onBlur={handleBlur("address")}
+                  required
+                  disabled={isSaving}
+                  className={cn(inputCls, errors.address && "border-rose-500 focus:ring-rose-500/20 focus:border-rose-500")}
+                />
               </Field>
 
               {/* Row 5 */}
-              <Field label="Postal Code *">
-                <input placeholder="" {...field("postalCode")} required className={inputCls} />
+              <Field label="Postal Code *" error={errors.postalCode}>
+                <input
+                  name="postalCode"
+                  placeholder=""
+                  value={formState.postalCode}
+                  onChange={handleTextChange("postalCode")}
+                  onBlur={handleBlur("postalCode")}
+                  required
+                  disabled={isSaving}
+                  className={cn(inputCls, errors.postalCode && "border-rose-500 focus:ring-rose-500/20 focus:border-rose-500")}
+                />
               </Field>
 
-              <Field label="Timezone *">
-                <input placeholder="" {...field("timezone")} required className={inputCls} />
+              <Field label="Timezone *" error={errors.timezone}>
+                <input
+                  name="timezone"
+                  placeholder=""
+                  value={formState.timezone}
+                  onChange={handleTextChange("timezone")}
+                  onBlur={handleBlur("timezone")}
+                  required
+                  disabled={isSaving}
+                  className={cn(inputCls, errors.timezone && "border-rose-500 focus:ring-rose-500/20 focus:border-rose-500")}
+                />
               </Field>
 
               {/* Row 6 - Update Status Gray Box */}
@@ -330,10 +442,12 @@ export function AddEditAirportModal({
                 <div className="flex items-center gap-4">
                   <button
                     type="button"
-                    onClick={() => setFormState(prev => ({ ...prev, isActive: !prev.isActive }))}
+                    disabled={isSaving}
+                    onClick={() => setFormState((prev) => ({ ...prev, isActive: !prev.isActive }))}
                     className={cn(
                       "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none translate-y-0.5 translate-x-0.5",
-                      formState.isActive ? "bg-[#0F2757]" : "bg-gray-300"
+                      formState.isActive ? "bg-[#0F2757]" : "bg-gray-300",
+                      isSaving && "opacity-50 cursor-not-allowed"
                     )}
                   >
                     <span
@@ -372,15 +486,29 @@ export function AddEditAirportModal({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-3 px-6 rounded-lg border border-[#D1D5DB] text-[#09090B] text-[18px] hover:bg-[#F9FAFB] transition-colors cursor-pointer"
+              disabled={isSaving}
+              className="flex-1 py-3 px-6 rounded-lg border border-[#D1D5DB] text-[#09090B] text-[18px] hover:bg-[#F9FAFB] transition-colors cursor-pointer disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="flex-1 py-3 px-6 rounded-lg bg-[#0F2757] hover:bg-[#162259] text-white text-[18px] transition-colors cursor-pointer font-medium"
+              disabled={isSaving || !hasChanges}
+              className="flex-1 py-3 px-6 rounded-lg bg-[#0F2757] hover:bg-[#162259] text-white text-[18px] transition-colors cursor-pointer font-medium flex items-center justify-center disabled:opacity-60"
             >
-              {airport ? "Save Changes" : "Add Airport"}
+              {isSaving ? (
+                <div className="flex items-center justify-center gap-2">
+                  <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  <span>{airport ? "Saving..." : "Adding..."}</span>
+                </div>
+              ) : airport ? (
+                "Save Changes"
+              ) : (
+                "Add Airport"
+              )}
             </button>
           </div>
         </form>
@@ -396,10 +524,12 @@ function Field({
   label,
   children,
   className,
+  error,
 }: {
   label: string;
   children: React.ReactNode;
   className?: string;
+  error?: string;
 }) {
   return (
     <div className={className}>
@@ -407,6 +537,11 @@ function Field({
         {label}
       </label>
       {children}
+      {error && (
+        <span className="text-rose-500 text-xs font-medium font-figtree pl-1 mt-1 block">
+          {error}
+        </span>
+      )}
     </div>
   );
 }
