@@ -5,19 +5,28 @@ export interface InvitationResponse {
   airlineId: number | null;
   airlineName: string;
   airlineCode: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  jobTitle: string;
-  invitedByAdminId: number;
+  countryCode: string;
+  companyRegistrationNumber: string;
+  contactEmail: string;
+  creditLimit?: number;
   status: "PENDING" | "ACCEPTED" | "REVOKED" | "EXPIRED";
   expiresAt: string;
   createdAt: string;
   updatedAt: string;
+  invitedByAdminId: number;
 }
 
 export interface InvitationDetailResponse extends InvitationResponse {
-  companyRegistrationNumber: string;
+  website?: string;
+  contactPhone: string;
+  timezone: string;
+  currency: string;
+  address: string;
+  logo?: string;
+  adminFirstName: string;
+  adminLastName: string;
+  adminEmail: string;
+  adminJobTitle: string;
   history: Array<{
     id: number;
     event: string;
@@ -49,11 +58,19 @@ export interface InviteAirlineRequest {
 export const onboardingService = {
   async getInvitations(
     page: number,
-    limit: number
+    limit: number,
+    search?: string,
+    status?: string,
+    countryCode?: string
   ): Promise<{ invitations: InvitationResponse[]; total: number }> {
     try {
+      const params: any = { page, limit };
+      if (search) params.search = search;
+      if (status) params.status = status;
+      if (countryCode && countryCode !== "All Countries") params.countryCode = countryCode;
+
       const { data } = await apiClient.get("/airline/invitations", {
-        params: { page, limit },
+        params,
       });
       return {
         invitations: data.data.invitations || [],
