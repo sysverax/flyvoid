@@ -23,6 +23,8 @@ import {
   AirlineInvitationDetailResponseDto,
   ResendAirlineInvitationResponseDto,
   RevokeAirlineInvitationResponseDto,
+  UpdateAirlineInvitationRequestDto,
+  UpdateAirlineInvitationResponseDto,
 } from "../dto/airline-invitation";
 import { AirlineAdminInviteEntity } from "../entities/airline-admin-invite.entity";
 import { AIRLINE_INVITATION_STATUSES } from "../constants";
@@ -397,6 +399,166 @@ export class AirlineInvitationService {
         performedByAdminEmail: h.performedByAdmin?.email ?? null,
         createdAt: h.createdAt.toISOString(),
       })),
+    };
+  }
+
+  async updateInvitation(
+    authenticatedUser: AuthenticatedUser,
+    invitationId: number,
+    dto: UpdateAirlineInvitationRequestDto,
+    requestId: string,
+  ): Promise<UpdateAirlineInvitationResponseDto> {
+    const invite =
+      await this.airlineInvitationRepository.findAirlineAdminInviteById(
+        invitationId,
+        requestId,
+      );
+
+    if (!invite) {
+      throw new NotFoundException("Invitation not found");
+    }
+
+    if (invite.status === AIRLINE_INVITATION_STATUSES.ACCEPTED) {
+      throw new ConflictException("Accepted invitation cannot be updated");
+    }
+
+    const meta = invite.meta;
+    const normalizedAirlineCode = dto.airlineCode
+      ? dto.airlineCode.trim().toUpperCase()
+      : undefined;
+    const normalizedCRN = dto.companyRegistrationNumber
+      ? dto.companyRegistrationNumber.trim()
+      : undefined;
+    const normalizedAdminEmail = dto.adminEmail
+      ? dto.adminEmail.toLowerCase().trim()
+      : undefined;
+
+    // Conflict checks only for fields that are actually changing
+    if (normalizedAirlineCode && normalizedAirlineCode !== meta.airlineCode) {
+      const existing =
+        await this.airlineRepository.findByCodeOrCompanyRegistrationNumber(
+          normalizedAirlineCode,
+          normalizedAirlineCode,
+          requestId,
+        );
+      if (existing?.code === normalizedAirlineCode) {
+        throw new ConflictException("Airline code already exists");
+      }
+      const activeByCode =
+        await this.airlineInvitationRepository.findActiveMetaInviteByCodeOrCompanyRegistrationNumber(
+          normalizedAirlineCode,
+          normalizedAirlineCode,
+          requestId,
+        );
+      if (activeByCode?.airlineCode === normalizedAirlineCode) {
+        throw new ConflictException(
+          "Active invitation already exists for this airline code",
+        );
+      }
+    }
+
+    if (normalizedCRN && normalizedCRN !== meta.companyRegistrationNumber) {
+      const existing =
+        await this.airlineRepository.findByCodeOrCompanyRegistrationNumber(
+          normalizedCRN,
+          normalizedCRN,
+          requestId,
+        );
+      if (existing?.companyRegistrationNumber === normalizedCRN) {
+        throw new ConflictException(
+          "Company registration number already exists",
+        );
+      }
+      const activeByCRN =
+        await this.airlineInvitationRepository.findActiveMetaInviteByCodeOrCompanyRegistrationNumber(
+          normalizedCRN,
+          normalizedCRN,
+          requestId,
+        );
+      if (activeByCRN?.companyRegistrationNumber === normalizedCRN) {
+        throw new ConflictException(
+          "Active invitation already exists for this company registration number",
+        );
+      }
+    }
+
+    if (normalizedAdminEmail && normalizedAdminEmail !== meta.adminEmail) {
+      const existingUser = await this.airlineUserRepository.findByEmail(
+        normalizedAdminEmail,
+        requestId,
+      );
+      if (existingUser) {
+        throw new ConflictException("Airline admin email already exists");
+      }
+      const activeByEmail =
+        await this.airlineInvitationRepository.findActiveAirlineAdminInviteByEmail(
+          normalizedAdminEmail,
+          requestId,
+        );
+      if (activeByEmail) {
+        throw new ConflictException(
+          "Active invitation already exists for this email",
+        );
+      }
+    }
+
+    const metaUpdate: Partial<typeof meta> = {};
+    if (dto.airlineName !== undefined) metaUpdate.airlineName = dto.airlineName;
+    if (normalizedAirlineCode !== undefined)
+      metaUpdate.airlineCode = normalizedAirlineCode;
+    if (dto.countryCode !== undefined) metaUpdate.countryCode = dto.countryCode;
+    if (normalizedCRN !== undefined)
+      metaUpdate.companyRegistrationNumber = normalizedCRN;
+    if (dto.website !== undefined) metaUpdate.website = dto.website ?? null;
+    if (dto.contactEmail !== undefined)
+      metaUpdate.contactEmail = dto.contactEmail;
+    if (dto.contactPhone !== undefined)
+      metaUpdate.contactPhone = dto.contactPhone;
+    if (dto.timezone !== undefined) metaUpdate.timezone = dto.timezone;
+    if (dto.currency !== undefined) metaUpdate.currency = dto.currency;
+    if (dto.address !== undefined) metaUpdate.address = dto.address;
+    if (dto.logo !== undefined) metaUpdate.logo = dto.logo ?? null;
+    if (dto.creditLimit !== undefined) metaUpdate.creditLimit = dto.creditLimit;
+    if (dto.adminFirstName !== undefined)
+      metaUpdate.adminFirstName = dto.adminFirstName;
+    if (dto.adminLastName !== undefined)
+      metaUpdate.adminLastName = dto.adminLastName;
+    if (normalizedAdminEmail !== undefined)
+      metaUpdate.adminEmail = normalizedAdminEmail;
+    if (dto.jobTitle !== undefined) metaUpdate.adminJobTitle = dto.jobTitle;
+
+    if (Object.keys(metaUpdate).length > 0) {
+      await this.airlineInvitationRepository.updateMetaAirlineInvite(
+        meta.id,
+        metaUpdate,
+        requestId,
+      );
+    }
+
+    const updatedMeta = { ...meta, ...metaUpdate };
+    const resolvedStatus = this.resolveInvitationStatus(invite);
+
+    return {
+      invitationId: invite.id,
+      airlineName: updatedMeta.airlineName,
+      airlineCode: updatedMeta.airlineCode,
+      countryCode: updatedMeta.countryCode,
+      companyRegistrationNumber: updatedMeta.companyRegistrationNumber,
+      website: updatedMeta.website ?? undefined,
+      contactEmail: updatedMeta.contactEmail,
+      contactPhone: updatedMeta.contactPhone,
+      timezone: updatedMeta.timezone,
+      currency: updatedMeta.currency,
+      address: updatedMeta.address,
+      logo: updatedMeta.logo ?? undefined,
+      creditLimit: updatedMeta.creditLimit ?? undefined,
+      adminFirstName: updatedMeta.adminFirstName,
+      adminLastName: updatedMeta.adminLastName,
+      adminEmail: updatedMeta.adminEmail,
+      adminJobTitle: updatedMeta.adminJobTitle,
+      status: resolvedStatus,
+      expiresAt: invite.expiresAt.toISOString(),
+      updatedAt: new Date().toISOString(),
     };
   }
 

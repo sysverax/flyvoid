@@ -548,6 +548,41 @@ export class AirlineInvitationRepository {
     };
   }
 
+  async updateMetaAirlineInvite(
+    metaId: number,
+    payload: Partial<
+      Pick<
+        MetaAirlineInviteEntity,
+        | "airlineName"
+        | "airlineCode"
+        | "countryCode"
+        | "companyRegistrationNumber"
+        | "website"
+        | "contactEmail"
+        | "contactPhone"
+        | "timezone"
+        | "currency"
+        | "address"
+        | "logo"
+        | "creditLimit"
+        | "adminFirstName"
+        | "adminLastName"
+        | "adminEmail"
+        | "adminJobTitle"
+      >
+    >,
+    requestId: string,
+  ): Promise<void> {
+    this.logger.debug(
+      "Updating meta airline invite",
+      "AirlineInvitationRepository",
+      requestId,
+      { metaId },
+    );
+
+    await this.metaAirlineInviteRepository.update({ id: metaId }, payload);
+  }
+
   async markAirlineAdminInviteAccepted(
     inviteId: number,
     airlineId: number,

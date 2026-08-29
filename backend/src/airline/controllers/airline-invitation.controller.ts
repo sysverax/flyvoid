@@ -5,6 +5,7 @@ import {
   HttpCode,
   Param,
   ParseIntPipe,
+  Patch,
   Post,
   Query,
   Req,
@@ -55,6 +56,8 @@ import {
   RevokeAirlineInvitationResponseDto,
   AirlineInvitationDetailResponseDto,
   AirlineInvitationHistoryItemDto,
+  UpdateAirlineInvitationRequestDto,
+  UpdateAirlineInvitationResponseDto,
 } from "../dto/airline-invitation";
 import { AirlineInvitationService } from "../services/airline-invitation.service";
 import {
@@ -74,6 +77,8 @@ import { AirlineInvitationListRequestDto } from "../dto/airline-invitation/airli
   ResendAirlineInvitationResponseDto,
   RevokeAirlineInvitationResponseDto,
   AirlineInvitationMatrixResponseDto,
+  UpdateAirlineInvitationRequestDto,
+  UpdateAirlineInvitationResponseDto,
 )
 @Controller("airline")
 @RequireUserTypes(UserType.PLATFORM)
@@ -543,6 +548,105 @@ export class AirlineInvitationController {
       response,
       requestId,
       "Invitation fetched successfully",
+    );
+  }
+
+  @Patch("invitations/:invitationId")
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequireAccessControl({
+    platform: {
+      asset: PlatformAsset.INVITES_ONBOARDING,
+      access: [AccessAction.EDIT],
+    },
+  })
+  @ApiBearerAuth("access-token")
+  @ApiOperation({
+    summary: "Update airline invitation",
+    description: `
+    Updates the invitation metadata for a pending, expired, or revoked invitation.
+      All fields are optional — include only the fields to change.
+      Required fields (airlineName, airlineCode, countryCode, companyRegistrationNumber, contactEmail, contactPhone, timezone, currency, address, adminFirstName, adminLastName, adminEmail, jobTitle) cannot be emptied if provided.
+      Optional fields (website, logo, creditLimit) can be set to null to clear them.
+      Access: SUPER_ADMIN and STAFF with EDIT access on the INVITES_ONBOARDING asset. Requires userType=PLATFORM.
+      Business logic validations:
+        1. Invitation must exist (404 if not found)
+        2. Accepted invitations cannot be updated (409 Conflict)
+        3. Updated airlineCode must not conflict with an existing airline or active invitation
+        4. Updated companyRegistrationNumber must not conflict with an existing airline or active invitation
+        5. Updated adminEmail must not conflict with an existing airline user or active invitation`,
+  })
+  @ApiBody({
+    description: "Invitation update payload",
+    type: UpdateAirlineInvitationRequestDto,
+  })
+  @ApiOkResponse({
+    description: "Invitation updated successfully",
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(BaseResponseDto) },
+        {
+          properties: {
+            success: { type: "boolean", example: true },
+            requestId: { type: "string", example: REQUEST_ID_EXAMPLE },
+            timestamp: { type: "string", example: TIMESTAMP_EXAMPLE },
+            message: {
+              type: "string",
+              example: "Airline invitation updated successfully",
+            },
+            data: { $ref: getSchemaPath(UpdateAirlineInvitationResponseDto) },
+          },
+        },
+      ],
+    },
+  })
+  @ApiBadRequestResponse({
+    description: "Validation failed",
+    schema: createBadRequestErrorSchema(
+      "/api/v1/airline/invitations/:invitationId",
+    ),
+  })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/airline/invitations/:invitationId",
+      "Invitation not found",
+    ),
+  })
+  @ApiUnauthorizedResponse({
+    description: "Missing/invalid access token",
+    schema: createUnauthorizedErrorSchema(
+      "/api/v1/airline/invitations/:invitationId",
+      "Unauthorized",
+    ),
+  })
+  @ApiForbiddenResponse({
+    description: "Insufficient permissions. PLATFORM user type is required.",
+  })
+  @ApiConflictResponse({
+    description:
+      "Accepted invitation cannot be updated, or a field conflict exists",
+    schema: createConflictErrorSchema(
+      "/api/v1/airline/invitations/:invitationId",
+      "Accepted invitation cannot be updated",
+    ),
+  })
+  async updateInvitation(
+    @Req() req: AuthenticatedRequest,
+    @Param("invitationId", ParseIntPipe) invitationId: number,
+    @Body() dto: UpdateAirlineInvitationRequestDto,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<UpdateAirlineInvitationResponseDto>> {
+    const response = await this.airlineInvitationService.updateInvitation(
+      req.user,
+      invitationId,
+      dto,
+      requestId,
+    );
+
+    return BaseResponseDto.success(
+      response,
+      requestId,
+      "Airline invitation updated successfully",
     );
   }
 }
