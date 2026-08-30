@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
 import { DataSource } from "typeorm";
@@ -37,19 +38,19 @@ export class AirlineService {
       requestId,
     );
 
-    const airlineIds = airlines.map((a) => a.id);
-    const adminUsers = await this.batchFindAdminsByAirlineIds(
-      airlineIds,
-      requestId,
-    );
-
+    // TODO: Add flightsCount, spendAmount, revenueAmount to the response. This may require additional queries or joins.
     return {
       total,
       currentPage: query.page,
       limit: query.limit,
-      airlines: airlines.map((airline) =>
-        this.toAirlineResponse(airline, adminUsers.get(airline.id) ?? null),
-      ),
+      airlines: airlines.map((airline) => ({
+        ...this.toAirlineResponse(airline),
+        flightsCount: 0,
+        passengersCount: 0,
+        hotelBookingsCount: 0,
+        spendAmount: 0,
+        revenueAmount: 0,
+      })),
     };
   }
 
@@ -57,15 +58,23 @@ export class AirlineService {
     airlineId: number,
     requestId: string,
   ): Promise<AdminAirlineResponseDto> {
-    const airline = await this.airlineRepository.findById(airlineId, requestId);
+    const [airline, adminUser] = await Promise.all([
+      this.airlineRepository.findByIdWithWallet(airlineId, requestId),
+      this.airlineUserRepository.findAdminByAirlineId(airlineId, requestId),
+    ]);
+
     if (!airline) {
       throw new NotFoundException("Airline not found");
     }
+    if (!adminUser) {
+      throw new NotFoundException("Airline admin user not found");
+    }
 
-    const adminUser = await this.airlineUserRepository.findAdminByAirlineId(
-      airlineId,
-      requestId,
-    );
+    if (!airline.wallet) {
+      throw new InternalServerErrorException(
+        "Airline wallet is not configured",
+      );
+    }
 
     return this.toAirlineResponse(airline, adminUser);
   }
@@ -259,7 +268,7 @@ export class AirlineService {
 
   private toAirlineResponse(
     airline: AirlineEntity,
-    adminUser: AirlineUserEntity | null,
+    adminUser?: AirlineUserEntity | null,
   ): AdminAirlineResponseDto {
     return {
       id: airline.id,
@@ -268,15 +277,16 @@ export class AirlineService {
       countryCode: airline.countryCode,
       companyRegistrationNumber: airline.companyRegistrationNumber,
       website: airline.website ?? null,
-      contactEmail: airline.contactEmail,
-      contactPhone: airline.contactPhone,
-      timezone: airline.timezone,
-      logo: airline.logo ?? null,
-      currency: airline.currency,
-      address: airline.address,
+      contactEmail: airline.contactEmail ?? null,
+      contactPhone: airline.contactPhone ?? null,
+      timezone: airline.timezone ?? null,
+      logo: airline.logo ?? undefined,
+      currency: airline.currency ?? null,
+      creditLimit: airline.wallet?.creditLimit ?? 0,
+      address: airline.address ?? null,
       isActive: airline.isActive,
       isSuspended: airline.isSuspended,
-      adminUser: this.toAdminUserDto(adminUser),
+      adminUser: adminUser ? this.toAdminUserDto(adminUser) : null,
       createdAt: airline.createdAt.toISOString(),
       updatedAt: airline.updatedAt.toISOString(),
     };

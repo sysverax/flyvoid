@@ -72,18 +72,29 @@ export class AirlineRepository {
     return repository.save(airline);
   }
 
-  async findById(
+  async findById(id: number, requestId: string): Promise<AirlineEntity | null> {
+    this.logger.debug("Finding airline by id", "AirlineRepository", requestId, {
+      airlineId: id,
+    });
+
+    return this.airlineRepository.findOne({ where: { id } });
+  }
+
+  async findByIdWithWallet(
     id: number,
     requestId: string,
   ): Promise<AirlineEntity | null> {
     this.logger.debug(
-      "Finding airline by id",
+      "Finding airline by id with wallet",
       "AirlineRepository",
       requestId,
       { airlineId: id },
     );
 
-    return this.airlineRepository.findOne({ where: { id } });
+    return this.airlineRepository.findOne({
+      where: { id },
+      relations: ["wallet"],
+    });
   }
 
   async findByCode(
@@ -120,26 +131,21 @@ export class AirlineRepository {
     query: AdminAirlineQueryDto,
     requestId: string,
   ): Promise<{ airlines: AirlineEntity[]; total: number }> {
-    this.logger.debug(
-      "Listing all airlines",
-      "AirlineRepository",
-      requestId,
-      {
-        page: query.page,
-        limit: query.limit,
-        search: query.search,
-        isActive: query.isActive,
-        isSuspended: query.isSuspended,
-      },
-    );
+    this.logger.debug("Listing all airlines", "AirlineRepository", requestId, {
+      page: query.page,
+      limit: query.limit,
+      search: query.search,
+      countryCode: query.countryCode,
+      isActive: query.isActive,
+      isSuspended: query.isSuspended,
+    });
 
     const qb = this.airlineRepository.createQueryBuilder("airline");
 
     if (query.search) {
-      qb.where(
-        "(airline.name ILIKE :search OR airline.code ILIKE :search)",
-        { search: `%${query.search}%` },
-      );
+      qb.where("(airline.name ILIKE :search OR airline.code ILIKE :search)", {
+        search: `%${query.search}%`,
+      });
     }
 
     if (query.isActive !== undefined) {
@@ -151,6 +157,12 @@ export class AirlineRepository {
     if (query.isSuspended !== undefined) {
       qb.andWhere("airline.isSuspended = :isSuspended", {
         isSuspended: query.isSuspended,
+      });
+    }
+
+    if (query.countryCode) {
+      qb.andWhere("airline.countryCode = :countryCode", {
+        countryCode: query.countryCode,
       });
     }
 
@@ -186,12 +198,10 @@ export class AirlineRepository {
     requestId: string,
     manager?: EntityManager,
   ): Promise<void> {
-    this.logger.debug(
-      "Updating airline",
-      "AirlineRepository",
-      requestId,
-      { airlineId: id, fields: Object.keys(payload) },
-    );
+    this.logger.debug("Updating airline", "AirlineRepository", requestId, {
+      airlineId: id,
+      fields: Object.keys(payload),
+    });
 
     const repository = manager
       ? manager.getRepository(AirlineEntity)
