@@ -456,12 +456,12 @@ export class AdminController {
   })
   async listAdminUsers(
     @Req() req: AuthenticatedRequest,
-    @Query() pagination: AdminUserQueryDto,
+    @Query() adminUserQuery: AdminUserQueryDto,
     @RequestId() requestId: string,
   ): Promise<BaseResponseDto<AdminUserListResponseDto>> {
     const response = await this.adminService.listAdminUsers(
       req.user,
-      pagination,
+      adminUserQuery,
       requestId,
     );
     return BaseResponseDto.success(

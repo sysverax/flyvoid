@@ -238,20 +238,20 @@ export class AdminService {
 
   async listAdminUsers(
     authenticatedUser: AuthenticatedUser,
-    pagination: AdminUserQueryDto,
+    adminUserQuery: AdminUserQueryDto,
     requestId: string,
   ): Promise<AdminUserListResponseDto> {
     await this.ensureSuperAdmin(authenticatedUser, requestId);
 
     const { admins, total } = await this.adminRepository.findAll(
-      pagination,
+      adminUserQuery,
       requestId,
     );
 
     return {
       total,
-      currentPage: pagination.page,
-      limit: pagination.limit,
+      currentPage: adminUserQuery.page,
+      limit: adminUserQuery.limit,
       users: admins.map((admin) => this.toAdminUserResponse(admin)),
     };
   }
