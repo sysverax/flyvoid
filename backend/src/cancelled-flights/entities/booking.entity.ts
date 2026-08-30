@@ -4,10 +4,12 @@ import {
   Entity,
   JoinColumn,
   ManyToOne,
+  OneToOne,
   PrimaryGeneratedColumn,
 } from "typeorm";
 import { CancelledFlightEntity } from "./cancelled-flight.entity";
 import { SpecialNote, TravelClass } from "./enums";
+import { HotelAllocationEntity } from "./hotel-allocation.entity";
 
 @Entity("cancelled_flight_bookings")
 export class BookingEntity {
@@ -56,6 +58,9 @@ export class BookingEntity {
   })
   @JoinColumn({ name: "cancelled_flight_id" })
   cancelledFlight!: CancelledFlightEntity;
+
+  @OneToOne(() => HotelAllocationEntity, (allocation) => allocation.booking)
+  hotelAllocation?: HotelAllocationEntity;
 
   @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;

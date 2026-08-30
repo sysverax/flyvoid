@@ -11,6 +11,7 @@ export interface HotelCandidate {
   amenities: string[];
   pricePerNight: number;
   description: string;
+  rateKey?: string | null;
 }
 
 @Injectable()
@@ -139,6 +140,7 @@ export class HotelPartnerService {
           amenities,
           pricePerNight: price,
           description: `Enjoy a comfortable stay at ${hotel.name}, a quality ${stars}-star hotel located in the ${hotel.zoneName || "airport"} area.`,
+          rateKey: hotel.rooms?.[0]?.rates?.[0]?.rateKey || null,
         };
       });
 
@@ -154,6 +156,161 @@ export class HotelPartnerService {
         throw error;
       }
       throw new ServiceUnavailableException(`Hotelbeds API query failed: ${error.message}`);
+    }
+  }
+
+  async checkRate(rateKey: string, requestId: string): Promise<any> {
+    if (!this.apiKey || !this.secret) {
+      this.logger.warn(
+        "Hotelbeds credentials not configured.",
+        "HotelPartnerService",
+        requestId,
+      );
+      throw new ServiceUnavailableException("Hotelbeds API credentials not configured");
+    }
+
+    const endpoint = this.useSandbox
+      ? "https://api.test.hotelbeds.com/hotel-api/1.0/checkrates"
+      : "https://api.hotelbeds.com/hotel-api/1.0/checkrates";
+
+    const timestamp = Math.floor(Date.now() / 1000);
+    const dataToHash = this.apiKey + this.secret + timestamp;
+    const signature = crypto.createHash("sha256").update(dataToHash).digest("hex");
+
+    const payload = {
+      rooms: [
+        {
+          rateKey,
+        },
+      ],
+    };
+
+    try {
+      this.logger.info(
+        "Validating rate with Hotelbeds CheckRate API",
+        "HotelPartnerService",
+        requestId,
+        { rateKey },
+      );
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Api-key": this.apiKey,
+          "X-Signature": signature,
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Hotelbeds CheckRate API returned status ${response.status}: ${errorText}`);
+      }
+
+      const responseData = await response.json();
+      this.logger.info("Successfully validated rate with Hotelbeds", "HotelPartnerService", requestId);
+      return responseData;
+    } catch (error: any) {
+      this.logger.error(
+        `Error calling Hotelbeds CheckRate API: ${error.message}`,
+        "HotelPartnerService",
+        requestId,
+        { stack: error.stack },
+      );
+      throw new ServiceUnavailableException(`Hotelbeds CheckRate API failed: ${error.message}`);
+    }
+  }
+
+  async bookHotel(
+    bookingData: {
+      firstName: string;
+      lastName: string;
+      bookingId: string;
+      pnr: string;
+    },
+    rateKey: string,
+    paymentData: any,
+    requestId: string,
+  ): Promise<any> {
+    if (!this.apiKey || !this.secret) {
+      this.logger.warn(
+        "Hotelbeds credentials not configured.",
+        "HotelPartnerService",
+        requestId,
+      );
+      throw new ServiceUnavailableException("Hotelbeds API credentials not configured");
+    }
+
+    const endpoint = this.useSandbox
+      ? "https://api-secure.test.hotelbeds.com/hotel-api/1.0/bookings"
+      : "https://api-secure.hotelbeds.com/hotel-api/1.0/bookings";
+
+    const timestamp = Math.floor(Date.now() / 1000);
+    const dataToHash = this.apiKey + this.secret + timestamp;
+    const signature = crypto.createHash("sha256").update(dataToHash).digest("hex");
+
+    const payload: any = {
+      holder: {
+        name: bookingData.firstName,
+        surname: bookingData.lastName,
+      },
+      rooms: [
+        {
+          rateKey: rateKey,
+          paxes: [
+            {
+              roomId: 1,
+              type: "AD",
+              name: bookingData.firstName,
+              surname: bookingData.lastName,
+            },
+          ],
+        },
+      ],
+      clientReference: bookingData.pnr,
+    };
+
+    if (paymentData) {
+      payload.paymentData = paymentData;
+    }
+
+    try {
+      this.logger.info(
+        "Creating live reservation with Hotelbeds Bookings API",
+        "HotelPartnerService",
+        requestId,
+        { bookingId: bookingData.bookingId },
+      );
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Api-key": this.apiKey,
+          "X-Signature": signature,
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Hotelbeds Bookings API returned status ${response.status}: ${errorText}`);
+      }
+
+      const responseData = await response.json();
+      this.logger.info("Successfully created booking with Hotelbeds", "HotelPartnerService", requestId);
+      return responseData;
+    } catch (error: any) {
+      this.logger.error(
+        `Error calling Hotelbeds Bookings API: ${error.message}`,
+        "HotelPartnerService",
+        requestId,
+        { stack: error.stack },
+      );
+      throw new ServiceUnavailableException(`Hotelbeds Bookings API failed: ${error.message}`);
     }
   }
 }

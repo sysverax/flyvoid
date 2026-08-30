@@ -56,6 +56,8 @@ import { CreateBookingDto } from "./dto/create-booking.dto";
 import { UpdateBookingDto } from "./dto/update-booking.dto";
 import { ImportBookingsConfirmDto } from "./dto/import-bookings.dto";
 import { AllocateHotelDto } from "./dto/allocate-hotel.dto";
+import { CheckRateRequestDto } from "./dto/check-rate-request.dto";
+import { BookHotelRequestDto } from "./dto/book-hotel-request.dto";
 
 @ApiTags("Cancelled Flights")
 @ApiBearerAuth("access-token")
@@ -454,6 +456,64 @@ export class CancelledFlightsController {
       data,
       requestId,
       "Hotel allocated successfully",
+    );
+  }
+
+  // ── POST /cancelled-flights/:id/bookings/:bookingId/check-rate ────────────
+
+  @Post(":id/bookings/:bookingId/check-rate")
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.EDIT],
+    },
+  })
+  @ApiOperation({
+    summary: "Check rate key availability and pricing details",
+    description: "Queries Hotelbeds CheckRate API to verify room rate availability, cancellation policies, and cost details.",
+  })
+  @ApiParam({ name: "id", description: "Cancelled flight UUID" })
+  @ApiParam({ name: "bookingId", description: "Booking UUID" })
+  async checkRate(
+    @Param("id") id: string,
+    @Param("bookingId") bookingId: string,
+    @Body() dto: CheckRateRequestDto,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<object>> {
+    const data = await this.service.checkRate(id, bookingId, dto.rateKey, requestId);
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Room rate details retrieved successfully",
+    );
+  }
+
+  // ── POST /cancelled-flights/:id/bookings/:bookingId/book-hotel ────────────
+
+  @Post(":id/bookings/:bookingId/book-hotel")
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.EDIT],
+    },
+  })
+  @ApiOperation({
+    summary: "Perform live hotel reservation and allocate it to the booking",
+    description: "Queries Hotelbeds Bookings API to confirm reservation, then stores allocation details in the database.",
+  })
+  @ApiParam({ name: "id", description: "Cancelled flight UUID" })
+  @ApiParam({ name: "bookingId", description: "Booking UUID" })
+  async bookHotel(
+    @Param("id") id: string,
+    @Param("bookingId") bookingId: string,
+    @Body() dto: BookHotelRequestDto,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<object>> {
+    const data = await this.service.bookHotel(id, bookingId, dto, requestId);
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Hotel booked and allocated successfully",
     );
   }
 }

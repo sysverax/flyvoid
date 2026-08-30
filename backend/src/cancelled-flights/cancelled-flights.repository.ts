@@ -171,7 +171,7 @@ export class CancelledFlightsRepository {
       "Saving hotel allocation",
       "CancelledFlightsRepository",
       requestId,
-      { cancelledFlightId: payload.cancelledFlightId, hotelName: payload.hotelName },
+      { cancelledFlightId: payload.cancelledFlightId, bookingId: payload.bookingId, hotelName: payload.hotelName },
     );
     const entity = this.allocationRepo.create(payload);
     return this.allocationRepo.save(entity);

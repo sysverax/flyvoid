@@ -609,20 +609,36 @@ CREATE INDEX IF NOT EXISTS idx_cancelled_flight_bookings_flight_id
 CREATE TABLE IF NOT EXISTS public.hotel_allocations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   cancelled_flight_id uuid NOT NULL,
+  booking_id uuid NOT NULL,
   hotel_name varchar(255) NOT NULL,
   hotel_address text,
   check_in_date date NOT NULL,
   check_out_date date NOT NULL,
   total_rooms integer,
   cost_per_room decimal(10,2),
+  booking_reference varchar(255) NOT NULL,
+  status varchar(50) NOT NULL,
+  rate_key text,
   created_at timestamp without time zone NOT NULL DEFAULT now(),
   updated_at timestamp without time zone NOT NULL DEFAULT now(),
   CONSTRAINT fk_hotel_allocations_flight
     FOREIGN KEY (cancelled_flight_id)
     REFERENCES public.cancelled_flights(id)
-    ON DELETE CASCADE
+    ON DELETE CASCADE,
+  CONSTRAINT fk_hotel_allocations_booking
+    FOREIGN KEY (booking_id)
+    REFERENCES public.cancelled_flight_bookings(id)
+    ON DELETE CASCADE,
+  CONSTRAINT uq_hotel_allocations_booking
+    UNIQUE (booking_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_hotel_allocations_flight_id
   ON public.hotel_allocations (cancelled_flight_id);
+
+CREATE INDEX IF NOT EXISTS idx_hotel_allocations_booking_id
+  ON public.hotel_allocations (booking_id);
+
+
+
 

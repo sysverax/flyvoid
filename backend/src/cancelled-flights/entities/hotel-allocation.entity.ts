@@ -4,12 +4,13 @@ import {
   Entity,
   JoinColumn,
   ManyToOne,
+  OneToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from "typeorm";
 import { CancelledFlightEntity } from "./cancelled-flight.entity";
+import { BookingEntity } from "./booking.entity";
 
-// Stub entity — allocation logic not yet implemented
 @Entity("hotel_allocations")
 export class HotelAllocationEntity {
   @PrimaryGeneratedColumn("uuid")
@@ -17,6 +18,9 @@ export class HotelAllocationEntity {
 
   @Column({ name: "cancelled_flight_id", type: "uuid" })
   cancelledFlightId!: string;
+
+  @Column({ name: "booking_id", type: "uuid" })
+  bookingId!: string;
 
   @Column({ name: "hotel_name", type: "varchar", length: 255 })
   hotelName!: string;
@@ -46,9 +50,22 @@ export class HotelAllocationEntity {
   })
   costPerRoom?: number | null;
 
+  @Column({ name: "booking_reference", type: "varchar", length: 255 })
+  bookingReference!: string;
+
+  @Column({ name: "status", type: "varchar", length: 50 })
+  status!: string;
+
+  @Column({ name: "rate_key", type: "text", nullable: true })
+  rateKey?: string | null;
+
   @ManyToOne(() => CancelledFlightEntity, { onDelete: "CASCADE" })
   @JoinColumn({ name: "cancelled_flight_id" })
   cancelledFlight!: CancelledFlightEntity;
+
+  @OneToOne(() => BookingEntity, (booking) => booking.hotelAllocation, { onDelete: "CASCADE" })
+  @JoinColumn({ name: "booking_id" })
+  booking!: BookingEntity;
 
   @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
