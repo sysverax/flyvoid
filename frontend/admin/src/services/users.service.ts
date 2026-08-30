@@ -14,9 +14,13 @@ export interface User {
 }
 
 export const usersService = {
-  async getUsers(page: number, limit: number): Promise<{ users: User[]; total: number }> {
+  async getUsers(page: number, limit: number, search?: string, isActive?: boolean): Promise<{ users: User[]; total: number }> {
     try {
-      const { data } = await apiClient.get("/admin/users", { params: { page, limit } });
+      const params: any = { page, limit };
+      if (search) params.search = search;
+      if (isActive !== undefined) params.isActive = isActive;
+
+      const { data } = await apiClient.get("/admin/users", { params });
       const { users, total } = data.data;
 
       const items = users.map((u: any) => {
@@ -26,7 +30,7 @@ export const usersService = {
           if (stored) {
             try {
               accessControls = JSON.parse(stored);
-            } catch {}
+            } catch { }
           }
         }
         return { ...u, accessControls };

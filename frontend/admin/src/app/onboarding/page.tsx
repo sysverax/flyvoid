@@ -12,8 +12,9 @@ import {
   TableHead,
   TableCell,
   SortHeader,
-} from "../../components/ui/table";
+} from "@/src/components/ui/table";
 import { Invitation, InviteFormState } from "@/src/types/onboarding";
+import { countries as countryList } from "countries-list";
 import { FiltersCard } from "@/src/components/ui/FiltersCard";
 import { Pagination } from "@/src/components/ui/pagination";
 import { InviteModal } from "@/src/components/onboarding/InviteModal";
@@ -36,7 +37,14 @@ import { toast } from "react-toastify";
 import { onboardingService } from "@/src/services/onboarding.service";
 
 const STATUSES = ["Pending", "Expired", "Accepted", "Revoked"] as const;
-const ALL_STATUSES = ["pending", "expired", "accepted", "revoked"];
+const ALL_STATUSES = ["Pending", "Expired", "Accepted", "Revoked"];
+
+const COUNTRIES_FILTER = [
+  { value: "All Countries", label: "All Countries" },
+  ...Object.entries(countryList)
+    .map(([code, c]) => ({ value: code, label: c.name }))
+    .sort((a, b) => a.label.localeCompare(b.label)),
+];
 
 
 const formatDate = (dateStr?: string) => {
@@ -114,66 +122,89 @@ export default function OnboardingPage() {
     adminJobTitle: "",
   });
 
-  const countries = [
-    "All Countries",
-    "France",
-    "Japan",
-    "Switzerland",
-    "Sweden",
-    "United States",
-    "Australia",
-    "United Kingdom",
-    "Germany",
-    "India",
-    "Canada"
-  ];
-
-  const fetchInvitations = async (page = currentPage, limit = resultsPerPage, showLoader = true) => {
+  const fetchInvitationsData = async (
+    page = currentPage,
+    limit = resultsPerPage,
+    search = searchQuery,
+    statuses = selectedStatuses,
+    country = selectedCountry,
+    showLoader = true
+  ) => {
     if (showLoader) setIsLoading(true);
     try {
-      const res = await onboardingService.getInvitations(page, limit);
+      let statusParam: string | undefined = undefined;
+      if (statuses.size > 0 && statuses.size < ALL_STATUSES.length) {
+        statusParam = Array.from(statuses).join(",");
+      }
+
+      const res = await onboardingService.getInvitations(
+        page, 
+        limit, 
+        search || undefined, 
+        statusParam, 
+        country
+      );
+      
       const mapped = res.invitations.map((inv: any) => ({
         id: String(inv.invitationId),
         airlineName: inv.airlineName,
         airlineCode: inv.airlineCode,
-        contactEmail: inv.email, // falling back to admin email since contactEmail is not in invitation list DTO
-        country: "N/A",
+        contactEmail: inv.contactEmail,
+        country: countryList[inv.countryCode as keyof typeof countryList]?.name || inv.countryCode || "N/A",
         invitedBy: `Admin #${inv.invitedByAdminId}`,
         invitedDate: formatDate(inv.createdAt),
         expiryDate: formatDate(inv.expiresAt),
-        creditLimit: 0,
+        creditLimit: inv.creditLimit || 0,
         status: mapStatus(inv.status),
       }));
-      setInvitations(mapped);
-      setTotalResults(res.total);
+      return { mapped, total: res.total };
     } catch (err: any) {
-      toast.error(err.message || "Failed to load invitations");
+      throw err;
     } finally {
       if (showLoader) setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchInvitations(currentPage, resultsPerPage);
-  }, [currentPage, resultsPerPage]);
+    let isMounted = true;
+    
+    const load = async () => {
+      try {
+        const { mapped, total } = await fetchInvitationsData();
+        if (isMounted) {
+          setInvitations(mapped);
+          setTotalResults(total);
+        }
+      } catch (err: any) {
+        if (isMounted) {
+          toast.error(err.message || "Failed to load invitations");
+        }
+      }
+    };
 
-  const filteredInvitations = useMemo(() => {
-    return invitations.filter((inv) => {
-      const matchesSearch =
-        inv.airlineName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        inv.airlineCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        inv.contactEmail.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesCountry =
-        selectedCountry === "All Countries" || inv.country === selectedCountry;
-      const matchesStatus =
-        selectedStatuses.size === 0 || selectedStatuses.has(inv.status);
-      return matchesSearch && matchesCountry && matchesStatus;
-    });
-  }, [invitations, searchQuery, selectedCountry, selectedStatuses]);
+    const timeoutId = setTimeout(() => {
+      load();
+    }, 300);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, [currentPage, resultsPerPage, searchQuery, selectedStatuses, selectedCountry]);
+
+  const fetchInvitations = async (page = currentPage, limit = resultsPerPage, showLoader = true) => {
+    try {
+      const { mapped, total } = await fetchInvitationsData(page, limit, searchQuery, selectedStatuses, selectedCountry, showLoader);
+      setInvitations(mapped);
+      setTotalResults(total);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to load invitations");
+    }
+  };
 
   const sortedInvitations = useMemo(() => {
-    return sortData(filteredInvitations, sortField, sortOrder, ["invitedDate", "expiryDate"]);
-  }, [filteredInvitations, sortField, sortOrder]);
+    return sortData(invitations, sortField, sortOrder, ["invitedDate", "expiryDate"]);
+  }, [invitations, sortField, sortOrder]);
 
   const totalPages = Math.max(
     1,
@@ -236,24 +267,24 @@ export default function OnboardingPage() {
         id: String(details.invitationId),
         airlineName: details.airlineName,
         airlineCode: details.airlineCode,
-        contactEmail: details.email,
-        country: "N/A",
+        contactEmail: details.contactEmail,
+        country: countryList[details.countryCode as keyof typeof countryList]?.name || details.countryCode || "N/A",
         invitedBy: `Admin #${details.invitedByAdminId}`,
         invitedDate: formatDate(details.createdAt),
         expiryDate: formatDate(details.expiresAt),
-        creditLimit: 0,
+        creditLimit: details.creditLimit || 0,
         status: mapStatus(details.status),
         companyReg: details.companyRegistrationNumber,
-        website: "",
-        phone: "",
-        timezone: "",
-        logoUrl: "",
-        currency: "",
-        address: "",
-        adminFirstName: details.firstName,
-        adminLastName: details.lastName,
-        adminEmail: details.email,
-        adminJobTitle: details.jobTitle,
+        website: details.website || "",
+        phone: details.contactPhone || "",
+        timezone: details.timezone || "",
+        logoUrl: details.logo || "",
+        currency: details.currency || "",
+        address: details.address || "",
+        adminFirstName: details.adminFirstName,
+        adminLastName: details.adminLastName,
+        adminEmail: details.adminEmail,
+        adminJobTitle: details.adminJobTitle,
       };
       setViewTarget(fullInvitation);
     } catch (err: any) {
@@ -417,7 +448,7 @@ export default function OnboardingPage() {
               setSelectedCountry(val);
               setCurrentPage(1);
             }}
-            options={countries.map((c) => ({ value: c, label: c }))}
+            options={COUNTRIES_FILTER}
             widthClass="w-44"
             triggerWidthClass="w-[180px]"
           />

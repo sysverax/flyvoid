@@ -166,18 +166,23 @@ export function ManageUserModal({
     }
   }, [isOpen]);
 
-  const [userName, setUserName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [userEmail, setUserEmail] = useState("");
   const [userStatus, setUserStatus] = useState<"Active" | "Inactive">("Active");
   const [userPermissions, setUserPermissions] = useState<UserPermissions>(emptyPermissions());
-  const [errors, setErrors] = useState<{ userName?: string; userEmail?: string }>({});
-  const [touched, setTouched] = useState<{ userName?: boolean; userEmail?: boolean }>({});
+  const [errors, setErrors] = useState<{ firstName?: string; lastName?: string; userEmail?: string }>({});
+  const [touched, setTouched] = useState<{ firstName?: boolean; lastName?: boolean; userEmail?: boolean }>({});
 
-  const validateField = (field: "userName" | "userEmail", value: string) => {
+  const validateField = (field: "firstName" | "lastName" | "userEmail", value: string) => {
     let error: string | undefined;
-    if (field === "userName") {
+    if (field === "firstName") {
       if (!value.trim()) {
-        error = "User Name is required";
+        error = "First Name is required";
+      }
+    } else if (field === "lastName") {
+      if (!value.trim()) {
+        error = "Last Name is required";
       }
     } else if (field === "userEmail") {
       if (!value.trim()) {
@@ -192,18 +197,27 @@ export function ManageUserModal({
     setErrors((prev) => ({ ...prev, [field]: error }));
   };
 
-  const handleBlur = (field: "userName" | "userEmail") => {
+  const handleBlur = (field: "firstName" | "lastName" | "userEmail") => {
     setTouched((prev) => ({ ...prev, [field]: true }));
-    const val = field === "userName" ? userName : userEmail;
+    const val = field === "firstName" ? firstName : field === "lastName" ? lastName : userEmail;
     validateField(field, val);
   };
 
-  const handleNameChange = (val: string) => {
-    setUserName(val);
-    if (touched.userName) {
-      validateField("userName", val);
-    } else if (errors.userName) {
-      setErrors((prev) => ({ ...prev, userName: undefined }));
+  const handleFirstNameChange = (val: string) => {
+    setFirstName(val);
+    if (touched.firstName) {
+      validateField("firstName", val);
+    } else if (errors.firstName) {
+      setErrors((prev) => ({ ...prev, firstName: undefined }));
+    }
+  };
+
+  const handleLastNameChange = (val: string) => {
+    setLastName(val);
+    if (touched.lastName) {
+      validateField("lastName", val);
+    } else if (errors.lastName) {
+      setErrors((prev) => ({ ...prev, lastName: undefined }));
     }
   };
 
@@ -218,12 +232,14 @@ export function ManageUserModal({
 
   useEffect(() => {
     if (editingUser) {
-      setUserName(`${editingUser.firstName} ${editingUser.lastName}`.trim());
+      setFirstName(editingUser.firstName);
+      setLastName(editingUser.lastName);
       setUserEmail(editingUser.email);
       setUserStatus(editingUser.isActive ? "Active" : "Inactive");
       setUserPermissions(mapBackendAccessControlsToFrontend(editingUser.accessControls, editingUser.role));
     } else {
-      setUserName("");
+      setFirstName("");
+      setLastName("");
       setUserEmail("");
       setUserStatus("Active");
       setUserPermissions(emptyPermissions());
@@ -295,8 +311,8 @@ export function ManageUserModal({
   const hasChanges = useMemo(() => {
     if (!editingUser) return true;
 
-    const initialName = `${editingUser.firstName} ${editingUser.lastName}`.trim();
-    if (userName.trim() !== initialName) return true;
+    if (firstName.trim() !== editingUser.firstName) return true;
+    if (lastName.trim() !== editingUser.lastName) return true;
     if (userEmail.trim() !== editingUser.email) return true;
 
     const initialStatus = editingUser.isActive ? "Active" : "Inactive";
@@ -313,15 +329,18 @@ export function ManageUserModal({
     }
 
     return false;
-  }, [editingUser, userName, userEmail, userStatus, userPermissions]);
+  }, [editingUser, firstName, lastName, userEmail, userStatus, userPermissions]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    const newErrors: { userName?: string; userEmail?: string } = {};
+    const newErrors: { firstName?: string; lastName?: string; userEmail?: string } = {};
 
-    if (!userName.trim()) {
-      newErrors.userName = "User Name is required";
+    if (!firstName.trim()) {
+      newErrors.firstName = "First Name is required";
+    }
+    if (!lastName.trim()) {
+      newErrors.lastName = "Last Name is required";
     }
 
     if (!userEmail.trim()) {
@@ -335,19 +354,16 @@ export function ManageUserModal({
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
-      setTouched({ userName: true, userEmail: true });
+      setTouched({ firstName: true, lastName: true, userEmail: true });
       return;
     }
 
     setErrors({});
 
-    const nameParts = userName.trim().split(/\s+/);
-    const firstName = nameParts[0] || "";
-    const lastName = nameParts.slice(1).join(" ");
     const isActive = userStatus === "Active";
     const accessControls = mapFrontendPermissionsToBackend(userPermissions);
 
-    onSave(firstName, lastName, userEmail, isActive, accessControls);
+    onSave(firstName.trim(), lastName.trim(), userEmail, isActive, accessControls);
   };
 
   return (
@@ -358,7 +374,7 @@ export function ManageUserModal({
           "fixed inset-0 bg-black/40 z-40 transition-opacity duration-300",
           isOpen ? "opacity-100" : "opacity-0 pointer-events-none"
         )}
-        onClick={isLoading ? () => {} : onClose}
+        onClick={isLoading ? () => { } : onClose}
       />
 
       {/* Slide-in panel */}
@@ -392,36 +408,65 @@ export function ManageUserModal({
           <form id="manage-user-form" onSubmit={handleSubmit} noValidate className="self-stretch flex flex-col justify-start items-start gap-6 w-full">
 
             {/* User Name & Email inputs */}
-            <div className="self-stretch inline-flex justify-start items-start gap-5 relative -top-0.5">
-              {/* User Name */}
-              <div className="flex-1 inline-flex flex-col justify-start items-start">
-                <div className="self-stretch flex-1 flex flex-col justify-start items-start gap-2.5">
-                  <label className="justify-start text-gray-800 text-base font-medium font-figtree leading-[100%]">User Name *</label>
-                  <input
-                    type="text"
-                    placeholder="Enter user name"
-                    value={userName}
-                    onChange={(e) => handleNameChange(e.target.value)}
-                    onBlur={() => handleBlur("userName")}
-                    required
-                    disabled={isLoading}
-                    className={cn(
-                      "self-stretch flex-1 px-4 py-3 bg-[#F9FAFB] rounded-[10px] border transition-all text-base font-figtree text-gray-800 placeholder-gray-500 focus:bg-white focus:outline-none focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed",
-                      errors.userName
-                        ? "border-red-500 focus:ring-red-500/10 focus:border-red-500"
-                        : "border-gray-300 focus:border-[#0F2757] focus:ring-[#0F2757]/10"
+            <div className="self-stretch flex flex-col justify-start items-start gap-6 relative -top-0.5">
+              <div className="self-stretch inline-flex justify-start items-start gap-5 w-full">
+                {/* First Name */}
+                <div className="flex-1 inline-flex flex-col justify-start items-start">
+                  <div className="self-stretch flex-1 flex flex-col justify-start items-start gap-2.5">
+                    <label className="justify-start text-gray-800 text-base font-medium font-figtree leading-[100%]">First Name *</label>
+                    <input
+                      type="text"
+                      placeholder="Enter first name"
+                      value={firstName}
+                      onChange={(e) => handleFirstNameChange(e.target.value)}
+                      onBlur={() => handleBlur("firstName")}
+                      required
+                      disabled={isLoading}
+                      className={cn(
+                        "self-stretch flex-1 px-4 py-3 bg-[#F9FAFB] rounded-[10px] border transition-all text-base font-figtree text-gray-800 placeholder-gray-500 focus:bg-white focus:outline-none focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed",
+                        errors.firstName
+                          ? "border-red-500 focus:ring-red-500/10 focus:border-red-500"
+                          : "border-gray-300 focus:border-[#0F2757] focus:ring-[#0F2757]/10"
+                      )}
+                    />
+                    {errors.firstName && (
+                      <span className="text-red-500 text-xs font-medium font-figtree pl-1 -mt-1.5">
+                        {errors.firstName}
+                      </span>
                     )}
-                  />
-                  {errors.userName && (
-                    <span className="text-red-500 text-xs font-medium font-figtree pl-1 -mt-1.5">
-                      {errors.userName}
-                    </span>
-                  )}
+                  </div>
+                </div>
+
+                {/* Last Name */}
+                <div className="flex-1 inline-flex flex-col justify-start items-start">
+                  <div className="self-stretch flex-1 flex flex-col justify-start items-start gap-2.5">
+                    <label className="justify-start text-gray-800 text-base font-medium font-figtree leading-[100%]">Last Name *</label>
+                    <input
+                      type="text"
+                      placeholder="Enter last name"
+                      value={lastName}
+                      onChange={(e) => handleLastNameChange(e.target.value)}
+                      onBlur={() => handleBlur("lastName")}
+                      required
+                      disabled={isLoading}
+                      className={cn(
+                        "self-stretch flex-1 px-4 py-3 bg-[#F9FAFB] rounded-[10px] border transition-all text-base font-figtree text-gray-800 placeholder-gray-500 focus:bg-white focus:outline-none focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed",
+                        errors.lastName
+                          ? "border-red-500 focus:ring-red-500/10 focus:border-red-500"
+                          : "border-gray-300 focus:border-[#0F2757] focus:ring-[#0F2757]/10"
+                      )}
+                    />
+                    {errors.lastName && (
+                      <span className="text-red-500 text-xs font-medium font-figtree pl-1 -mt-1.5">
+                        {errors.lastName}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              {/* Email */}
-              <div className="flex-1 inline-flex flex-col justify-start items-start">
+              {/* Email row*/}
+              <div className="self-stretch inline-flex flex-col justify-start items-start w-full">
                 <div className="self-stretch flex-1 flex flex-col justify-start items-start gap-2.5">
                   <label className="justify-start text-gray-800 text-base font-medium font-figtree leading-[100%]">Email *</label>
                   <input
