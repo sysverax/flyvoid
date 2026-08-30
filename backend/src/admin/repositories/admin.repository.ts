@@ -89,32 +89,32 @@ export class AdminRepository {
   }
 
   async findAll(
-    pagination: AdminUserQueryDto,
+    adminUserQuery: AdminUserQueryDto,
     requestId: string,
   ): Promise<{ admins: AdminEntity[]; total: number }> {
     this.logger.debug("Listing all admins", "AdminRepository", requestId);
 
-    const skip = (pagination.page - 1) * pagination.limit;
+    const skip = (adminUserQuery.page - 1) * adminUserQuery.limit;
 
     const queryBuilder = this.adminRepository.createQueryBuilder("admin");
 
-    if (pagination.isActive !== undefined) {
+    if (adminUserQuery.isActive !== undefined) {
       queryBuilder.andWhere("admin.isActive = :isActive", {
-        isActive: pagination.isActive,
+        isActive: adminUserQuery.isActive,
       });
     }
 
-    if (pagination.search) {
+    if (adminUserQuery.search) {
       queryBuilder.andWhere(
         "(CAST(admin.id AS TEXT) ILIKE :search OR admin.firstName ILIKE :search OR admin.lastName ILIKE :search OR admin.email ILIKE :search)",
-        { search: `%${pagination.search}%` },
+        { search: `%${adminUserQuery.search}%` },
       );
     }
 
     queryBuilder
       .orderBy("admin.createdAt", "DESC")
       .skip(skip)
-      .take(pagination.limit);
+      .take(adminUserQuery.limit);
 
     const [admins, total] = await queryBuilder.getManyAndCount();
 

@@ -10,7 +10,7 @@ export class AdminUserQueryDto extends PaginationQueryDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @MaxLength(50)
   search?: string;
 
   @ApiPropertyOptional({
