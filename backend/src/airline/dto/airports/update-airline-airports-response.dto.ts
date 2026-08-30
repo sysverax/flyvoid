@@ -19,18 +19,4 @@ export class UpdateAirlineAirportsResponseDto {
     isArray: true,
   })
   disabledAirportIds!: number[];
-
-  @ApiProperty({
-    description: "Final active airport ids currently assigned to the airline",
-    example: [1, 3, 7],
-    type: Number,
-    isArray: true,
-  })
-  activeAirportIds!: number[];
-
-  @ApiProperty({
-    description: "Total active airport assignments after the update",
-    example: 3,
-  })
-  totalActiveAirports!: number;
 }

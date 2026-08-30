@@ -40,29 +40,6 @@ export class AirlineAirportRepository {
       .getMany();
   }
 
-  async saveMany(
-    mappings: AirlineAirportEntity[],
-    requestId: string,
-    manager?: EntityManager,
-  ): Promise<AirlineAirportEntity[]> {
-    this.logger.debug(
-      "Saving airline-airport mappings",
-      "AirlineAirportRepository",
-      requestId,
-      { count: mappings.length },
-    );
-
-    if (mappings.length === 0) {
-      return [];
-    }
-
-    const repository = manager
-      ? manager.getRepository(AirlineAirportEntity)
-      : this.airlineAirportRepository;
-
-    return repository.save(mappings);
-  }
-
   async bulkUpsertAssignments(
     payloads: Array<
       Pick<
@@ -141,29 +118,20 @@ export class AirlineAirportRepository {
     return this.airlineAirportRepository.create(payload);
   }
 
-  async findActiveAirportIdsByAirlineId(
+  async findAssignedAirportIdsByAirlineId(
     airlineId: number,
     requestId: string,
-    manager?: EntityManager,
   ): Promise<number[]> {
     this.logger.debug(
-      "Finding active airport ids by airline id",
+      "Finding assigned airport ids by airline id",
       "AirlineAirportRepository",
       requestId,
       { airlineId },
     );
-
-    const repository = manager
-      ? manager.getRepository(AirlineAirportEntity)
-      : this.airlineAirportRepository;
-
-    const rows = await repository
-      .createQueryBuilder("mapping")
-      .select("mapping.airportId", "airportId")
-      .where("mapping.airlineId = :airlineId", { airlineId })
-      .andWhere("mapping.isActive = :isActive", { isActive: true })
-      .orderBy("mapping.airportId", "ASC")
-      .getRawMany<{ airportId: number }>();
+    const rows = await this.airlineAirportRepository.find({
+      where: { airlineId: airlineId, isActive: true },
+      select: ["airportId"],
+    });
 
     return rows.map((row) => Number(row.airportId));
   }
