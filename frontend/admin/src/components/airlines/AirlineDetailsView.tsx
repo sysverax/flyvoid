@@ -179,6 +179,14 @@ export function AirlineDetailsView({
                 {airline.onboardingDate}
               </div>
             </div>
+            <div className="self-stretch flex justify-between items-center h-[22px]">
+              <div className="text-gray-500 text-lg font-normal font-figtree">
+                Credit Limit
+              </div>
+              <div className="text-gray-800 text-lg font-medium font-figtree">
+                ${airline.creditLimit.toLocaleString()}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -218,14 +226,6 @@ export function AirlineDetailsView({
               </div>
               <div className="text-gray-800 text-lg font-medium font-figtree">
                 {airline.adminJobTitle}
-              </div>
-            </div>
-            <div className="self-stretch flex justify-between items-center h-[22px]">
-              <div className="text-gray-500 text-lg font-normal font-figtree">
-                Credit Limit
-              </div>
-              <div className="text-gray-800 text-lg font-medium font-figtree">
-                ${airline.creditLimit.toLocaleString()}
               </div>
             </div>
           </div>

@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from "react";
-import { X, Search } from "lucide-react";
+import { X, Search, Loader2 } from "lucide-react";
 import { useLockBodyScroll } from "@/src/hooks/useLockBodyScroll";
 import { Airline } from "@/src/types/airlines";
 import { cn } from "@/src/lib/utils";
+import { toast } from "react-toastify";
+import { airlinesService } from "@/src/services/airlines.service";
 import { Dropdown, DropdownOption } from "@/src/components/ui/Dropdown";
 import {
   Table,
@@ -54,21 +56,6 @@ interface AirportItem {
   country: string;
   status: "Active" | "Inactive";
 }
-
-const ALL_AIRPORTS: AirportItem[] = [
-  { id: "pac-act", name: "Pacific Airport", iata: "PA", country: "USA", status: "Active" },
-  { id: "lhr-act", name: "Heathrow Airport", iata: "LHR", country: "UK", status: "Active" },
-  { id: "hnd-act", name: "Tokyo Haneda Airport", iata: "HND", country: "Japan", status: "Active" },
-  { id: "lax-act", name: "Los Angeles International Airport", iata: "LAX", country: "USA", status: "Active" },
-  { id: "dxb-act", name: "Heathrow Airport", iata: "DXB", country: "UAE", status: "Active" },
-  { id: "lhr-inact", name: "Dubai International Airport", iata: "LHR", country: "UK", status: "Active" },
-  { id: "lax-inact", name: "Heathrow Airport", iata: "LAX", country: "USA", status: "Inactive" },
-  { id: "hnd-inact", name: "Los Angeles International Airport", iata: "HND", country: "Japan", status: "Inactive" },
-  { id: "sin-inact", name: "Tokyo Haneda Airport", iata: "SIN", country: "Singapore", status: "Inactive" },
-  { id: "sidn-inact", name: "Changi Airport", iata: "SIN", country: "Singapore", status: "Inactive" },
-  { id: "atl-inact", name: "Hartsfield-Jackson Atlanta International Airport", iata: "ATL", country: "USA", status: "Inactive" },
-  { id: "cdg-inact", name: "Charles de Gaulle Airport", iata: "CDG", country: "France", status: "Inactive" },
-];
 
 const AIRPORT_COUNTRIES: DropdownOption[] = [
   { value: "All Countries", label: "All Countries" },
@@ -130,7 +117,8 @@ interface EditAirlineModalProps {
   isOpen: boolean;
   airline: Airline | null;
   onClose: () => void;
-  onSave: (updatedFields: Partial<Airline>) => void;
+  onSave: (updatedFields: Partial<Airline>, assignAirportIds: number[], disableAirportIds: number[]) => void;
+  isSaving?: boolean;
 }
 
 type Errors = Partial<Record<string, string>>;
@@ -140,6 +128,7 @@ export function EditAirlineModal({
   airline,
   onClose,
   onSave,
+  isSaving = false,
 }: EditAirlineModalProps) {
   useLockBodyScroll(isOpen);
 
@@ -164,11 +153,14 @@ export function EditAirlineModal({
     creditLimit: 0,
   });
 
+  const [airports, setAirports] = useState<AirportItem[]>([]);
+  const [initialSelectedIds, setInitialSelectedIds] = useState<string[]>([]);
   const [selectedAirportIds, setSelectedAirportIds] = useState<string[]>([]);
   const [airportSearch, setAirportSearch] = useState("");
   const [airportCountry, setAirportCountry] = useState("All Countries");
   const [sortField, setSortField] = useState<keyof AirportItem | "isSelected" | null>(null);
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [isLoadingAirports, setIsLoadingAirports] = useState(false);
 
   const [errors, setErrors] = useState<Errors>({});
   const [touched, setTouched] = useState<Partial<Record<string, boolean>>>({});
@@ -203,26 +195,48 @@ export function EditAirlineModal({
         creditLimit: airline.creditLimit || 0,
       });
 
-      // Initialize selected airports
-      const initialSelected: string[] = [];
-      if (airline.assignedAirports) {
-        const names = airline.assignedAirports.split(",").map((n) => n.trim());
-        const tempNames = [...names];
-        ALL_AIRPORTS.forEach((ap) => {
-          const idx = tempNames.indexOf(ap.name);
-          if (idx !== -1) {
-            initialSelected.push(ap.id);
-            tempNames.splice(idx, 1);
+      setAirportSearch("");
+      setAirportCountry("All Countries");
+
+      if (isOpen) {
+        const fetchAirports = async () => {
+          setIsLoadingAirports(true);
+          try {
+            let allAirportsData: AirportItem[] = [];
+            let currentPage = 1;
+            let totalPages = 1;
+
+            do {
+              const data = await airlinesService.getAirlineAirports(Number(airline.id), { limit: 200, page: currentPage });
+              totalPages = data.totalPages;
+              
+              const fetchedAirports: AirportItem[] = data.airports.map((ap) => ({
+                id: String(ap.id),
+                name: ap.name,
+                iata: ap.iataCode,
+                country: countries[ap.countryCode as keyof typeof countries]?.name || ap.countryCode || "Unknown",
+                status: ap.isActive ? "Active" : "Inactive",
+                isAssigned: ap.isAssigned
+              }));
+
+              allAirportsData = [...allAirportsData, ...fetchedAirports];
+              currentPage++;
+            } while (currentPage <= totalPages);
+            
+            setAirports(allAirportsData);
+            
+            const assignedIds = allAirportsData.filter((ap: any) => ap.isAssigned).map(ap => String(ap.id));
+            setSelectedAirportIds(assignedIds);
+            setInitialSelectedIds(assignedIds);
+          } catch (error) {
+            toast.error("Failed to load airports");
+          } finally {
+            setIsLoadingAirports(false);
           }
-        });
-      } else {
-        // Fallback default selection
-        initialSelected.push("pac-act", "lhr-act", "hnd-act", "lax-act", "dxb-act");
+        };
+        fetchAirports();
       }
-      setSelectedAirportIds(initialSelected);
     }
-    setAirportSearch("");
-    setAirportCountry("All Countries");
   }, [airline, isOpen]);
 
   // Compute if any form field or airport selection has changed
@@ -236,24 +250,9 @@ export function EditAirlineModal({
       return String(editFormState[k] ?? "").trim() !== String(airline[k] ?? "").trim();
     });
 
-    const initialSelected: string[] = [];
-    if (airline.assignedAirports) {
-      const names = airline.assignedAirports.split(",").map((n) => n.trim());
-      const tempNames = [...names];
-      ALL_AIRPORTS.forEach((ap) => {
-        const idx = tempNames.indexOf(ap.name);
-        if (idx !== -1) {
-          initialSelected.push(ap.id);
-          tempNames.splice(idx, 1);
-        }
-      });
-    } else {
-      initialSelected.push("pac-act", "lhr-act", "hnd-act", "lax-act", "dxb-act");
-    }
-
     const airportsChanged =
-      selectedAirportIds.length !== initialSelected.length ||
-      selectedAirportIds.some((id) => !initialSelected.includes(id));
+      selectedAirportIds.length !== initialSelectedIds.length ||
+      selectedAirportIds.some((id) => !initialSelectedIds.includes(id));
 
     return anyFieldChanged || airportsChanged;
   }, [editFormState, selectedAirportIds, airline]);
@@ -297,14 +296,27 @@ export function EditAirlineModal({
       return;
     }
 
-    // Map selected airport IDs back to a comma-separated list of airport names
-    const selectedAirports = ALL_AIRPORTS.filter((ap) => selectedAirportIds.includes(ap.id));
+    const assignIds: number[] = [];
+    const disableIds: number[] = [];
+    
+    airports.forEach((ap) => {
+      const wasSelected = initialSelectedIds.includes(ap.id);
+      const isSelected = selectedAirportIds.includes(ap.id);
+      
+      if (isSelected && !wasSelected) {
+        assignIds.push(Number(ap.id));
+      } else if (!isSelected && wasSelected) {
+        disableIds.push(Number(ap.id));
+      }
+    });
+
+    const selectedAirports = airports.filter((ap) => selectedAirportIds.includes(ap.id));
     const assignedAirportsStr = selectedAirports.map((ap) => ap.name).join(", ");
 
     onSave({
       ...editFormState,
       assignedAirports: assignedAirportsStr,
-    });
+    }, assignIds, disableIds);
   };
 
   const handleToggleAirport = (id: string) => {
@@ -314,7 +326,7 @@ export function EditAirlineModal({
   };
 
   // Filter airports list
-  const filteredAirports = ALL_AIRPORTS.filter((ap) => {
+  const filteredAirports = airports.filter((ap) => {
     const matchesSearch =
       ap.name.toLowerCase().includes(airportSearch.toLowerCase()) ||
       ap.iata.toLowerCase().includes(airportSearch.toLowerCase());
@@ -695,10 +707,17 @@ export function EditAirlineModal({
             </button>
             <button
               type="submit"
-              disabled={!hasChanges}
-              className="flex-1 py-3 px-6 rounded-lg bg-[#0F2757] hover:bg-[#162259] text-white text-[18px] transition-colors cursor-pointer disabled:opacity-60"
+              disabled={!hasChanges || isSaving}
+              className="flex-1 py-3 px-6 rounded-lg bg-[#0F2757] hover:bg-[#162259] text-white text-[18px] transition-colors cursor-pointer disabled:opacity-60 flex justify-center items-center"
             >
-              Save Changes
+              {isSaving ? (
+                <>
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Save Changes"
+              )}
             </button>
           </div>
         </form>

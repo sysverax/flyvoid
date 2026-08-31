@@ -97,6 +97,7 @@ export default function OnboardingPage() {
 
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [viewTarget, setViewTarget] = useState<Invitation | null>(null);
+  const [editTarget, setEditTarget] = useState<Invitation | null>(null);
   const [revokeConfirmTarget, setRevokeConfirmTarget] =
     useState<Invitation | null>(null);
   const [resendConfirmTarget, setResendConfirmTarget] =
@@ -294,6 +295,64 @@ export default function OnboardingPage() {
     }
   };
 
+  const handleEditDetails = async (inv: Invitation) => {
+    if (isViewingDetail === inv.id) return;
+    setIsViewingDetail(inv.id);
+    try {
+      const details = await onboardingService.getInvitationDetail(Number(inv.id));
+      const fullInvitation: Invitation = {
+        id: String(details.invitationId),
+        airlineName: details.airlineName,
+        airlineCode: details.airlineCode,
+        contactEmail: details.contactEmail,
+        country: countryList[details.countryCode as keyof typeof countryList]?.name || details.countryCode || "N/A",
+        invitedBy: `Admin #${details.invitedByAdminId}`,
+        invitedDate: formatDate(details.createdAt),
+        expiryDate: formatDate(details.expiresAt),
+        creditLimit: details.creditLimit || 0,
+        status: mapStatus(details.status),
+        companyReg: details.companyRegistrationNumber,
+        website: details.website || "",
+        phone: details.contactPhone || "",
+        timezone: details.timezone || "",
+        logoUrl: details.logo || "",
+        currency: details.currency || "",
+        address: details.address || "",
+        adminFirstName: details.adminFirstName,
+        adminLastName: details.adminLastName,
+        adminEmail: details.adminEmail,
+        adminJobTitle: details.adminJobTitle,
+      };
+      setEditTarget(fullInvitation);
+
+      setInviteForm({
+        airlineName: details.airlineName,
+        airlineCode: details.airlineCode,
+        contactEmail: details.contactEmail,
+        country: details.countryCode,
+        creditLimit: details.creditLimit ? String(details.creditLimit) : "",
+        expiryDate: formatDate(details.expiresAt),
+        companyReg: details.companyRegistrationNumber,
+        website: details.website || "",
+        phone: details.contactPhone || "",
+        timezone: details.timezone || "UTC",
+        logoUrl: details.logo || "",
+        currency: details.currency || "USD",
+        address: details.address || "",
+        adminFirstName: details.adminFirstName,
+        adminLastName: details.adminLastName,
+        adminEmail: details.adminEmail,
+        adminJobTitle: details.adminJobTitle,
+      });
+
+      setIsInviteModalOpen(true);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to load invitation details for editing");
+    } finally {
+      setIsViewingDetail(null);
+    }
+  };
+
   const handleResendInvite = async (inv: Invitation) => {
     setIsResending(true);
     try {
@@ -356,28 +415,35 @@ export default function OnboardingPage() {
 
     setIsSaving(true);
     try {
-      const payload = {
+      const payload: any = {
         airlineName: inviteForm.airlineName,
         airlineCode: inviteForm.airlineCode.toUpperCase(),
         countryCode: inviteForm.country,
         companyRegistrationNumber: inviteForm.companyReg,
-        website: inviteForm.website || undefined,
+        website: inviteForm.website || null,
         contactEmail: inviteForm.contactEmail,
         contactPhone: inviteForm.phone,
         timezone: inviteForm.timezone,
-        logo: inviteForm.logoUrl || undefined,
+        logo: inviteForm.logoUrl || null,
         address: inviteForm.address,
         currency: inviteForm.currency,
         adminFirstName: inviteForm.adminFirstName,
         adminLastName: inviteForm.adminLastName,
         adminEmail: inviteForm.adminEmail,
         jobTitle: inviteForm.adminJobTitle,
-        creditLimit: inviteForm.creditLimit ? Number(inviteForm.creditLimit) : 0,
+        creditLimit: inviteForm.creditLimit ? Number(inviteForm.creditLimit) : null,
       };
 
-      const response = await onboardingService.inviteAirline(payload);
-      toast.success(response.message || `Successfully invited ${inviteForm.airlineName}!`);
+      if (editTarget) {
+        const response = await onboardingService.updateInvitation(Number(editTarget.id), payload);
+        toast.success(response.message || `Successfully updated invitation for ${inviteForm.airlineName}!`);
+      } else {
+        const response = await onboardingService.inviteAirline(payload);
+        toast.success(response.message || `Successfully invited ${inviteForm.airlineName}!`);
+      }
+      
       setIsInviteModalOpen(false);
+      setEditTarget(null);
       fetchInvitations(currentPage, resultsPerPage, false);
 
       setInviteForm({
@@ -571,7 +637,13 @@ export default function OnboardingPage() {
                             variant="ghost"
                             className="h-5 w-5 cursor-pointer p-0 hover:bg-transparent"
                             size="icon"
-                            onClick={() => handleViewDetails(inv)}
+                            onClick={() => {
+                              if (inv.status === "Accepted") {
+                                handleViewDetails(inv);
+                              } else {
+                                handleEditDetails(inv);
+                              }
+                            }}
                             disabled={isViewingDetail === inv.id}
                           >
                             {isViewingDetail === inv.id ? (
@@ -649,6 +721,7 @@ export default function OnboardingPage() {
         onClose={() => {
           if (!isSaving) {
             setIsInviteModalOpen(false);
+            setEditTarget(null);
             setInviteForm({
               airlineName: "",
               airlineCode: "",
@@ -673,6 +746,7 @@ export default function OnboardingPage() {
         onSubmit={handleCreateInvitation}
         formState={inviteForm}
         setFormState={setInviteForm}
+        editTarget={editTarget}
       />
 
       <ViewInvitationModal
