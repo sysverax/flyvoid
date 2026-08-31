@@ -82,6 +82,7 @@ export class CancelledFlightsService {
   // ── Create cancelled flight ──────────────────────────────────────────────
 
   async createCancelledFlight(
+    airlineId: number,
     dto: CreateCancelledFlightDto,
     requestId: string,
   ): Promise<CancelledFlightResponseDto> {
@@ -94,7 +95,7 @@ export class CancelledFlightsService {
     const flight = await this.cancelledFlightsRepository.createFlight(
       {
         flightNumber: dto.flightNumber,
-        airlineId: dto.airlineId,
+        airlineId: airlineId,
         departureAirportId: dto.departureAirportId,
         arrivalAirportId: dto.arrivalAirportId,
         cancellationDate: dto.cancellationDate,

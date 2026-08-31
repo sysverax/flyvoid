@@ -11,6 +11,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -67,6 +68,7 @@ import {
   BookHotelRequestDto,
 } from "./dto";
 import { PaginationQueryDto } from "../common/dto/pagination-query.dto";
+import { AuthenticatedRequest } from "../auth/interfaces/authenticated-request.interface";
 
 @ApiTags("Cancelled Flights")
 @ApiBearerAuth("access-token")
@@ -122,10 +124,22 @@ export class CancelledFlightsController {
     ),
   })
   async createCancelledFlight(
+    @Req() req: AuthenticatedRequest,
     @Body() dto: CreateCancelledFlightDto,
     @RequestId() requestId: string,
   ): Promise<BaseResponseDto<CancelledFlightResponseDto>> {
-    const data = await this.service.createCancelledFlight(dto, requestId);
+    const user = req.user;
+    const airlineId = user.airlineId;
+    if (!airlineId) {
+      throw new BadRequestException(
+        "Authenticated user does not have an associated airlineId",
+      );
+    }
+    const data = await this.service.createCancelledFlight(
+      airlineId,
+      dto,
+      requestId,
+    );
     return BaseResponseDto.success(data, requestId, "Cancelled flight created");
   }
 
