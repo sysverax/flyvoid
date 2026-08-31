@@ -1,7 +1,12 @@
-import { Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import {
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from "@nestjs/common";
 import * as crypto from "node:crypto";
 import { config } from "../config/config";
 import { LoggerService } from "../common/logger/logger.service";
+import { HotelAllocationStatus } from "./entities/enums";
 
 export interface HotelCandidate {
   id: string;
@@ -34,7 +39,9 @@ export class HotelPartnerService {
         "HotelPartnerService",
         requestId,
       );
-      throw new ServiceUnavailableException("Hotelbeds API credentials not configured");
+      throw new ServiceUnavailableException(
+        "Hotelbeds API credentials not configured",
+      );
     }
 
     const endpoint = this.useSandbox
@@ -45,7 +52,10 @@ export class HotelPartnerService {
     // X-Signature = SHA256(apiKey + secret + timestampInSeconds)
     const timestamp = Math.floor(Date.now() / 1000);
     const dataToHash = this.apiKey + this.secret + timestamp;
-    const signature = crypto.createHash("sha256").update(dataToHash).digest("hex");
+    const signature = crypto
+      .createHash("sha256")
+      .update(dataToHash)
+      .digest("hex");
 
     // Build Hotelbeds Availability Request payload using geolocation
     const payload = {
@@ -81,7 +91,7 @@ export class HotelPartnerService {
         headers: {
           "Api-key": this.apiKey,
           "X-Signature": signature,
-          "Accept": "application/json",
+          Accept: "application/json",
           "Content-Type": "application/json",
         },
         body: JSON.stringify(payload),
@@ -89,7 +99,9 @@ export class HotelPartnerService {
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Hotelbeds API returned status ${response.status}: ${errorText}`);
+        throw new Error(
+          `Hotelbeds API returned status ${response.status}: ${errorText}`,
+        );
       }
 
       const responseData = await response.json();
@@ -107,42 +119,52 @@ export class HotelPartnerService {
           "HotelPartnerService",
           requestId,
         );
-        throw new NotFoundException(`No hotels found near airport ${airport.iataCode}`);
+        throw new NotFoundException(
+          `No hotels found near airport ${airport.iataCode}`,
+        );
       }
 
       // Map Hotelbeds response to standard HotelCandidate interface
-      const mappedHotels: HotelCandidate[] = rawHotels.slice(0, 10).map((hotel: any) => {
-        let stars = 3;
-        const catName = hotel.categoryName || "";
-        const starMatch = catName.match(/(\d)/);
-        if (starMatch) {
-          stars = parseInt(starMatch[1], 10);
-        }
+      const mappedHotels: HotelCandidate[] = rawHotels
+        .slice(0, 10)
+        .map((hotel: any) => {
+          let stars = 3;
+          const catName = hotel.categoryName || "";
+          const starMatch = catName.match(/(\d)/);
+          if (starMatch) {
+            stars = parseInt(starMatch[1], 10);
+          }
 
-        const price = hotel.minRate ? parseFloat(hotel.minRate) : 120;
+          const price = hotel.minRate ? parseFloat(hotel.minRate) : 120;
 
-        // Populate amenities logically based on Hotelbeds features and stars
-        const amenities = ["WiFi"];
-        if (stars >= 4) {
-          amenities.push("Business Center", "Elevator", "Wheelchair Accessible");
-        }
-        if (stars >= 5) {
-          amenities.push("Spa", "Swimming Pool", "24-hour Room Service");
-        } else {
-          amenities.push("Free Shuttle");
-        }
+          // Populate amenities logically based on Hotelbeds features and stars
+          const amenities = ["WiFi"];
+          if (stars >= 4) {
+            amenities.push(
+              "Business Center",
+              "Elevator",
+              "Wheelchair Accessible",
+            );
+          }
+          if (stars >= 5) {
+            amenities.push("Spa", "Swimming Pool", "24-hour Room Service");
+          } else {
+            amenities.push("Free Shuttle");
+          }
 
-        return {
-          id: `hb-${hotel.code}`,
-          name: hotel.name,
-          address: hotel.address || `Near Airport (Zone: ${hotel.zoneName || "Transit"})`,
-          stars,
-          amenities,
-          pricePerNight: price,
-          description: `Enjoy a comfortable stay at ${hotel.name}, a quality ${stars}-star hotel located in the ${hotel.zoneName || "airport"} area.`,
-          rateKey: hotel.rooms?.[0]?.rates?.[0]?.rateKey || null,
-        };
-      });
+          return {
+            id: `hb-${hotel.code}`,
+            name: hotel.name,
+            address:
+              hotel.address ||
+              `Near Airport (Zone: ${hotel.zoneName || "Transit"})`,
+            stars,
+            amenities,
+            pricePerNight: price,
+            description: `Enjoy a comfortable stay at ${hotel.name}, a quality ${stars}-star hotel located in the ${hotel.zoneName || "airport"} area.`,
+            rateKey: hotel.rooms?.[0]?.rates?.[0]?.rateKey || null,
+          };
+        });
 
       return mappedHotels;
     } catch (error: any) {
@@ -152,10 +174,15 @@ export class HotelPartnerService {
         requestId,
         { stack: error.stack },
       );
-      if (error instanceof NotFoundException || error instanceof ServiceUnavailableException) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof ServiceUnavailableException
+      ) {
         throw error;
       }
-      throw new ServiceUnavailableException(`Hotelbeds API query failed: ${error.message}`);
+      throw new ServiceUnavailableException(
+        `Hotelbeds API query failed: ${error.message}`,
+      );
     }
   }
 
@@ -166,7 +193,9 @@ export class HotelPartnerService {
         "HotelPartnerService",
         requestId,
       );
-      throw new ServiceUnavailableException("Hotelbeds API credentials not configured");
+      throw new ServiceUnavailableException(
+        "Hotelbeds API credentials not configured",
+      );
     }
 
     const endpoint = this.useSandbox
@@ -175,7 +204,10 @@ export class HotelPartnerService {
 
     const timestamp = Math.floor(Date.now() / 1000);
     const dataToHash = this.apiKey + this.secret + timestamp;
-    const signature = crypto.createHash("sha256").update(dataToHash).digest("hex");
+    const signature = crypto
+      .createHash("sha256")
+      .update(dataToHash)
+      .digest("hex");
 
     const payload = {
       rooms: [
@@ -198,7 +230,7 @@ export class HotelPartnerService {
         headers: {
           "Api-key": this.apiKey,
           "X-Signature": signature,
-          "Accept": "application/json",
+          Accept: "application/json",
           "Content-Type": "application/json",
         },
         body: JSON.stringify(payload),
@@ -206,11 +238,17 @@ export class HotelPartnerService {
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Hotelbeds CheckRate API returned status ${response.status}: ${errorText}`);
+        throw new Error(
+          `Hotelbeds CheckRate API returned status ${response.status}: ${errorText}`,
+        );
       }
 
       const responseData = await response.json();
-      this.logger.info("Successfully validated rate with Hotelbeds", "HotelPartnerService", requestId);
+      this.logger.info(
+        "Successfully validated rate with Hotelbeds",
+        "HotelPartnerService",
+        requestId,
+      );
       return responseData;
     } catch (error: any) {
       this.logger.error(
@@ -219,7 +257,9 @@ export class HotelPartnerService {
         requestId,
         { stack: error.stack },
       );
-      throw new ServiceUnavailableException(`Hotelbeds CheckRate API failed: ${error.message}`);
+      throw new ServiceUnavailableException(
+        `Hotelbeds CheckRate API failed: ${error.message}`,
+      );
     }
   }
 
@@ -227,20 +267,33 @@ export class HotelPartnerService {
     bookingData: {
       firstName: string;
       lastName: string;
-      bookingId: string;
+      bookingId: number;
       pnr: string;
     },
     rateKey: string,
     paymentData: any,
     requestId: string,
-  ): Promise<any> {
+  ): Promise<{
+    bookingReference: string;
+    status: HotelAllocationStatus;
+    hotelName: string;
+    hotelAddress: string;
+    checkInDate: string;
+    checkOutDate: string;
+    totalRooms: number;
+    costPerRoom: number;
+    price: number;
+    buyingPrice: number;
+  }> {
     if (!this.apiKey || !this.secret) {
       this.logger.warn(
         "Hotelbeds credentials not configured.",
         "HotelPartnerService",
         requestId,
       );
-      throw new ServiceUnavailableException("Hotelbeds API credentials not configured");
+      throw new ServiceUnavailableException(
+        "Hotelbeds API credentials not configured",
+      );
     }
 
     const endpoint = this.useSandbox
@@ -249,7 +302,10 @@ export class HotelPartnerService {
 
     const timestamp = Math.floor(Date.now() / 1000);
     const dataToHash = this.apiKey + this.secret + timestamp;
-    const signature = crypto.createHash("sha256").update(dataToHash).digest("hex");
+    const signature = crypto
+      .createHash("sha256")
+      .update(dataToHash)
+      .digest("hex");
 
     const payload: any = {
       holder: {
@@ -289,7 +345,7 @@ export class HotelPartnerService {
         headers: {
           "Api-key": this.apiKey,
           "X-Signature": signature,
-          "Accept": "application/json",
+          Accept: "application/json",
           "Content-Type": "application/json",
         },
         body: JSON.stringify(payload),
@@ -297,12 +353,29 @@ export class HotelPartnerService {
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Hotelbeds Bookings API returned status ${response.status}: ${errorText}`);
+        throw new Error(
+          `Hotelbeds Bookings API returned status ${response.status}: ${errorText}`,
+        );
       }
 
       const responseData = await response.json();
-      this.logger.info("Successfully created booking with Hotelbeds", "HotelPartnerService", requestId);
-      return responseData;
+      this.logger.info(
+        "Successfully created booking with Hotelbeds",
+        "HotelPartnerService",
+        requestId,
+      );
+      return {
+        bookingReference: responseData.booking.reference,
+        status: HotelAllocationStatus.CONFIRMED,
+        hotelName: responseData.booking.hotel.name,
+        hotelAddress: responseData.booking.hotel.address,
+        checkInDate: responseData.booking.stay.checkIn,
+        checkOutDate: responseData.booking.stay.checkOut,
+        totalRooms: responseData.booking.rooms.length,
+        costPerRoom: responseData.booking.rooms[0].totalNet,
+        price: responseData.booking.totalNet,
+        buyingPrice: responseData.booking.buyingPrice,
+      };
     } catch (error: any) {
       this.logger.error(
         `Error calling Hotelbeds Bookings API: ${error.message}`,
@@ -310,7 +383,9 @@ export class HotelPartnerService {
         requestId,
         { stack: error.stack },
       );
-      throw new ServiceUnavailableException(`Hotelbeds Bookings API failed: ${error.message}`);
+      throw new ServiceUnavailableException(
+        `Hotelbeds Bookings API failed: ${error.message}`,
+      );
     }
   }
 }

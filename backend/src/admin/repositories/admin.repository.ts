@@ -6,6 +6,7 @@ import {
   PlatformAsset,
 } from "../../common/constants/access-control.constants";
 import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
+import { AdminUserQueryDto } from "../dto/admin-user-query.dto";
 import { LoggerService } from "../../common/logger/logger.service";
 import { AdminEntity } from "../entities/admin.entity";
 import { PlatformAccessControlEntity } from "../entities/platform-access-control.entity";
@@ -88,20 +89,34 @@ export class AdminRepository {
   }
 
   async findAll(
-    pagination: PaginationQueryDto,
+    adminUserQuery: AdminUserQueryDto,
     requestId: string,
   ): Promise<{ admins: AdminEntity[]; total: number }> {
     this.logger.debug("Listing all admins", "AdminRepository", requestId);
 
-    const skip = (pagination.page - 1) * pagination.limit;
+    const skip = (adminUserQuery.page - 1) * adminUserQuery.limit;
 
-    const [admins, total] = await this.adminRepository.findAndCount({
-      order: {
-        createdAt: "DESC",
-      },
-      skip,
-      take: pagination.limit,
-    });
+    const queryBuilder = this.adminRepository.createQueryBuilder("admin");
+
+    if (adminUserQuery.isActive !== undefined) {
+      queryBuilder.andWhere("admin.isActive = :isActive", {
+        isActive: adminUserQuery.isActive,
+      });
+    }
+
+    if (adminUserQuery.search) {
+      queryBuilder.andWhere(
+        "(CAST(admin.id AS TEXT) ILIKE :search OR admin.firstName ILIKE :search OR admin.lastName ILIKE :search OR admin.email ILIKE :search)",
+        { search: `%${adminUserQuery.search}%` },
+      );
+    }
+
+    queryBuilder
+      .orderBy("admin.createdAt", "DESC")
+      .skip(skip)
+      .take(adminUserQuery.limit);
+
+    const [admins, total] = await queryBuilder.getManyAndCount();
 
     return { admins, total };
   }

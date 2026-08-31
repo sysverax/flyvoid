@@ -20,12 +20,12 @@ export class CreateBookingDto {
   @ApiProperty({ example: "John" })
   @IsNotEmpty()
   @IsString()
-  first_name!: string;
+  firstName!: string;
 
   @ApiProperty({ example: "Doe" })
   @IsNotEmpty()
   @IsString()
-  last_name!: string;
+  lastName!: string;
 
   @ApiProperty({ example: "john.doe@email.com" })
   @IsEmail()
@@ -38,7 +38,7 @@ export class CreateBookingDto {
 
   @ApiProperty({ enum: TravelClass })
   @IsEnum(TravelClass)
-  travel_class!: TravelClass;
+  travelClass!: TravelClass;
 
   @ApiProperty({ example: 2, minimum: 1 })
   @IsInt()
@@ -54,10 +54,10 @@ export class CreateBookingDto {
   @IsOptional()
   @IsArray()
   @IsEnum(SpecialNote, { each: true })
-  special_notes?: SpecialNote[];
+  specialNotes?: SpecialNote[];
 
   @ApiPropertyOptional({ example: "Passenger requires window seat" })
   @IsOptional()
   @IsString()
-  additional_notes?: string;
+  additionalNotes?: string;
 }

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Image from "next/image";
-import { Send, Search } from "lucide-react";
+import { Send, Search, Loader2 } from "lucide-react";
 import { Dropdown } from "@/src/components/ui/Dropdown";
 import {
   Table,
@@ -12,9 +12,9 @@ import {
   TableHead,
   TableCell,
   SortHeader,
-} from "../../components/ui/table";
-import { Invitation, Toast, InviteFormState } from "@/src/types/onboarding";
-import { ToastList } from "@/src/components/ui/ToastList";
+} from "@/src/components/ui/table";
+import { Invitation, InviteFormState } from "@/src/types/onboarding";
+import { countries as countryList } from "countries-list";
 import { FiltersCard } from "@/src/components/ui/FiltersCard";
 import { Pagination } from "@/src/components/ui/pagination";
 import { InviteModal } from "@/src/components/onboarding/InviteModal";
@@ -33,101 +33,53 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from "@radix-ui/react-tooltip";
-
-const INITIAL_INVITATIONS: Invitation[] = [
-  {
-    id: "1",
-    airlineName: "EuroJet Airways",
-    airlineCode: "EJA",
-    contactEmail: "onboard.eja@eurojet.com",
-    country: "France",
-    invitedBy: "John Smith",
-    invitedDate: "30/01/2025",
-    expiryDate: "28/02/2025",
-    creditLimit: 100000,
-    status: "Pending",
-  },
-  {
-    id: "2",
-    airlineName: "EuroJet Airways",
-    airlineCode: "EJA",
-    contactEmail: "onboard.eja@eurojet.com",
-    country: "France",
-    invitedBy: "John Smith",
-    invitedDate: "30/01/2025",
-    expiryDate: "28/02/2025",
-    creditLimit: 100000,
-    status: "Accepted",
-  },
-  {
-    id: "3",
-    airlineName: "EuroJet Airways",
-    airlineCode: "EJA",
-    contactEmail: "onboard.eja@eurojet.com",
-    country: "France",
-    invitedBy: "John Smith",
-    invitedDate: "30/01/2025",
-    expiryDate: "28/02/2025",
-    creditLimit: 100000,
-    status: "Revoked",
-  },
-  {
-    id: "4",
-    airlineName: "EuroJet Airways",
-    airlineCode: "EJA",
-    contactEmail: "onboard.eja@eurojet.com",
-    country: "France",
-    invitedBy: "John Smith",
-    invitedDate: "30/01/2025",
-    expiryDate: "28/02/2025",
-    creditLimit: 100000,
-    status: "Expired",
-  },
-  // {
-  //   id: "5",
-  //   airlineName: "TransAsia Link",
-  //   airlineCode: "TAL",
-  //   contactEmail: "onboard.tal@transasia.net",
-  //   country: "Japan",
-  //   invitedBy: "John Smith",
-  //   invitedDate: "15/02/2025",
-  //   expiryDate: "15/03/2025",
-  //   creditLimit: 150000,
-  //   status: "Accepted",
-  // },
-  // {
-  //   id: "6",
-  //   airlineName: "Alpine Airways",
-  //   airlineCode: "ALA",
-  //   contactEmail: "onboard.ala@alpine.ch",
-  //   country: "Switzerland",
-  //   invitedBy: "John Smith",
-  //   invitedDate: "10/01/2025",
-  //   expiryDate: "10/02/2025",
-  //   creditLimit: 120000,
-  //   status: "Revoked",
-  // },
-  // {
-  //   id: "7",
-  //   airlineName: "Nordic Flight",
-  //   airlineCode: "NDF",
-  //   contactEmail: "onboard.ndf@nordic.se",
-  //   country: "Sweden",
-  //   invitedBy: "Sarah Connor",
-  //   invitedDate: "05/01/2025",
-  //   expiryDate: "05/02/2025",
-  //   creditLimit: 80000,
-  //   status: "Expired",
-  // },
-];
+import { toast } from "react-toastify";
+import { onboardingService } from "@/src/services/onboarding.service";
 
 const STATUSES = ["Pending", "Expired", "Accepted", "Revoked"] as const;
-const ALL_STATUSES = ["pending", "expired", "accepted", "revoked"];
+const ALL_STATUSES = ["Pending", "Expired", "Accepted", "Revoked"];
+
+const COUNTRIES_FILTER = [
+  { value: "All Countries", label: "All Countries" },
+  ...Object.entries(countryList)
+    .map(([code, c]) => ({ value: code, label: c.name }))
+    .sort((a, b) => a.label.localeCompare(b.label)),
+];
+
+
+const formatDate = (dateStr?: string) => {
+  if (!dateStr) return "N/A";
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return "N/A";
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
+};
+
+const mapStatus = (status?: string): "Pending" | "Accepted" | "Revoked" | "Expired" => {
+  switch (status?.toUpperCase()) {
+    case "ACCEPTED":
+      return "Accepted";
+    case "REVOKED":
+      return "Revoked";
+    case "EXPIRED":
+      return "Expired";
+    case "PENDING":
+    default:
+      return "Pending";
+  }
+};
 
 export default function OnboardingPage() {
   const { hasPermission } = useAuth();
-  const [invitations, setInvitations] =
-    useState<Invitation[]>(INITIAL_INVITATIONS);
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isRevoking, setIsRevoking] = useState(false);
+  const [isResending, setIsResending] = useState(false);
+  const [isViewingDetail, setIsViewingDetail] = useState<string | null>(null);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCountry, setSelectedCountry] = useState("All Countries");
   const [selectedStatuses, setSelectedStatuses] = useState<Set<string>>(
@@ -138,6 +90,7 @@ export default function OnboardingPage() {
 
   const [resultsPerPage, setResultsPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
+  const [totalResults, setTotalResults] = useState(0);
 
   const [sortField, setSortField] = useState<keyof Invitation | null>(null);
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
@@ -145,6 +98,8 @@ export default function OnboardingPage() {
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [viewTarget, setViewTarget] = useState<Invitation | null>(null);
   const [revokeConfirmTarget, setRevokeConfirmTarget] =
+    useState<Invitation | null>(null);
+  const [resendConfirmTarget, setResendConfirmTarget] =
     useState<Invitation | null>(null);
 
   const [inviteForm, setInviteForm] = useState<InviteFormState>({
@@ -167,53 +122,94 @@ export default function OnboardingPage() {
     adminJobTitle: "",
   });
 
-  const [toasts, setToasts] = useState<Toast[]>([]);
+  const fetchInvitationsData = async (
+    page = currentPage,
+    limit = resultsPerPage,
+    search = searchQuery,
+    statuses = selectedStatuses,
+    country = selectedCountry,
+    showLoader = true
+  ) => {
+    if (showLoader) setIsLoading(true);
+    try {
+      let statusParam: string | undefined = undefined;
+      if (statuses.size > 0 && statuses.size < ALL_STATUSES.length) {
+        statusParam = Array.from(statuses).join(",");
+      }
 
-  const [editTarget, setEditTarget] = useState<Invitation | null>(null);
-  const [resendConfirmTarget, setResendConfirmTarget] =
-    useState<Invitation | null>(null);
-
-  const addToast = (message: string, type: Toast["type"] = "success") => {
-    const id = Math.random().toString(36).substring(2, 9);
-    setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(
-      () => setToasts((prev) => prev.filter((t) => t.id !== id)),
-      4000,
-    );
+      const res = await onboardingService.getInvitations(
+        page, 
+        limit, 
+        search || undefined, 
+        statusParam, 
+        country
+      );
+      
+      const mapped = res.invitations.map((inv: any) => ({
+        id: String(inv.invitationId),
+        airlineName: inv.airlineName,
+        airlineCode: inv.airlineCode,
+        contactEmail: inv.contactEmail,
+        country: countryList[inv.countryCode as keyof typeof countryList]?.name || inv.countryCode || "N/A",
+        invitedBy: `Admin #${inv.invitedByAdminId}`,
+        invitedDate: formatDate(inv.createdAt),
+        expiryDate: formatDate(inv.expiresAt),
+        creditLimit: inv.creditLimit || 0,
+        status: mapStatus(inv.status),
+      }));
+      return { mapped, total: res.total };
+    } catch (err: any) {
+      throw err;
+    } finally {
+      if (showLoader) setIsLoading(false);
+    }
   };
 
-  const countries = useMemo(() => {
-    const unique = new Set(invitations.map((item) => item.country));
-    return ["All Countries", ...Array.from(unique)];
-  }, [invitations]);
+  useEffect(() => {
+    let isMounted = true;
+    
+    const load = async () => {
+      try {
+        const { mapped, total } = await fetchInvitationsData();
+        if (isMounted) {
+          setInvitations(mapped);
+          setTotalResults(total);
+        }
+      } catch (err: any) {
+        if (isMounted) {
+          toast.error(err.message || "Failed to load invitations");
+        }
+      }
+    };
 
-  const filteredInvitations = useMemo(() => {
-    return invitations.filter((inv) => {
-      const matchesSearch =
-        inv.airlineName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        inv.airlineCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        inv.contactEmail.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesCountry =
-        selectedCountry === "All Countries" || inv.country === selectedCountry;
-      const matchesStatus =
-        selectedStatuses.size === 0 || selectedStatuses.has(inv.status);
-      return matchesSearch && matchesCountry && matchesStatus;
-    });
-  }, [invitations, searchQuery, selectedCountry, selectedStatuses]);
+    const timeoutId = setTimeout(() => {
+      load();
+    }, 300);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, [currentPage, resultsPerPage, searchQuery, selectedStatuses, selectedCountry]);
+
+  const fetchInvitations = async (page = currentPage, limit = resultsPerPage, showLoader = true) => {
+    try {
+      const { mapped, total } = await fetchInvitationsData(page, limit, searchQuery, selectedStatuses, selectedCountry, showLoader);
+      setInvitations(mapped);
+      setTotalResults(total);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to load invitations");
+    }
+  };
 
   const sortedInvitations = useMemo(() => {
-    return sortData(filteredInvitations, sortField, sortOrder, ["invitedDate", "expiryDate"]);
-  }, [filteredInvitations, sortField, sortOrder]);
+    return sortData(invitations, sortField, sortOrder, ["invitedDate", "expiryDate"]);
+  }, [invitations, sortField, sortOrder]);
 
   const totalPages = Math.max(
     1,
-    Math.ceil(sortedInvitations.length / resultsPerPage),
+    Math.ceil(totalResults / resultsPerPage),
   );
-
-  const paginatedInvitations = useMemo(() => {
-    const startIndex = (currentPage - 1) * resultsPerPage;
-    return sortedInvitations.slice(startIndex, startIndex + resultsPerPage);
-  }, [sortedInvitations, currentPage, resultsPerPage]);
 
   const filterDescriptionText = useMemo(() => {
     if (
@@ -246,7 +242,6 @@ export default function OnboardingPage() {
     setCurrentPage(1);
     setSortField(null);
     setSortOrder("asc");
-    addToast("Filters cleared", "info");
   };
 
   const handleSort = (field: keyof Invitation) => {
@@ -263,43 +258,72 @@ export default function OnboardingPage() {
     setCurrentPage(1);
   };
 
-
-  const handleResendInvite = (inv: Invitation) => {
-    const today = new Date();
-    today.setDate(today.getDate() + 30);
-    const newExpiry = [
-      String(today.getDate()).padStart(2, "0"),
-      String(today.getMonth() + 1).padStart(2, "0"),
-      today.getFullYear(),
-    ].join("/");
-
-    setInvitations((prev) =>
-      prev.map((item) =>
-        item.id === inv.id
-          ? { ...item, expiryDate: newExpiry, status: "Pending" }
-          : item,
-      ),
-    );
-    addToast(`Invitation resent to ${inv.airlineName} (${inv.contactEmail})`);
+  const handleViewDetails = async (inv: Invitation) => {
+    if (isViewingDetail === inv.id) return;
+    setIsViewingDetail(inv.id);
+    try {
+      const details = await onboardingService.getInvitationDetail(Number(inv.id));
+      const fullInvitation: Invitation = {
+        id: String(details.invitationId),
+        airlineName: details.airlineName,
+        airlineCode: details.airlineCode,
+        contactEmail: details.contactEmail,
+        country: countryList[details.countryCode as keyof typeof countryList]?.name || details.countryCode || "N/A",
+        invitedBy: `Admin #${details.invitedByAdminId}`,
+        invitedDate: formatDate(details.createdAt),
+        expiryDate: formatDate(details.expiresAt),
+        creditLimit: details.creditLimit || 0,
+        status: mapStatus(details.status),
+        companyReg: details.companyRegistrationNumber,
+        website: details.website || "",
+        phone: details.contactPhone || "",
+        timezone: details.timezone || "",
+        logoUrl: details.logo || "",
+        currency: details.currency || "",
+        address: details.address || "",
+        adminFirstName: details.adminFirstName,
+        adminLastName: details.adminLastName,
+        adminEmail: details.adminEmail,
+        adminJobTitle: details.adminJobTitle,
+      };
+      setViewTarget(fullInvitation);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to load invitation details");
+    } finally {
+      setIsViewingDetail(null);
+    }
   };
 
-  const handleRevokeConfirm = () => {
+  const handleResendInvite = async (inv: Invitation) => {
+    setIsResending(true);
+    try {
+      const response = await onboardingService.resendInvitation(Number(inv.id));
+      toast.success(response.message || `Invitation resent to ${inv.airlineName}`);
+      setResendConfirmTarget(null);
+      fetchInvitations(currentPage, resultsPerPage, false);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to resend invitation");
+    } finally {
+      setIsResending(false);
+    }
+  };
+
+  const handleRevokeConfirm = async () => {
     if (!revokeConfirmTarget) return;
-    setInvitations((prev) =>
-      prev.map((item) =>
-        item.id === revokeConfirmTarget.id
-          ? { ...item, status: "Revoked" as const }
-          : item,
-      ),
-    );
-    addToast(
-      `Invitation for ${revokeConfirmTarget.airlineName} revoked`,
-      "warning",
-    );
-    setRevokeConfirmTarget(null);
+    setIsRevoking(true);
+    try {
+      const response = await onboardingService.revokeInvitation(Number(revokeConfirmTarget.id));
+      toast.success(response.message || `Invitation for ${revokeConfirmTarget.airlineName} revoked`);
+      setRevokeConfirmTarget(null);
+      fetchInvitations(currentPage, resultsPerPage, false);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to revoke invitation");
+    } finally {
+      setIsRevoking(false);
+    }
   };
 
-  const handleCreateInvitation = (e: React.FormEvent) => {
+  const handleCreateInvitation = async (e: React.FormEvent) => {
     e.preventDefault();
     if (
       !inviteForm.airlineName ||
@@ -309,128 +333,81 @@ export default function OnboardingPage() {
       !inviteForm.adminFirstName ||
       !inviteForm.adminLastName ||
       !inviteForm.adminEmail ||
-      !inviteForm.adminJobTitle
+      !inviteForm.adminJobTitle ||
+      !inviteForm.address ||
+      !inviteForm.currency ||
+      !inviteForm.timezone ||
+      !inviteForm.phone ||
+      !inviteForm.companyReg
     ) {
-      addToast("Please fill in all required fields", "warning");
+      toast.warn("Please fill in all required fields");
       return;
     }
 
-    const formattedExpiry = inviteForm.expiryDate
-      ? (() => {
-        const rawDate = new Date(inviteForm.expiryDate);
-        return [
-          String(rawDate.getDate()).padStart(2, "0"),
-          String(rawDate.getMonth() + 1).padStart(2, "0"),
-          rawDate.getFullYear(),
-        ].join("/");
-      })()
-      : editTarget
-        ? editTarget.expiryDate
-        : (() => {
-          const today = new Date();
-          today.setDate(today.getDate() + 30);
-          return [
-            String(today.getDate()).padStart(2, "0"),
-            String(today.getMonth() + 1).padStart(2, "0"),
-            today.getFullYear(),
-          ].join("/");
-        })();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(inviteForm.contactEmail)) {
+      toast.warn("Please enter a valid contact email address");
+      return;
+    }
+    if (!emailRegex.test(inviteForm.adminEmail)) {
+      toast.warn("Please enter a valid admin email address");
+      return;
+    }
 
-    const today = new Date();
-    const formattedToday = [
-      String(today.getDate()).padStart(2, "0"),
-      String(today.getMonth() + 1).padStart(2, "0"),
-      today.getFullYear(),
-    ].join("/");
-
-    if (editTarget) {
-      setInvitations((prev) =>
-        prev.map((item) =>
-          item.id === editTarget.id
-            ? {
-              ...item,
-              airlineName: inviteForm.airlineName,
-              airlineCode: inviteForm.airlineCode.toUpperCase(),
-              contactEmail: inviteForm.contactEmail,
-              country: inviteForm.country,
-              expiryDate: formattedExpiry,
-              creditLimit: inviteForm.creditLimit
-                ? parseInt(inviteForm.creditLimit)
-                : 100000,
-              companyReg: inviteForm.companyReg,
-              website: inviteForm.website,
-              phone: inviteForm.phone,
-              timezone: inviteForm.timezone,
-              logoUrl: inviteForm.logoUrl,
-              currency: inviteForm.currency,
-              address: inviteForm.address,
-              adminFirstName: inviteForm.adminFirstName,
-              adminLastName: inviteForm.adminLastName,
-              adminEmail: inviteForm.adminEmail,
-              adminJobTitle: inviteForm.adminJobTitle,
-            }
-            : item
-        )
-      );
-      setEditTarget(null);
-      addToast(`Successfully updated invitation for ${inviteForm.airlineName}!`);
-    } else {
-      const newInvitation: Invitation = {
-        id: Math.random().toString(36).substring(2, 9),
+    setIsSaving(true);
+    try {
+      const payload = {
         airlineName: inviteForm.airlineName,
         airlineCode: inviteForm.airlineCode.toUpperCase(),
+        countryCode: inviteForm.country,
+        companyRegistrationNumber: inviteForm.companyReg,
+        website: inviteForm.website || undefined,
         contactEmail: inviteForm.contactEmail,
-        country: inviteForm.country,
-        invitedBy: "You (Admin)",
-        invitedDate: formattedToday,
-        expiryDate: formattedExpiry,
-        creditLimit: inviteForm.creditLimit
-          ? parseInt(inviteForm.creditLimit)
-          : 100000,
-        status: "Pending",
-        companyReg: inviteForm.companyReg,
-        website: inviteForm.website,
-        phone: inviteForm.phone,
+        contactPhone: inviteForm.phone,
         timezone: inviteForm.timezone,
-        logoUrl: inviteForm.logoUrl,
-        currency: inviteForm.currency,
+        logo: inviteForm.logoUrl || undefined,
         address: inviteForm.address,
+        currency: inviteForm.currency,
         adminFirstName: inviteForm.adminFirstName,
         adminLastName: inviteForm.adminLastName,
         adminEmail: inviteForm.adminEmail,
-        adminJobTitle: inviteForm.adminJobTitle,
+        jobTitle: inviteForm.adminJobTitle,
+        creditLimit: inviteForm.creditLimit ? Number(inviteForm.creditLimit) : 0,
       };
-      setInvitations((prev) => [newInvitation, ...prev]);
-      setIsInviteModalOpen(false);
-      addToast(`Successfully invited ${newInvitation.airlineName}!`);
-    }
 
-    setInviteForm({
-      airlineName: "",
-      airlineCode: "",
-      contactEmail: "",
-      country: "",
-      creditLimit: "",
-      expiryDate: "",
-      companyReg: "",
-      website: "",
-      phone: "",
-      timezone: "UTC",
-      logoUrl: "",
-      currency: "USD",
-      address: "",
-      adminFirstName: "",
-      adminLastName: "",
-      adminEmail: "",
-      adminJobTitle: "",
-    });
+      const response = await onboardingService.inviteAirline(payload);
+      toast.success(response.message || `Successfully invited ${inviteForm.airlineName}!`);
+      setIsInviteModalOpen(false);
+      fetchInvitations(currentPage, resultsPerPage, false);
+
+      setInviteForm({
+        airlineName: "",
+        airlineCode: "",
+        contactEmail: "",
+        country: "",
+        creditLimit: "",
+        expiryDate: "",
+        companyReg: "",
+        website: "",
+        phone: "",
+        timezone: "UTC",
+        logoUrl: "",
+        currency: "USD",
+        address: "",
+        adminFirstName: "",
+        adminLastName: "",
+        adminEmail: "",
+        adminJobTitle: "",
+      });
+    } catch (err: any) {
+      toast.error(err.message || "Failed to create invitation");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
-    // <div className="flex min-h-screen flex-1 flex-col pb-16 lg:w-[1136px] lg:max-w-[calc(100vw-304px)]">
     <div className="flex min-h-screen flex-1 flex-col pb-16 lg:w-full lg:max-w-[calc(100vw-304px)]">
-      <ToastList toasts={toasts} />
-
       <div className="space-y-7">
         {/* Header */}
         <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center lg:h-[50px]">
@@ -471,7 +448,7 @@ export default function OnboardingPage() {
               setSelectedCountry(val);
               setCurrentPage(1);
             }}
-            options={countries.map((c) => ({ value: c, label: c }))}
+            options={COUNTRIES_FILTER}
             widthClass="w-44"
             triggerWidthClass="w-[180px]"
           />
@@ -497,7 +474,7 @@ export default function OnboardingPage() {
         </FiltersCard>
 
         {/* Table card */}
-        <div className="hidden overflow-hidden rounded-[12px] border border-[#E5E7EB] lg:block mb-6 pt-1.5">
+        <div className="hidden overflow-hidden rounded-[12px] border border-[#E5E7EB] lg:block mb-6 translate-y-1.5 bg-white">
           <Table>
             <TableHeader>
               <TableRow>
@@ -529,15 +506,27 @@ export default function OnboardingPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paginatedInvitations.length === 0 ? (
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={showActionsColumn ? 9 : 8} className="px-6 py-12 text-center text-gray-500 font-figtree">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <svg className="animate-spin h-8 w-8 text-primary" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      <span>Loading invitations...</span>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : sortedInvitations.length === 0 ? (
                 <TableEmptyState
-                  colSpan={9}
+                  colSpan={showActionsColumn ? 9 : 8}
                   icon={Search}
                   title="No invitations found"
                   message="Try adjusting your filters or search query."
                 />
               ) : (
-                paginatedInvitations.map((inv) => (
+                sortedInvitations.map((inv) => (
                   <TableRow
                     key={inv.id}
                     className={cn("relative", "mt-1")}
@@ -561,7 +550,7 @@ export default function OnboardingPage() {
                         {inv.contactEmail}
                       </span>
                     </TableCell>
-                    <TableCell className={cn(inv.status === "Revoked" && "opacity-50")}>{inv.country}</TableCell>
+                    <TableCell className={cn(inv.status === "Revoked" && "opacity-50")}>{inv.country || "N/A"}</TableCell>
                     <TableCell className={cn(inv.status === "Revoked" && "opacity-50")}>{inv.invitedBy}</TableCell>
                     <TableCell className={cn("whitespace-nowrap", inv.status === "Revoked" && "opacity-50")}>
                       {inv.invitedDate}
@@ -570,7 +559,7 @@ export default function OnboardingPage() {
                       {inv.expiryDate}
                     </TableCell>
                     <TableCell className={cn(inv.status === "Revoked" && "opacity-50")}>
-                      ${inv.creditLimit.toLocaleString()}
+                      {inv.creditLimit > 0 ? `$${inv.creditLimit.toLocaleString()}` : "N/A"}
                     </TableCell>
                     <TableCell className={cn(inv.status === "Revoked" && "opacity-50")}>
                       <StatusBadge status={inv.status} />
@@ -578,115 +567,55 @@ export default function OnboardingPage() {
                     {showActionsColumn && (
                       <TableCell>
                         <div className="flex items-center justify-start min-w-[60px] gap-3">
-                          {inv.status === "Accepted" && (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  className="h-5 w-5 cursor-pointer p-0"
-                                  size="icon"
-                                  onClick={() => setViewTarget(inv)}
-                                >
-                                  <Image
-                                    src="/icons/view.svg"
-                                    alt="View"
-                                    width={20}
-                                    height={20}
-                                  />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                View Invitation Details
-                              </TooltipContent>
-                            </Tooltip>
-                          )}
+                          <Button
+                            variant="ghost"
+                            className="h-5 w-5 cursor-pointer p-0 hover:bg-transparent"
+                            size="icon"
+                            onClick={() => handleViewDetails(inv)}
+                            disabled={isViewingDetail === inv.id}
+                          >
+                            {isViewingDetail === inv.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin text-[#6B7280]" />
+                            ) : (
+                              <Image
+                                src={inv.status === "Accepted" ? "/icons/view.svg" : "/icons/edit.svg"}
+                                alt={inv.status === "Accepted" ? "View" : "Edit"}
+                                width={20}
+                                height={20}
+                              />
+                            )}
+                          </Button>
+
                           {(inv.status === "Pending" ||
                             inv.status === "Expired" ||
                             inv.status === "Revoked") && hasPermission("edit") && (
                               <>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button
-                                      variant="ghost"
-                                      className="h-5 w-5 cursor-pointer p-0"
-                                      size="icon"
-                                      onClick={() => {
-                                        setEditTarget(inv);
-                                        setInviteForm({
-                                          airlineName: inv.airlineName,
-                                          airlineCode: inv.airlineCode,
-                                          contactEmail: inv.contactEmail,
-                                          country: inv.country,
-                                          creditLimit: String(inv.creditLimit),
-                                          expiryDate: inv.expiryDate
-                                            ? (() => {
-                                              const parts = inv.expiryDate.split("/");
-                                              if (parts.length === 3) {
-                                                return `${parts[2]}-${parts[1]}-${parts[0]}`;
-                                              }
-                                              return "";
-                                            })()
-                                            : "",
-                                          companyReg: inv.companyReg || "",
-                                          website: inv.website || "",
-                                          phone: inv.phone || "",
-                                          timezone: inv.timezone || "UTC",
-                                          logoUrl: inv.logoUrl || "",
-                                          currency: inv.currency || "USD",
-                                          address: inv.address || "",
-                                          adminFirstName: inv.adminFirstName || "",
-                                          adminLastName: inv.adminLastName || "",
-                                          adminEmail: inv.adminEmail || "",
-                                          adminJobTitle: inv.adminJobTitle || "",
-                                        });
-                                      }}
-                                    >
-                                      <Image
-                                        src="/icons/edit.svg"
-                                        alt="Edit"
-                                        width={20}
-                                        height={20}
-                                      />
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>Edit Invitation</TooltipContent>
-                                </Tooltip>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button
-                                      variant="ghost"
-                                      className="h-5 w-5 cursor-pointer p-0"
-                                      size="icon"
-                                      onClick={() => setResendConfirmTarget(inv)}
-                                    >
-                                      <Image
-                                        src="/icons/resend.svg"
-                                        alt="Resend"
-                                        width={20}
-                                        height={20}
-                                      />
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>Resend Invitation</TooltipContent>
-                                </Tooltip>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button
-                                      variant="ghost"
-                                      className="h-5 w-5 cursor-pointer p-0"
-                                      size="icon"
-                                      onClick={() => setRevokeConfirmTarget(inv)}
-                                    >
-                                      <Image
-                                        src="/icons/revoke.svg"
-                                        alt="Revoke"
-                                        width={20}
-                                        height={20}
-                                      />
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>Revoke Invitation</TooltipContent>
-                                </Tooltip>
+                                <Button
+                                  variant="ghost"
+                                  className="h-5 w-5 cursor-pointer p-0 hover:bg-transparent"
+                                  size="icon"
+                                  onClick={() => setResendConfirmTarget(inv)}
+                                >
+                                  <Image
+                                    src="/icons/resend.svg"
+                                    alt="Resend"
+                                    width={20}
+                                    height={20}
+                                  />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  className="h-5 w-5 cursor-pointer p-0 hover:bg-transparent"
+                                  size="icon"
+                                  onClick={() => setRevokeConfirmTarget(inv)}
+                                >
+                                  <Image
+                                    src="/icons/revoke.svg"
+                                    alt="Revoke"
+                                    width={20}
+                                    height={20}
+                                  />
+                                </Button>
                               </>
                             )}
                         </div>
@@ -700,45 +629,50 @@ export default function OnboardingPage() {
         </div>
 
         {/* Pagination */}
-        <Pagination
-          totalResults={filteredInvitations.length}
-          currentPage={currentPage}
-          setCurrentPage={setCurrentPage}
-          resultsPerPage={resultsPerPage}
-          setResultsPerPage={setResultsPerPage}
-          totalPages={totalPages}
-        />
+        {totalResults > 0 && (
+          <div className="mb-6">
+            <Pagination
+              totalResults={totalResults}
+              currentPage={currentPage}
+              setCurrentPage={setCurrentPage}
+              resultsPerPage={resultsPerPage}
+              setResultsPerPage={setResultsPerPage}
+              totalPages={totalPages}
+            />
+          </div>
+        )}
       </div>
 
       <InviteModal
-        isOpen={isInviteModalOpen || !!editTarget}
+        isOpen={isInviteModalOpen}
+        isLoading={isSaving}
         onClose={() => {
-          setIsInviteModalOpen(false);
-          setEditTarget(null);
-          setInviteForm({
-            airlineName: "",
-            airlineCode: "",
-            contactEmail: "",
-            country: "",
-            creditLimit: "",
-            expiryDate: "",
-            companyReg: "",
-            website: "",
-            phone: "",
-            timezone: "UTC",
-            logoUrl: "",
-            currency: "USD",
-            address: "",
-            adminFirstName: "",
-            adminLastName: "",
-            adminEmail: "",
-            adminJobTitle: "",
-          });
+          if (!isSaving) {
+            setIsInviteModalOpen(false);
+            setInviteForm({
+              airlineName: "",
+              airlineCode: "",
+              contactEmail: "",
+              country: "",
+              creditLimit: "",
+              expiryDate: "",
+              companyReg: "",
+              website: "",
+              phone: "",
+              timezone: "UTC",
+              logoUrl: "",
+              currency: "USD",
+              address: "",
+              adminFirstName: "",
+              adminLastName: "",
+              adminEmail: "",
+              adminJobTitle: "",
+            });
+          }
         }}
         onSubmit={handleCreateInvitation}
         formState={inviteForm}
         setFormState={setInviteForm}
-        editTarget={editTarget}
       />
 
       <ViewInvitationModal
@@ -748,16 +682,17 @@ export default function OnboardingPage() {
 
       <RevokeDialog
         target={revokeConfirmTarget}
-        onClose={() => setRevokeConfirmTarget(null)}
+        isRevoking={isRevoking}
+        onClose={() => !isRevoking && setRevokeConfirmTarget(null)}
         onConfirm={handleRevokeConfirm}
       />
 
       <ResendDialog
         target={resendConfirmTarget}
-        onClose={() => setResendConfirmTarget(null)}
+        isResending={isResending}
+        onClose={() => !isResending && setResendConfirmTarget(null)}
         onConfirm={() => {
           handleResendInvite(resendConfirmTarget!);
-          setResendConfirmTarget(null);
         }}
       />
     </div>

@@ -59,6 +59,8 @@ import {
   UpdateAirlineAirportsRequestDto,
   UpdateAirlineAirportsResponseDto,
   UpdateAirportRequestDto,
+  GetAirportsWithAssignmentQueryDto,
+  AirportListWithAssignmentResponseDto,
 } from "../dto/airports";
 import { AirportService } from "../services/airport.service";
 
@@ -68,6 +70,10 @@ import { AirportService } from "../services/airport.service";
   AirportResponseDto,
   AirportListResponseDto,
   UpdateAirlineAirportsResponseDto,
+  UpdateAirlineAirportsRequestDto,
+  UpdateAirportRequestDto,
+  GetAirportsWithAssignmentQueryDto,
+  AirportListWithAssignmentResponseDto,
 )
 @UseGuards(JwtAuthGuard, RbacGuard)
 @Controller("airports")
@@ -386,6 +392,83 @@ export class AirportController {
       data,
       requestId,
       "Airline airport assignments updated",
+    );
+  }
+
+  // get all airports with assignment tag for a specific airline. This endpoint is accessible to PLATFORM users
+  @Get("/airlines/:airlineId/airports")
+  @RequireUserTypes(UserType.PLATFORM)
+  @RequireAccessControl({
+    platform: {
+      asset: [PlatformAsset.AIRLINES],
+      access: [AccessAction.VIEW],
+    },
+  })
+  @ApiBearerAuth("access-token")
+  @ApiOperation({
+    summary: "Get all airports with assignment status for a specific airline",
+    description: `
+    Returns a paginated list of airports. 
+      Accessible to SUPER_ADMIN and STAFF with VIEW access on the AIRLINES asset.
+      Supports optional filters: 
+        1. countryCode (2-letter ISO alpha-2)
+        2. status (active/inactive) - not supported for AIRLINE users, as they only see active airports.
+        3. free-text search on airport name, IATA code, or ICAO code. 
+      Validations
+        1. page must be >= 1
+        2. countryCode must be exactly 2 uppercase letters`,
+  })
+  @ApiOkResponse({
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(BaseResponseDto) },
+        {
+          properties: {
+            success: { type: "boolean", example: true },
+            requestId: { type: "string", example: REQUEST_ID_EXAMPLE },
+            timestamp: { type: "string", example: TIMESTAMP_EXAMPLE },
+            message: {
+              type: "string",
+              example: "Airports fetched successfully",
+            },
+            data: { $ref: getSchemaPath(AirportListWithAssignmentResponseDto) },
+          },
+        },
+      ],
+    },
+  })
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema("/api/v1/airlines/:airlineId/airports"),
+  })
+  @ApiUnauthorizedResponse({
+    schema: createUnauthorizedErrorSchema(
+      "/api/v1/airlines/:airlineId/airports",
+      "Unauthorized",
+    ),
+  })
+  @ApiForbiddenResponse({
+    schema: createForbiddenErrorSchema(
+      "/api/v1/airlines/:airlineId/airports",
+      "Insufficient permissions",
+    ),
+  })
+  async getAirportsWithAssignment(
+    @Param("airlineId", ParseIntPipe) airlineId: number,
+    @Req() req: AuthenticatedRequest,
+    @Query() query: GetAirportsWithAssignmentQueryDto,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<AirportListWithAssignmentResponseDto>> {
+    const data = await this.airportService.listAirportsWithAssignment(
+      req.user,
+      airlineId,
+      query,
+      requestId,
+    );
+
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Airports fetched successfully",
     );
   }
 }

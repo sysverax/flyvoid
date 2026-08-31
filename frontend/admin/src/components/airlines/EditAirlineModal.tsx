@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { X, Search } from "lucide-react";
 import { useLockBodyScroll } from "@/src/hooks/useLockBodyScroll";
 import { Airline } from "@/src/types/airlines";
@@ -16,17 +16,13 @@ import {
   SortHeader,
 } from "@/src/components/ui/table";
 
+import { countries } from "countries-list";
+
 const COUNTRIES: DropdownOption[] = [
-  { value: "France", label: "France" },
-  { value: "Japan", label: "Japan" },
-  { value: "Switzerland", label: "Switzerland" },
-  { value: "Sweden", label: "Sweden" },
-  { value: "United States", label: "United States" },
-  { value: "Australia", label: "Australia" },
-  { value: "United Kingdom", label: "United Kingdom" },
-  { value: "Germany", label: "Germany" },
-  { value: "India", label: "India" },
-  { value: "Canada", label: "Canada" },
+  { value: "", label: "Select Country" },
+  ...Object.entries(countries)
+    .map(([_, c]) => ({ value: c.name, label: c.name }))
+    .sort((a, b) => a.label.localeCompare(b.label)),
 ];
 
 const TIMEZONES: DropdownOption[] = [
@@ -84,12 +80,60 @@ const AIRPORT_COUNTRIES: DropdownOption[] = [
   { value: "France", label: "France" },
 ];
 
+// Validation
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_RE = /^\+?[0-9]{7,15}$/;
+const URL_RE = /^(https?:\/\/)?([\w.-]+)\.([a-z]{2,6})(\/[\w.\-/?%&=]*)?$/i;
+
+function validate(key: string, value: any): string {
+  const v = String(value ?? "").trim();
+  switch (key) {
+    case "airlineName": return v ? "" : "Airline Name is required";
+    case "companyReg": return v ? "" : "Company Registration Number is required";
+    case "adminFirstName": return v ? "" : "First Name is required";
+    case "adminLastName":
+      if (!v) return "Last Name is required";
+      if (v.length < 2) return "Last Name must be longer than or equal to 2 characters";
+      return "";
+    case "adminJobTitle": return v ? "" : "Job Title is required";
+    case "address": return v ? "" : "Address is required";
+    case "country": return v ? "" : "Country is required";
+    case "airlineCode":
+      if (!v) return "Airline Code is required";
+      if (!/^[A-Z0-9]+$/i.test(v)) return "Airline Code must contain only letters and numbers";
+      return "";
+    case "contactEmail":
+      if (!v) return "Contact Email is required";
+      if (!EMAIL_RE.test(v)) return "Please enter a valid email address";
+      return "";
+    case "adminEmail":
+      if (!v) return "Admin Email is required";
+      if (!EMAIL_RE.test(v)) return "Please enter a valid email address";
+      return "";
+    case "contactPhone":
+      if (!v) return "Contact Phone is required";
+      if (!PHONE_RE.test(v)) return "Please enter a valid phone (e.g. +971501234567)";
+      return "";
+    case "website":
+      if (v && !URL_RE.test(v)) return "Please enter a valid website URL";
+      return "";
+    case "creditLimit":
+      if (v === "" || v === undefined) return "";
+      if (isNaN(Number(v)) || Number(v) < 0) return "Credit Limit must be a valid number";
+      return "";
+    default:
+      return "";
+  }
+}
+
 interface EditAirlineModalProps {
   isOpen: boolean;
   airline: Airline | null;
   onClose: () => void;
   onSave: (updatedFields: Partial<Airline>) => void;
 }
+
+type Errors = Partial<Record<string, string>>;
 
 export function EditAirlineModal({
   isOpen,
@@ -100,12 +144,6 @@ export function EditAirlineModal({
   useLockBodyScroll(isOpen);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (isOpen && scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTop = 0;
-    }
-  }, [isOpen]);
 
   const [editFormState, setEditFormState] = useState({
     airlineName: "",
@@ -131,6 +169,18 @@ export function EditAirlineModal({
   const [airportCountry, setAirportCountry] = useState("All Countries");
   const [sortField, setSortField] = useState<keyof AirportItem | "isSelected" | null>(null);
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+
+  const [errors, setErrors] = useState<Errors>({});
+  const [touched, setTouched] = useState<Partial<Record<string, boolean>>>({});
+
+  // Reset errors/touched when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setErrors({});
+      setTouched({});
+      if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (airline) {
@@ -173,10 +223,79 @@ export function EditAirlineModal({
     }
     setAirportSearch("");
     setAirportCountry("All Countries");
-  }, [airline]);
+  }, [airline, isOpen]);
+
+  // Compute if any form field or airport selection has changed
+  const hasChanges = useMemo(() => {
+    if (!airline) return false;
+    const keys = Object.keys(editFormState) as Array<keyof typeof editFormState>;
+    const anyFieldChanged = keys.some((k) => {
+      if (k === "creditLimit") {
+        return Number(editFormState[k]) !== Number(airline[k]);
+      }
+      return String(editFormState[k] ?? "").trim() !== String(airline[k] ?? "").trim();
+    });
+
+    const initialSelected: string[] = [];
+    if (airline.assignedAirports) {
+      const names = airline.assignedAirports.split(",").map((n) => n.trim());
+      const tempNames = [...names];
+      ALL_AIRPORTS.forEach((ap) => {
+        const idx = tempNames.indexOf(ap.name);
+        if (idx !== -1) {
+          initialSelected.push(ap.id);
+          tempNames.splice(idx, 1);
+        }
+      });
+    } else {
+      initialSelected.push("pac-act", "lhr-act", "hnd-act", "lax-act", "dxb-act");
+    }
+
+    const airportsChanged =
+      selectedAirportIds.length !== initialSelected.length ||
+      selectedAirportIds.some((id) => !initialSelected.includes(id));
+
+    return anyFieldChanged || airportsChanged;
+  }, [editFormState, selectedAirportIds, airline]);
+
+  const setErr = (key: keyof typeof editFormState, msg: string) =>
+    setErrors((prev) => ({ ...prev, [key]: msg || undefined }));
+
+  const handleChange = (key: keyof typeof editFormState) =>
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const val = e.target.value;
+      setEditFormState({ ...editFormState, [key]: val });
+      if (touched[key]) setErr(key, validate(key, val));
+    };
+
+  const handleBlur = (key: keyof typeof editFormState) => () => {
+    setTouched((prev) => ({ ...prev, [key]: true }));
+    setErr(key, validate(key, editFormState[key] ?? ""));
+  };
+
+  const setField = (key: keyof typeof editFormState) => (val: string) => {
+    setEditFormState({ ...editFormState, [key]: val });
+    if (touched[key]) setErr(key, validate(key, val));
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    const allKeys = Object.keys(editFormState) as Array<keyof typeof editFormState>;
+    const newErrors: Errors = {};
+    allKeys.forEach((k) => {
+      const msg = validate(k, editFormState[k] ?? "");
+      if (msg) newErrors[k] = msg;
+    });
+
+    setErrors(newErrors);
+    setTouched(Object.fromEntries(allKeys.map((k) => [k, true])));
+
+    if (Object.keys(newErrors).length > 0) {
+      const first = scrollContainerRef.current?.querySelector(".field-error");
+      first?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
 
     // Map selected airport IDs back to a comma-separated list of airport names
     const selectedAirports = ALL_AIRPORTS.filter((ap) => selectedAirportIds.includes(ap.id));
@@ -193,15 +312,6 @@ export function EditAirlineModal({
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
     );
   };
-
-  const field = (key: keyof typeof editFormState) => ({
-    value: editFormState[key],
-    onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
-      setEditFormState({ ...editFormState, [key]: e.target.value }),
-  });
-
-  const setField = (key: keyof typeof editFormState) => (val: string) =>
-    setEditFormState({ ...editFormState, [key]: val });
 
   // Filter airports list
   const filteredAirports = ALL_AIRPORTS.filter((ap) => {
@@ -250,6 +360,12 @@ export function EditAirlineModal({
     }
   });
 
+  const ic = (key: keyof typeof editFormState) =>
+    cn(inputCls, errors[key] && "border-red-500 focus:ring-red-500/20 focus:border-red-500");
+
+  const err = (key: keyof typeof editFormState) =>
+    errors[key] ? <p className="field-error mt-1 text-xs text-red-500">{errors[key]}</p> : null;
+
   return (
     <>
       {/* Backdrop */}
@@ -292,17 +408,19 @@ export function EditAirlineModal({
 
         {/* Scrollable body */}
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
-          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-6 py-7 space-y-6 scrollbar-hide">
+          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-6 py-7 space-y-6 scrollbar-hide relative -left-0.5">
 
             {/* Airline Details Section */}
             <section>
               <h3 className="text-[18px] font-semibold text-[#1F2937] mb-2.5 relative -top-1">Airline Details</h3>
               <div className="grid grid-cols-2 gap-[23px]">
                 <Field label="Airline Name" required >
-                  <input placeholder="" {...field("airlineName")} required className={inputCls} />
+                  <input placeholder="" value={editFormState.airlineName} onChange={handleChange("airlineName")} onBlur={handleBlur("airlineName")} className={ic("airlineName")} />
+                  {err("airlineName")}
                 </Field>
                 <Field label="Airline Code" required>
-                  <input placeholder="" {...field("airlineCode")} required className={inputCls} />
+                  <input placeholder="" value={editFormState.airlineCode} onChange={handleChange("airlineCode")} onBlur={handleBlur("airlineCode")} className={ic("airlineCode")} />
+                  {err("airlineCode")}
                 </Field>
 
                 {/* Country — custom Dropdown */}
@@ -315,20 +433,26 @@ export function EditAirlineModal({
                     triggerWidthClass="w-full"
                     heightClass="h-[49px]"
                     bgClass="bg-white"
+                    error={!!(errors["country"] && touched["country"])}
                   />
+                  {err("country")}
                 </Field>
 
                 <Field label="Company Registration Number" required>
-                  <input {...field("companyReg")} required className={inputCls} />
+                  <input value={editFormState.companyReg} onChange={handleChange("companyReg")} onBlur={handleBlur("companyReg")} className={ic("companyReg")} />
+                  {err("companyReg")}
                 </Field>
                 <Field label="Website">
-                  <input placeholder="https://" {...field("website")} className={inputCls} />
+                  <input placeholder="https://" value={editFormState.website} onChange={handleChange("website")} onBlur={handleBlur("website")} className={ic("website")} />
+                  {err("website")}
                 </Field>
                 <Field label="Contact Email" required>
-                  <input type="email" {...field("contactEmail")} required className={inputCls} />
+                  <input type="email" value={editFormState.contactEmail} onChange={handleChange("contactEmail")} onBlur={handleBlur("contactEmail")} className={ic("contactEmail")} />
+                  {err("contactEmail")}
                 </Field>
                 <Field label="Contact Phone" required>
-                  <input type="tel" {...field("contactPhone")} required className={inputCls} />
+                  <input type="tel" value={editFormState.contactPhone} onChange={handleChange("contactPhone")} onBlur={handleBlur("contactPhone")} className={ic("contactPhone")} />
+                  {err("contactPhone")}
                 </Field>
 
                 {/* Timezone — custom Dropdown */}
@@ -341,11 +465,14 @@ export function EditAirlineModal({
                     triggerWidthClass="w-full"
                     heightClass="h-[49px]"
                     bgClass="bg-white"
+                    error={!!(errors["timezone"] && touched["timezone"])}
                   />
+                  {err("timezone")}
                 </Field>
 
                 <Field label="Logo URL">
-                  <input placeholder="https://..." {...field("logoUrl")} className={inputCls} />
+                  <input placeholder="https://..." value={editFormState.logoUrl} onChange={handleChange("logoUrl")} onBlur={handleBlur("logoUrl")} className={ic("logoUrl")} />
+                  {err("logoUrl")}
                 </Field>
 
                 {/* Currency — custom Dropdown */}
@@ -358,11 +485,14 @@ export function EditAirlineModal({
                     triggerWidthClass="w-full"
                     heightClass="h-[49px]"
                     bgClass="bg-white"
+                    error={!!(errors["currency"] && touched["currency"])}
                   />
+                  {err("currency")}
                 </Field>
 
                 <Field label="Address" required className="col-span-2">
-                  <input {...field("address")} required className={inputCls} />
+                  <input value={editFormState.address} onChange={handleChange("address")} onBlur={handleBlur("address")} className={ic("address")} />
+                  {err("address")}
                 </Field>
               </div>
             </section>
@@ -372,25 +502,34 @@ export function EditAirlineModal({
               <h3 className="text-[18px] font-semibold text-[#1F2937] mb-2.5">Admin Details</h3>
               <div className="grid grid-cols-2 gap-[23px]">
                 <Field label="Admin First Name" required>
-                  <input {...field("adminFirstName")} required className={inputCls} />
+                  <input value={editFormState.adminFirstName} onChange={handleChange("adminFirstName")} onBlur={handleBlur("adminFirstName")} className={ic("adminFirstName")} />
+                  {err("adminFirstName")}
                 </Field>
                 <Field label="Admin Last Name" required>
-                  <input {...field("adminLastName")} required className={inputCls} />
+                  <input value={editFormState.adminLastName} onChange={handleChange("adminLastName")} onBlur={handleBlur("adminLastName")} className={ic("adminLastName")} />
+                  {err("adminLastName")}
                 </Field>
                 <Field label="Admin Email" required>
-                  <input type="email" {...field("adminEmail")} required className={inputCls} />
+                  <input type="email" value={editFormState.adminEmail} onChange={handleChange("adminEmail")} onBlur={handleBlur("adminEmail")} className={ic("adminEmail")} />
+                  {err("adminEmail")}
                 </Field>
                 <Field label="Job Title" required>
-                  <input {...field("adminJobTitle")} required className={inputCls} />
+                  <input value={editFormState.adminJobTitle} onChange={handleChange("adminJobTitle")} onBlur={handleBlur("adminJobTitle")} className={ic("adminJobTitle")} />
+                  {err("adminJobTitle")}
                 </Field>
                 <Field label="Credit Limit" required className="col-span-2">
                   <input
                     type="number"
                     value={editFormState.creditLimit}
-                    onChange={(e) => setEditFormState({ ...editFormState, creditLimit: Number(e.target.value) })}
-                    required
-                    className={inputCls}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setEditFormState({ ...editFormState, creditLimit: val });
+                      if (touched["creditLimit"]) setErr("creditLimit", validate("creditLimit", val));
+                    }}
+                    onBlur={handleBlur("creditLimit")}
+                    className={ic("creditLimit")}
                   />
+                  {err("creditLimit")}
                 </Field>
               </div>
             </section>
@@ -556,7 +695,8 @@ export function EditAirlineModal({
             </button>
             <button
               type="submit"
-              className="flex-1 py-3 px-6 rounded-lg bg-[#0F2757] hover:bg-[#162259] text-white text-[18px] transition-colors cursor-pointer"
+              disabled={!hasChanges}
+              className="flex-1 py-3 px-6 rounded-lg bg-[#0F2757] hover:bg-[#162259] text-white text-[18px] transition-colors cursor-pointer disabled:opacity-60"
             >
               Save Changes
             </button>

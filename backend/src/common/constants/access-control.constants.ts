@@ -33,7 +33,7 @@ export enum AccessAction {
 }
 
 export interface DomainAccessRequirement {
-  asset: string;
+  asset: string | string[];
   access: AccessAction[];
 }
 
@@ -68,14 +68,19 @@ export function hasRequiredAccess(
     return true;
   }
 
-  const assignedPermissions =
-    assignedAccessControls?.find(
-      (entry) => entry.moduleKey === requirement.asset,
-    )?.permissions ?? [];
+  const assets = Array.isArray(requirement.asset)
+    ? requirement.asset
+    : [requirement.asset];
 
-  const assignedPermissionSet = new Set(assignedPermissions);
+  return assets.some((asset) => {
+    const assignedPermissions =
+      assignedAccessControls?.find((entry) => entry.moduleKey === asset)
+        ?.permissions ?? [];
 
-  return requirement.access.every((permission) =>
-    assignedPermissionSet.has(permission),
-  );
+    const assignedPermissionSet = new Set(assignedPermissions);
+
+    return requirement.access.every((permission) =>
+      assignedPermissionSet.has(permission),
+    );
+  });
 }

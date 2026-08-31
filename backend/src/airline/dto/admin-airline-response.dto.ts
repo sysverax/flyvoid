@@ -1,4 +1,4 @@
-import { ApiProperty } from "@nestjs/swagger";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 
 export class AirlineAdminUserDto {
   @ApiProperty({ example: 1 })
@@ -20,7 +20,7 @@ export class AirlineAdminUserDto {
   isActive!: boolean;
 }
 
-export class AdminAirlineResponseDto {
+export class BaseAdminAirlineResponseDto {
   @ApiProperty({ example: 12 })
   id!: number;
 
@@ -36,6 +36,20 @@ export class AdminAirlineResponseDto {
   @ApiProperty({ example: "CRN-001234" })
   companyRegistrationNumber!: string;
 
+  @ApiProperty({ example: true })
+  isActive!: boolean;
+
+  @ApiProperty({ example: false })
+  isSuspended!: boolean;
+
+  @ApiProperty({ example: "2026-01-01T10:00:00.000Z" })
+  createdAt!: string;
+
+  @ApiProperty({ example: "2026-01-15T09:30:00.000Z" })
+  updatedAt!: string;
+}
+
+export class AdminAirlineResponseDto extends BaseAdminAirlineResponseDto {
   @ApiProperty({ example: "https://skyjet.com", nullable: true })
   website!: string | null;
 
@@ -48,14 +62,19 @@ export class AdminAirlineResponseDto {
   @ApiProperty({ example: "Asia/Dubai" })
   timezone!: string;
 
-  @ApiProperty({ example: "https://cdn.example.com/skyjet-logo.png", nullable: true })
-  logo!: string | null;
+  @ApiPropertyOptional({
+    example: "https://cdn.example.com/skyjet-logo.png",
+  })
+  logo?: string;
 
   @ApiProperty({ example: "AED" })
   currency!: string;
 
   @ApiProperty({ example: "Dubai Airport Free Zone, Dubai, UAE" })
   address!: string;
+
+  @ApiProperty({ example: 100000 })
+  creditLimit!: number;
 
   @ApiProperty({ example: true })
   isActive!: boolean;

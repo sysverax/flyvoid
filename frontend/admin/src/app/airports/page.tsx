@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { Search, Eye, Plus, Edit } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
+import { Search, Eye, Plus, Edit, Loader2 } from "lucide-react";
 import {
   Table,
   TableHeader,
@@ -20,109 +20,66 @@ import { Dropdown } from "@/src/components/ui/Dropdown";
 import { AddEditAirportModal } from "@/src/components/airports/AddEditAirportModal";
 import { AirportDetailsView } from "@/src/components/airports/AirportDetailsView";
 import { useAuth } from "@/src/hooks/useAuth";
+import { toast } from "react-toastify";
+import { countries } from "countries-list";
+import { airportsService } from "@/src/services/airports.service";
 
-const INITIAL_AIRPORTS: Airport[] = [
-  {
-    id: "1",
-    name: "Dubai International Airport",
-    iataCode: "PA", // As shown in screenshot
-    icaoCode: "OMDB",
-    city: "Dubai",
-    countryCode: "AE",
-    country: "United Arab Emirates",
-    latitude: 25.2532,
-    longitude: 55.3675,
-    timezone: "Asia/Dubai",
-    type: "INTERNATIONAL",
-    isActive: true,
-    address: "Terminal 3, Airport Rd, Dubai",
-    postalCode: "00000",
-  },
-  {
-    id: "2",
-    name: "Heathrow Airport",
-    iataCode: "LHR",
-    icaoCode: "EGLL",
-    city: "London",
-    countryCode: "GB",
-    country: "United Kingdom",
-    latitude: 51.4700,
-    longitude: -0.4543,
-    timezone: "Europe/London",
-    type: "DOMESTIC",
-    isActive: true,
-    address: "Longford TW6, United Kingdom",
-    postalCode: "TW6 1QG",
-  },
-  {
-    id: "3",
-    name: "Tokyo Haneda Airport",
-    iataCode: "HND",
-    icaoCode: "RJTT",
-    city: "Tokyo",
-    countryCode: "JP",
-    country: "Japan",
-    latitude: 35.5523,
-    longitude: 139.7798,
-    timezone: "Asia/Tokyo",
-    type: "INTERNATIONAL",
-    isActive: true,
-    address: "Hanedakuko, Ota City, Tokyo, Japan",
-    postalCode: "144-0041",
-  },
-  {
-    id: "4",
-    name: "Los Angeles International Airport",
-    iataCode: "LAX",
-    icaoCode: "KLAX",
-    city: "Los Angeles",
-    countryCode: "US",
-    country: "United States",
-    latitude: 33.9416,
-    longitude: -118.4085,
-    timezone: "America/Los_Angeles",
-    type: "DOMESTIC",
-    isActive: false,
-    address: "1 World Way, Los Angeles, CA 90045, USA",
-    postalCode: "90045",
-  },
-  {
-    id: "5",
-    name: "John F. Kennedy International Airport",
-    iataCode: "JFK",
-    icaoCode: "KJFK",
-    city: "New York",
-    countryCode: "US",
-    country: "United States",
-    latitude: 40.6413,
-    longitude: -73.7781,
-    timezone: "America/New_York",
-    type: "INTERNATIONAL",
-    isActive: true,
-    address: "Queens, NY 11430, USA",
-    postalCode: "11430",
-  },
-  {
-    id: "6",
-    name: "Changi Airport",
-    iataCode: "SIN",
-    icaoCode: "WSSS",
-    city: "Singapore",
-    countryCode: "SG",
-    country: "Singapore",
-    latitude: 1.3644,
-    longitude: 103.9915,
-    timezone: "Asia/Singapore",
-    type: "INTERNATIONAL",
-    isActive: false,
-    address: "Airport Blvd., Singapore",
-    postalCode: "918146",
-  },
-];
+const getCountryCode = (countryName: string): string => {
+  const entry = Object.entries(countries).find(
+    ([_, c]) => c.name.toLowerCase() === countryName.toLowerCase()
+  );
+  return entry ? entry[0] : "US";
+};
+
+function decodeJwt(token: string): any {
+  try {
+    const base64Url = token.split(".")[1];
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split("")
+        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+        .join("")
+    );
+    return JSON.parse(jsonPayload);
+  } catch {
+    return null;
+  }
+}
+
+function mapAirportDTOToAirport(dto: any): Airport {
+  const countryName = countries[dto.countryCode as keyof typeof countries]?.name || dto.countryCode || "N/A";
+  return {
+    id: String(dto.id),
+    name: dto.name,
+    iataCode: dto.iataCode,
+    icaoCode: dto.icaoCode,
+    city: dto.city,
+    countryCode: dto.countryCode,
+    country: countryName,
+    latitude: dto.latitude,
+    longitude: dto.longitude,
+    timezone: dto.timezone,
+    type: dto.type,
+    isActive: dto.isActive,
+    address: dto.address,
+    postalCode: dto.postalCode,
+  };
+}
 
 export default function AirportsPage() {
-  const [airports, setAirports] = useState<Airport[]>(INITIAL_AIRPORTS);
+  const [airports, setAirports] = useState<Airport[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const { hasPermission } = useAuth();
+
+  const isAirlineUser = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    const token = sessionStorage.getItem("flyvoid_access_token");
+    if (!token) return false;
+    const decoded = decodeJwt(token);
+    return decoded?.userType === "AIRLINE";
+  }, []);
 
   // Navigation / Details view state
   const [selectedAirportId, setSelectedAirportId] = useState<string | null>(null);
@@ -135,6 +92,7 @@ export default function AirportsPage() {
   // Pagination states
   const [resultsPerPage, setResultsPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
+  const [totalResults, setTotalResults] = useState(0);
 
   // Sorting states
   const [sortField, setSortField] = useState<keyof Airport | null>(null);
@@ -161,45 +119,59 @@ export default function AirportsPage() {
     { value: "India", label: "India" },
     { value: "Canada", label: "Canada" },
     { value: "Australia", label: "Australia" },
+    { value: "United Arab Emirates", label: "United Arab Emirates" },
   ];
+
+  const fetchAirports = async () => {
+    setIsLoading(true);
+    try {
+      let countryCode: string | undefined = undefined;
+      if (selectedCountry !== "All Countries") {
+        countryCode = getCountryCode(selectedCountry);
+      }
+
+      let status: boolean | undefined = undefined;
+      if (!isAirlineUser) {
+        if (selectedStatus === "Active") {
+          status = true;
+        } else if (selectedStatus === "Inactive") {
+          status = false;
+        }
+      }
+
+      const res = await airportsService.getAirports({
+        search: searchQuery || undefined,
+        countryCode,
+        status,
+        page: currentPage,
+        limit: resultsPerPage,
+      });
+
+      const mapped = res.airports.map(mapAirportDTOToAirport);
+      setAirports(mapped);
+      setTotalResults(res.total);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to load airports");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAirports();
+  }, [searchQuery, selectedStatus, selectedCountry, currentPage, resultsPerPage]);
 
   // Current selected airport object
   const selectedAirport = useMemo(() => {
     return airports.find((ap) => ap.id === selectedAirportId) || null;
   }, [airports, selectedAirportId]);
 
-  // Filtration logic
-  const filteredAirports = useMemo(() => {
-    return airports.filter((ap) => {
-      const matchesSearch =
-        ap.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        ap.iataCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        ap.city.toLowerCase().includes(searchQuery.toLowerCase());
-
-      const matchesStatus =
-        selectedStatus === "All Status" ||
-        (selectedStatus === "Active" && ap.isActive) ||
-        (selectedStatus === "Inactive" && !ap.isActive);
-
-      const matchesCountry =
-        selectedCountry === "All Countries" || ap.country === selectedCountry;
-
-      return matchesSearch && matchesStatus && matchesCountry;
-    });
-  }, [airports, searchQuery, selectedStatus, selectedCountry]);
-
   // Sorting logic
   const sortedAirports = useMemo(() => {
-    return sortData(filteredAirports, sortField, sortOrder, []);
-  }, [filteredAirports, sortField, sortOrder]);
+    return sortData(airports, sortField, sortOrder, []);
+  }, [airports, sortField, sortOrder]);
 
-  // Pagination logic
-  const totalPages = Math.max(1, Math.ceil(sortedAirports.length / resultsPerPage));
-
-  const paginatedAirports = useMemo(() => {
-    const startIndex = (currentPage - 1) * resultsPerPage;
-    return sortedAirports.slice(startIndex, startIndex + resultsPerPage);
-  }, [sortedAirports, currentPage, resultsPerPage]);
+  const totalPages = Math.max(1, Math.ceil(totalResults / resultsPerPage));
 
   const handleClearAll = () => {
     setSearchQuery("");
@@ -225,15 +197,19 @@ export default function AirportsPage() {
   };
 
   // Toggle active status switch directly in the table
-  const handleToggleStatus = (airport: Airport) => {
-    setAirports((prev) =>
-      prev.map((item) => {
-        if (item.id === airport.id) {
-          return { ...item, isActive: !item.isActive };
-        }
-        return item;
-      })
-    );
+  const handleToggleStatus = async (airport: Airport) => {
+    setIsLoading(true);
+    try {
+      const response = await airportsService.updateAirport(Number(airport.id), {
+        isActive: !airport.isActive,
+      });
+      toast.success(response.message || `Successfully updated status for ${airport.name}`);
+      fetchAirports();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update status");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Open add/edit modal
@@ -248,40 +224,52 @@ export default function AirportsPage() {
   };
 
   // Save changes from Add/Edit modal
-  const handleSaveAirport = (fields: Partial<Airport>) => {
-    if (editTarget) {
-      // Editing existing airport
-      setAirports((prev) =>
-        prev.map((item) => {
-          if (item.id === editTarget.id) {
-            return { ...item, ...fields };
-          }
-          return item;
-        })
-      );
-    } else {
-      // Adding new airport
-      const newId = (airports.length + 1).toString();
-      const newAirport: Airport = {
-        id: newId,
-        name: fields.name || "",
-        iataCode: fields.iataCode || "",
-        icaoCode: fields.icaoCode || "",
-        city: fields.city || "",
-        countryCode: fields.countryCode || "",
-        country: fields.country || "",
-        latitude: fields.latitude || 0,
-        longitude: fields.longitude || 0,
-        timezone: fields.timezone || "Asia/Dubai",
-        type: fields.type || "INTERNATIONAL",
-        isActive: fields.isActive !== undefined ? fields.isActive : true,
-        address: fields.address || "",
-        postalCode: fields.postalCode || "",
-      };
-      setAirports((prev) => [...prev, newAirport]);
+  const handleSaveAirport = async (fields: Partial<Airport>) => {
+    setIsSaving(true);
+    try {
+      if (editTarget) {
+        // Editing existing airport
+        const response = await airportsService.updateAirport(Number(editTarget.id), {
+          name: fields.name,
+          iataCode: fields.iataCode,
+          icaoCode: fields.icaoCode,
+          countryCode: fields.countryCode,
+          city: fields.city,
+          latitude: fields.latitude,
+          longitude: fields.longitude,
+          timezone: fields.timezone,
+          type: fields.type,
+          isActive: fields.isActive,
+          address: fields.address || undefined,
+          postalCode: fields.postalCode,
+        });
+        toast.success(response.message || "Airport updated successfully");
+      } else {
+        // Adding new airport
+        const response = await airportsService.createAirport({
+          name: fields.name!,
+          iataCode: fields.iataCode!,
+          icaoCode: fields.icaoCode!,
+          countryCode: fields.countryCode!,
+          city: fields.city!,
+          latitude: fields.latitude!,
+          longitude: fields.longitude!,
+          timezone: fields.timezone!,
+          type: fields.type!,
+          isActive: fields.isActive !== undefined ? fields.isActive : true,
+          address: fields.address || undefined,
+          postalCode: fields.postalCode!,
+        });
+        toast.success(response.message || "Airport created successfully");
+      }
+      setIsModalOpen(false);
+      setEditTarget(null);
+      fetchAirports();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save airport");
+    } finally {
+      setIsSaving(false);
     }
-    setIsModalOpen(false);
-    setEditTarget(null);
   };
 
   return (
@@ -319,16 +307,18 @@ export default function AirportsPage() {
           onClearFilters={handleClearAll}
         >
           {/* Status Filter */}
-          <Dropdown
-            value={selectedStatus}
-            onChange={(val) => {
-              setSelectedStatus(val);
-              setCurrentPage(1);
-            }}
-            options={statusOptions}
-            widthClass="w-44"
-            triggerWidthClass="w-[180px]"
-          />
+          {!isAirlineUser && (
+            <Dropdown
+              value={selectedStatus}
+              onChange={(val) => {
+                setSelectedStatus(val);
+                setCurrentPage(1);
+              }}
+              options={statusOptions}
+              widthClass="w-44"
+              triggerWidthClass="w-[180px]"
+            />
+          )}
 
           {/* Country/City Filter */}
           <Dropdown
@@ -424,7 +414,19 @@ export default function AirportsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paginatedAirports.length === 0 ? (
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={9} className="px-6 py-12 text-center text-gray-500 font-figtree">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <svg className="animate-spin h-8 w-8 text-primary" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      <span>Loading airports...</span>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : sortedAirports.length === 0 ? (
                 <TableEmptyState
                   colSpan={9}
                   icon={Search}
@@ -432,7 +434,7 @@ export default function AirportsPage() {
                   message="Try adjusting your filters or search query."
                 />
               ) : (
-                paginatedAirports.map((airport) => (
+                sortedAirports.map((airport) => (
                   <TableRow key={airport.id}>
                     <TableCell className="leading-[100%] text-[15px] font-inter">
                       {airport.name}
@@ -480,7 +482,6 @@ export default function AirportsPage() {
                         <button
                           onClick={() => setSelectedAirportId(airport.id)}
                           className="p-1 text-[#6B7280] hover:text-primary transition-colors cursor-pointer"
-                          title="View Profile"
                         >
                           <Eye className="h-[20px] w-[20px]" />
                         </button>
@@ -488,7 +489,6 @@ export default function AirportsPage() {
                           <button
                             onClick={() => handleOpenEditModal(airport)}
                             className="p-1 text-[#6B7280] hover:text-[#0F2757] transition-colors cursor-pointer"
-                            title="Edit Airport"
                           >
                             <Edit className="h-[20px] w-[20px]" />
                           </button>
@@ -504,7 +504,7 @@ export default function AirportsPage() {
 
         {/* Pagination */}
         <Pagination
-          totalResults={filteredAirports.length}
+          totalResults={totalResults}
           currentPage={currentPage}
           setCurrentPage={setCurrentPage}
           resultsPerPage={resultsPerPage}
@@ -516,7 +516,7 @@ export default function AirportsPage() {
       {/* Details Modal */}
       <AirportDetailsView
         isOpen={!!selectedAirport}
-        airport={selectedAirport || INITIAL_AIRPORTS[0]}
+        airport={selectedAirport || airports[0]}
         onClose={() => setSelectedAirportId(null)}
         onEditClick={() => {
           if (selectedAirport) {
@@ -531,9 +531,12 @@ export default function AirportsPage() {
       <AddEditAirportModal
         isOpen={isModalOpen}
         airport={editTarget}
+        isSaving={isSaving}
         onClose={() => {
-          setIsModalOpen(false);
-          setEditTarget(null);
+          if (!isSaving) {
+            setIsModalOpen(false);
+            setEditTarget(null);
+          }
         }}
         onSave={handleSaveAirport}
       />

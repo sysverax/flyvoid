@@ -17,6 +17,9 @@ import {
   UpdateAirlineAirportsRequestDto,
   UpdateAirlineAirportsResponseDto,
   UpdateAirportRequestDto,
+  GetAirportsWithAssignmentQueryDto,
+  AirportListWithAssignmentResponseDto,
+  AirportResponseDtoWithAssignment,
 } from "../dto/airports";
 import { AirlineEntity } from "../entities/airline.entity";
 import { AirportEntity } from "../entities/airport.entity";
@@ -95,6 +98,33 @@ export class AirportService {
 
     return {
       airports: airports.map((airport) => this.toAirportResponse(airport)),
+      total: total,
+      currentPage: query.page,
+      totalPages,
+      limit: query.limit,
+    };
+  }
+
+  async listAirportsWithAssignment(
+    authenticatedUser: AuthenticatedUser,
+    airlineId: number,
+    query: GetAirportsWithAssignmentQueryDto,
+    requestId: string,
+  ): Promise<AirportListWithAssignmentResponseDto> {
+    const [assignedAirportIds, { airports, total }] = await Promise.all([
+      this.airlineAirportRepository.findAssignedAirportIdsByAirlineId(
+        airlineId,
+        requestId,
+      ),
+      this.airportRepository.findAll(query, requestId),
+    ]);
+
+    const totalPages = total === 0 ? 0 : Math.ceil(total / query.limit);
+
+    return {
+      airports: airports.map((airport) =>
+        this.toAirportResponseWithAssignments(airport, assignedAirportIds),
+      ),
       total: total,
       currentPage: query.page,
       totalPages,
@@ -237,12 +267,6 @@ export class AirportService {
       );
     });
 
-    const currentActiveAirportIds =
-      await this.airlineAirportRepository.findActiveAirportIdsByAirlineId(
-        airlineId,
-        requestId,
-      );
-
     this.logger.info(
       "Airline airport assignments updated",
       this.context,
@@ -252,7 +276,6 @@ export class AirportService {
         actorAdminId: authenticatedUser.sub,
         assignedCount: assignedAirportIds.length,
         disabledCount: disabledAirportIds.length,
-        totalActiveAirports: currentActiveAirportIds.length,
       },
     );
 
@@ -260,8 +283,6 @@ export class AirportService {
       airlineId,
       assignedAirportIds,
       disabledAirportIds,
-      activeAirportIds: currentActiveAirportIds,
-      totalActiveAirports: currentActiveAirportIds.length,
     };
   }
 
@@ -300,6 +321,32 @@ export class AirportService {
       type: entity.type,
       address: entity.address ?? null,
       postalCode: entity.postalCode ?? null,
+      // createdBy: entity.createdBy,
+      // updatedBy: entity.updatedBy ?? null,
+      // createdAt: entity.createdAt.toISOString(),
+      // updatedAt: entity.updatedAt.toISOString(),
+    };
+  }
+
+  private toAirportResponseWithAssignments(
+    entity: AirportEntity,
+    assignedAirportIds: number[],
+  ): AirportResponseDtoWithAssignment {
+    return {
+      id: entity.id,
+      name: entity.name,
+      iataCode: entity.iataCode,
+      icaoCode: entity.icaoCode,
+      countryCode: entity.countryCode,
+      city: entity.city,
+      latitude: Number(entity.latitude),
+      longitude: Number(entity.longitude),
+      timezone: entity.timezone,
+      isActive: entity.isActive,
+      type: entity.type,
+      address: entity.address ?? null,
+      postalCode: entity.postalCode ?? null,
+      isAssigned: assignedAirportIds.includes(entity.id),
       // createdBy: entity.createdBy,
       // updatedBy: entity.updatedBy ?? null,
       // createdAt: entity.createdAt.toISOString(),

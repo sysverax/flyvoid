@@ -4,59 +4,104 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import * as ExcelJS from "exceljs";
+import { Readable } from "stream";
 import { LoggerService } from "../common/logger/logger.service";
 import { CancelledFlightsRepository } from "./cancelled-flights.repository";
-import { CreateCancelledFlightDto } from "./dto/create-cancelled-flight.dto";
-import { CreateBookingDto } from "./dto/create-booking.dto";
-import { UpdateBookingDto } from "./dto/update-booking.dto";
-import { ImportBookingsConfirmDto } from "./dto/import-bookings.dto";
 import { BookingEntity } from "./entities/booking.entity";
 import {
   CancellationReason,
   FlightStatus,
+  HotelAllocationStatus,
   SpecialNote,
   TravelClass,
 } from "./entities/enums";
-import { GroqService } from "../common/groq/groq.service";
+import {
+  CreateCancelledFlightDto,
+  CreateBookingDto,
+  BookingResponseDto,
+  UpdateBookingDto,
+  CancelledFlightResponseDto,
+  ImportBookingResponseDto,
+  ReviewCancelledFlightResponseDto,
+  AllocateHotelDto,
+  BookHotelRequestDto,
+} from "./dto";
+import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
+import { PaginationQueryDto } from "../common/dto/pagination-query.dto";
 import { HotelPartnerService } from "./hotel-partner.service";
-import { AllocateHotelDto } from "./dto/allocate-hotel.dto";
-import { BookHotelRequestDto } from "./dto/book-hotel-request.dto";
+import { GroqService } from "../common/groq/groq.service";
 
 @Injectable()
 export class CancelledFlightsService {
   private readonly context = "CancelledFlightsService";
 
   constructor(
-    private readonly repo: CancelledFlightsRepository,
-    private readonly logger: LoggerService,
-    private readonly groqService: GroqService,
+    private readonly cancelledFlightsRepository: CancelledFlightsRepository,
     private readonly hotelPartnerService: HotelPartnerService,
+    private readonly groqService: GroqService,
+    private readonly logger: LoggerService,
   ) {}
+
+  private toCancelledFlightResponse(
+    flight: CancelledFlightEntity,
+  ): CancelledFlightResponseDto {
+    return {
+      id: flight.id,
+      flightNumber: flight.flightNumber,
+      airlineId: flight.airlineId,
+      departureAirportId: flight.departureAirportId,
+      arrivalAirportId: flight.arrivalAirportId,
+      cancellationDate: flight.cancellationDate,
+      cancellationReason: flight.cancellationReason ?? null,
+      cancellationReasonText: flight.cancellationReasonText ?? null,
+      status: flight.status,
+      createdAt: flight.createdAt.toISOString(),
+      updatedAt: flight.updatedAt?.toISOString() ?? null,
+    };
+  }
+
+  private toBookingResponse(booking: BookingEntity): BookingResponseDto {
+    return {
+      id: booking.id,
+      cancelledFlightId: booking.cancelledFlightId,
+      pnr: booking.pnr,
+      firstName: booking.firstName,
+      lastName: booking.lastName,
+      email: booking.email,
+      phone: booking.phone,
+      travelClass: booking.travelClass,
+      adults: booking.adults,
+      children: booking.children,
+      specialNotes: booking.specialNotes ?? [],
+      additionalNotes: booking.additionalNotes ?? null,
+      createdAt: booking.createdAt.toISOString(),
+      updatedAt: booking.updatedAt?.toISOString() ?? null,
+    };
+  }
 
   // ── Create cancelled flight ──────────────────────────────────────────────
 
   async createCancelledFlight(
     dto: CreateCancelledFlightDto,
     requestId: string,
-  ) {
-    if (dto.departure_airport_id === dto.arrival_airport_id) {
+  ): Promise<CancelledFlightResponseDto> {
+    if (dto.departureAirportId === dto.arrivalAirportId) {
       throw new BadRequestException(
         "Departure and arrival airports must be different",
       );
     }
 
-    const flight = await this.repo.createFlight(
+    const flight = await this.cancelledFlightsRepository.createFlight(
       {
-        flightNumber: dto.flight_number,
-        airlineId: dto.airline_id,
-        departureAirportId: dto.departure_airport_id,
-        arrivalAirportId: dto.arrival_airport_id,
-        cancellationDate: dto.cancellation_date,
+        flightNumber: dto.flightNumber,
+        airlineId: dto.airlineId,
+        departureAirportId: dto.departureAirportId,
+        arrivalAirportId: dto.arrivalAirportId,
+        cancellationDate: dto.cancellationDate,
         cancellationReason:
-          (dto.cancellation_reason as CancellationReason) ?? null,
-        cancellationReasonText: dto.cancellation_reason_text ?? null,
-        status: FlightStatus.DRAFT,
+          (dto.cancellationReason as CancellationReason) ?? null,
+        cancellationReasonText: dto.cancellationReasonText ?? null,
+        status: FlightStatus.IN_PROGRESS,
       },
       requestId,
     );
@@ -66,44 +111,43 @@ export class CancelledFlightsService {
       flightNumber: flight.flightNumber,
     });
 
-    return {
-      id: flight.id,
-      flight_number: flight.flightNumber,
-      status: flight.status,
-      cancellation_date: flight.cancellationDate,
-      created_at: flight.createdAt,
-    };
+    return this.toCancelledFlightResponse(flight);
   }
 
   // ── Add single booking ───────────────────────────────────────────────────
 
-  async addBooking(flightId: string, dto: CreateBookingDto, requestId: string) {
+  async addBooking(
+    flightId: number,
+    dto: CreateBookingDto,
+    requestId: string,
+  ): Promise<BookingResponseDto> {
     await this.requireFlight(flightId, requestId);
 
-    const duplicate = await this.repo.findBookingByPnrAndFlight(
-      dto.pnr,
-      flightId,
-      requestId,
-    );
+    const duplicate =
+      await this.cancelledFlightsRepository.findBookingByPnrAndFlight(
+        dto.pnr,
+        flightId,
+        requestId,
+      );
     if (duplicate) {
       throw new ConflictException(
         `Booking with PNR '${dto.pnr}' already exists for this flight`,
       );
     }
 
-    const booking = await this.repo.createBooking(
+    const booking = await this.cancelledFlightsRepository.createBooking(
       {
         cancelledFlightId: flightId,
         pnr: dto.pnr,
-        firstName: dto.first_name,
-        lastName: dto.last_name,
+        firstName: dto.firstName,
+        lastName: dto.lastName,
         email: dto.email,
         phone: dto.phone,
-        travelClass: dto.travel_class,
+        travelClass: dto.travelClass,
         adults: dto.adults,
         children: dto.children,
-        specialNotes: dto.special_notes ?? [],
-        additionalNotes: dto.additional_notes ?? null,
+        specialNotes: dto.specialNotes ?? [],
+        additionalNotes: dto.additionalNotes ?? null,
       },
       requestId,
     );
@@ -119,68 +163,82 @@ export class CancelledFlightsService {
 
   // ── Import preview ───────────────────────────────────────────────────────
 
-  async previewImport(
-    flightId: string,
+  async importBookings(
+    flightId: number,
     file: { buffer: Buffer; originalname: string; mimetype: string },
     requestId: string,
-  ) {
+  ): Promise<ImportBookingResponseDto> {
     await this.requireFlight(flightId, requestId);
+    // Parse the CSV file
+    const csv = file.buffer.toString("utf-8");
+    const rows = csv.split("\n").map((line) => line.split(","));
+    const pnrSet = new Set<string>();
 
-    const workbook = new ExcelJS.Workbook();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await workbook.xlsx.load(file.buffer as any);
-
-    const sheet = workbook.worksheets[0];
-    if (!sheet) {
-      throw new BadRequestException("Excel file has no worksheets");
-    }
-
-    const preview: object[] = [];
+    const bookings: {
+      row: number;
+      pnr: string;
+      firstName: string;
+      lastName: string;
+      email: string;
+      phone: string;
+      travelClass: TravelClass;
+      adults: number;
+      children: number;
+      estRooms: number;
+      specialNotes: SpecialNote[];
+      additionalNotes: string | null;
+    }[] = [];
+    const errorsList: { row: number; errors: string[] }[] = [];
     let validCount = 0;
     let errorCount = 0;
 
-    sheet.eachRow((row, rowNumber) => {
-      if (rowNumber === 1) return; // skip header
+    rows.forEach((row, rowNumber) => {
+      if (rowNumber === 0) return; // skip header
 
-      const getValue = (col: number): string =>
-        String(row.getCell(col).value ?? "").trim();
+      const getValue = (col: number): string => String(row[col] ?? "").trim();
 
       const pnr = getValue(1);
-      const first_name = getValue(2);
-      const last_name = getValue(3);
+      const firstName = getValue(2);
+      const lastName = getValue(3);
       const email = getValue(4);
       const phone = getValue(5);
-      const travel_class_raw = getValue(6).toLowerCase();
-      const adults_raw = parseInt(getValue(7), 10);
-      const children_raw = parseInt(getValue(8), 10);
-      const special_notes_raw = getValue(9);
-      const additional_notes = getValue(10) || null;
+      const travelClassRaw = getValue(6).toLowerCase();
+      const adultsRaw = parseInt(getValue(7), 10);
+      const childrenRaw = parseInt(getValue(8), 10);
+      const specialNotesRaw = getValue(9);
+      const additionalNotes = getValue(10) || null;
 
       const errors: string[] = [];
 
-      if (!pnr) errors.push("PNR is required");
-      if (!first_name) errors.push("First Name is required");
-      if (!last_name) errors.push("Last Name is required");
+      if (!pnr) {
+        errors.push("PNR is required");
+      } else if (pnrSet.has(pnr)) {
+        errors.push(`Duplicate PNR '${pnr}' found in the file`);
+      } else {
+        pnrSet.add(pnr);
+      }
+      if (!firstName) errors.push("First Name is required");
+      if (!lastName) errors.push("Last Name is required");
       if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         errors.push("Email is invalid");
       }
       if (!phone) errors.push("Phone is required");
       if (
-        travel_class_raw !== TravelClass.ECONOMY &&
-        travel_class_raw !== TravelClass.BUSINESS
+        travelClassRaw !== TravelClass.ECONOMY &&
+        travelClassRaw !== TravelClass.BUSINESS
       ) {
         errors.push("Travel Class must be 'economy' or 'business'");
       }
-      if (isNaN(adults_raw) || adults_raw < 1) {
+      if (isNaN(adultsRaw) || adultsRaw < 1) {
         errors.push("Adults must be a number >= 1");
       }
-      if (isNaN(children_raw) || children_raw < 0) {
+      if (isNaN(childrenRaw) || childrenRaw < 0) {
         errors.push("Children must be a number >= 0");
       }
 
       const validSpecialNotes = Object.values(SpecialNote) as string[];
-      const special_notes: SpecialNote[] = special_notes_raw
-        ? (special_notes_raw
+      const specialNotes: SpecialNote[] = specialNotesRaw
+        ? (specialNotesRaw
             .split(",")
             .map((s) => s.trim().toLowerCase())
             .filter((s) => {
@@ -192,101 +250,103 @@ export class CancelledFlightsService {
             }) as SpecialNote[])
         : [];
 
-      const is_valid = errors.length === 0;
-      if (is_valid) validCount++;
-      else errorCount++;
+      const isValid = errors.length === 0;
+      if (isValid) validCount++;
+      else {
+        errorCount++;
+        errorsList.push({ row: rowNumber, errors });
+      }
 
-      const adults = is_valid ? adults_raw : 0;
-      const children = is_valid ? children_raw : 0;
-
-      preview.push({
+      bookings.push({
         row: rowNumber,
         pnr,
-        first_name,
-        last_name,
+        firstName,
+        lastName,
         email,
         phone,
-        travel_class: travel_class_raw as TravelClass,
-        adults,
-        children,
-        est_rooms: is_valid ? Math.ceil((adults + children) / 2) : 0,
-        special_notes,
-        additional_notes,
-        is_valid,
-        errors,
+        travelClass: travelClassRaw as TravelClass,
+        adults: adultsRaw,
+        children: childrenRaw,
+        estRooms: isValid ? Math.ceil((adultsRaw + childrenRaw) / 2) : 0,
+        specialNotes,
+        additionalNotes,
       });
     });
 
-    return {
-      total_rows: preview.length,
-      valid_count: validCount,
-      error_count: errorCount,
-      preview,
-    };
-  }
-
-  // ── Confirm import ───────────────────────────────────────────────────────
-
-  async confirmImport(
-    flightId: string,
-    dto: ImportBookingsConfirmDto,
-    requestId: string,
-  ) {
-    await this.requireFlight(flightId, requestId);
-
-    const skippedPnrs: string[] = [];
-    const toSave: Partial<BookingEntity>[] = [];
-
-    for (const row of dto.rows) {
-      const existing = await this.repo.findBookingByPnrAndFlight(
-        row.pnr,
+    // Check for duplicate PNRs in the database
+    const existingBookings =
+      await this.cancelledFlightsRepository.findBookingsByFlightIdAndPnrs(
         flightId,
+        Array.from(pnrSet),
         requestId,
       );
-      if (existing) {
-        skippedPnrs.push(row.pnr);
-        continue;
+
+    existingBookings.forEach((bookingEntity: BookingEntity) => {
+      const row = bookings.find((b) => b.pnr === bookingEntity.pnr);
+      if (row) {
+        row.estRooms = 0; // Mark as invalid
+        errorsList.push({
+          row: row.row,
+          errors: [`PNR '${bookingEntity.pnr}' already exists for this flight`],
+        });
+        errorCount++;
       }
-      toSave.push({
-        cancelledFlightId: flightId,
-        pnr: row.pnr,
-        firstName: row.first_name,
-        lastName: row.last_name,
-        email: row.email,
-        phone: row.phone,
-        travelClass: row.travel_class,
-        adults: row.adults,
-        children: row.children,
-        specialNotes: row.special_notes ?? [],
-        additionalNotes: row.additional_notes ?? null,
-      });
-    }
-
-    if (toSave.length > 0) {
-      await this.repo.saveBookings(toSave, requestId);
-    }
-
-    this.logger.info("Bookings imported", this.context, requestId, {
-      flightId,
-      imported: toSave.length,
-      skipped: skippedPnrs.length,
     });
 
+    const toSave: {
+      cancelledFlightId: number;
+      pnr: string;
+      firstName: string;
+      lastName: string;
+      email: string;
+      phone: string;
+      travelClass: TravelClass;
+      adults: number;
+      children: number;
+      estRooms: number;
+      specialNotes: SpecialNote[];
+      additionalNotes: string | null;
+    }[] = bookings
+      .filter((b) => b.estRooms > 0)
+      .map((b) => ({
+        cancelledFlightId: flightId,
+        pnr: b.pnr,
+        firstName: b.firstName,
+        lastName: b.lastName,
+        email: b.email,
+        phone: b.phone,
+        travelClass: b.travelClass,
+        adults: b.adults,
+        children: b.children,
+        estRooms: b.estRooms,
+        specialNotes: b.specialNotes,
+        additionalNotes: b.additionalNotes,
+      }));
+
+    const bookingFlights = await this.cancelledFlightsRepository.saveBookings(
+      toSave,
+      requestId,
+    );
+
     return {
-      imported: toSave.length,
-      skipped: skippedPnrs.length,
-      skipped_pnrs: skippedPnrs,
+      bookings: bookingFlights.map((b) => this.toBookingResponse(b)),
+      summary: {
+        totalBookings: bookings.length,
+        validBookings: validCount,
+        errorBookings: errorCount,
+      },
+      errorList: errorsList,
     };
   }
 
   // ── Update booking ───────────────────────────────────────────────────────
 
   async updateBooking(
-    flightId: string,
-    bookingId: string,
+    flightId: number,
+    bookingId: number,
     dto: UpdateBookingDto,
     requestId: string,
-  ) {
+  ): Promise<BookingResponseDto> {
     await this.requireFlight(flightId, requestId);
     const booking = await this.requireBookingForFlight(
       bookingId,
@@ -295,11 +355,12 @@ export class CancelledFlightsService {
     );
 
     if (dto.pnr && dto.pnr !== booking.pnr) {
-      const conflict = await this.repo.findBookingByPnrAndFlight(
-        dto.pnr,
-        flightId,
-        requestId,
-      );
+      const conflict =
+        await this.cancelledFlightsRepository.findBookingByPnrAndFlight(
+          dto.pnr,
+          flightId,
+          requestId,
+        );
       if (conflict) {
         throw new ConflictException(
           `Booking with PNR '${dto.pnr}' already exists for this flight`,
@@ -307,24 +368,24 @@ export class CancelledFlightsService {
       }
     }
 
-    const updated = await this.repo.updateBooking(
+    const updated = await this.cancelledFlightsRepository.updateBooking(
       booking,
       {
         ...(dto.pnr !== undefined && { pnr: dto.pnr }),
-        ...(dto.first_name !== undefined && { firstName: dto.first_name }),
-        ...(dto.last_name !== undefined && { lastName: dto.last_name }),
+        ...(dto.firstName !== undefined && { firstName: dto.firstName }),
+        ...(dto.lastName !== undefined && { lastName: dto.lastName }),
         ...(dto.email !== undefined && { email: dto.email }),
         ...(dto.phone !== undefined && { phone: dto.phone }),
-        ...(dto.travel_class !== undefined && {
-          travelClass: dto.travel_class,
+        ...(dto.travelClass !== undefined && {
+          travelClass: dto.travelClass,
         }),
         ...(dto.adults !== undefined && { adults: dto.adults }),
         ...(dto.children !== undefined && { children: dto.children }),
-        ...(dto.special_notes !== undefined && {
-          specialNotes: dto.special_notes,
+        ...(dto.specialNotes !== undefined && {
+          specialNotes: dto.specialNotes ?? [],
         }),
-        ...(dto.additional_notes !== undefined && {
-          additionalNotes: dto.additional_notes,
+        ...(dto.additionalNotes !== undefined && {
+          additionalNotes: dto.additionalNotes,
         }),
       },
       requestId,
@@ -335,86 +396,95 @@ export class CancelledFlightsService {
 
   // ── Delete booking ───────────────────────────────────────────────────────
 
-  async deleteBooking(flightId: string, bookingId: string, requestId: string) {
+  async deleteBooking(flightId: number, bookingId: number, requestId: string) {
     await this.requireFlight(flightId, requestId);
     const booking = await this.requireBookingForFlight(
       bookingId,
       flightId,
       requestId,
     );
-    await this.repo.deleteBooking(booking, requestId);
+    await this.cancelledFlightsRepository.deleteBooking(booking, requestId);
     return { message: "Booking deleted successfully" };
   }
 
   // ── List bookings ────────────────────────────────────────────────────────
-
-  async listBookings(flightId: string, requestId: string) {
+  async listBookings(
+    flightId: number,
+    pagination: PaginationQueryDto,
+    requestId: string,
+  ) {
     await this.requireFlight(flightId, requestId);
-    const bookings = await this.repo.findBookingsByFlightId(
-      flightId,
-      requestId,
-    );
+    const bookings =
+      await this.cancelledFlightsRepository.findBookingsByFlightIdWithPagination(
+        flightId,
+        pagination.page || 1,
+        pagination.limit || 10,
+        requestId,
+      );
 
-    const summary = this.computeSummary(bookings);
-
-    return {
-      summary,
-      bookings: bookings.map((b) => this.toBookingResponse(b)),
-    };
+    return bookings.map((b) => this.toBookingResponse(b));
   }
 
   // ── Review ───────────────────────────────────────────────────────────────
+  async reviewFlight(
+    flightId: number,
+    requestId: string,
+  ): Promise<ReviewCancelledFlightResponseDto> {
+    const [flight, bookingStats] = await Promise.all([
+      this.cancelledFlightsRepository.findFlightWithRelations(
+        flightId,
+        requestId,
+      ),
+      this.cancelledFlightsRepository.findBookingStatsByFlightId(
+        flightId,
+        requestId,
+      ),
+    ]);
 
-  async reviewFlight(flightId: string, requestId: string) {
-    const flight = await this.repo.findFlightWithRelations(flightId, requestId);
     if (!flight) {
       throw new NotFoundException(`Cancelled flight '${flightId}' not found`);
     }
 
-    const summary = this.computeSummary(flight.bookings ?? []);
-
     return {
       flight: {
         id: flight.id,
-        flight_number: flight.flightNumber,
+        flightNumber: flight.flightNumber,
+        airlineId: flight.airlineId,
+        departureAirportId: flight.departureAirportId,
+        arrivalAirportId: flight.arrivalAirportId,
         route: {
-          departure: {
+          departureAirport: {
             id: flight.departureAirport.id,
             code: flight.departureAirport.iataCode,
             name: flight.departureAirport.name,
           },
-          arrival: {
+          arrivalAirport: {
             id: flight.arrivalAirport.id,
             code: flight.arrivalAirport.iataCode,
             name: flight.arrivalAirport.name,
           },
         },
-        cancellation_date: flight.cancellationDate,
-        cancellation_reason: flight.cancellationReason ?? null,
+        cancellationDate: flight.cancellationDate,
+        cancellationReason: flight.cancellationReason ?? null,
         status: flight.status,
+        createdAt: flight.createdAt.toISOString(),
+        updatedAt: flight.updatedAt?.toISOString() ?? null,
       },
       summary: {
-        total_bookings: summary.total_bookings,
-        total_passengers: summary.total_passengers,
-        est_rooms_required: summary.est_rooms,
-        business_class_count: summary.business_count,
+        totalBookings: bookingStats.totalBookings,
+        totalAdults: bookingStats.totalAdults,
+        totalChildren: bookingStats.totalChildren,
       },
-      bookings: (flight.bookings ?? []).map((b) => ({
-        pnr: b.pnr,
-        contact: `${b.firstName} ${b.lastName}`,
-        email: b.email,
-        adults: b.adults,
-        children: b.children,
-        travel_class: b.travelClass,
-        est_rooms: Math.ceil((b.adults + b.children) / 2),
-      })),
     };
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
-  private async requireFlight(flightId: string, requestId: string) {
-    const flight = await this.repo.findFlightById(flightId, requestId);
+  private async requireFlight(flightId: number, requestId: string) {
+    const flight = await this.cancelledFlightsRepository.findFlightById(
+      flightId,
+      requestId,
+    );
     if (!flight) {
       throw new NotFoundException(`Cancelled flight '${flightId}' not found`);
     }
@@ -422,11 +492,14 @@ export class CancelledFlightsService {
   }
 
   private async requireBookingForFlight(
-    bookingId: string,
-    flightId: string,
+    bookingId: number,
+    flightId: number,
     requestId: string,
   ): Promise<BookingEntity> {
-    const booking = await this.repo.findBookingById(bookingId, requestId);
+    const booking = await this.cancelledFlightsRepository.findBookingById(
+      bookingId,
+      requestId,
+    );
     if (!booking || booking.cancelledFlightId !== flightId) {
       throw new NotFoundException(
         `Booking '${bookingId}' not found for flight '${flightId}'`,
@@ -435,46 +508,57 @@ export class CancelledFlightsService {
     return booking;
   }
 
-  private toBookingResponse(booking: BookingEntity) {
-    return {
-      id: booking.id,
-      cancelled_flight_id: booking.cancelledFlightId,
-      pnr: booking.pnr,
-      first_name: booking.firstName,
-      last_name: booking.lastName,
-      email: booking.email,
-      phone: booking.phone,
-      travel_class: booking.travelClass,
-      adults: booking.adults,
-      children: booking.children,
-      est_rooms: Math.ceil((booking.adults + booking.children) / 2),
-      special_notes: booking.specialNotes ?? [],
-      additional_notes: booking.additionalNotes ?? null,
-      created_at: booking.createdAt,
-    };
-  }
+  async confirmPassengerBookingDetails(
+    flightId: number,
+    requestId: string,
+  ): Promise<CancelledFlightResponseDto> {
+    const [flight, bookingStats] = await Promise.all([
+      this.cancelledFlightsRepository.findFlightWithRelations(
+        flightId,
+        requestId,
+      ),
+      this.cancelledFlightsRepository.findBookingStatsByFlightId(
+        flightId,
+        requestId,
+      ),
+    ]);
+    if (!flight) {
+      throw new NotFoundException(`Cancelled flight '${flightId}' not found`);
+    }
 
-  private computeSummary(bookings: BookingEntity[]) {
-    const total_bookings = bookings.length;
-    const total_passengers = bookings.reduce(
-      (sum, b) => sum + b.adults + b.children,
-      0,
-    );
-    const est_rooms = bookings.reduce(
-      (sum, b) => sum + Math.ceil((b.adults + b.children) / 2),
-      0,
-    );
-    const business_count = bookings.filter(
-      (b) => b.travelClass === TravelClass.BUSINESS,
-    ).length;
-    return { total_bookings, total_passengers, est_rooms, business_count };
+    if (flight.status !== FlightStatus.IN_PROGRESS) {
+      throw new BadRequestException(
+        `Cannot confirm passenger booking details for flight '${flightId}' with status '${flight.status}'`,
+      );
+    }
+
+    if (bookingStats.totalBookings === 0) {
+      throw new BadRequestException(
+        `Cannot confirm passenger booking details for flight '${flightId}' with no bookings`,
+      );
+    }
+
+    const updatedFlight =
+      await this.cancelledFlightsRepository.updateFlightStatus({
+        cancelledFlightEntity: flight,
+        status: FlightStatus.PASSENGERS_BOOKING_CONFIRMED,
+        passengerBookingStats: {
+          totalBookings: bookingStats.totalBookings,
+          totalAdults: bookingStats.totalAdults,
+          totalChildren: bookingStats.totalChildren,
+        },
+        HotelBookingStats: null, // No hotel booking stats at this point
+        requestId,
+      });
+
+    return this.toCancelledFlightResponse(updatedFlight);
   }
 
   // ── AI Hotel Recommendations & Allocation ───────────────────────────────
 
   async getHotelRecommendations(
-    flightId: string,
-    bookingId: string,
+    flightId: number,
+    bookingId: number,
     requestId: string,
   ) {
     this.logger.debug(
@@ -483,7 +567,11 @@ export class CancelledFlightsService {
       requestId,
     );
 
-    const flight = await this.repo.findFlightWithRelations(flightId, requestId);
+    const flight =
+      await this.cancelledFlightsRepository.findFlightWithRelations(
+        flightId,
+        requestId,
+      );
     if (!flight) {
       throw new NotFoundException(`Cancelled flight '${flightId}' not found`);
     }
@@ -622,26 +710,27 @@ export class CancelledFlightsService {
   }
 
   async allocateHotel(
-    flightId: string,
-    bookingId: string,
+    flightId: number,
+    bookingId: number,
     dto: AllocateHotelDto,
     requestId: string,
   ) {
     await this.requireFlight(flightId, requestId);
     await this.requireBookingForFlight(bookingId, flightId, requestId);
 
-    const allocation = await this.repo.saveHotelAllocation(
-      {
-        cancelledFlightId: flightId,
-        hotelName: dto.hotelName,
-        hotelAddress: dto.hotelAddress ?? null,
-        checkInDate: dto.checkInDate,
-        checkOutDate: dto.checkOutDate,
-        totalRooms: dto.totalRooms,
-        costPerRoom: dto.costPerRoom,
-      },
-      requestId,
-    );
+    const allocation =
+      await this.cancelledFlightsRepository.saveHotelAllocation(
+        {
+          cancelledFlightId: flightId,
+          hotelName: dto.hotelName,
+          hotelAddress: dto.hotelAddress ?? null,
+          checkInDate: dto.checkInDate,
+          checkOutDate: dto.checkOutDate,
+          totalRooms: dto.totalRooms,
+          costPerRoom: dto.costPerRoom,
+        },
+        requestId,
+      );
 
     this.logger.info("Hotel allocated to booking", this.context, requestId, {
       flightId,
@@ -665,8 +754,8 @@ export class CancelledFlightsService {
   }
 
   async checkRate(
-    flightId: string,
-    bookingId: string,
+    flightId: number,
+    bookingId: number,
     rateKey: string,
     requestId: string,
   ) {
@@ -683,8 +772,8 @@ export class CancelledFlightsService {
   }
 
   async bookHotel(
-    flightId: string,
-    bookingId: string,
+    flightId: number,
+    bookingId: number,
     dto: BookHotelRequestDto,
     requestId: string,
   ) {
@@ -694,25 +783,38 @@ export class CancelledFlightsService {
       requestId,
     );
 
-    const flight = await this.repo.findFlightWithRelations(flightId, requestId);
+    const flight =
+      await this.cancelledFlightsRepository.findFlightWithRelations(
+        flightId,
+        requestId,
+      );
     if (!flight) {
       throw new NotFoundException(`Cancelled flight '${flightId}' not found`);
     }
 
-    const booking = await this.requireBookingForFlight(bookingId, flightId, requestId);
+    const booking = await this.requireBookingForFlight(
+      bookingId,
+      flightId,
+      requestId,
+    );
 
     // 1. Call CheckRate API first to validate that rate exists and is still bookable
-    const checkRateResult = await this.hotelPartnerService.checkRate(dto.rateKey, requestId);
+    const checkRateResult = await this.hotelPartnerService.checkRate(
+      dto.rateKey,
+      requestId,
+    );
     const hotel = checkRateResult.hotel;
     if (!hotel) {
-      throw new BadRequestException("Hotel details not returned from CheckRate validation");
+      throw new BadRequestException(
+        "Hotel details not returned from CheckRate validation",
+      );
     }
 
     // Determine room details and pricing from CheckRate validation response
     const hotelName = hotel.name;
     const hotelAddress = hotel.address || null;
     const totalRooms = hotel.rooms?.length || 1;
-    
+
     // Read net price from first rate of first room
     const rateInfo = hotel.rooms?.[0]?.rates?.[0];
     const costPerRoom = rateInfo ? Number(rateInfo.net) : 0;
@@ -720,7 +822,9 @@ export class CancelledFlightsService {
     // Resolve dates
     const checkIn = flight.cancellationDate;
     if (!checkIn) {
-      throw new BadRequestException(`Cancellation date not found for flight '${flightId}'`);
+      throw new BadRequestException(
+        `Cancellation date not found for flight '${flightId}'`,
+      );
     }
     const checkInDateObj = new Date(checkIn);
     const finalCheckOutDateObj = new Date(checkInDateObj);
@@ -728,7 +832,19 @@ export class CancelledFlightsService {
     const finalCheckOut = finalCheckOutDateObj.toISOString().split("T")[0];
 
     // 2. Perform live booking via Hotelbeds
-    const bookingResult = await this.hotelPartnerService.bookHotel(
+    // TODO: Fix the return type of bookHotel to include the booking reference and status
+    const bookingResult: {
+      bookingReference: string;
+      status: HotelAllocationStatus;
+      hotelName: string;
+      hotelAddress: string;
+      checkInDate: string;
+      checkOutDate: string;
+      totalRooms: number;
+      costPerRoom: number;
+      price: number;
+      buyingPrice: number;
+    } = await this.hotelPartnerService.bookHotel(
       {
         firstName: booking.firstName,
         lastName: booking.lastName,
@@ -740,40 +856,50 @@ export class CancelledFlightsService {
       requestId,
     );
 
-    const hbBooking = bookingResult.booking;
-    if (!hbBooking) {
-      throw new BadRequestException("Booking response did not contain confirmation details");
+    if (!bookingResult) {
+      throw new BadRequestException(
+        "Booking response did not contain confirmation details",
+      );
     }
 
     // 3. Save hotel allocation in database
-    const allocation = await this.repo.saveHotelAllocation(
-      {
-        cancelledFlightId: flightId,
-        bookingId: bookingId,
-        hotelName: hotelName,
-        hotelAddress: hotelAddress,
-        checkInDate: checkIn,
-        checkOutDate: finalCheckOut,
-        totalRooms: totalRooms,
-        costPerRoom: costPerRoom,
-        bookingReference: hbBooking.reference,
-        status: hbBooking.status || "CONFIRMED",
-        rateKey: dto.rateKey,
-      },
-      requestId,
-    );
+    // TODO: Selling price, platform fee and earnings calculations should be handled here based on business logic
+    const allocation =
+      await this.cancelledFlightsRepository.saveHotelAllocation(
+        {
+          cancelledFlightId: flightId,
+          bookingId: bookingId,
+          hotelName: hotelName,
+          hotelAddress: hotelAddress,
+          checkInDate: checkIn,
+          checkOutDate: finalCheckOut,
+          totalRooms: totalRooms,
+          costPerRoom: costPerRoom,
+          bookingReference: bookingResult.bookingReference,
+          status: bookingResult.status,
+          rateKey: dto.rateKey,
+          price: bookingResult.price,
+          buyingPrice: bookingResult.buyingPrice,
+          sellingPrice: bookingResult.price, // Assuming selling price is the same as price for now
+        },
+        requestId,
+      );
 
-    this.logger.info("Hotel booking completed and allocated to booking", this.context, requestId, {
-      flightId,
-      bookingId,
-      allocationId: allocation.id,
-      bookingReference: allocation.bookingReference,
-      status: allocation.status,
-    });
+    this.logger.info(
+      "Hotel booking completed and allocated to booking",
+      this.context,
+      requestId,
+      {
+        flightId,
+        bookingId,
+        allocationId: allocation.id,
+        bookingReference: allocation.bookingReference,
+        status: allocation.status,
+      },
+    );
 
     return {
       message: "Hotel booked and allocated successfully",
-      booking: hbBooking,
       allocation: {
         id: allocation.id,
         hotelName: allocation.hotelName,

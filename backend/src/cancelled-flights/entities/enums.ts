@@ -24,6 +24,16 @@ export enum SpecialNote {
 export enum FlightStatus {
   DRAFT = "draft",
   IN_PROGRESS = "in_progress",
+  PASSENGERS_BOOKING_CONFIRMED = "passengers_booking_confirmed",
+  HOTEL_ALLOCATION_IN_PROGRESS = "hotel_allocation_in_progress",
   ALLOCATED = "allocated",
   PUBLISHED = "published",
+}
+
+export enum HotelAllocationStatus {
+  DRAFT = "draft",
+  IN_PROGRESS = "in_progress",
+  CONFIRMED = "confirmed",
+  CANCELLED = "cancelled",
+  COMPLETED = "completed",
 }

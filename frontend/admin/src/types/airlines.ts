@@ -32,4 +32,6 @@ export interface Airline {
   allocationFailuresCount: number;
   logoUrl?: string;
   assignedAirports?: string;
+  isActive?: boolean;
+  isSuspended?: boolean;
 }

@@ -7,8 +7,10 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseIntPipe,
+  Patch,
   Post,
-  Put,
+  Query,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -27,6 +29,7 @@ import {
   ApiTags,
   ApiConflictResponse,
   ApiUnauthorizedResponse,
+  ApiExtraModels,
 } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RbacGuard } from "../auth/guards/rbac.guard";
@@ -51,19 +54,30 @@ import {
   createUnauthorizedErrorSchema,
 } from "../common/constants/swagger.constants";
 import { CancelledFlightsService } from "./cancelled-flights.service";
-import { CreateCancelledFlightDto } from "./dto/create-cancelled-flight.dto";
-import { CreateBookingDto } from "./dto/create-booking.dto";
-import { UpdateBookingDto } from "./dto/update-booking.dto";
-import { ImportBookingsConfirmDto } from "./dto/import-bookings.dto";
-import { AllocateHotelDto } from "./dto/allocate-hotel.dto";
-import { CheckRateRequestDto } from "./dto/check-rate-request.dto";
-import { BookHotelRequestDto } from "./dto/book-hotel-request.dto";
+import {
+  CreateCancelledFlightDto,
+  CancelledFlightResponseDto,
+  CreateBookingDto,
+  BookingResponseDto,
+  ImportBookingResponseDto,
+  UpdateBookingDto,
+  ReviewCancelledFlightResponseDto,
+  AllocateHotelDto,
+  CheckRateRequestDto,
+  BookHotelRequestDto,
+} from "./dto";
+import { PaginationQueryDto } from "../common/dto/pagination-query.dto";
 
 @ApiTags("Cancelled Flights")
 @ApiBearerAuth("access-token")
 @UseGuards(JwtAuthGuard, RbacGuard)
 @RequireUserTypes(UserType.AIRLINE)
 @Controller("cancelled-flights")
+@ApiExtraModels(
+  CancelledFlightResponseDto,
+  BookingResponseDto,
+  ImportBookingResponseDto,
+)
 export class CancelledFlightsController {
   constructor(private readonly service: CancelledFlightsService) {}
 
@@ -90,6 +104,9 @@ export class CancelledFlightsController {
             requestId: { type: "string", example: REQUEST_ID_EXAMPLE },
             timestamp: { type: "string", example: TIMESTAMP_EXAMPLE },
             message: { type: "string", example: "Cancelled flight created" },
+            data: {
+              $ref: "#/components/schemas/CancelledFlightResponseDto",
+            },
           },
         },
       ],
@@ -107,7 +124,7 @@ export class CancelledFlightsController {
   async createCancelledFlight(
     @Body() dto: CreateCancelledFlightDto,
     @RequestId() requestId: string,
-  ): Promise<BaseResponseDto<object>> {
+  ): Promise<BaseResponseDto<CancelledFlightResponseDto>> {
     const data = await this.service.createCancelledFlight(dto, requestId);
     return BaseResponseDto.success(data, requestId, "Cancelled flight created");
   }
@@ -126,7 +143,7 @@ export class CancelledFlightsController {
     description:
       "Manually adds a single booking. PNR must be unique per flight.",
   })
-  @ApiParam({ name: "id", description: "Cancelled flight UUID" })
+  @ApiParam({ name: "id", description: "Cancelled flight id" })
   @ApiCreatedResponse({
     schema: {
       properties: {
@@ -134,6 +151,7 @@ export class CancelledFlightsController {
         requestId: { type: "string", example: REQUEST_ID_EXAMPLE },
         timestamp: { type: "string", example: TIMESTAMP_EXAMPLE },
         message: { type: "string", example: "Booking added" },
+        data: { $ref: "#/components/schemas/BookingResponseDto" },
       },
     },
   })
@@ -150,16 +168,15 @@ export class CancelledFlightsController {
     ),
   })
   async addBooking(
-    @Param("id") id: string,
+    @Param("id", ParseIntPipe) id: number,
     @Body() dto: CreateBookingDto,
     @RequestId() requestId: string,
-  ): Promise<BaseResponseDto<object>> {
+  ): Promise<BaseResponseDto<BookingResponseDto>> {
     const data = await this.service.addBooking(id, dto, requestId);
     return BaseResponseDto.success(data, requestId, "Booking added");
   }
 
   // ── POST /cancelled-flights/:id/bookings/import ─────────────────────────
-
   @Post(":id/bookings/import")
   @HttpCode(HttpStatus.OK)
   @RequireAccessControl({
@@ -170,9 +187,9 @@ export class CancelledFlightsController {
   })
   @UseInterceptors(FileInterceptor("file"))
   @ApiOperation({
-    summary: "Preview Excel import of bookings",
+    summary: "Import bookings from a CSV file",
     description:
-      "Parses an .xlsx file and returns a preview with valid/invalid rows. Nothing is saved.",
+      "Parses a .csv file and imports bookings for the cancelled flight.",
   })
   @ApiConsumes("multipart/form-data")
   @ApiBody({
@@ -183,60 +200,47 @@ export class CancelledFlightsController {
       },
     },
   })
-  @ApiParam({ name: "id", description: "Cancelled flight UUID" })
+  @ApiParam({ name: "id", description: "Cancelled flight id" })
+  @ApiOkResponse({
+    schema: {
+      properties: {
+        success: { type: "boolean", example: true },
+        requestId: { type: "string", example: REQUEST_ID_EXAMPLE },
+        timestamp: { type: "string", example: TIMESTAMP_EXAMPLE },
+        message: { type: "string", example: "Bookings imported successfully" },
+        data: { $ref: "#/components/schemas/ImportBookingResponseDto" },
+      },
+    },
+  })
   @ApiBadRequestResponse({
     schema: createBadRequestErrorSchema(
       "/api/v1/cancelled-flights/:id/bookings/import",
     ),
   })
-  async importPreview(
-    @Param("id") id: string,
+  async importBookings(
+    @Param("id", ParseIntPipe) id: number,
     @UploadedFile()
     file: { buffer: Buffer; originalname: string; mimetype: string },
     @RequestId() requestId: string,
-  ): Promise<BaseResponseDto<object>> {
+  ): Promise<BaseResponseDto<ImportBookingResponseDto>> {
     if (!file) {
       throw new BadRequestException("File is required");
     }
     const ext = file.originalname?.split(".").pop()?.toLowerCase();
-    if (
-      ext !== "xlsx" &&
-      file.mimetype !==
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    ) {
-      throw new BadRequestException("Only .xlsx files are accepted");
+    const allowedMimes = ["text/csv", "application/csv"];
+    if (ext !== "csv" && !allowedMimes.includes(file.mimetype)) {
+      throw new BadRequestException("Only .csv files are accepted");
     }
-    const data = await this.service.previewImport(id, file, requestId);
-    return BaseResponseDto.success(data, requestId, "Import preview generated");
-  }
-
-  // ── POST /cancelled-flights/:id/bookings/import/confirm ─────────────────
-
-  @Post(":id/bookings/import/confirm")
-  @RequireAccessControl({
-    airline: {
-      asset: AirlineAsset.CANCELLED_FLIGHTS,
-      access: [AccessAction.EDIT],
-    },
-  })
-  @ApiOperation({
-    summary: "Confirm and save imported bookings",
-    description:
-      "Saves valid rows from an import preview. Duplicate PNRs per flight are skipped.",
-  })
-  @ApiParam({ name: "id", description: "Cancelled flight UUID" })
-  async confirmImport(
-    @Param("id") id: string,
-    @Body() dto: ImportBookingsConfirmDto,
-    @RequestId() requestId: string,
-  ): Promise<BaseResponseDto<object>> {
-    const data = await this.service.confirmImport(id, dto, requestId);
-    return BaseResponseDto.success(data, requestId, "Bookings imported");
+    const data = await this.service.importBookings(id, file, requestId);
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Bookings imported successfully",
+    );
   }
 
   // ── PUT /cancelled-flights/:id/bookings/:bookingId ───────────────────────
-
-  @Put(":id/bookings/:bookingId")
+  @Patch(":id/bookings/:bookingId")
   @RequireAccessControl({
     airline: {
       asset: AirlineAsset.CANCELLED_FLIGHTS,
@@ -248,8 +252,8 @@ export class CancelledFlightsController {
     description:
       "All fields are optional. If PNR changes, uniqueness per flight is re-validated.",
   })
-  @ApiParam({ name: "id", description: "Cancelled flight UUID" })
-  @ApiParam({ name: "bookingId", description: "Booking UUID" })
+  @ApiParam({ name: "id", description: "Cancelled flight id" })
+  @ApiParam({ name: "bookingId", description: "Booking id" })
   @ApiNotFoundResponse({
     schema: createNotFoundErrorSchema(
       "/api/v1/cancelled-flights/:id/bookings/:bookingId",
@@ -263,8 +267,8 @@ export class CancelledFlightsController {
     ),
   })
   async updateBooking(
-    @Param("id") id: string,
-    @Param("bookingId") bookingId: string,
+    @Param("id", ParseIntPipe) id: number,
+    @Param("bookingId", ParseIntPipe) bookingId: number,
     @Body() dto: UpdateBookingDto,
     @RequestId() requestId: string,
   ): Promise<BaseResponseDto<object>> {
@@ -290,8 +294,8 @@ export class CancelledFlightsController {
     summary: "Delete a booking",
     description: "Hard deletes a booking by ID. Flight and booking must exist.",
   })
-  @ApiParam({ name: "id", description: "Cancelled flight UUID" })
-  @ApiParam({ name: "bookingId", description: "Booking UUID" })
+  @ApiParam({ name: "id", description: "Cancelled flight id" })
+  @ApiParam({ name: "bookingId", description: "Booking id" })
   @ApiOkResponse({
     schema: {
       properties: {
@@ -315,8 +319,8 @@ export class CancelledFlightsController {
     ),
   })
   async deleteBooking(
-    @Param("id") id: string,
-    @Param("bookingId") bookingId: string,
+    @Param("id", ParseIntPipe) id: number,
+    @Param("bookingId", ParseIntPipe) bookingId: number,
     @RequestId() requestId: string,
   ): Promise<BaseResponseDto<object>> {
     const data = await this.service.deleteBooking(id, bookingId, requestId);
@@ -337,7 +341,7 @@ export class CancelledFlightsController {
     description:
       "Returns summary counts and the full booking list for a flight.",
   })
-  @ApiParam({ name: "id", description: "Cancelled flight UUID" })
+  @ApiParam({ name: "id", description: "Cancelled flight id" })
   @ApiNotFoundResponse({
     schema: createNotFoundErrorSchema(
       "/api/v1/cancelled-flights/:id/bookings",
@@ -345,10 +349,11 @@ export class CancelledFlightsController {
     ),
   })
   async listBookings(
-    @Param("id") id: string,
+    @Param("id", ParseIntPipe) id: number,
+    @Query() pagination: PaginationQueryDto,
     @RequestId() requestId: string,
   ): Promise<BaseResponseDto<object>> {
-    const data = await this.service.listBookings(id, requestId);
+    const data = await this.service.listBookings(id, pagination, requestId);
     return BaseResponseDto.success(
       data,
       requestId,
@@ -367,10 +372,9 @@ export class CancelledFlightsController {
   })
   @ApiOperation({
     summary: "Review a cancelled flight before hotel allocation",
-    description:
-      "Returns full flight details with route, bookings, and summary counts.",
+    description: "Returns full flight details with route, and summary counts.",
   })
-  @ApiParam({ name: "id", description: "Cancelled flight UUID" })
+  @ApiParam({ name: "id", description: "Cancelled flight id" })
   @ApiNotFoundResponse({
     schema: createNotFoundErrorSchema(
       "/api/v1/cancelled-flights/:id/review",
@@ -378,14 +382,50 @@ export class CancelledFlightsController {
     ),
   })
   async reviewFlight(
-    @Param("id") id: string,
+    @Param("id", ParseIntPipe) id: number,
     @RequestId() requestId: string,
-  ): Promise<BaseResponseDto<object>> {
+  ): Promise<BaseResponseDto<ReviewCancelledFlightResponseDto>> {
     const data = await this.service.reviewFlight(id, requestId);
     return BaseResponseDto.success(
       data,
       requestId,
       "Flight review fetched successfully",
+    );
+  }
+
+  // POST /cancelled-flights/:id/bookings/confirm
+  // Confirm the passenger booking details and move the flight status to PASSENGERS_BOOKING_CONFIRMED
+  @Post(":id/bookings/confirm")
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.EDIT],
+    },
+  })
+  @ApiOperation({
+    summary: "Confirm passenger booking details",
+    description:
+      "Confirms that all passenger booking details are correct and moves the flight status to PASSENGERS_BOOKING_CONFIRMED.",
+  })
+  @ApiParam({ name: "id", description: "Cancelled flight id" })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/cancelled-flights/:id/bookings/confirm",
+      "Cancelled flight not found",
+    ),
+  })
+  async confirmPassengerBookingDetails(
+    @Param("id", ParseIntPipe) id: number,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<CancelledFlightResponseDto>> {
+    const data = await this.service.confirmPassengerBookingDetails(
+      id,
+      requestId,
+    );
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Passenger booking details confirmed",
     );
   }
 
@@ -412,11 +452,15 @@ export class CancelledFlightsController {
     ),
   })
   async getHotelRecommendations(
-    @Param("id") id: string,
-    @Param("bookingId") bookingId: string,
+    @Param("id", ParseIntPipe) id: number,
+    @Param("bookingId", ParseIntPipe) bookingId: number,
     @RequestId() requestId: string,
   ): Promise<BaseResponseDto<object>> {
-    const data = await this.service.getHotelRecommendations(id, bookingId, requestId);
+    const data = await this.service.getHotelRecommendations(
+      id,
+      bookingId,
+      requestId,
+    );
     return BaseResponseDto.success(
       data,
       requestId,
@@ -446,12 +490,17 @@ export class CancelledFlightsController {
     ),
   })
   async allocateHotel(
-    @Param("id") id: string,
-    @Param("bookingId") bookingId: string,
+    @Param("id", ParseIntPipe) id: number,
+    @Param("bookingId", ParseIntPipe) bookingId: number,
     @Body() dto: AllocateHotelDto,
     @RequestId() requestId: string,
   ): Promise<BaseResponseDto<object>> {
-    const data = await this.service.allocateHotel(id, bookingId, dto, requestId);
+    const data = await this.service.allocateHotel(
+      id,
+      bookingId,
+      dto,
+      requestId,
+    );
     return BaseResponseDto.success(
       data,
       requestId,
@@ -470,17 +519,23 @@ export class CancelledFlightsController {
   })
   @ApiOperation({
     summary: "Check rate key availability and pricing details",
-    description: "Queries Hotelbeds CheckRate API to verify room rate availability, cancellation policies, and cost details.",
+    description:
+      "Queries Hotelbeds CheckRate API to verify room rate availability, cancellation policies, and cost details.",
   })
   @ApiParam({ name: "id", description: "Cancelled flight UUID" })
   @ApiParam({ name: "bookingId", description: "Booking UUID" })
   async checkRate(
-    @Param("id") id: string,
-    @Param("bookingId") bookingId: string,
+    @Param("id", ParseIntPipe) id: number,
+    @Param("bookingId", ParseIntPipe) bookingId: number,
     @Body() dto: CheckRateRequestDto,
     @RequestId() requestId: string,
   ): Promise<BaseResponseDto<object>> {
-    const data = await this.service.checkRate(id, bookingId, dto.rateKey, requestId);
+    const data = await this.service.checkRate(
+      id,
+      bookingId,
+      dto.rateKey,
+      requestId,
+    );
     return BaseResponseDto.success(
       data,
       requestId,
@@ -499,13 +554,14 @@ export class CancelledFlightsController {
   })
   @ApiOperation({
     summary: "Perform live hotel reservation and allocate it to the booking",
-    description: "Queries Hotelbeds Bookings API to confirm reservation, then stores allocation details in the database.",
+    description:
+      "Queries Hotelbeds Bookings API to confirm reservation, then stores allocation details in the database.",
   })
   @ApiParam({ name: "id", description: "Cancelled flight UUID" })
   @ApiParam({ name: "bookingId", description: "Booking UUID" })
   async bookHotel(
-    @Param("id") id: string,
-    @Param("bookingId") bookingId: string,
+    @Param("id", ParseIntPipe) id: number,
+    @Param("bookingId", ParseIntPipe) bookingId: number,
     @Body() dto: BookHotelRequestDto,
     @RequestId() requestId: string,
   ): Promise<BaseResponseDto<object>> {

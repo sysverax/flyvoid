@@ -6,6 +6,7 @@ import {
   ManyToOne,
   OneToOne,
   PrimaryGeneratedColumn,
+  UpdateDateColumn,
 } from "typeorm";
 import { CancelledFlightEntity } from "./cancelled-flight.entity";
 import { SpecialNote, TravelClass } from "./enums";
@@ -13,11 +14,11 @@ import { HotelAllocationEntity } from "./hotel-allocation.entity";
 
 @Entity("cancelled_flight_bookings")
 export class BookingEntity {
-  @PrimaryGeneratedColumn("uuid")
-  id!: string;
+  @PrimaryGeneratedColumn({ type: "integer" })
+  id!: number;
 
-  @Column({ name: "cancelled_flight_id", type: "uuid" })
-  cancelledFlightId!: string;
+  @Column({ name: "cancelled_flight_id", type: "integer" })
+  cancelledFlightId!: number;
 
   @Column({ name: "pnr", type: "varchar", length: 20 })
   pnr!: string;
@@ -64,4 +65,7 @@ export class BookingEntity {
 
   @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
+
+  @UpdateDateColumn({ name: "updated_at" })
+  updatedAt!: Date;
 }
