@@ -564,7 +564,7 @@ CREATE TABLE public.cancelled_flights (
   cancellation_date date NOT NULL,
   cancellation_reason varchar(50),
   cancellation_reason_text text,
-  status varchar(20) NOT NULL DEFAULT 'draft',
+  status varchar(40) NOT NULL DEFAULT 'draft',
   total_booking integer NOT NULL DEFAULT 0,
   total_adults integer NOT NULL DEFAULT 0,
   total_children integer NOT NULL DEFAULT 0,
