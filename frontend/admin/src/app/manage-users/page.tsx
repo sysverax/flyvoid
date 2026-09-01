@@ -14,6 +14,7 @@ import { useAuth } from "@/src/hooks/useAuth";
 import { Pagination } from "@/src/components/ui/pagination";
 import { usersService, User } from "@/src/services/users.service";
 import { toast } from "react-toastify";
+import { TruncatedTooltip } from "@/src/components/ui/TruncatedTooltip";
 
 export default function ManageUsersPage() {
   const { hasPermission } = useAuth();
@@ -289,8 +290,16 @@ export default function ManageUsersPage() {
                   className="hover:bg-gray-50/50 transition-colors"
                 >
                   <TableCell className="font-mono font-medium text-gray-600">{user.id}</TableCell>
-                  <TableCell className="font-medium text-[#1F2937]">{`${user.firstName} ${user.lastName}`}</TableCell>
-                  <TableCell className="text-[#6B7280]">{user.email}</TableCell>
+                  <TableCell className="text-[#1F2937]">
+                    <TruncatedTooltip text={`${user.firstName} ${user.lastName}`} side="top">
+                      <span className="block max-w-[400px] truncate">{`${user.firstName} ${user.lastName}`}</span>
+                    </TruncatedTooltip>
+                  </TableCell>
+                  <TableCell className="text-[#6B7280]">
+                    <TruncatedTooltip text={user.email} side="top">
+                      <span className="block max-w-[400px] truncate">{user.email}</span>
+                    </TruncatedTooltip>
+                  </TableCell>
                   <TableCell>
                     <StatusBadge status={user.isActive ? "Active" : "Inactive"} />
                   </TableCell>

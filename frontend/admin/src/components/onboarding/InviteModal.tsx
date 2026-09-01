@@ -238,6 +238,7 @@ export function InviteModal({
                     disabled={isLoading}
                     maxListHeightClass="max-h-[296px]"
                     error={!!(errors["country"] && touched["country"])}
+                    searchable
                   />
                   {err("country")}
                 </Field>
