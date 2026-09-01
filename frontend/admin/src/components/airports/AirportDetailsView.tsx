@@ -1,10 +1,14 @@
 "use client";
 
+import { useState, useRef } from "react";
+import * as Tooltip from "@radix-ui/react-tooltip";
+import React from "react";
 import { X } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { Airport } from "@/src/types/airports";
 import { useLockBodyScroll } from "@/src/hooks/useLockBodyScroll";
 import { useAuth } from "@/src/hooks/useAuth";
+import { TruncatedTooltip } from "@/src/components/ui/TruncatedTooltip";
 
 interface AirportDetailsViewProps {
   isOpen: boolean;
@@ -65,10 +69,12 @@ export function AirportDetailsView({
                 ["Type", airport.type.toLowerCase()],
               ].map(([label, value]) => (
                 <div key={String(label)} className="self-stretch flex justify-between items-center">
-                  <div className="text-gray-500 text-[16px] font-normal font-figtree h-[19px] leading-normal">{label}</div>
-                  <div className="text-right text-gray-900 text-[16px] font-medium font-figtree h-[19px] leading-normal capitalize">
-                    {value}
-                  </div>
+                  <div className="text-gray-500 text-[16px] font-normal font-figtree leading-normal shrink-0">{label}</div>
+                  <TruncatedTooltip text={String(value)} side="top">
+                    <div className="text-right text-gray-900 text-[16px] font-medium font-figtree leading-normal capitalize max-w-[300px] truncate cursor-default">
+                      {value}
+                    </div>
+                  </TruncatedTooltip>
                 </div>
               ))}
 

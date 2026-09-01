@@ -1,6 +1,9 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { countries } from "countries-list";
+
+import { useState, useMemo, useEffect, useRef } from "react";
+import * as Tooltip from "@radix-ui/react-tooltip";
 import {
   Search,
   Eye,
@@ -70,13 +73,9 @@ export default function AirlinesPage() {
 
   const countryOptions = [
     { value: "All Countries", label: "All Countries" },
-    { value: "United States", label: "United States" },
-    { value: "United Kingdom", label: "United Kingdom" },
-    { value: "Germany", label: "Germany" },
-    { value: "France", label: "France" },
-    { value: "India", label: "India" },
-    { value: "Canada", label: "Canada" },
-    { value: "Australia", label: "Australia" },
+    ...Object.entries(countries)
+      .map(([_, c]) => ({ value: c.name, label: c.name }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
   ];
 
   const fetchAirlines = async (showLoading = true) => {
@@ -325,8 +324,10 @@ export default function AirlinesPage() {
                 setCurrentPage(1);
               }}
               options={countryOptions}
-              widthClass="w-44"
-              triggerWidthClass="w-[180px]"
+              widthClass="w-full sm:w-44"
+              triggerWidthClass="w-full sm:w-44"
+              maxListHeightClass="max-h-[296px]"
+              searchable
             />
           </FiltersCard>
 
@@ -387,8 +388,8 @@ export default function AirlinesPage() {
                 ) : (
                   sortedAirlines.map((airline) => (
                     <TableRow key={airline.id}>
-                      <TableCell className="font-medium text-[#1F2937]">
-                        {airline.airlineName}
+                      <TableCell>
+                        <AirlineNameCell name={airline.airlineName} />
                       </TableCell>
                       <TableCell>
                         <span className="rounded-[4px] bg-[#E5E7EB] text-[#1F2937] font-inter text-[12px] px-2.5 py-1.5 font-medium h-[28px]">
@@ -398,17 +399,17 @@ export default function AirlinesPage() {
                       <TableCell>
                         <StatusBadge status={airline.status} />
                       </TableCell>
-                      <TableCell className="text-[#6B7280]">
-                        {airline.flightsCount}
+                      <TableCell>
+                        <MetricTooltip value={airline.flightsCount} />
                       </TableCell>
                       <TableCell className="text-[#1F2937]">
-                        {airline.passengersCount.toLocaleString()}
+                        <MetricTooltip value={airline.passengersCount} />
                       </TableCell>
                       <TableCell className="text-[#6B7280] relative -left-1">
-                        ${airline.spend.toLocaleString()}
+                        <MetricTooltip value={airline.spend} isCurrency />
                       </TableCell>
                       <TableCell className="text-[#6B7280] -translate-x-1.5">
-                        ${airline.revenue.toLocaleString()}
+                        <MetricTooltip value={airline.revenue} isCurrency />
                       </TableCell>
                       {hasPermission("edit") && (
                         <TableCell>
@@ -498,5 +499,61 @@ export default function AirlinesPage() {
         onConfirm={handleConfirmSuspend}
       />
     </div>
+  );
+}
+
+function AirlineNameCell({ name }: { name: string }) {
+  const textRef = useRef<HTMLDivElement>(null);
+  const [isTruncated, setIsTruncated] = useState(false);
+
+  const checkTruncation = () => {
+    if (textRef.current) {
+      setIsTruncated(textRef.current.scrollWidth > textRef.current.clientWidth);
+    }
+  };
+
+  return (
+    <Tooltip.Provider delayDuration={300}>
+      <Tooltip.Root>
+        <Tooltip.Trigger asChild onMouseEnter={checkTruncation}>
+          <div ref={textRef} className="max-w-[150px] truncate cursor-default">
+            {name}
+          </div>
+        </Tooltip.Trigger>
+        <Tooltip.Portal>
+          {isTruncated && (
+            <Tooltip.Content side="top" sideOffset={5} className="bg-gray-100 border border-gray-200 text-gray-800 text-[13px] font-medium px-3 py-1.5 rounded-md shadow-lg max-w-xs break-words z-[100] animate-in fade-in-0 zoom-in-95 font-figtree">
+              {name}
+              <Tooltip.Arrow className="fill-gray-100" />
+            </Tooltip.Content>
+          )}
+        </Tooltip.Portal>
+      </Tooltip.Root>
+    </Tooltip.Provider>
+  );
+}
+
+function MetricTooltip({ value, isCurrency = false }: { value: number; isCurrency?: boolean }) {
+  const compactValue = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value);
+  const exactValue = new Intl.NumberFormat("en-US").format(value);
+  const exactStr = isCurrency ? `$${exactValue}` : exactValue;
+  const compactStr = isCurrency ? `$${compactValue}` : compactValue;
+
+  return (
+    <Tooltip.Provider delayDuration={300}>
+      <Tooltip.Root>
+        <Tooltip.Trigger asChild>
+          <span className="cursor-default">
+            {compactStr}
+          </span>
+        </Tooltip.Trigger>
+        <Tooltip.Portal>
+          <Tooltip.Content side="top" sideOffset={5} className="bg-gray-100 border border-gray-200 text-gray-800 text-[13px] font-medium px-3 py-1.5 rounded-md shadow-lg max-w-xs break-words z-[100] animate-in fade-in-0 zoom-in-95 font-figtree">
+            {exactStr}
+            <Tooltip.Arrow className="fill-gray-100" />
+          </Tooltip.Content>
+        </Tooltip.Portal>
+      </Tooltip.Root>
+    </Tooltip.Provider>
   );
 }

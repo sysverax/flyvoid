@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import * as Tooltip from "@radix-ui/react-tooltip";
+import React from "react";
 import { Search, Eye, Plus, Edit, Loader2 } from "lucide-react";
 import {
   Table,
@@ -16,6 +18,7 @@ import { cn, sortData } from "@/src/lib/utils";
 import { Airport } from "@/src/types/airports";
 import { TableEmptyState } from "@/src/components/ui/EmptyState";
 import { FiltersCard } from "@/src/components/ui/FiltersCard";
+import { TruncatedTooltip } from "@/src/components/ui/TruncatedTooltip";
 import { Dropdown } from "@/src/components/ui/Dropdown";
 import { AddEditAirportModal } from "@/src/components/airports/AddEditAirportModal";
 import { AirportDetailsView } from "@/src/components/airports/AirportDetailsView";
@@ -112,14 +115,9 @@ export default function AirportsPage() {
   // Static country options matching the Airlines tab exactly
   const countryOptions = [
     { value: "All Countries", label: "All Countries" },
-    { value: "United States", label: "United States" },
-    { value: "United Kingdom", label: "United Kingdom" },
-    { value: "Germany", label: "Germany" },
-    { value: "France", label: "France" },
-    { value: "India", label: "India" },
-    { value: "Canada", label: "Canada" },
-    { value: "Australia", label: "Australia" },
-    { value: "United Arab Emirates", label: "United Arab Emirates" },
+    ...Object.entries(countries)
+      .map(([_, c]) => ({ value: c.name, label: c.name }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
   ];
 
   const fetchAirports = async () => {
@@ -328,8 +326,10 @@ export default function AirportsPage() {
               setCurrentPage(1);
             }}
             options={countryOptions}
-            widthClass="w-44"
-            triggerWidthClass="w-[180px]"
+            widthClass="w-full sm:w-44"
+            triggerWidthClass="w-full sm:w-44"
+            maxListHeightClass="max-h-[296px]"
+            searchable
           />
         </FiltersCard>
 
@@ -437,22 +437,36 @@ export default function AirportsPage() {
                 sortedAirports.map((airport) => (
                   <TableRow key={airport.id}>
                     <TableCell className="leading-[100%] text-[15px] font-inter">
-                      {airport.name}
+                      <TruncatedTooltip text={airport.name} side="top">
+                        <div className="max-w-[200px] truncate cursor-default">
+                          {airport.name}
+                        </div>
+                      </TruncatedTooltip>
                     </TableCell>
                     <TableCell>
                       <span className="rounded-[4px] bg-[#E5E7EB] text-[#1F2937] font-inter text-[12px] px-2.5 py-1.5 font-medium h-[28px]">
                         {airport.iataCode}
                       </span>
                     </TableCell>
-                    <TableCell className="font-inter">{airport.city}</TableCell>
+                    <TableCell className="font-inter">
+                      <TruncatedTooltip text={airport.city} side="top">
+                        <div className="max-w-[150px] truncate cursor-default">
+                          {airport.city}
+                        </div>
+                      </TruncatedTooltip>
+                    </TableCell>
                     <TableCell className="font-inter">
                       {airport.latitude.toFixed(4)}
                     </TableCell>
                     <TableCell className="font-inter">
                       {airport.longitude.toFixed(4)}
                     </TableCell>
-                    <TableCell className="truncate max-w-[138px] font-inter" title={airport.timezone}>
-                      {airport.timezone}
+                    <TableCell className="font-inter">
+                      <TruncatedTooltip text={airport.timezone} side="top">
+                        <div className="max-w-[138px] truncate cursor-default">
+                          {airport.timezone}
+                        </div>
+                      </TruncatedTooltip>
                     </TableCell>
                     <TableCell className="font-inter">
                       {airport.type}

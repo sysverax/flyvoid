@@ -446,6 +446,8 @@ export function EditAirlineModal({
                     heightClass="h-[49px]"
                     bgClass="bg-white"
                     error={!!(errors["country"] && touched["country"])}
+                    maxListHeightClass="max-h-[296px]"
+                    searchable
                   />
                   {err("country")}
                 </Field>

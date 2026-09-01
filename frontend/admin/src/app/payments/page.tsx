@@ -1,5 +1,7 @@
 "use client";
 
+import { countries } from "countries-list";
+
 import { useState, useEffect, useRef, useMemo } from "react";
 import {
   Wallet,
@@ -648,12 +650,11 @@ export default function PaymentsPage() {
   }, []);
 
   const countryOptions = useMemo(() => {
-    const uniqueCountries = new Set<string>();
-    DETAILED_AIRLINE_HEALTH_DATA.forEach((item) => uniqueCountries.add(item.country));
-    TRANSACTIONS_DATA.forEach((item) => uniqueCountries.add(item.country));
     return [
       { value: "All", label: "All Countries" },
-      ...Array.from(uniqueCountries).map((name) => ({ value: name, label: name })),
+      ...Object.entries(countries)
+        .map(([_, c]) => ({ value: c.name, label: c.name }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
     ];
   }, []);
 
@@ -1323,6 +1324,8 @@ export default function PaymentsPage() {
                   options={countryOptions}
                   triggerWidthClass="w-[180px]"
                   widthClass="w-[180px]"
+                  maxListHeightClass="max-h-[296px]"
+                  searchable
                 />
               </div>
 

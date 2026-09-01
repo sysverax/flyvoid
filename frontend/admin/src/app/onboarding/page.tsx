@@ -28,11 +28,7 @@ import { cn, sortData } from "@/src/lib/utils";
 import { StatusBadge } from "@/src/components/ui/StatusBadge";
 import { TableEmptyState } from "@/src/components/ui/EmptyState";
 import { Button } from "@/src/components/ui/button";
-import {
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-} from "@radix-ui/react-tooltip";
+import { TruncatedTooltip } from "@/src/components/ui/TruncatedTooltip";
 import { toast } from "react-toastify";
 import { onboardingService } from "@/src/services/onboarding.service";
 
@@ -598,23 +594,23 @@ export default function OnboardingPage() {
                     className={cn("relative", "mt-1")}
                   >
                     <TableCell className={cn("w-[170px]", inv.status === "Revoked" && "opacity-50")}>
-                      <p className="truncate" title={inv.airlineName}>
-                        {inv.airlineName}
-                      </p>
-                      <p
-                        className="text-xs text-[#807F94] font-mono mt-0.5 truncate"
-                        title={inv.airlineCode}
-                      >
-                        {inv.airlineCode}
-                      </p>
+                      <TruncatedTooltip text={inv.airlineName} side="top">
+                        <p className="truncate">
+                          {inv.airlineName}
+                        </p>
+                      </TruncatedTooltip>
+                      <TruncatedTooltip text={inv.airlineCode} side="top">
+                        <p className="text-xs text-[#807F94] font-mono mt-0.5 truncate">
+                          {inv.airlineCode}
+                        </p>
+                      </TruncatedTooltip>
                     </TableCell>
                     <TableCell className={cn(inv.status === "Revoked" && "opacity-50")}>
-                      <span
-                        className="block max-w-[120px] truncate"
-                        title={inv.contactEmail}
-                      >
-                        {inv.contactEmail}
-                      </span>
+                      <TruncatedTooltip text={inv.contactEmail} side="top">
+                        <span className="block max-w-[120px] truncate">
+                          {inv.contactEmail}
+                        </span>
+                      </TruncatedTooltip>
                     </TableCell>
                     <TableCell className={cn(inv.status === "Revoked" && "opacity-50")}>{inv.country || "N/A"}</TableCell>
                     <TableCell className={cn(inv.status === "Revoked" && "opacity-50")}>{inv.invitedBy}</TableCell>
