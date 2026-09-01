@@ -335,6 +335,8 @@ export function AddEditAirportModal({
                   bgClass="bg-white"
                   error={!!errors.country}
                   disabled={isSaving}
+                  maxListHeightClass="max-h-[296px]"
+                  searchable
                 />
               </Field>
 

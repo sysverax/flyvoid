@@ -1,6 +1,9 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { countries } from "countries-list";
+
+import { useState, useMemo, useEffect, useRef } from "react";
+import * as Tooltip from "@radix-ui/react-tooltip";
 import {
   Search,
   Eye,
@@ -25,222 +28,21 @@ import { StatusBadge } from "@/src/components/ui/StatusBadge";
 import { Dropdown } from "@/src/components/ui/Dropdown";
 import { EditAirlineModal } from "@/src/components/airlines/EditAirlineModal";
 import { SuspendAirlineDialog } from "@/src/components/airlines/SuspendAirlineDialog";
-import { AirlineDetailsView } from "@/src/components/airlines/AirlineDetailsView";
 import { useAuth } from "@/src/hooks/useAuth";
 import { toast } from "react-toastify";
-import { countries } from "countries-list";
-import { airlinesService, UpdateAirlineRequest } from "@/src/services/airlines.service";
+import { airlinesService, UpdateAirlineRequest, mapAirlineDTOToAirline } from "@/src/services/airlines.service";
+import { getCountryCode } from "@/src/lib/utils";
+import { useRouter } from "next/navigation";
 
-const INITIAL_AIRLINES: Airline[] = [
-  {
-    id: "1",
-    airlineName: "Pacific Airways",
-    airlineCode: "PA",
-    country: "United States",
-    companyReg: "REG-PAC-1001",
-    website: "https://www.pacific.example.com",
-    contactEmail: "ops.north@pacific.com",
-    contactPhone: "+1 555 020 0001",
-    timezone: "PST",
-    currency: "USD",
-    address: "100 Airport Rd, Seattle, WA",
-    onboardingDate: "10/05/2023",
-    status: "Active",
-    flightsCount: 12,
-    passengersCount: 1847,
-    spend: 245000,
-    revenue: 19600,
-    stripeConnection: "Connected",
-    adminFirstName: "John",
-    adminLastName: "Doe",
-    adminEmail: "john@pacific.com",
-    adminJobTitle: "Ops Director",
-    creditLimit: 250000,
-    totalCancelledFlights: 12,
-    totalPassengersMetric: 1847,
-    avgCostPerPassenger: 132,
-    totalSpendMetric: 245000,
-    platformFeesMetric: 12250,
-    allowanceBalanceMetric: 150000,
-    failedPaymentsCount: 0,
-    allocationFailuresCount: 1,
-  },
-  {
-    id: "2",
-    airlineName: "SkyLine Airways",
-    airlineCode: "SKY",
-    country: "United States",
-    companyReg: "REG-SKY-1001",
-    website: "https://www.sky.example.com",
-    contactEmail: "ops@skyline.com",
-    contactPhone: "+1 555 010 0000",
-    timezone: "UTC",
-    currency: "USD",
-    address: "1 Aviation Way, Terminal 1",
-    onboardingDate: "15/01/2024",
-    status: "Active",
-    flightsCount: 12,
-    passengersCount: 1847,
-    spend: 245000,
-    revenue: 19600,
-    stripeConnection: "Connected",
-    adminFirstName: "Operations",
-    adminLastName: "Admin",
-    adminEmail: "ops@skyline.com",
-    adminJobTitle: "Operations Manager",
-    creditLimit: 100000,
-    totalCancelledFlights: 12,
-    totalPassengersMetric: 1847,
-    avgCostPerPassenger: 132,
-    totalSpendMetric: 245000,
-    platformFeesMetric: 12250,
-    allowanceBalanceMetric: 150000,
-    failedPaymentsCount: 0,
-    allocationFailuresCount: 0,
-  },
-  {
-    id: "3",
-    airlineName: "SkyLine Airways",
-    airlineCode: "SKY",
-    country: "United States",
-    companyReg: "REG-PAC-1003",
-    website: "https://www.pacific.example.com",
-    contactEmail: "ops.east@pacific.com",
-    contactPhone: "+1 555 020 0003",
-    timezone: "EST",
-    currency: "USD",
-    address: "300 Airport Rd, New York, NY",
-    onboardingDate: "15/07/2023",
-    status: "Suspended",
-    flightsCount: 12,
-    passengersCount: 1847,
-    spend: 245000,
-    revenue: 19600,
-    stripeConnection: "Pending",
-    adminFirstName: "Bob",
-    adminLastName: "Johnson",
-    adminEmail: "bob@pacific.com",
-    adminJobTitle: "East Coordinator",
-    creditLimit: 150000,
-    totalCancelledFlights: 24,
-    totalPassengersMetric: 2350,
-    avgCostPerPassenger: 145,
-    totalSpendMetric: 340000,
-    platformFeesMetric: 17000,
-    allowanceBalanceMetric: 80000,
-    failedPaymentsCount: 1,
-    allocationFailuresCount: 3,
-  },
-  {
-    id: "4",
-    airlineName: "SkyLine Airways",
-    airlineCode: "PA",
-    country: "United States",
-    companyReg: "REG-PAC-1004",
-    website: "https://www.pacific.example.com",
-    contactEmail: "ops.west@pacific.com",
-    contactPhone: "+1 555 020 0004",
-    timezone: "PST",
-    currency: "USD",
-    address: "400 Airport Rd, Los Angeles, CA",
-    onboardingDate: "20/08/2023",
-    status: "Disabled",
-    flightsCount: 12,
-    passengersCount: 1847,
-    spend: 245000,
-    revenue: 19600,
-    stripeConnection: "Failed",
-    adminFirstName: "Alice",
-    adminLastName: "Williams",
-    adminEmail: "alice@pacific.com",
-    adminJobTitle: "West Lead",
-    creditLimit: 100000,
-    totalCancelledFlights: 50,
-    totalPassengersMetric: 4500,
-    avgCostPerPassenger: 150,
-    totalSpendMetric: 675000,
-    platformFeesMetric: 33750,
-    allowanceBalanceMetric: 20000,
-    failedPaymentsCount: 3,
-    allocationFailuresCount: 8,
-  },
-];
-const getCountryCode = (countryName: string): string => {
-  const entry = Object.entries(countries).find(
-    ([_, c]) => c.name.toLowerCase() === countryName.toLowerCase()
-  );
-  return entry ? entry[0] : "US";
-};
 
-const formatDate = (dateStr?: string) => {
-  if (!dateStr) return "N/A";
-  const date = new Date(dateStr);
-  if (isNaN(date.getTime())) return "N/A";
-  const day = String(date.getDate()).padStart(2, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const year = date.getFullYear();
-  return `${day}/${month}/${year}`;
-};
-
-function mapAirlineDTOToAirline(dto: any): Airline {
-  const countryName = countries[dto.countryCode as keyof typeof countries]?.name || dto.countryCode || "N/A";
-
-  const isSuspendedBool = Boolean(dto.isSuspended);
-  const isActiveBool = dto.isActive !== undefined ? Boolean(dto.isActive) : true;
-
-  let status: "Active" | "Suspended" | "Disabled" = "Active";
-  if (isSuspendedBool) {
-    status = "Suspended";
-  } else if (!isActiveBool) {
-    status = "Disabled";
-  }
-
-  return {
-    id: String(dto.id),
-    airlineName: dto.name,
-    airlineCode: dto.code,
-    country: countryName,
-    companyReg: dto.companyRegistrationNumber,
-    website: dto.website || "",
-    contactEmail: dto.contactEmail,
-    contactPhone: dto.contactPhone,
-    timezone: dto.timezone,
-    currency: dto.currency,
-    address: dto.address,
-    onboardingDate: formatDate(dto.createdAt),
-    status,
-    flightsCount: 0,
-    passengersCount: 0,
-    spend: 0,
-    revenue: 0,
-    stripeConnection: "Pending",
-    adminFirstName: dto.adminUser?.firstName || "",
-    adminLastName: dto.adminUser?.lastName || "",
-    adminEmail: dto.adminUser?.email || "",
-    adminJobTitle: dto.adminUser?.jobTitle || "",
-    creditLimit: 0,
-    totalCancelledFlights: 0,
-    totalPassengersMetric: 0,
-    avgCostPerPassenger: 0,
-    totalSpendMetric: 0,
-    platformFeesMetric: 0,
-    allowanceBalanceMetric: 0,
-    failedPaymentsCount: 0,
-    allocationFailuresCount: 0,
-    logoUrl: dto.logo,
-    isActive: isActiveBool,
-    isSuspended: isSuspendedBool,
-  };
-}
 
 export default function AirlinesPage() {
+  const router = useRouter();
   const [airlines, setAirlines] = useState<Airline[]>([]);
   const { hasPermission } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [isViewingDetail, setIsViewingDetail] = useState<string | null>(null);
-
-  // Navigation State / Detailed View Object
-  const [selectedAirlineDetail, setSelectedAirlineDetail] = useState<Airline | null>(null);
 
   // Search & Filter States
   const [searchQuery, setSearchQuery] = useState("");
@@ -271,13 +73,9 @@ export default function AirlinesPage() {
 
   const countryOptions = [
     { value: "All Countries", label: "All Countries" },
-    { value: "United States", label: "United States" },
-    { value: "United Kingdom", label: "United Kingdom" },
-    { value: "Germany", label: "Germany" },
-    { value: "France", label: "France" },
-    { value: "India", label: "India" },
-    { value: "Canada", label: "Canada" },
-    { value: "Australia", label: "Australia" },
+    ...Object.entries(countries)
+      .map(([_, c]) => ({ value: c.name, label: c.name }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
   ];
 
   const fetchAirlines = async (showLoading = true) => {
@@ -300,6 +98,7 @@ export default function AirlinesPage() {
         search: searchQuery || undefined,
         isActive,
         isSuspended,
+        countryCode: selectedCountry !== "All Countries" ? getCountryCode(selectedCountry) : undefined,
         page: currentPage,
         limit: resultsPerPage,
       });
@@ -316,16 +115,11 @@ export default function AirlinesPage() {
 
   useEffect(() => {
     fetchAirlines();
-  }, [searchQuery, selectedStatus, currentPage, resultsPerPage]);
+  }, [searchQuery, selectedStatus, selectedCountry, currentPage, resultsPerPage]);
 
-  // Filtration logic
   const filteredAirlines = useMemo(() => {
-    return airlines.filter((airline) => {
-      const matchesCountry =
-        selectedCountry === "All Countries" || airline.country === selectedCountry;
-      return matchesCountry;
-    });
-  }, [airlines, selectedCountry]);
+    return airlines;
+  }, [airlines]);
 
   // Sort Data
   const sortedAirlines = useMemo(() => {
@@ -361,18 +155,9 @@ export default function AirlinesPage() {
     setCurrentPage(1);
   };
 
-  const handleViewDetails = async (id: string) => {
-    if (isViewingDetail === id) return;
+  const handleViewDetails = (id: string) => {
     setIsViewingDetail(id);
-    try {
-      const dto = await airlinesService.getAirlineDetail(Number(id));
-      const mapped = mapAirlineDTOToAirline(dto);
-      setSelectedAirlineDetail(mapped);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to load airline details");
-    } finally {
-      setIsViewingDetail(null);
-    }
+    router.push(`/airlines/${id}`);
   };
 
   // Toggle active/disable status from the toggle switch in the table
@@ -445,10 +230,10 @@ export default function AirlinesPage() {
     setEditTarget(airline);
   };
 
-  const handleSaveEdit = async (updatedFields: Partial<Airline>) => {
+  const handleSaveEdit = async (updatedFields: Partial<Airline>, assignAirportIds: number[], disableAirportIds: number[]) => {
     if (!editTarget) return;
 
-    setIsLoading(true);
+    setIsSaving(true);
     try {
       const status = editTarget.status;
       const isActive = status === "Active";
@@ -475,31 +260,29 @@ export default function AirlinesPage() {
       };
 
       const response = await airlinesService.updateAirline(Number(editTarget.id), payload);
+      
+      if (assignAirportIds.length > 0 || disableAirportIds.length > 0) {
+        await airlinesService.updateAirlineAirportAssignments(Number(editTarget.id), {
+          assignAirportIds,
+          disableAirportIds,
+        });
+      }
+
       toast.success(response.message || "Airline updated successfully");
       setEditTarget(null);
 
-      const mapped = mapAirlineDTOToAirline(response.data);
-      if (selectedAirlineDetail && selectedAirlineDetail.id === editTarget.id) {
-        setSelectedAirlineDetail(mapped);
-      }
 
-      fetchAirlines();
+
+      fetchAirlines(false);
     } catch (err: any) {
       toast.error(err.message || "Failed to update airline");
     } finally {
-      setIsLoading(false);
+      setIsSaving(false);
     }
   };
 
   return (
     <div className="flex min-h-screen flex-1 flex-col pb-16 lg:w-full lg:max-w-[calc(100vw-304px)]">
-      {selectedAirlineDetail ? (
-        <AirlineDetailsView
-          airline={selectedAirlineDetail}
-          onBack={() => setSelectedAirlineDetail(null)}
-          onEditClick={() => handleOpenEditModal(selectedAirlineDetail)}
-        />
-      ) : (
         <div className="space-y-7">
           {/* Header */}
           <div>
@@ -541,8 +324,10 @@ export default function AirlinesPage() {
                 setCurrentPage(1);
               }}
               options={countryOptions}
-              widthClass="w-44"
-              triggerWidthClass="w-[180px]"
+              widthClass="w-full sm:w-44"
+              triggerWidthClass="w-full sm:w-44"
+              maxListHeightClass="max-h-[296px]"
+              searchable
             />
           </FiltersCard>
 
@@ -572,9 +357,6 @@ export default function AirlinesPage() {
                   <TableHead className="min-w-[115px] -translate-x-1.5">
                     <SortHeader label="Revenue" field="revenue" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                   </TableHead>
-                  <TableHead className="min-w-[128px] -translate-x-1">
-                    <SortHeader label="Stripe" field="stripeConnection" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
-                  </TableHead>
                   {hasPermission("edit") && (
                     <TableHead className="whitespace-nowrap min-w-[143px] -translate-x-1">
                       <SortHeader label="Enable/Disable" field="status" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
@@ -586,7 +368,7 @@ export default function AirlinesPage() {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="px-6 py-12 text-center text-gray-500 font-figtree">
+                    <TableCell colSpan={9} className="px-6 py-12 text-center text-gray-500 font-figtree">
                       <div className="flex flex-col items-center justify-center gap-2">
                         <svg className="animate-spin h-8 w-8 text-primary" fill="none" viewBox="0 0 24 24">
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -598,7 +380,7 @@ export default function AirlinesPage() {
                   </TableRow>
                 ) : sortedAirlines.length === 0 ? (
                   <TableEmptyState
-                    colSpan={10}
+                    colSpan={9}
                     icon={Search}
                     title="No airlines found"
                     message="Try adjusting your filters or search query."
@@ -606,8 +388,8 @@ export default function AirlinesPage() {
                 ) : (
                   sortedAirlines.map((airline) => (
                     <TableRow key={airline.id}>
-                      <TableCell className="font-medium text-[#1F2937]">
-                        {airline.airlineName}
+                      <TableCell>
+                        <AirlineNameCell name={airline.airlineName} />
                       </TableCell>
                       <TableCell>
                         <span className="rounded-[4px] bg-[#E5E7EB] text-[#1F2937] font-inter text-[12px] px-2.5 py-1.5 font-medium h-[28px]">
@@ -617,29 +399,17 @@ export default function AirlinesPage() {
                       <TableCell>
                         <StatusBadge status={airline.status} />
                       </TableCell>
-                      <TableCell className="text-[#6B7280]">
-                        {airline.flightsCount}
+                      <TableCell>
+                        <MetricTooltip value={airline.flightsCount} />
                       </TableCell>
                       <TableCell className="text-[#1F2937]">
-                        {airline.passengersCount.toLocaleString()}
+                        <MetricTooltip value={airline.passengersCount} />
                       </TableCell>
                       <TableCell className="text-[#6B7280] relative -left-1">
-                        ${airline.spend.toLocaleString()}
+                        <MetricTooltip value={airline.spend} isCurrency />
                       </TableCell>
-                      <TableCell className="text-[#6B7280] relative -left-1">
-                        ${airline.revenue.toLocaleString()}
-                      </TableCell>
-                      <TableCell>
-                        <span
-                          className={cn(
-                            "inline-flex items-center rounded-full px-2.5 py-0.5 text-[12px] font-medium relative left-1.5",
-                            airline.stripeConnection === "Connected" && "bg-green-100 text-green-800",
-                            airline.stripeConnection === "Pending" && "bg-yellow-100 text-yellow-800",
-                            airline.stripeConnection === "Failed" && "bg-red-100 text-red-800"
-                          )}
-                        >
-                          {airline.stripeConnection}
-                        </span>
+                      <TableCell className="text-[#6B7280] -translate-x-1.5">
+                        <MetricTooltip value={airline.revenue} isCurrency />
                       </TableCell>
                       {hasPermission("edit") && (
                         <TableCell>
@@ -649,7 +419,7 @@ export default function AirlinesPage() {
                             disabled={!hasPermission("edit") || togglingAirlineId === airline.id}
                             onClick={() => handleToggleStatus(airline)}
                             className={cn(
-                              "relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none relative left-1",
+                              "relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none -translate-x-1",
                               hasPermission("edit") && togglingAirlineId !== airline.id ? "cursor-pointer" : "cursor-not-allowed opacity-70",
                               airline.isActive ? "bg-emerald-500" : "bg-gray-200"
                             )}
@@ -712,13 +482,13 @@ export default function AirlinesPage() {
             totalPages={totalPages}
           />
         </div>
-      )}
 
       <EditAirlineModal
         isOpen={!!editTarget}
         airline={editTarget}
         onClose={() => setEditTarget(null)}
         onSave={handleSaveEdit}
+        isSaving={isSaving}
       />
 
       <SuspendAirlineDialog
@@ -729,5 +499,61 @@ export default function AirlinesPage() {
         onConfirm={handleConfirmSuspend}
       />
     </div>
+  );
+}
+
+function AirlineNameCell({ name }: { name: string }) {
+  const textRef = useRef<HTMLDivElement>(null);
+  const [isTruncated, setIsTruncated] = useState(false);
+
+  const checkTruncation = () => {
+    if (textRef.current) {
+      setIsTruncated(textRef.current.scrollWidth > textRef.current.clientWidth);
+    }
+  };
+
+  return (
+    <Tooltip.Provider delayDuration={300}>
+      <Tooltip.Root>
+        <Tooltip.Trigger asChild onMouseEnter={checkTruncation}>
+          <div ref={textRef} className="max-w-[150px] truncate cursor-default">
+            {name}
+          </div>
+        </Tooltip.Trigger>
+        <Tooltip.Portal>
+          {isTruncated && (
+            <Tooltip.Content side="top" sideOffset={5} className="bg-gray-100 border border-gray-200 text-gray-800 text-[13px] font-medium px-3 py-1.5 rounded-md shadow-lg max-w-xs break-words z-[100] animate-in fade-in-0 zoom-in-95 font-figtree">
+              {name}
+              <Tooltip.Arrow className="fill-gray-100" />
+            </Tooltip.Content>
+          )}
+        </Tooltip.Portal>
+      </Tooltip.Root>
+    </Tooltip.Provider>
+  );
+}
+
+function MetricTooltip({ value, isCurrency = false }: { value: number; isCurrency?: boolean }) {
+  const compactValue = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value);
+  const exactValue = new Intl.NumberFormat("en-US").format(value);
+  const exactStr = isCurrency ? `$${exactValue}` : exactValue;
+  const compactStr = isCurrency ? `$${compactValue}` : compactValue;
+
+  return (
+    <Tooltip.Provider delayDuration={300}>
+      <Tooltip.Root>
+        <Tooltip.Trigger asChild>
+          <span className="cursor-default">
+            {compactStr}
+          </span>
+        </Tooltip.Trigger>
+        <Tooltip.Portal>
+          <Tooltip.Content side="top" sideOffset={5} className="bg-gray-100 border border-gray-200 text-gray-800 text-[13px] font-medium px-3 py-1.5 rounded-md shadow-lg max-w-xs break-words z-[100] animate-in fade-in-0 zoom-in-95 font-figtree">
+            {exactStr}
+            <Tooltip.Arrow className="fill-gray-100" />
+          </Tooltip.Content>
+        </Tooltip.Portal>
+      </Tooltip.Root>
+    </Tooltip.Provider>
   );
 }

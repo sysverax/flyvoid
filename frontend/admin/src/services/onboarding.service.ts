@@ -116,4 +116,13 @@ export const onboardingService = {
       throw new Error(extractErrorMessage(error, "Failed to revoke invitation."));
     }
   },
+
+  async updateInvitation(invitationId: number, payload: Partial<InviteAirlineRequest>): Promise<any> {
+    try {
+      const { data } = await apiClient.patch(`/airline/invitations/${invitationId}`, payload);
+      return data;
+    } catch (error: any) {
+      throw new Error(extractErrorMessage(error, "Failed to update invitation."));
+    }
+  },
 };
