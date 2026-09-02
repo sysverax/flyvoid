@@ -18,6 +18,9 @@ const selectedEnvFile = envFileByCommand[lifecycleEvent] ?? ".env";
 dotenv.config({ path: selectedEnvFile, quiet: true });
 
 export const config = {
+  cors: {
+    allowedOrigins: process.env.CORS_ALLOWED_ORIGINS ?? "",
+  },
   app: {
     port: parseInt(process.env.APP_PORT ?? "3000", 10),
     name: process.env.APP_NAME ?? "backend",
