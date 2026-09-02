@@ -15,15 +15,15 @@ env:
   BACKEND_APP_NAME: "backend"
   REMOTE_BACKEND_PATH: "/home/ubuntu/flyvoid/backend"
 
-  # # Admin web paths
-  # ADMIN_WEB_APP_PATH: "frontend/admin"
-  # ADMIN_WEB_APP_NAME: "admin-web"
-  # ADMIN_WEB_REMOTE_APP_PATH: "/home/ubuntu/flyvoid/frontend/admin"
+  # Admin web paths
+  ADMIN_WEB_APP_PATH: "frontend/admin"
+  ADMIN_WEB_APP_NAME: "admin-web"
+  ADMIN_WEB_REMOTE_APP_PATH: "/home/ubuntu/flyvoid/frontend/admin"
 
-  # # Airline web paths
-  # AIRLINE_WEB_APP_PATH: "frontend/airline"
-  # AIRLINE_WEB_APP_NAME: "airline-web"
-  # AIRLINE_WEB_REMOTE_APP_PATH: "/home/ubuntu/flyvoid/frontend/airline"
+  # Airline web paths
+  AIRLINE_WEB_APP_PATH: "frontend/airline"
+  AIRLINE_WEB_APP_NAME: "airline-web"
+  AIRLINE_WEB_REMOTE_APP_PATH: "/home/ubuntu/flyvoid/frontend/airline"
 
 jobs:
   detect_changes:
@@ -47,10 +47,10 @@ jobs:
           filters: |
             backend:
               - '${{env.BACKEND_PATH}}/**'
-            # admin:
-            #   - '${{env.ADMIN_WEB_APP_PATH}}/**'
-            # airline:
-            #   - '${{env.AIRLINE_WEB_APP_PATH}}/**'
+            admin:
+              - '${{env.ADMIN_WEB_APP_PATH}}/**'
+            airline:
+              - '${{env.AIRLINE_WEB_APP_PATH}}/**'
 
   backend_deployment:
     needs: [detect_changes]
@@ -131,8 +131,6 @@ jobs:
           echo "[INFO] ======================================"
           echo "[INFO] Backend deployment completed successfully"
           echo "[INFO] ======================================"
-
-
 
   # admin_deployment:
   #   needs: [detect_changes]
@@ -328,4 +326,3 @@ jobs:
   #         echo "[INFO] ======================================"
   #         echo "[INFO] Airline web deployment completed successfully"
   #         echo "[INFO] ======================================"
-
