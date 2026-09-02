@@ -1,9 +1,13 @@
 "use client";
 
 import { ArrowLeft, Edit3, AlertTriangle, PencilIcon } from "lucide-react";
+import * as Tooltip from "@radix-ui/react-tooltip";
+import React, { useState, useRef } from "react";
 import { cn } from "@/src/lib/utils";
 import { Airline } from "@/src/types/airlines";
 import { StatusBadge } from "@/src/components/ui/StatusBadge";
+import { useAuth } from "@/src/hooks/useAuth";
+import { TruncatedTooltip } from "@/src/components/ui/TruncatedTooltip";
 
 interface AirlineDetailsViewProps {
   airline: Airline;
@@ -16,6 +20,8 @@ export function AirlineDetailsView({
   onBack,
   onEditClick,
 }: AirlineDetailsViewProps) {
+  const { hasPermission } = useAuth();
+
   return (
     <div className="space-y-[19px]">
       {/* Back button */}
@@ -31,9 +37,11 @@ export function AirlineDetailsView({
       <div className="self-stretch flex justify-between items-center relative -top-1">
         <div className="flex flex-col justify-start items-start">
           <div className="flex justify-start items-center gap-2">
-            <h1 className="text-gray-800 text-2xl font-semibold font-figtree">
-              {airline.airlineName}
-            </h1>
+            <TruncatedTooltip text={airline.airlineName}>
+              <h1 className="text-gray-800 text-2xl font-semibold font-figtree max-w-[500px] truncate cursor-default">
+                {airline.airlineName}
+              </h1>
+            </TruncatedTooltip>
             <StatusBadge status={airline.status} />
           </div>
           <div className="text-gray-500 text-sm font-normal font-figtree">
@@ -41,15 +49,17 @@ export function AirlineDetailsView({
           </div>
         </div>
 
-        <button
-          onClick={onEditClick}
-          className="px-4 py-[13px] bg-[#0F2757] rounded-[10px] flex justify-center items-center gap-2 overflow-hidden hover:bg-[#1A3B75] transition-colors text-white text-base font-medium font-figtree cursor-pointer shrink-0"
-        >
-          <div className="size-5 flex items-center justify-center shrink-0">
-            <img src="/icons/edit1.svg" alt="Edit" className="h-5 w-5" />
-          </div>
-          <span>Edit Details</span>
-        </button>
+        {hasPermission("edit") && (
+          <button
+            onClick={onEditClick}
+            className="px-4 py-[13px] bg-[#0F2757] rounded-[10px] flex justify-center items-center gap-2 overflow-hidden hover:bg-[#1A3B75] transition-colors text-white text-base font-medium font-figtree cursor-pointer shrink-0"
+          >
+            <div className="size-5 flex items-center justify-center shrink-0">
+              <img src="/icons/edit1.svg" alt="Edit" className="h-5 w-5" />
+            </div>
+            <span>Edit Details</span>
+          </button>
+        )}
       </div>
 
       {/* Disabled Warning Banner */}
@@ -82,12 +92,14 @@ export function AirlineDetailsView({
           </div>
           <div className="self-stretch flex flex-col justify-start items-start gap-4">
             <div className="self-stretch flex justify-between items-center h-[22px] -mt-[2px]">
-              <div className="text-gray-500 text-lg font-normal font-figtree">
+              <div className="text-gray-500 text-lg font-normal font-figtree shrink-0">
                 Airline Name
               </div>
-              <div className="text-gray-800 text-lg font-medium font-figtree">
-                {airline.airlineName}
-              </div>
+              <TruncatedTooltip text={airline.airlineName} side="top">
+                <div className="text-gray-800 text-lg font-medium font-figtree text-right max-w-[280px] truncate cursor-default">
+                  {airline.airlineName}
+                </div>
+              </TruncatedTooltip>
             </div>
             <div className="self-stretch flex justify-between items-center h-[22px]">
               <div className="text-gray-500 text-lg font-normal font-figtree">
@@ -106,33 +118,39 @@ export function AirlineDetailsView({
               </div>
             </div>
             <div className="self-stretch flex justify-between items-center h-[22px]">
-              <div className="text-gray-500 text-lg font-normal font-figtree">
+              <div className="text-gray-500 text-lg font-normal font-figtree shrink-0">
                 Company Registration
               </div>
-              <div className="text-gray-800 text-lg font-medium font-figtree">
-                {airline.companyReg}
-              </div>
+              <TruncatedTooltip text={airline.companyReg} side="top">
+                <div className="text-gray-800 text-lg font-medium font-figtree text-right max-w-[280px] truncate cursor-default">
+                  {airline.companyReg}
+                </div>
+              </TruncatedTooltip>
             </div>
             <div className="self-stretch flex justify-between items-center h-[22px]">
-              <div className="text-gray-500 text-lg font-normal font-figtree">
+              <div className="text-gray-500 text-lg font-normal font-figtree shrink-0">
                 Website
               </div>
-              <a
-                href={airline.website}
-                target="_blank"
-                rel="noreferrer"
-                className="text-primary hover:underline text-lg font-medium font-figtree"
-              >
-                {airline.website}
-              </a>
+              <TruncatedTooltip text={airline.website} side="top">
+                <a
+                  href={airline.website}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-primary hover:underline text-lg font-medium font-figtree text-right max-w-[280px] truncate"
+                >
+                  {airline.website}
+                </a>
+              </TruncatedTooltip>
             </div>
             <div className="self-stretch flex justify-between items-center h-[22px]">
-              <div className="text-gray-500 text-lg font-normal font-figtree">
+              <div className="text-gray-500 text-lg font-normal font-figtree shrink-0">
                 Contact Email
               </div>
-              <div className="text-gray-800 text-lg font-medium font-figtree">
-                {airline.contactEmail}
-              </div>
+              <TruncatedTooltip text={airline.contactEmail} side="top">
+                <div className="text-gray-800 text-lg font-medium font-figtree text-right max-w-[280px] truncate cursor-default">
+                  {airline.contactEmail}
+                </div>
+              </TruncatedTooltip>
             </div>
             <div className="self-stretch flex justify-between items-center h-[22px]">
               <div className="text-gray-500 text-lg font-normal font-figtree">
@@ -159,12 +177,14 @@ export function AirlineDetailsView({
               </div>
             </div>
             <div className="self-stretch flex justify-between items-center h-[22px]">
-              <div className="text-gray-500 text-lg font-normal font-figtree">
+              <div className="text-gray-500 text-lg font-normal font-figtree shrink-0">
                 Address
               </div>
-              <div className="text-gray-800 text-lg font-medium font-figtree text-right max-w-[280px]">
-                {airline.address}
-              </div>
+              <TruncatedTooltip text={airline.address} side="top">
+                <div className="text-gray-800 text-lg font-medium font-figtree text-right max-w-[280px] truncate cursor-default">
+                  {airline.address}
+                </div>
+              </TruncatedTooltip>
             </div>
             <div className="self-stretch flex justify-between items-center h-[22px]">
               <div className="text-gray-500 text-lg font-normal font-figtree">
@@ -172,6 +192,14 @@ export function AirlineDetailsView({
               </div>
               <div className="text-gray-800 text-lg font-medium font-figtree">
                 {airline.onboardingDate}
+              </div>
+            </div>
+            <div className="self-stretch flex justify-between items-center h-[22px]">
+              <div className="text-gray-500 text-lg font-normal font-figtree">
+                Credit Limit
+              </div>
+              <div className="text-gray-800 text-lg font-medium font-figtree">
+                ${airline.creditLimit.toLocaleString()}
               </div>
             </div>
           </div>
@@ -184,44 +212,44 @@ export function AirlineDetailsView({
           </div>
           <div className="self-stretch flex flex-col justify-start items-start gap-4 -mt-0.5">
             <div className="self-stretch flex justify-between items-center h-[22px]">
-              <div className="text-gray-500 text-lg font-normal font-figtree">
+              <div className="text-gray-500 text-lg font-normal font-figtree shrink-0">
                 Admin First Name
               </div>
-              <div className="text-gray-800 text-lg font-medium font-figtree">
-                {airline.adminFirstName}
-              </div>
+              <TruncatedTooltip text={airline.adminFirstName} side="top">
+                <div className="text-gray-800 text-lg font-medium font-figtree text-right max-w-[200px] truncate cursor-default">
+                  {airline.adminFirstName}
+                </div>
+              </TruncatedTooltip>
             </div>
             <div className="self-stretch flex justify-between items-center h-[22px]">
-              <div className="text-gray-500 text-lg font-normal font-figtree">
+              <div className="text-gray-500 text-lg font-normal font-figtree shrink-0">
                 Admin Last Name
               </div>
-              <div className="text-gray-800 text-lg font-medium font-figtree">
-                {airline.adminLastName}
-              </div>
+              <TruncatedTooltip text={airline.adminLastName} side="top">
+                <div className="text-gray-800 text-lg font-medium font-figtree text-right max-w-[200px] truncate cursor-default">
+                  {airline.adminLastName}
+                </div>
+              </TruncatedTooltip>
             </div>
             <div className="self-stretch flex justify-between items-center h-[22px]">
-              <div className="text-gray-500 text-lg font-normal font-figtree">
+              <div className="text-gray-500 text-lg font-normal font-figtree shrink-0">
                 Admin Email
               </div>
-              <div className="text-gray-800 text-lg font-medium font-figtree">
-                {airline.adminEmail}
-              </div>
+              <TruncatedTooltip text={airline.adminEmail} side="top">
+                <div className="text-gray-800 text-lg font-medium font-figtree text-right max-w-[200px] truncate cursor-default">
+                  {airline.adminEmail}
+                </div>
+              </TruncatedTooltip>
             </div>
             <div className="self-stretch flex justify-between items-center h-[22px]">
-              <div className="text-gray-500 text-lg font-normal font-figtree">
+              <div className="text-gray-500 text-lg font-normal font-figtree shrink-0">
                 Job Title
               </div>
-              <div className="text-gray-800 text-lg font-medium font-figtree">
-                {airline.adminJobTitle}
-              </div>
-            </div>
-            <div className="self-stretch flex justify-between items-center h-[22px]">
-              <div className="text-gray-500 text-lg font-normal font-figtree">
-                Credit Limit
-              </div>
-              <div className="text-gray-800 text-lg font-medium font-figtree">
-                ${airline.creditLimit.toLocaleString()}
-              </div>
+              <TruncatedTooltip text={airline.adminJobTitle} side="top">
+                <div className="text-gray-800 text-lg font-medium font-figtree text-right max-w-[200px] truncate cursor-default">
+                  {airline.adminJobTitle}
+                </div>
+              </TruncatedTooltip>
             </div>
           </div>
         </div>

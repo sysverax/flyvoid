@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS public.airlines (
   address varchar(255),
   logo varchar(255),
   is_active boolean NOT NULL DEFAULT true,
+  is_suspended boolean NOT NULL DEFAULT false,
   created_at timestamp without time zone NOT NULL DEFAULT now(),
   updated_at timestamp without time zone NOT NULL DEFAULT now()
 );

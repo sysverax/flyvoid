@@ -2,6 +2,8 @@ export * from "./create-airport-request.dto";
 export * from "./update-airport-request.dto";
 export * from "./airport-response.dto";
 export * from "./get-airports-query.dto";
+export * from "./get-airport-list-with-assignment-query.dto";
+export * from "./airport-list-with-assignment-response.dto";
 export * from "./airport-list-response.dto";
 export * from "./update-airline-airports-request.dto";
 export * from "./update-airline-airports-response.dto";

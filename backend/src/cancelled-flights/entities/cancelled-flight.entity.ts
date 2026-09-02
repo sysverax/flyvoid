@@ -10,13 +10,13 @@ import {
 } from "typeorm";
 import { AirlineEntity } from "../../airline/entities/airline.entity";
 import { AirportEntity } from "../../airline/entities/airport.entity";
-import { BookingEntity } from "./booking.entity"
+import { BookingEntity } from "./booking.entity";
 import { CancellationReason, FlightStatus } from "./enums";
 
 @Entity("cancelled_flights")
 export class CancelledFlightEntity {
-  @PrimaryGeneratedColumn("uuid")
-  id!: string;
+  @PrimaryGeneratedColumn({ type: "integer" })
+  id!: number;
 
   @Column({ name: "flight_number", type: "varchar", length: 20 })
   flightNumber!: string;
@@ -52,14 +52,64 @@ export class CancelledFlightEntity {
   })
   status!: FlightStatus;
 
+  // After passengers' booking is confirmed booking details are immutable, so we store the total bookings, total adults, and total children at the time of confirmation
+  @Column({ name: "total_booking", type: "integer", nullable: true })
+  totalBooking?: number | null;
+
+  @Column({ name: "total_adults", type: "integer", nullable: true })
+  totalAdults?: number | null;
+
+  @Column({ name: "total_children", type: "integer", nullable: true })
+  totalChildren?: number | null;
+
+  // After published data is immutable, so we store the total cost of hotel allocations at the time of publishing
+  @Column({ name: "total_hotel_rooms", type: "integer", nullable: true })
+  totalHotelRooms?: number | null;
+
   @Column({
-    name: "total_hotel_cost",
+    name: "total_price",
     type: "decimal",
     precision: 10,
     scale: 2,
     nullable: true,
   })
-  totalHotelCost?: number | null;
+  totalPrice?: number | null;
+
+  @Column({
+    name: "total_buying_price",
+    type: "decimal",
+    precision: 10,
+    scale: 2,
+    nullable: true,
+  })
+  totalBuyingPrice?: number | null;
+
+  @Column({
+    name: "total_selling_price",
+    type: "decimal",
+    precision: 10,
+    scale: 2,
+    nullable: true,
+  })
+  totalSellingPrice?: number | null;
+
+  @Column({
+    name: "total_platform_fee",
+    type: "decimal",
+    precision: 10,
+    scale: 2,
+    nullable: true,
+  })
+  totalPlatformFee?: number | null;
+
+  @Column({
+    name: "total_earnings",
+    type: "decimal",
+    precision: 10,
+    scale: 2,
+    nullable: true,
+  })
+  totalEarnings?: number | null;
 
   @ManyToOne(() => AirlineEntity, { onDelete: "RESTRICT" })
   @JoinColumn({ name: "airline_id" })

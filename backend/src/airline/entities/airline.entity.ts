@@ -54,6 +54,9 @@ export class AirlineEntity {
   @Column({ name: "is_active", type: "boolean", default: true })
   isActive!: boolean;
 
+  @Column({ name: "is_suspended", type: "boolean", default: false })
+  isSuspended!: boolean;
+
   @Column({ name: "invitation_id", type: "integer", nullable: true })
   invitationId!: number | null;
 

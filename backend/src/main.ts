@@ -34,17 +34,23 @@ async function bootstrap(): Promise<void> {
       .setTitle(config.swagger.title)
       .setDescription(config.swagger.description)
       .setVersion(config.swagger.version)
-      .addBearerAuth({
-        type: "http",
-        scheme: "bearer",
-        bearerFormat: "JWT",
-        description:
-          "Paste only the access token from signin. Swagger will send it as Authorization: Bearer <token>.",
-      }, "access-token")
+      .addBearerAuth(
+        {
+          type: "http",
+          scheme: "bearer",
+          bearerFormat: "JWT",
+          description:
+            "Paste only the access token from signin. Swagger will send it as Authorization: Bearer <token>.",
+        },
+        "access-token",
+      )
       .build();
 
     const document = SwaggerModule.createDocument(app, swaggerDocumentConfig);
     SwaggerModule.setup(config.swagger.path, app, document, {
+      customSiteTitle: `${config.swagger.title} Docs`,
+      jsonDocumentUrl: `${config.swagger.path}/json`,
+      yamlDocumentUrl: `${config.swagger.path}/yaml`,
       swaggerOptions: {
         persistAuthorization: true,
       },

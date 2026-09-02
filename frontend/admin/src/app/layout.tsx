@@ -4,6 +4,8 @@ import "./globals.css";
 import { MainLayout } from "@/src/components/layout/MainLayout";
 import { cn } from "@/src/lib/utils";
 import { TooltipProvider } from "@radix-ui/react-tooltip";
+import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -28,11 +30,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={cn("font-sans", figtree.variable, geist.variable, urbanist.variable)}>
+    <html lang="en" suppressHydrationWarning className={cn("font-sans", figtree.variable, geist.variable, urbanist.variable)}>
       <body className={`${figtree.className} min-h-screen flex flex-col antialiased`}>
         <TooltipProvider>
           <MainLayout>{children}</MainLayout>
         </TooltipProvider>
+        <ToastContainer position="top-right" autoClose={3000} />
       </body>
     </html>
   );

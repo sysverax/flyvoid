@@ -2,8 +2,8 @@ import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Brackets, Repository } from "typeorm";
 import { LoggerService } from "../../common/logger/logger.service";
-import { GetAirportsQueryDto } from "../dto/airports/get-airports-query.dto";
 import { AirportEntity } from "../entities/airport.entity";
+import { GetAirportsQueryDto } from "../dto/airports";
 
 @Injectable()
 export class AirportRepository {

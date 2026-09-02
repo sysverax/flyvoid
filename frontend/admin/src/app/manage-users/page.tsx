@@ -1,108 +1,80 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Image from "next/image";
-import { Search, Plus, Trash2 } from "lucide-react";
+import { Search, Plus, Trash2, Loader2 } from "lucide-react";
 import { cn, sortData } from "@/src/lib/utils";
-import { Toast } from "@/src/types/common";
-import { ToastList } from "@/src/components/ui/ToastList";
 import { Dropdown } from "@/src/components/ui/Dropdown";
 import { StatusBadge } from "@/src/components/ui/StatusBadge";
 import { Button } from "@/src/components/ui/button";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell, SortHeader } from "@/src/components/ui/table";
 import { ManageUserModal } from "@/src/components/manage-users/ManageUserModal";
-
-interface UserPermissions {
-  [key: string]: {
-    view: boolean;
-    edit: boolean;
-    export: boolean;
-    all: boolean;
-  };
-}
-
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  status: "Active" | "Inactive";
-  permissions: UserPermissions;
-}
-
-const defaultSarahPermissions: UserPermissions = {
-  dashboard: { view: true, edit: true, export: true, all: true },
-  airlines: { view: true, edit: true, export: true, all: true },
-  cancelledFlights: { view: false, edit: false, export: false, all: false },
-  platformOverview: { view: true, edit: true, export: true, all: true },
-  detailedAnalysis: { view: true, edit: true, export: true, all: true },
-  platformTreasury: { view: false, edit: false, export: false, all: false },
-  invitesOnboarding: { view: false, edit: false, export: false, all: false },
-  systemSettings: { view: true, edit: true, export: true, all: true },
-  auditLogs: { view: true, edit: true, export: true, all: true },
-};
-
-const defaultDavidPermissions: UserPermissions = {
-  dashboard: { view: true, edit: true, export: false, all: false },
-  airlines: { view: true, edit: false, export: false, all: false },
-  cancelledFlights: { view: true, edit: false, export: false, all: false },
-  platformOverview: { view: true, edit: false, export: false, all: false },
-  detailedAnalysis: { view: true, edit: false, export: false, all: false },
-  platformTreasury: { view: false, edit: false, export: false, all: false },
-  invitesOnboarding: { view: true, edit: true, export: false, all: false },
-  systemSettings: { view: false, edit: false, export: false, all: false },
-  auditLogs: { view: true, edit: false, export: false, all: false },
-};
-
-const defaultMayaPermissions: UserPermissions = {
-  dashboard: { view: true, edit: false, export: false, all: false },
-  airlines: { view: true, edit: false, export: false, all: false },
-  cancelledFlights: { view: true, edit: false, export: false, all: false },
-  platformOverview: { view: false, edit: false, export: false, all: false },
-  detailedAnalysis: { view: false, edit: false, export: false, all: false },
-  platformTreasury: { view: false, edit: false, export: false, all: false },
-  invitesOnboarding: { view: false, edit: false, export: false, all: false },
-  systemSettings: { view: false, edit: false, export: false, all: false },
-  auditLogs: { view: true, edit: false, export: false, all: false },
-};
+import { DeleteUserDialog } from "@/src/components/manage-users/DeleteUserDialog";
+import { useAuth } from "@/src/hooks/useAuth";
+import { Pagination } from "@/src/components/ui/pagination";
+import { usersService, User } from "@/src/services/users.service";
+import { toast } from "react-toastify";
+import { TruncatedTooltip } from "@/src/components/ui/TruncatedTooltip";
 
 export default function ManageUsersPage() {
-  const [users, setUsers] = useState<User[]>([
-    {
-      id: "AID0001",
-      name: "Sarah Johnson",
-      email: "sarah@flyvoid.com",
-      status: "Active",
-      permissions: defaultSarahPermissions,
-    },
-    {
-      id: "AID0002",
-      name: "David Chen",
-      email: "david@flyvoid.com",
-      status: "Active",
-      permissions: defaultDavidPermissions,
-    },
-    {
-      id: "AID0003",
-      name: "Maya Patel",
-      email: "maya@flyvoid.com",
-      status: "Inactive",
-      permissions: defaultMayaPermissions,
-    },
-  ]);
+  const { hasPermission } = useAuth();
+  const [users, setUsers] = useState<User[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const [toasts, setToasts] = useState<Toast[]>([]);
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [resultsPerPage, setResultsPerPage] = useState(10);
+  const [totalResults, setTotalResults] = useState(0);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"All" | "Active" | "Inactive">("All");
 
   // Modal control states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
+  const [isEditingId, setIsEditingId] = useState<number | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const showToast = (message: string, type: "success" | "warning" | "info" = "success") => {
-    const id = Date.now().toString();
-    setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
-  };
+  const totalPages = Math.ceil(totalResults / resultsPerPage);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchUsersData = async () => {
+      setIsLoading(true);
+      try {
+        let isActive: boolean | undefined = undefined;
+        if (statusFilter === "Active") isActive = true;
+        else if (statusFilter === "Inactive") isActive = false;
+
+        const res = await usersService.getUsers(currentPage, resultsPerPage, searchQuery || undefined, isActive);
+
+        if (isMounted) {
+          setUsers(res.users);
+          setTotalResults(res.total);
+        }
+      } catch (err: any) {
+        if (isMounted) {
+          toast.error(err.message || "Failed to load users");
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    const timeoutId = setTimeout(() => {
+      fetchUsersData();
+    }, 300);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, [currentPage, resultsPerPage, searchQuery, statusFilter]);
 
   const handleOpenAddModal = () => {
     setEditingUser(null);
@@ -110,59 +82,92 @@ export default function ManageUsersPage() {
   };
 
   const handleOpenEditModal = (user: User) => {
-    setEditingUser(user);
-    setIsModalOpen(true);
+    setIsEditingId(user.id);
+    setTimeout(() => {
+      setEditingUser(user);
+      setIsModalOpen(true);
+      setIsEditingId(null);
+    }, 400);
   };
 
-  const handleDeleteUser = (userId: string) => {
-    if (confirm("Are you sure you want to delete this user?")) {
-      setUsers((prev) => prev.filter((u) => u.id !== userId));
-      showToast("User deleted successfully.", "info");
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    try {
+      const message = await usersService.deleteUser(deleteTarget.id);
+      setUsers((prev) => prev.filter((u) => u.id !== deleteTarget.id));
+      toast.success(message);
+      setDeleteTarget(null);
+
+      if (users.length === 1 && currentPage > 1) {
+        setCurrentPage((prev) => prev - 1);
+      } else {
+        const res = await usersService.getUsers(currentPage, resultsPerPage, searchQuery || undefined, statusFilter === "Active" ? true : statusFilter === "Inactive" ? false : undefined);
+        setUsers(res.users);
+        setTotalResults(res.total);
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete user.");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
-  const handleSaveUser = (
-    name: string,
+  const handleSaveUser = async (
+    firstName: string,
+    lastName: string,
     email: string,
-    status: "Active" | "Inactive",
-    permissions: UserPermissions
+    isActive: boolean,
+    accessControls: Array<{ asset: string; access: string[] }>
   ) => {
-    if (!name.trim() || !email.trim()) {
-      showToast("Please fill in all required fields.", "warning");
+    if (!firstName.trim() || !lastName.trim() || !email.trim()) {
+      toast.warn("Please fill in all required fields.");
       return;
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      showToast("Please enter a valid email address.", "warning");
+      toast.warn("Please enter a valid email address");
       return;
     }
 
-    if (editingUser) {
-      // Edit mode
-      setUsers((prev) =>
-        prev.map((u) =>
-          u.id === editingUser.id
-            ? { ...u, name, email, status, permissions }
-            : u
-        )
-      );
-      showToast("User updated successfully!", "success");
-    } else {
-      // Add mode
-      const newId = `AID${String(users.length + 1).padStart(4, "0")}`;
-      const newUser: User = {
-        id: newId,
-        name,
-        email,
-        status,
-        permissions,
-      };
-      setUsers((prev) => [...prev, newUser]);
-      showToast("New user added successfully!", "success");
-    }
+    setIsSaving(true);
+    try {
+      if (editingUser) {
+        // Edit mode
+        const { user: updatedUser, message } = await usersService.updateUser(editingUser.id, {
+          firstName,
+          lastName,
+          email,
+          isActive,
+          accessControls,
+        });
 
-    setIsModalOpen(false);
+        setUsers((prev) =>
+          prev.map((u) => (u.id === editingUser.id ? updatedUser : u))
+        );
+        toast.success(message);
+      } else {
+        // Add mode
+        const { user: invitedUser, message, temporaryPassword } = await usersService.inviteUser({
+          firstName,
+          lastName,
+          email,
+          isActive,
+          accessControls,
+        });
+
+        const res = await usersService.getUsers(currentPage, resultsPerPage, searchQuery || undefined, statusFilter === "Active" ? true : statusFilter === "Inactive" ? false : undefined);
+        setUsers(res.users);
+        setTotalResults(res.total);
+        toast.success(message);
+      }
+      setIsModalOpen(false);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save user.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // Sorting States
@@ -182,25 +187,10 @@ export default function ManageUsersPage() {
     }
   };
 
-  // Search and status filtering
-  const filteredUsers = useMemo(() => {
-    return users.filter((u) => {
-      const query = searchQuery.toLowerCase();
-      const matchesSearch =
-        u.id.toLowerCase().includes(query) ||
-        u.name.toLowerCase().includes(query) ||
-        u.email.toLowerCase().includes(query);
-
-      const matchesStatus = statusFilter === "All" || u.status === statusFilter;
-
-      return matchesSearch && matchesStatus;
-    });
-  }, [users, searchQuery, statusFilter]);
-
   // Sort Data
   const sortedUsers = useMemo(() => {
-    return sortData(filteredUsers, sortField, sortOrder, []);
-  }, [filteredUsers, sortField, sortOrder]);
+    return sortData(users, sortField, sortOrder, []);
+  }, [users, sortField, sortOrder]);
 
   return (
     <div className="flex min-h-screen flex-1 flex-col pb-16 lg:w-full lg:max-w-[calc(100vw-304px)]">
@@ -214,13 +204,16 @@ export default function ManageUsersPage() {
             Create and manage admin users and their module access
           </p>
         </div>
-        <Button
-          onClick={handleOpenAddModal}
-          className="h-[50px] rounded-[10px] bg-primary hover:bg-primary-hover px-4.5 py-[9px] text-[16px] font-medium font-figtree transition-colors duration-200 cursor-pointer text-white flex items-center justify-center gap-2"
-        >
-          <Plus className="h-5 w-5" />
-          <span>Add New</span>
-        </Button>
+        {hasPermission("edit") && (
+          <Button
+            onClick={handleOpenAddModal}
+            className="h-[50px] bg-primary hover:bg-primary-hover px-4.5 py-[9px] text-[16px] font-medium font-figtree transition-colors duration-200 cursor-pointer text-white flex items-center justify-center gap-2"
+            style={{ borderRadius: "10px" }}
+          >
+            <Plus className="h-5 w-5" />
+            <span>Add New</span>
+          </Button>
+        )}
       </div>
 
       {/* Filter and Search Bar */}
@@ -233,14 +226,20 @@ export default function ManageUsersPage() {
             type="text"
             placeholder="Search by User ID, Name, Email"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
+            }}
             className="w-full h-[48px] pl-[46px] pr-4 border border-[#D1D5DB] bg-[#F3F4F6] rounded-[10px] text-[16px] font-figtree focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-white transition-all text-gray-800 placeholder-[#6B7280]"
           />
         </div>
 
         <Dropdown
           value={statusFilter}
-          onChange={(val) => setStatusFilter(val as any)}
+          onChange={(val) => {
+            setStatusFilter(val as any);
+            setCurrentPage(1);
+          }}
           options={[
             { value: "All", label: "All Status" },
             { value: "Active", label: "Active" },
@@ -260,62 +259,87 @@ export default function ManageUsersPage() {
                 <SortHeader label="User ID" field="id" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
               </TableHead>
               <TableHead className="min-w-[413.5px]">
-                <SortHeader label="Name" field="name" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                <SortHeader label="Name" field="firstName" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
               </TableHead>
               <TableHead className="min-w-[413.5px]">
                 <SortHeader label="Email" field="email" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
               </TableHead>
               <TableHead className="min-w-[100px]">
-                <SortHeader label="Status" field="status" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                <SortHeader label="Status" field="isActive" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
               </TableHead>
-              <TableHead className="min-w-[89px]">Action</TableHead>
+              {hasPermission("edit") && <TableHead className="min-w-[89px]">Action</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {sortedUsers.length > 0 ? (
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={hasPermission("edit") ? 5 : 4} className="px-6 py-12 text-center text-gray-500 font-figtree">
+                  <div className="flex flex-col items-center justify-center gap-2">
+                    <svg className="animate-spin h-8 w-8 text-primary" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    <span>Loading users...</span>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : sortedUsers.length > 0 ? (
               sortedUsers.map((user) => (
                 <TableRow
                   key={user.id}
                   className="hover:bg-gray-50/50 transition-colors"
                 >
                   <TableCell className="font-mono font-medium text-gray-600">{user.id}</TableCell>
-                  <TableCell className="font-medium text-[#1F2937]">{user.name}</TableCell>
-                  <TableCell className="text-[#6B7280]">{user.email}</TableCell>
-                  <TableCell>
-                    <StatusBadge status={user.status} />
+                  <TableCell className="text-[#1F2937]">
+                    <TruncatedTooltip text={`${user.firstName} ${user.lastName}`} side="top">
+                      <span className="block max-w-[400px] truncate">{`${user.firstName} ${user.lastName}`}</span>
+                    </TruncatedTooltip>
+                  </TableCell>
+                  <TableCell className="text-[#6B7280]">
+                    <TruncatedTooltip text={user.email} side="top">
+                      <span className="block max-w-[400px] truncate">{user.email}</span>
+                    </TruncatedTooltip>
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center justify-start gap-2.5">
-                      <Button
-                        variant="ghost"
-                        className="h-5 w-5 cursor-pointer p-0"
-                        size="icon"
-                        onClick={() => handleOpenEditModal(user)}
-                        title="Edit User"
-                      >
-                        <Image
-                          src="/icons/edit.svg"
-                          alt="Edit"
-                          width={20}
-                          height={20}
-                        />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        className="h-5 w-5 cursor-pointer p-0"
-                        size="icon"
-                        onClick={() => handleDeleteUser(user.id)}
-                        title="Delete User"
-                      >
-                        <Trash2 className="h-5 w-5 text-[#6B7280] hover:text-rose-600 transition-colors" />
-                      </Button>
-                    </div>
+                    <StatusBadge status={user.isActive ? "Active" : "Inactive"} />
                   </TableCell>
+                  {hasPermission("edit") && (
+                    <TableCell>
+                      <div className="flex items-center justify-start gap-2.5">
+                        <Button
+                          variant="ghost"
+                          className="h-5 w-5 cursor-pointer p-0 hover:bg-transparent"
+                          size="icon"
+                          onClick={() => handleOpenEditModal(user)}
+                          disabled={isEditingId === user.id}
+                        >
+                          {isEditingId === user.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin text-[#6B7280]" />
+                          ) : (
+                            <Image
+                              src="/icons/edit.svg"
+                              alt="Edit"
+                              width={20}
+                              height={20}
+                            />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          className="h-5 w-5 cursor-pointer p-0 hover:bg-transparent"
+                          size="icon"
+                          onClick={() => setDeleteTarget(user)}
+                        >
+                          <Trash2 className="h-5 w-5 text-[#6B7280] hover:text-rose-600 transition-colors" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={5} className="px-6 py-10 text-center text-gray-500 font-figtree">
+                <TableCell colSpan={hasPermission("edit") ? 5 : 4} className="px-6 py-10 text-center text-gray-500 font-figtree">
                   No users found matching your search filters.
                 </TableCell>
               </TableRow>
@@ -324,15 +348,34 @@ export default function ManageUsersPage() {
         </Table>
       </div>
 
+      {totalResults > 0 && (
+        <div className="mb-6">
+          <Pagination
+            totalResults={totalResults}
+            currentPage={currentPage}
+            setCurrentPage={setCurrentPage}
+            resultsPerPage={resultsPerPage}
+            setResultsPerPage={setResultsPerPage}
+            totalPages={totalPages}
+          />
+        </div>
+      )}
+
       <ManageUserModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => !isSaving && setIsModalOpen(false)}
         onSave={handleSaveUser}
         editingUser={editingUser}
+        isLoading={isSaving}
       />
 
-      {/* Global Toast list */}
-      <ToastList toasts={toasts} />
+      <DeleteUserDialog
+        isOpen={!!deleteTarget}
+        user={deleteTarget}
+        isDeleting={isDeleting}
+        onClose={() => !isDeleting && setDeleteTarget(null)}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   );
 }

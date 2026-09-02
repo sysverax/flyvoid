@@ -1,0 +1,331 @@
+name: Test Deployment
+
+on:
+  push:
+    branches:
+      - test
+
+concurrency:
+  group: test-deployment
+  cancel-in-progress: true
+
+env:
+  # Backend paths
+  BACKEND_PATH: "backend"
+  BACKEND_APP_NAME: "backend"
+  REMOTE_BACKEND_PATH: "/home/ubuntu/flyvoid/backend"
+
+  # # Admin web paths
+  # ADMIN_WEB_APP_PATH: "frontend/admin"
+  # ADMIN_WEB_APP_NAME: "admin-web"
+  # ADMIN_WEB_REMOTE_APP_PATH: "/home/ubuntu/flyvoid/frontend/admin"
+
+  # # Airline web paths
+  # AIRLINE_WEB_APP_PATH: "frontend/airline"
+  # AIRLINE_WEB_APP_NAME: "airline-web"
+  # AIRLINE_WEB_REMOTE_APP_PATH: "/home/ubuntu/flyvoid/frontend/airline"
+
+jobs:
+  detect_changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend_changed: ${{ steps.filter.outputs.backend }}
+      admin_changed: ${{ steps.filter.outputs.admin }}
+      airline_changed: ${{ steps.filter.outputs.airline }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+
+      - name: Detect changed folders
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          base: ${{ github.event.before }}
+          filters: |
+            backend:
+              - '${{env.BACKEND_PATH}}/**'
+            # admin:
+            #   - '${{env.ADMIN_WEB_APP_PATH}}/**'
+            # airline:
+            #   - '${{env.AIRLINE_WEB_APP_PATH}}/**'
+
+  backend_deployment:
+    needs: [detect_changes]
+    if: needs.detect_changes.outputs.backend_changed == 'true'
+    runs-on: ubuntu-latest
+    env:
+      AWS_SSH_KEY: ${{ secrets.AWS_EC2_SSH_KEY }}
+      EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+      EC2_INSTANCE_IP: ${{ secrets.TEST_EC2_IP }}
+      BACKEND_ENV: ${{ secrets.TEST_BACKEND_ENV }}
+
+    steps:
+      - name: Start Backend Deployment
+        run: |
+          echo "[INFO] ======================================"
+          echo "[INFO] Starting Backend Deployment"
+          echo "[INFO] Commit: $GITHUB_SHA"
+          echo "[INFO] ======================================"
+
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+
+      - name: Write SSH Key
+        run: |
+          echo "[INFO] Writing SSH key..."
+          echo "${{env.AWS_SSH_KEY}}" > ~/ec2_key.pem
+          chmod 600 ~/ec2_key.pem
+
+      - name: Add EC2 Host to known_hosts
+        run: |
+          echo "[INFO] Adding EC2 host to known_hosts"
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{env.EC2_INSTANCE_IP}} >> ~/.ssh/known_hosts
+
+      - name: Ensure remote backend folder exists
+        run: |
+          ssh -i ~/ec2_key.pem -o StrictHostKeyChecking=no ${{env.EC2_USERNAME}}@${{env.EC2_INSTANCE_IP}} \
+            "mkdir -p ${{env.REMOTE_BACKEND_PATH}}"
+
+      - name: Rsync backend files to EC2
+        run: |
+          echo "[INFO] Transferring backend files..."
+          rsync -avz --delete \
+            --exclude='node_modules' \
+            --exclude='logs' \
+            --exclude='package-lock.json' \
+            --exclude='dbMigrationScripts' \
+            -e "ssh -i ~/ec2_key.pem -o StrictHostKeyChecking=no" \
+            ${{env.BACKEND_PATH}}/ ${{env.EC2_USERNAME}}@${{env.EC2_INSTANCE_IP}}:${{env.REMOTE_BACKEND_PATH}}
+          echo "[INFO] Transfer complete."
+
+      - name: Deploy backend on EC2
+        run: |
+          echo "[INFO] Deploying backend on EC2..."
+          ssh -i ~/ec2_key.pem -o StrictHostKeyChecking=no ${{env.EC2_USERNAME}}@${{env.EC2_INSTANCE_IP}} << EOF
+          set -e
+          cd "${{env.REMOTE_BACKEND_PATH}}"
+          echo "[INFO] Creating environment file..."
+          cat > .env.test <<EOL
+          ${{env.BACKEND_ENV}}
+          EOL
+
+          echo "[INFO] Installing dependencies..."
+          # npm ci --prefer-offline
+          npm install
+
+          echo "[INFO] Restarting PM2 process..."
+          pm2 stop "${{env.BACKEND_APP_NAME}}" || true
+          pm2 delete "${{env.BACKEND_APP_NAME}}" || true
+          pm2 start npm --name "${{env.BACKEND_APP_NAME}}" -- run start:test
+          pm2 save
+          EOF
+
+      - name: Backend Deployment Complete
+        run: |
+          echo "[INFO] ======================================"
+          echo "[INFO] Backend deployment completed successfully"
+          echo "[INFO] ======================================"
+
+
+
+  # admin_deployment:
+  #   needs: [detect_changes]
+  #   if: needs.detect_changes.outputs.admin_changed == 'true'
+  #   runs-on: ubuntu-latest
+
+  #   concurrency:
+  #     group: frontend-deployment
+  #     cancel-in-progress: false
+
+  #   env:
+  #     AWS_SSH_KEY: ${{ secrets.AWS_EC2_SSH_KEY }}
+  #     EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+  #     FRONTEND_EC2_INSTANCE_IP: ${{ secrets.TEST_EC2_IP }}
+  #     ADMIN_WEB_TEST_ENV: ${{ secrets.TEST_ADMIN_ENV }}
+
+  #   steps:
+  #     - name: Start Admin Deployment
+  #       run: |
+  #         echo "[INFO] ======================================"
+  #         echo "[INFO] Starting Admin Deployment"
+  #         echo "[INFO] Commit: $GITHUB_SHA"
+  #         echo "[INFO] ======================================"
+
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v3
+  #       with:
+  #         fetch-depth: 2
+
+  #     - name: Write SSH Key
+  #       run: |
+  #         echo "[INFO] Writing SSH key..."
+  #         echo "${{env.AWS_SSH_KEY}}" > ~/ec2_key.pem
+  #         chmod 600 ~/ec2_key.pem
+
+  #     - name: Add EC2 Host to known_hosts
+  #       run: |
+  #         echo "[INFO] Adding EC2 host to known_hosts"
+  #         mkdir -p ~/.ssh
+  #         ssh-keyscan -H ${{env.FRONTEND_EC2_INSTANCE_IP}} >> ~/.ssh/known_hosts
+
+  #     - name: Ensure remote frontend admin folder exists
+  #       run: |
+  #         ssh -i ~/ec2_key.pem -o StrictHostKeyChecking=no ${{env.EC2_USERNAME}}@${{env.FRONTEND_EC2_INSTANCE_IP}} \
+  #           "mkdir -p ${{env.ADMIN_WEB_REMOTE_APP_PATH}}"
+
+  #     - name: Rsync admin web files to EC2
+  #       run: |
+  #         echo "[INFO] Transferring admin web files..."
+  #         rsync -avz --delete \
+  #           --exclude='node_modules' \
+  #           --exclude='logs' \
+  #           --exclude='package-lock.json' \
+  #           --exclude='build' \
+  #           --exclude='dbMigrationScripts' \
+  #           -e "ssh -i ~/ec2_key.pem -o StrictHostKeyChecking=no" \
+  #           ${{env.ADMIN_WEB_APP_PATH}}/ ${{env.EC2_USERNAME}}@${{env.FRONTEND_EC2_INSTANCE_IP}}:${{env.ADMIN_WEB_REMOTE_APP_PATH}}
+  #         echo "[INFO] Transfer complete."
+
+  #     - name: Deploy admin web on EC2
+  #       run: |
+  #         echo "[INFO] Deploying admin web on EC2..."
+  #         ssh -i ~/ec2_key.pem -o StrictHostKeyChecking=no ${{env.EC2_USERNAME}}@${{env.FRONTEND_EC2_INSTANCE_IP}} << EOF
+  #         set -e
+  #         cd "${{env.ADMIN_WEB_REMOTE_APP_PATH}}"
+
+  #         echo "[INFO] Creating environment file..."
+
+  #         cat > .env <<EOL
+  #         ${{env.ADMIN_WEB_TEST_ENV}}
+  #         EOL
+
+  #         echo "[INFO] Removing old dependencies..."
+  #         # rm -rf node_modules build package-lock.json || true
+  #         rm -rf node_modules dist package-lock.json || true
+
+  #         echo "[INFO] Installing dependencies..."
+  #         # npm ci --prefer-offline
+  #         npm install
+
+  #         echo "[INFO] Building React.js app..."
+  #         npm run build
+
+  #         echo "[INFO] Restarting PM2 process..."
+  #         pm2 delete "${{env.ADMIN_WEB_APP_NAME}}" || true
+  #         pm2 start npm --name "${{env.ADMIN_WEB_APP_NAME}}" -- run preview -- --host 0.0.0.0 --port 5173
+  #         pm2 save
+  #         EOF
+
+  #     - name: Admin Web Deployment Complete
+  #       run: |
+  #         echo "[INFO] ======================================"
+  #         echo "[INFO] Admin Web deployment completed successfully"
+  #         echo "[INFO] ======================================"
+
+  # airline_deployment:
+  #   needs: [detect_changes]
+  #   if: needs.detect_changes.outputs.airline_changed == 'true'
+  #   runs-on: ubuntu-latest
+
+  #   concurrency:
+  #     group: frontend-deployment
+  #     cancel-in-progress: false
+
+  #   env:
+  #     AWS_SSH_KEY: ${{ secrets.AWS_EC2_SSH_KEY }}
+  #     EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+  #     FRONTEND_EC2_INSTANCE_IP: ${{ secrets.TEST_EC2_IP }}
+  #     AIRLINE_WEB_TEST_ENV: ${{ secrets.TEST_AIRLINE_ENV }}
+
+  #   steps:
+  #     - name: Start Airline Web Deployment
+  #       run: |
+  #         echo "[INFO] ======================================"
+  #         echo "[INFO] Starting Airline Web Deployment"
+  #         echo "[INFO] Commit: $GITHUB_SHA"
+  #         echo "[INFO] ======================================"
+
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v3
+  #       with:
+  #         fetch-depth: 2
+
+  #     - name: Validate airline deployment secrets
+  #       run: |
+  #         set -e
+  #         [ -n "${{ env.AWS_SSH_KEY }}" ] || { echo "[ERROR] Missing secret AWS_EC2_SSH_KEY"; exit 1; }
+  #         [ -n "${{ env.EC2_USERNAME }}" ] || { echo "[ERROR] Missing secret EC2_USERNAME"; exit 1; }
+  #         [ -n "${{ env.FRONTEND_EC2_INSTANCE_IP }}" ] || { echo "[ERROR] Missing secret TEST_EC2_IP"; exit 1; }
+  #         [ -n "${{ env.AIRLINE_WEB_TEST_ENV }}" ] || { echo "[ERROR] Missing secret TEST_AIRLINE_ENV"; exit 1; }
+
+  #     - name: Write SSH Key
+  #       run: |
+  #         echo "[INFO] Writing SSH key..."
+  #         echo "${{env.AWS_SSH_KEY}}" > ~/ec2_key.pem
+  #         chmod 600 ~/ec2_key.pem
+
+  #     - name: Add EC2 Host to known_hosts
+  #       run: |
+  #         echo "[INFO] Adding EC2 host to known_hosts"
+  #         mkdir -p ~/.ssh
+  #         ssh-keyscan -H ${{env.FRONTEND_EC2_INSTANCE_IP}} >> ~/.ssh/known_hosts
+
+  #     - name: Ensure remote airline web folder exists
+  #       run: |
+  #         ssh -i ~/ec2_key.pem -o StrictHostKeyChecking=no ${{env.EC2_USERNAME}}@${{env.FRONTEND_EC2_INSTANCE_IP}} \
+  #           "mkdir -p ${{env.AIRLINE_WEB_REMOTE_APP_PATH}}"
+
+  #     - name: Rsync airline web files to EC2
+  #       run: |
+  #         echo "[INFO] Transferring airline web files..."
+  #         rsync -avz --delete \
+  #           --exclude='node_modules' \
+  #           --exclude='logs' \
+  #           --exclude='package-lock.json' \
+  #           --exclude='.next' \
+  #           --exclude='dbMigrationScripts' \
+  #           -e "ssh -i ~/ec2_key.pem -o StrictHostKeyChecking=no" \
+  #           ${{env.AIRLINE_WEB_APP_PATH}}/ ${{env.EC2_USERNAME}}@${{env.FRONTEND_EC2_INSTANCE_IP}}:${{env.AIRLINE_WEB_REMOTE_APP_PATH}}
+  #         echo "[INFO] Transfer complete."
+
+  #     - name: Deploy airline web on EC2
+  #       run: |
+  #         echo "[INFO] Deploying airline web on EC2..."
+  #         ssh -i ~/ec2_key.pem -o StrictHostKeyChecking=no ${{env.EC2_USERNAME}}@${{env.FRONTEND_EC2_INSTANCE_IP}} << EOF
+  #         set -e
+  #         cd "${{env.AIRLINE_WEB_REMOTE_APP_PATH}}"
+
+  #         echo "[INFO] Creating environment file..."
+
+  #         cat > .env <<EOL
+  #         ${{env.AIRLINE_WEB_TEST_ENV}}
+  #         EOL
+
+  #         echo "[INFO] Removing old dependencies..."
+  #         rm -rf node_modules .next package-lock.json || true
+
+  #         echo "[INFO] Installing dependencies..."
+  #         npm install
+
+  #         echo "[INFO] Building Next.js app..."
+  #         npm run build
+
+  #         echo "[INFO] Restarting PM2 process..."
+  #         pm2 stop "${{env.AIRLINE_WEB_APP_NAME}}" || true
+  #         pm2 delete "${{env.AIRLINE_WEB_APP_NAME}}" || true
+  #         pm2 start npm --name "${{env.AIRLINE_WEB_APP_NAME}}" -- run start
+  #         pm2 save
+  #         EOF
+
+  #     - name: Airline Web Deployment Complete
+  #       run: |
+  #         echo "[INFO] ======================================"
+  #         echo "[INFO] Airline web deployment completed successfully"
+  #         echo "[INFO] ======================================"
+

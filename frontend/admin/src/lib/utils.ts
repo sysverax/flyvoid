@@ -1,3 +1,4 @@
+import { countries } from "countries-list";
 export function cn(...inputs: (string | boolean | undefined | null)[]) {
   return inputs.filter(Boolean).join(" ");
 }
@@ -41,3 +42,20 @@ export function sortData<T>(
     return 0;
   });
 }
+
+export const getCountryCode = (countryName: string): string => {
+  const entry = Object.entries(countries).find(
+    ([_, c]) => c.name.toLowerCase() === countryName.toLowerCase()
+  );
+  return entry ? entry[0] : "US";
+};
+
+export const formatDate = (dateStr?: string) => {
+  if (!dateStr) return "N/A";
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return "N/A";
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
+};

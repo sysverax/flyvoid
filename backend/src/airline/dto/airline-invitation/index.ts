@@ -4,3 +4,5 @@ export * from "./airline-invitation-matrix-response.dto";
 export * from "./airline-invitation-response.dto";
 export * from "./revoke-airline-invitation-response.dto";
 export * from "./resend-airline-invitation-response.dto";
+export * from "./update-airline-invitation-request.dto";
+export * from "./update-airline-invitation-response.dto";
