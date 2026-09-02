@@ -1,15 +1,15 @@
 import * as dotenv from "dotenv";
 
 const envFileByCommand: Record<string, string> = {
-  dev: "local.env",
-  "start:dev": "dev.env",
-  "start:test": "test.env",
-  "start:e2e": "automation_test.env",
-  "test:e2e": "automation_test.env",
-  "test:e2e:auth": "automation_test.env",
-  "test:e2e:admin-auth": "automation_test.env",
-  start: "prod.env",
-  "start:prod": "prod.env",
+  dev: ".env.local",
+  "start:dev": ".env.dev",
+  "start:test": ".env.test",
+  "start:e2e": ".env.automation_test",
+  "test:e2e": ".env.automation_test",
+  "test:e2e:auth": ".env.automation_test",
+  "test:e2e:admin-auth": ".env.automation_test",
+  start: ".env.prod",
+  "start:prod": ".env.prod",
 };
 
 const lifecycleEvent = process.env.npm_lifecycle_event ?? "";
