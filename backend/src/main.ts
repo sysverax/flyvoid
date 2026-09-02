@@ -17,14 +17,14 @@ async function bootstrap(): Promise<void> {
 
   // app.enableCors();
   const allowedOrigins = config.cors.allowedOrigins
-  ?.split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
+    ?.split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
 
-app.enableCors({
-  origin: allowedOrigins,
-  credentials: true,
-});
+  app.enableCors({
+    origin: allowedOrigins,
+    credentials: true,
+  });
   app.setGlobalPrefix("api/v1");
 
   app.useGlobalPipes(
