@@ -26,13 +26,29 @@ const statusStyles: Record<string, { bg: string; text: string }> = {
     bg: "bg-[#FEF3C7]",
     text: "text-[#92400E]",
   },
+  Verified: {
+    bg: "bg-[#DBEAFE]",
+    text: "text-[#1E40AF]",
+  },
+  verified: {
+    bg: "bg-[#DBEAFE]",
+    text: "text-[#1E40AF]",
+  },
+  Paid: {
+    bg: "bg-[#CCFBF1]",
+    text: "text-[#0F766E]",
+  },
+  paid: {
+    bg: "bg-[#CCFBF1]",
+    text: "text-[#0F766E]",
+  },
   Allocated: {
-    bg: "bg-[#D1FAE5]",
-    text: "text-[#065F46]",
+    bg: "bg-[#F3E8FF]",
+    text: "text-[#6B21A8]",
   },
   allocated: {
-    bg: "bg-[#D1FAE5]",
-    text: "text-[#065F46]",
+    bg: "bg-[#F3E8FF]",
+    text: "text-[#6B21A8]",
   },
   Pending: {
     bg: "bg-[#FEF3C7]",

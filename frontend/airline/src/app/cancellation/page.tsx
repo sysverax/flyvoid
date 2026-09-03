@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Search, X, Plus, Send, Eye } from "lucide-react";
+import { Search, X, Plus, Send, Eye, ArrowLeft, Plane, Calendar, FileText, Users, DollarSign, CheckCircle2, Download, Bed, Percent, Wallet, Receipt, Star } from "lucide-react";
 import { toast } from "react-toastify";
 import {
   Table,
@@ -26,7 +26,7 @@ interface Cancellation {
   bookings: number;
   passengers: number;
   totalCost: number;
-  status: "Published" | "Draft" | "In Progress";
+  status: "Published" | "Verified" | "Allocated" | "Draft" | "Paid";
   reason: string;
 }
 
@@ -61,7 +61,7 @@ const INITIAL_CANCELLATIONS: Cancellation[] = [
     bookings: 45,
     passengers: 310,
     totalCost: 52000,
-    status: "In Progress",
+    status: "Allocated",
     reason: "Air Traffic Control crew shortage",
   },
   {
@@ -72,7 +72,7 @@ const INITIAL_CANCELLATIONS: Cancellation[] = [
     bookings: 30,
     passengers: 240,
     totalCost: 38100,
-    status: "Published",
+    status: "Verified",
     reason: "Late incoming aircraft delay",
   },
   {
@@ -83,7 +83,7 @@ const INITIAL_CANCELLATIONS: Cancellation[] = [
     bookings: 12,
     passengers: 95,
     totalCost: 11200,
-    status: "Draft",
+    status: "Paid",
     reason: "Aircraft engine sensor malfunction",
   }
 ];
@@ -91,9 +91,256 @@ const INITIAL_CANCELLATIONS: Cancellation[] = [
 const STATUS_OPTIONS = [
   { value: "All Status", label: "All Status" },
   { value: "Published", label: "Published" },
+  { value: "Verified", label: "Verified" },
+  { value: "Allocated", label: "Allocated" },
+  { value: "Paid", label: "Paid" },
   { value: "Draft", label: "Draft" },
-  { value: "In Progress", label: "In Progress" },
 ];
+
+function PublishedDetailView({ cancellation, onClose }: { cancellation: Cancellation, onClose: () => void }) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const [resultsPerPage, setResultsPerPage] = useState(10);
+
+  const hotelCost = cancellation.bookings * 144;
+  const platformDiscount = hotelCost * 0.10;
+  const hotelTax = hotelCost * 0.08;
+  const subtotal = hotelCost - platformDiscount + hotelTax;
+  const platformFee = subtotal * 0.05;
+  const totalPayment = subtotal + platformFee;
+
+  return (
+    <div className="w-full space-y-6">
+      {/* Header */}
+      <div className="flex justify-between items-center w-full mt-2">
+        <button
+          onClick={onClose}
+          className="flex items-center gap-2 text-[#6B7280] hover:text-[#111827] transition-colors cursor-pointer"
+        >
+          <ArrowLeft className="w-5 h-5" />
+          <span className="font-medium">Back to Cancelled Flights</span>
+        </button>
+        <StatusBadge status="Published" className="h-[28px] px-3.5 text-[14px]" />
+      </div>
+
+      {/* Flight Summary Card */}
+      <div className="w-full bg-white rounded-[16px] border border-gray-200 p-6">
+        <div className="flex items-center gap-4 mb-6">
+          <div className="w-[52px] h-[52px] rounded-[12px] bg-[#F3F4F6] flex items-center justify-center text-[#4B5563]">
+            <Plane className="w-6 h-6" />
+          </div>
+          <div>
+            <h2 className="text-[24px] font-bold text-[#1F2937] leading-tight">{cancellation.flight}</h2>
+            <p className="text-[#6B7280] mt-0.5">{cancellation.route.replace("➔", "→")}</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-4 gap-4 mb-6">
+          <div className="bg-[#F9FAFB] rounded-xl p-4">
+            <div className="flex items-center gap-1.5 text-[#6B7280] mb-2">
+              <Calendar className="w-[15px] h-[15px]" />
+              <span className="text-[13px] font-medium">Cancellation Date</span>
+            </div>
+            <p className="text-[#1F2937] font-semibold">{cancellation.cancellationDate}</p>
+          </div>
+          <div className="bg-[#F9FAFB] rounded-xl p-4">
+            <div className="flex items-center gap-1.5 text-[#6B7280] mb-2">
+              <FileText className="w-[15px] h-[15px]" />
+              <span className="text-[13px] font-medium">Bookings</span>
+            </div>
+            <p className="text-[#1F2937] font-semibold">{cancellation.bookings}</p>
+          </div>
+          <div className="bg-[#F9FAFB] rounded-xl p-4">
+            <div className="flex items-center gap-1.5 text-[#6B7280] mb-2">
+              <Users className="w-[15px] h-[15px]" />
+              <span className="text-[13px] font-medium">Passengers</span>
+            </div>
+            <p className="text-[#1F2937] font-semibold">{cancellation.passengers}</p>
+          </div>
+          <div className="bg-[#F9FAFB] rounded-xl p-4">
+            <div className="flex items-center gap-1.5 text-[#6B7280] mb-2">
+              <DollarSign className="w-[15px] h-[15px]" />
+              <span className="text-[13px] font-medium">Total Cost</span>
+            </div>
+            <p className="text-[#059669] font-semibold">${cancellation.totalCost.toLocaleString()}</p>
+          </div>
+        </div>
+
+        <div className="h-px bg-gray-100 w-full mb-4"></div>
+
+        <p className="text-[#4B5563] text-[15px]">
+          <span className="font-semibold text-[#6B7280] mr-2">Reason:</span>
+          {cancellation.reason}
+        </p>
+      </div>
+
+      {/* Published Bookings Detail Card */}
+      <div className="w-full bg-white rounded-[16px] border border-gray-200 p-6">
+        <div className="flex justify-between items-start mb-6">
+          <div className="flex items-center gap-4">
+            <div className="w-[42px] h-[42px] rounded-full bg-[#ECFDF5] flex items-center justify-center text-[#10B981]">
+              <CheckCircle2 className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-[18px] font-bold text-[#1F2937] leading-tight">Published Bookings</h3>
+              <p className="text-[#6B7280] text-[15px] mt-0.5">Confirmation emails have been sent to all passengers</p>
+            </div>
+          </div>
+          <button className="flex items-center gap-2 border border-gray-300 hover:bg-gray-50 text-[#374151] px-4 py-2.5 rounded-lg font-medium transition-colors cursor-pointer text-sm">
+            <Download className="w-4 h-4" />
+            Export Report
+          </button>
+        </div>
+
+        <div className="grid grid-cols-3 gap-4">
+          <div className="bg-[#F6F7F8] border border-gray-200 rounded-xl p-5 text-left">
+            <div className="flex items-center gap-2 text-gray-500 mb-3">
+              <Bed className="h-4 w-4" />
+              <span className="text-[13px] font-semibold uppercase">Total Room Bookings</span>
+            </div>
+            <div className="text-[24px] font-bold text-gray-900">{cancellation.bookings}</div>
+            <div className="text-sm text-gray-400 mt-1">Rooms booked</div>
+          </div>
+
+          <div className="bg-[#F6F7F8] border border-gray-200 rounded-xl p-5 text-left">
+            <div className="flex items-center gap-2 text-gray-500 mb-3">
+              <Receipt className="h-4 w-4" />
+              <span className="text-[13px] font-semibold uppercase">Total Hotel Cost</span>
+            </div>
+            <div className="text-[24px] font-bold text-gray-900">${hotelCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            <div className="text-sm text-gray-400 mt-1">Hotel charges before platform discount</div>
+          </div>
+
+          <div className="bg-[#F6F7F8] border border-gray-200 rounded-xl p-5 text-left">
+            <div className="flex items-center gap-2 text-gray-500 mb-3">
+              <Percent className="h-4 w-4" />
+              <span className="text-[13px] font-semibold uppercase">Platform Discount</span>
+            </div>
+            <div className="text-[24px] font-bold text-green-600">-${platformDiscount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            <div className="text-sm text-gray-400 mt-1">Discount provided by platform</div>
+          </div>
+
+          <div className="bg-[#F6F7F8] border border-gray-200 rounded-xl p-5 text-left">
+            <div className="flex items-center gap-2 text-gray-500 mb-3">
+              <DollarSign className="h-4 w-4" />
+              <span className="text-[13px] font-semibold uppercase">Hotel Tax</span>
+            </div>
+            <div className="text-[24px] font-bold text-gray-900">${hotelTax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            <div className="text-sm text-gray-400 mt-1">Applicable hotel taxes</div>
+          </div>
+
+          <div className="bg-[#F6F7F8] border border-gray-200 rounded-xl p-5 text-left">
+            <div className="flex items-center gap-2 text-gray-500 mb-3">
+              <Percent className="h-4 w-4" />
+              <span className="text-[13px] font-semibold uppercase">Platform Fee (5%)</span>
+            </div>
+            <div className="text-[24px] font-bold text-gray-900">${platformFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            <div className="text-sm text-gray-400 mt-1">Platform fee on the hotel payment</div>
+          </div>
+
+          <div className="bg-[#F6F7F8] border-[2px] border-[#0F2757] rounded-xl p-5 text-left">
+            <div className="flex items-center gap-2 text-[#0F2757] mb-3">
+              <Wallet className="h-4 w-4" />
+              <span className="text-[13px] font-semibold uppercase">Total Payment</span>
+            </div>
+            <div className="text-[24px] font-bold text-[#0F2757]">${totalPayment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            <div className="text-sm text-gray-500 mt-1">Total amount to be charged</div>
+          </div>
+        </div>
+
+        {/* Booked Hotels Table */}
+        <div className="mt-8 text-left">
+          <h4 className="text-[16px] font-semibold text-[#0F2757]">Booked Hotels</h4>
+          <p className="text-sm text-gray-500 mt-1">Review the hotel assigned to each booking and the associated room costs.</p>
+        </div>
+
+        <div className="overflow-x-auto border border-gray-200 rounded-xl mt-4">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="min-w-[140px]">Hotel Booking ID</TableHead>
+                <TableHead className="min-w-[100px]">PNR</TableHead>
+                <TableHead className="min-w-[160px]">Contact</TableHead>
+                <TableHead className="min-w-[120px]">Passengers</TableHead>
+                <TableHead className="min-w-[180px]">Hotel</TableHead>
+                <TableHead className="min-w-[100px]">Rating</TableHead>
+                <TableHead className="min-w-[80px]">Rooms</TableHead>
+                <TableHead className="min-w-[100px]">Total</TableHead>
+                <TableHead className="min-w-[80px]">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {Array.from({ length: cancellation.bookings })
+                .slice((currentPage - 1) * resultsPerPage, currentPage * resultsPerPage)
+                .map((_, idx) => {
+                  const originalIdx = (currentPage - 1) * resultsPerPage + idx;
+                  const isBusiness = originalIdx === 0;
+                  const hotelName = isBusiness ? "Hyatt Regency LAX" : "Holiday Inn Express LAX";
+                  const stars = isBusiness ? 4 : 3;
+                  const rooms = 1;
+                  const bookingCost = rooms * (isBusiness ? 160 : 120);
+
+                  return (
+                    <TableRow key={originalIdx}>
+                      <TableCell className="font-medium text-gray-900">HB-00023{originalIdx + 1}</TableCell>
+                      <TableCell className="font-medium text-gray-900">A{originalIdx}B{originalIdx}C</TableCell>
+                    <TableCell>
+                      <div className="font-semibold text-gray-900">Jane Doe</div>
+                      <div className="text-xs text-gray-500">jane.doe@example.com</div>
+                    </TableCell>
+                    <TableCell className="text-center">1 Passenger</TableCell>
+                    <TableCell className="font-medium">{hotelName}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center text-amber-400">
+                        {[...Array(stars)].map((_, i) => (
+                          <Star key={i} className="h-3 w-3 fill-current" />
+                        ))}
+                      </div>
+                    </TableCell>
+                    <TableCell>{rooms}</TableCell>
+                    <TableCell className="font-semibold text-gray-900">${bookingCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                    <TableCell>
+                      <button
+                        type="button"
+                        className="p-1.5 text-gray-400 hover:text-[#0F2757] hover:bg-gray-100 rounded transition-colors cursor-pointer"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+
+        {/* Pagination */}
+        <div className="mt-4">
+          <Pagination
+            totalResults={cancellation.bookings}
+            resultsPerPage={resultsPerPage}
+            currentPage={currentPage}
+            onPageChange={setCurrentPage}
+            onResultsPerPageChange={(val) => {
+              setResultsPerPage(val);
+              setCurrentPage(1);
+            }}
+          />
+        </div>
+
+        {/* Success Banner */}
+        <div className="mt-8 flex items-center justify-between bg-[#F0FDF4] border border-[#DCFCE7] rounded-xl px-5 py-4">
+          <div>
+            <h4 className="text-[#15803D] font-medium text-[15px]">All bookings confirmed</h4>
+            <p className="text-[#64748B] text-[13px] mt-0.5">{cancellation.bookings} confirmation emails sent</p>
+          </div>
+          <div className="text-[22px] font-bold text-[#0F2757]">
+            ${totalPayment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function CancellationPage() {
   const [cancellations, setCancellations] = useState<Cancellation[]>(INITIAL_CANCELLATIONS);
@@ -187,7 +434,12 @@ export default function CancellationPage() {
 
   return (
     <div className="flex min-h-screen flex-1 flex-col pb-16 lg:w-full lg:max-w-[calc(100vw-304px)]">
-      {isAddingNew ? (
+      {detailCancellation && detailCancellation.status === "Published" ? (
+        <PublishedDetailView
+          cancellation={detailCancellation}
+          onClose={() => setDetailCancellation(null)}
+        />
+      ) : isAddingNew ? (
         <CancellationWizard
           onClose={() => setIsAddingNew(false)}
           onSave={(added) => {
@@ -325,7 +577,12 @@ export default function CancellationPage() {
                         {c.flight}
                       </TableCell>
                       <TableCell className="text-[#6B7280]">
-                        {c.route}
+                        {c.route.split("➔").map((part, i, arr) => (
+                          <span key={i}>
+                            {part}
+                            {i < arr.length - 1 && <span className="font-bold text-gray-900">→</span>}
+                          </span>
+                        ))}
                       </TableCell>
                       <TableCell className="text-[#6B7280]">
                         {c.cancellationDate}
@@ -344,7 +601,7 @@ export default function CancellationPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center justify-start gap-1 -translate-x-1">
-                          {c.status !== "Published" && (
+                          {c.status === "Paid" && (
                             <button
                               onClick={() => setPublishTarget(c)}
                               className="p-1 text-[#6B7280] hover:text-emerald-600 transition-colors cursor-pointer"
@@ -382,7 +639,7 @@ export default function CancellationPage() {
       )}
 
       {/* Details Modal */}
-      {detailCancellation && (
+      {detailCancellation && detailCancellation.status !== "Published" && (
         <div
           className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center transition-opacity duration-300 p-4"
           onClick={() => setDetailCancellation(null)}
@@ -491,27 +748,22 @@ export default function CancellationPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6 animate-fadeIn">
           <div className="absolute inset-0 bg-black/40" onClick={() => setPublishTarget(null)} />
           <div
-            className="relative bg-white flex flex-col justify-center items-start py-6 gap-6 z-10 animate-scaleIn border border-gray-100"
+            className="relative bg-white flex flex-col justify-center items-start py-6 gap-5 z-10 animate-scaleIn border border-gray-100"
             style={{ width: 560, borderRadius: 16 }}
           >
             {/* Header */}
             <div
               className="flex flex-row justify-between items-center w-full"
               style={{
-                padding: "0px 24px 24px",
+                padding: "0px 24px 20px",
                 borderBottom: "1px solid #D1D5DB",
               }}
             >
               <h2
-                className="text-[#1F2937]"
-                style={{
-                  fontFamily: "Figtree",
-                  fontWeight: 600,
-                  fontSize: 24,
-                  lineHeight: "100%",
-                }}
+                className="text-[#1F2937] font-semibold text-[22px] font-figtree"
+                style={{ lineHeight: "100%" }}
               >
-                Publish Cancellation?
+                Publish Hotel Allocations
               </h2>
               <button
                 onClick={() => setPublishTarget(null)}
@@ -522,42 +774,57 @@ export default function CancellationPage() {
             </div>
 
             {/* Body */}
-            <div
-              className="px-6 text-[#6B7280] w-full text-left"
-              style={{
-                fontFamily: "Figtree, sans-serif",
-                fontWeight: 400,
-                fontSize: 18,
-                lineHeight: "150%",
-              }}
-            >
-              Are you sure you want to publish the cancellation for <span className="font-semibold text-gray-900">{publishTarget.flight}</span>? This will make the flight cancellation public and activate hotel allocation matching.
+            <div className="px-6 w-full text-left space-y-4">
+              <p className="text-gray-500 text-[15px] leading-relaxed">
+                This will finalize hotel bookings and send confirmation emails to all passengers.
+              </p>
+
+              <div className="w-full bg-[#F8F9FA] rounded-xl p-5 space-y-3 text-[15px]">
+                <div className="flex justify-between items-center text-gray-800">
+                  <span>Flight</span>
+                  <span className="font-semibold text-gray-900">{publishTarget.flight}</span>
+                </div>
+                <div className="flex justify-between items-center text-gray-800">
+                  <span>Route</span>
+                  <span className="font-semibold text-gray-900">{publishTarget.route}</span>
+                </div>
+                <div className="flex justify-between items-center text-gray-800">
+                  <span>Bookings</span>
+                  <span className="font-semibold text-gray-900">{publishTarget.bookings}</span>
+                </div>
+                <div className="flex justify-between items-center text-gray-800">
+                  <span>Passengers</span>
+                  <span className="font-semibold text-gray-900">{publishTarget.passengers}</span>
+                </div>
+                <div className="flex justify-between items-center text-gray-800 pt-3 border-t border-gray-200 mt-1">
+                  <span className="font-medium text-gray-900">Total Cost</span>
+                  <span className="font-bold text-gray-900 text-[17px]">${publishTarget.totalCost.toLocaleString()}</span>
+                </div>
+              </div>
+
+              <div className="w-full bg-[#FFF7E8] border border-[#FBE0C3] p-4 rounded-xl text-sm text-[#F59E0B] text-left">
+                <p>
+                  <span className="font-bold">Note:</span> This action cannot be undone. Passengers will receive their hotel booking confirmations immediately.
+                </p>
+              </div>
             </div>
 
             {/* Footer */}
-            <div className="flex gap-3 px-6 w-full mt-4">
+            <div className="flex gap-3 px-6 w-full mt-2">
               <button
                 type="button"
                 onClick={() => setPublishTarget(null)}
-                className="flex-1 py-2.5 rounded-lg border border-[#D1D5DB] text-[#1F2937] transition-colors hover:bg-[#F9FAFB] cursor-pointer"
-                style={{
-                  fontFamily: "Figtree, sans-serif",
-                  fontSize: 18,
-                  fontWeight: 400,
-                }}
+                className="flex-1 py-3 rounded-lg border border-[#D1D5DB] text-[#1F2937] transition-colors hover:bg-[#F9FAFB] cursor-pointer font-medium"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={() => confirmPublish(publishTarget.id)}
-                className="flex-1 py-2.5 rounded-lg text-white bg-[#0F2757] hover:bg-[#162259] transition-colors cursor-pointer flex items-center justify-center gap-2 font-medium"
-                style={{
-                  fontFamily: "Figtree, sans-serif",
-                  fontSize: 18,
-                }}
+                className="flex-1 py-3 rounded-lg text-white bg-[#0F2757] hover:bg-[#162259] transition-colors cursor-pointer flex items-center justify-center gap-2 font-medium"
               >
-                Publish
+                <Send className="h-4 w-4" />
+                <span>Publish & Notify</span>
               </button>
             </div>
           </div>
