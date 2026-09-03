@@ -2,6 +2,23 @@ import { Injectable, ServiceUnavailableException } from "@nestjs/common";
 import { config } from "../../config/config";
 import { LoggerService } from "../logger/logger.service";
 
+type SubGroupInputBooking = {
+  id: number;
+  pnr: string;
+  specialNotes?: string[];
+  additionalNotes?: string | null;
+};
+
+type HotelScoreInput = {
+  id: string;
+  name: string;
+  stars: number;
+  amenities: string[];
+  minRate: number;
+  isAccessible: boolean;
+  totalAvailableRooms: number;
+};
+
 @Injectable()
 export class GroqService {
   private readonly apiKey = config.groq.apiKey;
@@ -67,7 +84,12 @@ Candidate Hotels:
 ${JSON.stringify(hotels, null, 2)}`;
 
     try {
-      this.logger.info("Calling Groq API for hotel recommendation", "GroqService", requestId, { model: this.model });
+      this.logger.info(
+        "Calling Groq API for hotel recommendation",
+        "GroqService",
+        requestId,
+        { model: this.model },
+      );
       const response = await fetch(this.apiUrl, {
         method: "POST",
         headers: {
@@ -87,7 +109,9 @@ ${JSON.stringify(hotels, null, 2)}`;
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Groq API returned status ${response.status}: ${errorText}`);
+        throw new Error(
+          `Groq API returned status ${response.status}: ${errorText}`,
+        );
       }
 
       const responseData = await response.json();
@@ -105,7 +129,274 @@ ${JSON.stringify(hotels, null, 2)}`;
         requestId,
         { stack: error.stack },
       );
-      throw new ServiceUnavailableException(`Groq API recommendation failed: ${error.message}`);
+      throw new ServiceUnavailableException(
+        `Groq API recommendation failed: ${error.message}`,
+      );
+    }
+  }
+
+  async subGroupBySpecialNotes(
+    classBookings: SubGroupInputBooking[],
+    requestId: string,
+  ): Promise<{
+    subGroups: Array<{
+      id: string;
+      label: string;
+      bookingIds: number[];
+      needsProfile: string;
+    }>;
+  }> {
+    if (!this.apiKey) {
+      this.logger.warn(
+        "Groq API Key is not configured.",
+        "GroqService",
+        requestId,
+      );
+      throw new ServiceUnavailableException("Groq API Key is not configured");
+    }
+
+    const systemPrompt = `You are an AI clustering assistant for hotel allocation.
+Cluster bookings by semantic similarity of special needs using specialNotes and additionalNotes.
+
+You MUST respond with a valid JSON object in this exact format:
+{
+  "subGroups": [
+    {
+      "id": "accessibility",
+      "label": "Accessibility Requirements",
+      "bookingIds": [10, 14],
+      "needsProfile": "wheelchair access, ground floor rooms, accessible bathroom"
+    }
+  ]
+}
+
+Rules:
+- bookingIds must only include IDs from the provided input.
+- Every booking ID must appear in exactly one subgroup.
+- Use stable subgroup IDs (kebab-case), and include a "standard" subgroup for generic/no-special-needs bookings.
+- Return JSON only.`;
+
+    const userPrompt = `Bookings to cluster:\n${JSON.stringify(classBookings, null, 2)}`;
+
+    try {
+      this.logger.info(
+        "Calling Groq API for booking sub-grouping",
+        "GroqService",
+        requestId,
+        { model: this.model, bookingCount: classBookings.length },
+      );
+
+      const response = await fetch(this.apiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: this.model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.1,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+          `Groq API returned status ${response.status}: ${errorText}`,
+        );
+      }
+
+      const responseData = await response.json();
+      const content = responseData?.choices?.[0]?.message?.content;
+      if (!content) {
+        throw new Error("Empty message content received from Groq API");
+      }
+
+      const parsed = JSON.parse(content) as {
+        subGroups?: Array<{
+          id?: string;
+          label?: string;
+          bookingIds?: number[];
+          needsProfile?: string;
+        }>;
+      };
+
+      const knownIds = new Set(classBookings.map((booking) => booking.id));
+      const validGroups = (parsed.subGroups ?? [])
+        .map((group) => ({
+          id: String(group.id ?? "standard").trim() || "standard",
+          label: String(group.label ?? "Standard").trim() || "Standard",
+          bookingIds: (group.bookingIds ?? []).filter((id) => knownIds.has(id)),
+          needsProfile:
+            String(group.needsProfile ?? "standard requirements").trim() ||
+            "standard requirements",
+        }))
+        .filter((group) => group.bookingIds.length > 0);
+
+      if (validGroups.length === 0) {
+        return {
+          subGroups: [
+            {
+              id: "standard",
+              label: "Standard",
+              bookingIds: classBookings.map((booking) => booking.id),
+              needsProfile: "standard requirements",
+            },
+          ],
+        };
+      }
+
+      return { subGroups: validGroups };
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to sub-group bookings with Groq API: ${error.message}`,
+        "GroqService",
+        requestId,
+        { stack: error.stack },
+      );
+      throw new ServiceUnavailableException(
+        `Groq API sub-grouping failed: ${error.message}`,
+      );
+    }
+  }
+
+  async scoreHotelsForSubGroup(
+    subGroupProfile: {
+      travelClass: string;
+      classPriority: number;
+      needsProfile: string;
+      totalPassengers: number;
+      bookingCount: number;
+    },
+    hotels: HotelScoreInput[],
+    requestId: string,
+  ): Promise<{
+    scoredHotels: Array<{
+      hotelId: string;
+      score: number;
+      reason: string;
+    }>;
+  }> {
+    if (!this.apiKey) {
+      this.logger.warn(
+        "Groq API Key is not configured.",
+        "GroqService",
+        requestId,
+      );
+      throw new ServiceUnavailableException("Groq API Key is not configured");
+    }
+
+    const systemPrompt = `You are an AI scoring assistant for flight-disruption hotel allocation.
+Score each hotel from 1 to 100 for the provided subgroup profile.
+
+You MUST return a valid JSON object in this exact format:
+{
+  "scoredHotels": [
+    {
+      "hotelId": "hb-1234",
+      "score": 95,
+      "reason": "5-star, fully accessible, restaurant on-site, 2km from airport"
+    }
+  ]
+}
+
+Rules:
+- Include only hotelIds from the input list.
+- Prefer hotels matching subgroup needs, class priority, available rooms, stars, and price suitability.
+- Return JSON only.`;
+
+    const userPrompt = JSON.stringify(
+      {
+        subGroup: subGroupProfile,
+        hotels,
+      },
+      null,
+      2,
+    );
+
+    try {
+      this.logger.info(
+        "Calling Groq API for subgroup hotel scoring",
+        "GroqService",
+        requestId,
+        { model: this.model, hotelCount: hotels.length },
+      );
+
+      const response = await fetch(this.apiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: this.model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.1,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+          `Groq API returned status ${response.status}: ${errorText}`,
+        );
+      }
+
+      const responseData = await response.json();
+      const content = responseData?.choices?.[0]?.message?.content;
+      if (!content) {
+        throw new Error("Empty message content received from Groq API");
+      }
+
+      const parsed = JSON.parse(content) as {
+        scoredHotels?: Array<{
+          hotelId?: string;
+          score?: number;
+          reason?: string;
+        }>;
+      };
+
+      const knownIds = new Set(hotels.map((hotel) => hotel.id));
+      const scoredHotels = (parsed.scoredHotels ?? [])
+        .filter((hotel) => knownIds.has(String(hotel.hotelId ?? "")))
+        .map((hotel) => ({
+          hotelId: String(hotel.hotelId),
+          score: Math.max(1, Math.min(100, Number(hotel.score ?? 50))),
+          reason: String(hotel.reason ?? "No reason provided").trim(),
+        }))
+        .sort((a, b) => b.score - a.score);
+
+      if (scoredHotels.length === 0) {
+        return {
+          scoredHotels: hotels
+            .map((hotel) => ({
+              hotelId: hotel.id,
+              score: 50,
+              reason: "Default score applied",
+            }))
+            .sort((a, b) => b.score - a.score),
+        };
+      }
+
+      return { scoredHotels };
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to score hotels with Groq API: ${error.message}`,
+        "GroqService",
+        requestId,
+        { stack: error.stack },
+      );
+      throw new ServiceUnavailableException(
+        `Groq API hotel scoring failed: ${error.message}`,
+      );
     }
   }
 }

@@ -64,6 +64,22 @@ export class CancelledFlightsRepository {
     });
   }
 
+  async findFlightWithBookingsRelations(
+    id: number,
+    requestId: string,
+  ): Promise<CancelledFlightEntity | null> {
+    this.logger.debug(
+      "Finding cancelled flight with bookings and relations",
+      "CancelledFlightsRepository",
+      requestId,
+      { id },
+    );
+    return this.flightRepo.findOne({
+      where: { id },
+      relations: ["airline", "departureAirport", "arrivalAirport", "bookings"],
+    });
+  }
+
   async updateFlightStatus({
     cancelledFlightEntity,
     status,
@@ -321,5 +337,67 @@ export class CancelledFlightsRepository {
     );
     const entity = this.allocationRepo.create(payload);
     return this.allocationRepo.save(entity);
+  }
+
+  async saveHotelAllocationsBulk(
+    payloads: Partial<HotelAllocationEntity>[],
+    requestId: string,
+  ): Promise<HotelAllocationEntity[]> {
+    this.logger.debug(
+      "Bulk saving hotel allocations",
+      "CancelledFlightsRepository",
+      requestId,
+      { count: payloads.length },
+    );
+    if (payloads.length === 0) {
+      return [];
+    }
+    const entities = payloads.map((payload) => this.allocationRepo.create(payload));
+    return this.allocationRepo.save(entities);
+  }
+
+  async countHotelAllocationsByFlightId(
+    cancelledFlightId: number,
+    requestId: string,
+  ): Promise<number> {
+    this.logger.debug(
+      "Counting hotel allocations by flight id",
+      "CancelledFlightsRepository",
+      requestId,
+      { cancelledFlightId },
+    );
+    return this.allocationRepo.count({ where: { cancelledFlightId } });
+  }
+
+  async updateFlightHotelTotals(
+    cancelledFlightEntity: CancelledFlightEntity,
+    totals: {
+      totalHotelRooms: number;
+      totalPrice: number;
+      totalBuyingPrice: number;
+      totalSellingPrice: number;
+      totalPlatformFee: number;
+      totalEarnings: number;
+    },
+    requestId: string,
+  ): Promise<CancelledFlightEntity> {
+    this.logger.debug(
+      "Updating cancelled flight hotel totals",
+      "CancelledFlightsRepository",
+      requestId,
+      {
+        flightId: cancelledFlightEntity.id,
+        totals,
+      },
+    );
+
+    cancelledFlightEntity.totalHotelRooms = totals.totalHotelRooms;
+    cancelledFlightEntity.totalPrice = totals.totalPrice;
+    cancelledFlightEntity.totalBuyingPrice = totals.totalBuyingPrice;
+    cancelledFlightEntity.totalSellingPrice = totals.totalSellingPrice;
+    cancelledFlightEntity.totalPlatformFee = totals.totalPlatformFee;
+    cancelledFlightEntity.totalEarnings = totals.totalEarnings;
+
+    return this.flightRepo.save(cancelledFlightEntity);
   }
 }

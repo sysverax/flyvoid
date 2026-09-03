@@ -64,6 +64,7 @@ import {
   UpdateBookingDto,
   ReviewCancelledFlightResponseDto,
   AllocateHotelDto,
+  AllocateHotelsResponseDto,
   CheckRateRequestDto,
   BookHotelRequestDto,
 } from "./dto";
@@ -79,6 +80,7 @@ import { AuthenticatedRequest } from "../auth/interfaces/authenticated-request.i
   CancelledFlightResponseDto,
   BookingResponseDto,
   ImportBookingResponseDto,
+  AllocateHotelsResponseDto,
 )
 export class CancelledFlightsController {
   constructor(private readonly service: CancelledFlightsService) {}
@@ -519,6 +521,45 @@ export class CancelledFlightsController {
       data,
       requestId,
       "Hotel allocated successfully",
+    );
+  }
+
+  // ── POST /cancelled-flights/:cancelledFlightId/allocate-hotels ───────────
+
+  @Post(":cancelledFlightId/allocate-hotels")
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.EDIT],
+    },
+  })
+  @ApiOperation({
+    summary: "Allocate and book hotels for all confirmed bookings of a flight",
+    description:
+      "Performs bulk AI-driven hotel allocation and immediate booking for all confirmed PNR bookings under the cancelled flight.",
+  })
+  @ApiParam({
+    name: "cancelledFlightId",
+    description: "Cancelled flight UUID",
+  })
+  @ApiConflictResponse({
+    schema: createConflictErrorSchema(
+      "/api/v1/cancelled-flights/:cancelledFlightId/allocate-hotels",
+      "Allocations already exist for this flight",
+    ),
+  })
+  async allocateHotelsForFlight(
+    @Param("cancelledFlightId", ParseIntPipe) cancelledFlightId: number,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<AllocateHotelsResponseDto>> {
+    const data = await this.service.allocateHotelsForFlight(
+      cancelledFlightId,
+      requestId,
+    );
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Hotels allocated successfully",
     );
   }
 

@@ -10,5 +10,6 @@ export * from "./cancelled-flight-list-response.dto";
 export * from "./review-cancelled-flight-response.dto";
 
 export * from "./allocate-hotel.dto";
+export * from "./allocate-hotels-response.dto";
 export * from "./check-rate-request.dto";
 export * from "./book-hotel-request.dto";

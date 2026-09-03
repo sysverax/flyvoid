@@ -18,6 +18,7 @@ import {
 import {
   CreateCancelledFlightDto,
   CreateBookingDto,
+  AllocateHotelsResponseDto,
   BookingResponseDto,
   UpdateBookingDto,
   CancelledFlightResponseDto,
@@ -27,13 +28,22 @@ import {
   BookHotelRequestDto,
 } from "./dto";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
+import { AirlineEntity } from "../airline/entities/airline.entity";
 import { PaginationQueryDto } from "../common/dto/pagination-query.dto";
-import { HotelPartnerService } from "./hotel-partner.service";
+import { HotelCandidate, HotelPartnerService } from "./hotel-partner.service";
 import { GroqService } from "../common/groq/groq.service";
+import { HotelAllocationEntity } from "./entities/hotel-allocation.entity";
 
 @Injectable()
 export class CancelledFlightsService {
   private readonly context = "CancelledFlightsService";
+  private readonly classPriorityMap: Record<string, number> = {
+    first: 1,
+    first_class: 1,
+    business: 2,
+    premium_economy: 3,
+    economy: 4,
+  };
 
   constructor(
     private readonly cancelledFlightsRepository: CancelledFlightsRepository,
@@ -913,5 +923,1045 @@ export class CancelledFlightsService {
         status: allocation.status,
       },
     };
+  }
+
+  async allocateHotelsForFlight(
+    cancelledFlightId: number,
+    requestId: string,
+  ): Promise<AllocateHotelsResponseDto> {
+    this.logger.debug(
+      `Starting bulk hotel allocation for flight: ${cancelledFlightId}`,
+      this.context,
+      requestId,
+    );
+
+    const flight =
+      await this.cancelledFlightsRepository.findFlightWithBookingsRelations(
+        cancelledFlightId,
+        requestId,
+      );
+
+    if (!flight) {
+      throw new NotFoundException(
+        `Cancelled flight '${cancelledFlightId}' not found`,
+      );
+    }
+
+    if (flight.status !== FlightStatus.PASSENGERS_BOOKING_CONFIRMED) {
+      throw new BadRequestException(
+        `Flight '${cancelledFlightId}' is not ready for hotel allocation`,
+      );
+    }
+
+    const existingAllocationsCount =
+      await this.cancelledFlightsRepository.countHotelAllocationsByFlightId(
+        cancelledFlightId,
+        requestId,
+      );
+
+    if (existingAllocationsCount > 0) {
+      throw new ConflictException(
+        `Hotel allocations already exist for flight '${cancelledFlightId}'`,
+      );
+    }
+
+    // PASSENGERS_BOOKING_CONFIRMED means all bookings on this flight are confirmed.
+    const confirmedBookings = flight.bookings ?? [];
+
+    if (confirmedBookings.length === 0) {
+      throw new BadRequestException(
+        `No confirmed bookings found for flight '${cancelledFlightId}'`,
+      );
+    }
+
+    const checkIn = flight.cancellationDate;
+    if (!checkIn) {
+      throw new BadRequestException(
+        `Cancellation date not found for flight '${cancelledFlightId}'`,
+      );
+    }
+
+    const checkOut = this.getDatePlusDays(checkIn, 1);
+
+    const airlinePreferences = this.getAirlineHotelPreferences(flight.airline);
+    const departureAirport = flight.departureAirport;
+    if (!departureAirport) {
+      throw new NotFoundException(
+        `Departure airport not found for flight '${cancelledFlightId}'`,
+      );
+    }
+
+    try {
+      await this.cancelledFlightsRepository.updateFlightStatus({
+        cancelledFlightEntity: flight,
+        status: FlightStatus.HOTEL_ALLOCATION_IN_PROGRESS,
+        passengerBookingStats: {
+          totalBookings: null,
+          totalAdults: null,
+          totalChildren: null,
+        },
+        HotelBookingStats: null,
+        requestId,
+      });
+
+      const hotels = await this.hotelPartnerService.searchNearbyHotels(
+        {
+          iataCode: departureAirport.iataCode,
+          latitude: Number(departureAirport.latitude),
+          longitude: Number(departureAirport.longitude),
+        },
+        checkIn,
+        checkOut,
+        requestId,
+        {
+          radiusKm: airlinePreferences.maxDistanceKm,
+          allowedStars: airlinePreferences.allowedStars,
+        },
+      );
+
+      if (hotels.length === 0) {
+        throw new NotFoundException(
+          `No hotels found near airport '${departureAirport.iataCode}'`,
+        );
+      }
+
+      const bookingMap = new Map<number, BookingEntity>(
+        confirmedBookings.map((booking) => [booking.id, booking]),
+      );
+
+      const inventoryState = this.initializeInventoryState(hotels);
+      const groupedByClass = this.groupBookingsByClass(confirmedBookings);
+
+      const successfulAllocations: AllocateHotelsResponseDto["allocations"] =
+        [];
+      const failedAllocations: AllocateHotelsResponseDto["failedAllocations"] =
+        [];
+      const allocationEntitiesPayload: Array<Partial<HotelAllocationEntity>> =
+        [];
+
+      for (const classGroup of groupedByClass) {
+        const classSubGroups = await this.groqService.subGroupBySpecialNotes(
+          classGroup.bookings.map((booking) => ({
+            id: booking.id,
+            pnr: booking.pnr,
+            specialNotes: (booking.specialNotes ?? []) as string[],
+            additionalNotes: booking.additionalNotes,
+          })),
+          requestId,
+        );
+
+        for (const subGroup of classSubGroups.subGroups) {
+          const subgroupBookings = this.resolveSubGroupBookings(
+            subGroup.bookingIds,
+            classGroup.bookings,
+            bookingMap,
+          );
+
+          if (subgroupBookings.length === 0) {
+            continue;
+          }
+
+          const isAccessibilityGroup = this.isAccessibilitySubGroup(subGroup);
+          const candidateHotels = hotels.filter((hotel) => {
+            const hasInventory =
+              (inventoryState.get(hotel.id)?.remainingRooms ?? 0) > 0;
+            if (!hasInventory) {
+              return false;
+            }
+            if (isAccessibilityGroup) {
+              return hotel.isAccessible;
+            }
+            return true;
+          });
+
+          if (candidateHotels.length === 0) {
+            for (const booking of subgroupBookings) {
+              failedAllocations.push({
+                bookingId: booking.id,
+                pnr: booking.pnr,
+                reason: isAccessibilityGroup
+                  ? "No accessible hotels available for this subgroup"
+                  : "No hotels available for this subgroup",
+                status: "allocation_failed",
+              });
+            }
+            continue;
+          }
+
+          const totalPassengers = subgroupBookings.reduce(
+            (sum, booking) => sum + booking.adults + booking.children,
+            0,
+          );
+
+          const scored = await this.groqService.scoreHotelsForSubGroup(
+            {
+              travelClass: classGroup.travelClass,
+              classPriority: classGroup.priority,
+              needsProfile: subGroup.needsProfile,
+              totalPassengers,
+              bookingCount: subgroupBookings.length,
+            },
+            candidateHotels.map((hotel) => ({
+              id: hotel.id,
+              name: hotel.name,
+              stars: hotel.stars,
+              amenities: hotel.amenities,
+              minRate: hotel.minRate,
+              isAccessible: hotel.isAccessible,
+              totalAvailableRooms:
+                inventoryState.get(hotel.id)?.remainingRooms ??
+                hotel.totalAvailableRooms,
+            })),
+            requestId,
+          );
+
+          const scoredHotelIds = scored.scoredHotels.map(
+            (hotel) => hotel.hotelId,
+          );
+          const scoredHotels = this.sortHotelsByScoring(
+            candidateHotels,
+            scoredHotelIds,
+          );
+
+          const bookingContext = {
+            checkIn,
+            checkOut,
+            subgroupId: subGroup.id,
+            requestId,
+            airport: {
+              iataCode: departureAirport.iataCode,
+              latitude: Number(departureAirport.latitude),
+              longitude: Number(departureAirport.longitude),
+            },
+            airlinePreferences,
+          };
+
+          const reservedPlans: Array<{
+            booking: BookingEntity;
+            reservedHotel: HotelCandidate;
+            reservedHotelIndex: number;
+            rooms: Array<{
+              roomType: string;
+              capacity: number;
+              pricePerNight: number;
+              totalCost: number;
+              rateKey: string;
+            }>;
+            rateKey: string;
+            totalCost: number;
+            scoredHotels: HotelCandidate[];
+            bookingContext: typeof bookingContext;
+          }> = [];
+
+          for (const booking of subgroupBookings) {
+            const reservation = this.reserveRoomsForBooking(
+              booking,
+              scoredHotels,
+              inventoryState,
+              bookingContext,
+            );
+
+            if (!reservation.success) {
+              failedAllocations.push({
+                bookingId: booking.id,
+                pnr: booking.pnr,
+                reason: reservation.reason ?? "Failed to match rooms",
+                status: "allocation_failed",
+              });
+              continue;
+            }
+
+            reservedPlans.push(reservation.plan);
+          }
+
+          for (const plan of reservedPlans) {
+            const bookingAttempt = await this.bookReservedPlan(
+              plan,
+              inventoryState,
+            );
+            if (!bookingAttempt.success) {
+              failedAllocations.push({
+                bookingId: plan.booking.id,
+                pnr: plan.booking.pnr,
+                reason:
+                  bookingAttempt.reason ?? "Failed to book allocated hotel",
+                status: "allocation_failed",
+              });
+              continue;
+            }
+
+            const allocation = bookingAttempt.allocation;
+            successfulAllocations.push(allocation.responseItem);
+            allocationEntitiesPayload.push(allocation.entityPayload);
+          }
+        }
+      }
+
+      await this.cancelledFlightsRepository.saveHotelAllocationsBulk(
+        allocationEntitiesPayload,
+        requestId,
+      );
+
+      const totals = successfulAllocations.reduce(
+        (acc, item) => {
+          acc.totalRooms += item.totalRooms;
+          acc.totalPrice += item.totalCost;
+          acc.totalBuyingPrice += item.buyingPrice;
+          acc.totalSellingPrice += item.sellingPrice;
+          acc.totalPlatformFee += item.platformFee;
+          acc.totalEarnings += item.earnings;
+          return acc;
+        },
+        {
+          totalRooms: 0,
+          totalPrice: 0,
+          totalBuyingPrice: 0,
+          totalSellingPrice: 0,
+          totalPlatformFee: 0,
+          totalEarnings: 0,
+        },
+      );
+
+      const allocationStatus =
+        successfulAllocations.length > 0
+          ? FlightStatus.ALLOCATED
+          : FlightStatus.PASSENGERS_BOOKING_CONFIRMED;
+
+      const updatedFlight =
+        await this.cancelledFlightsRepository.updateFlightStatus({
+          cancelledFlightEntity: flight,
+          status: allocationStatus,
+          passengerBookingStats: {
+            totalBookings: null,
+            totalAdults: null,
+            totalChildren: null,
+          },
+          HotelBookingStats: {
+            totalHotelRooms: totals.totalRooms,
+            totalPrice: totals.totalPrice,
+            totalBuyingPrice: totals.totalBuyingPrice,
+            totalSellingPrice: totals.totalSellingPrice,
+            totalPlatformFee: totals.totalPlatformFee,
+            totalEarnings: totals.totalEarnings,
+          },
+          requestId,
+        });
+
+      this.logger.info(
+        "Bulk hotel allocation completed",
+        this.context,
+        requestId,
+        {
+          flightId: cancelledFlightId,
+          successfulAllocations: successfulAllocations.length,
+          failedAllocations: failedAllocations.length,
+        },
+      );
+
+      return {
+        flightId: updatedFlight.id,
+        flightNumber: updatedFlight.flightNumber,
+        status: "allocation_complete",
+        summary: {
+          totalPNRs: confirmedBookings.length,
+          successfulAllocations: successfulAllocations.length,
+          failedAllocations: failedAllocations.length,
+          totalRoomsAllocated: totals.totalRooms,
+          totalCost: Number(totals.totalPrice.toFixed(2)),
+        },
+        allocations: successfulAllocations,
+        failedAllocations,
+      };
+    } catch (error) {
+      this.logger.error(
+        "Bulk hotel allocation failed; restoring flight status",
+        this.context,
+        requestId,
+        { flightId: cancelledFlightId, error },
+      );
+      await this.cancelledFlightsRepository.updateFlightStatus({
+        cancelledFlightEntity: flight,
+        status: FlightStatus.PASSENGERS_BOOKING_CONFIRMED,
+        passengerBookingStats: {
+          totalBookings: null,
+          totalAdults: null,
+          totalChildren: null,
+        },
+        HotelBookingStats: null,
+        requestId,
+      });
+      throw error;
+    }
+  }
+
+  private getDatePlusDays(date: string, days: number): string {
+    const parsed = new Date(date);
+    if (isNaN(parsed.getTime())) {
+      throw new BadRequestException(`Invalid date '${date}'`);
+    }
+    parsed.setDate(parsed.getDate() + days);
+    return parsed.toISOString().split("T")[0];
+  }
+
+  private getAirlineHotelPreferences(airline: AirlineEntity): {
+    allowedStars: number[];
+    maxDistanceKm: number;
+  } {
+    const record = airline as AirlineEntity & {
+      hotelPreferences?: Record<string, unknown>;
+      hotel_preferences?: Record<string, unknown>;
+    };
+    const preferences = (record.hotelPreferences ??
+      record.hotel_preferences ??
+      {}) as Record<string, unknown>;
+
+    const starSource =
+      preferences.allowedStars ??
+      preferences.allowed_stars ??
+      preferences.stars;
+    const allowedStars = Array.isArray(starSource)
+      ? starSource
+          .map((star) => Number(star))
+          .filter((star) => Number.isFinite(star) && star >= 1 && star <= 5)
+      : [];
+
+    const maxDistanceRaw = Number(
+      preferences.maxDistanceKm ?? preferences.max_distance_km ?? 20,
+    );
+
+    return {
+      allowedStars,
+      maxDistanceKm:
+        Number.isFinite(maxDistanceRaw) && maxDistanceRaw > 0
+          ? maxDistanceRaw
+          : 20,
+    };
+  }
+
+  private groupBookingsByClass(bookings: BookingEntity[]): Array<{
+    travelClass: string;
+    priority: number;
+    bookings: BookingEntity[];
+  }> {
+    const grouped = new Map<string, BookingEntity[]>();
+    for (const booking of bookings) {
+      const key = String(booking.travelClass ?? "unknown").toLowerCase();
+      if (!grouped.has(key)) {
+        grouped.set(key, []);
+      }
+      grouped.get(key)!.push(booking);
+    }
+
+    return Array.from(grouped.entries())
+      .map(([travelClass, classBookings]) => ({
+        travelClass,
+        priority: this.classPriorityMap[travelClass] ?? 99,
+        bookings: classBookings,
+      }))
+      .sort((a, b) => a.priority - b.priority);
+  }
+
+  private resolveSubGroupBookings(
+    bookingIds: number[],
+    classBookings: BookingEntity[],
+    bookingMap: Map<number, BookingEntity>,
+  ): BookingEntity[] {
+    const selected = bookingIds
+      .map((bookingId) => bookingMap.get(bookingId))
+      .filter((booking): booking is BookingEntity => !!booking);
+
+    if (selected.length > 0) {
+      return selected;
+    }
+
+    return classBookings;
+  }
+
+  private isAccessibilitySubGroup(subGroup: {
+    id: string;
+    label: string;
+    needsProfile: string;
+  }): boolean {
+    return /accessib|wheelchair|mobility|medical/i.test(
+      `${subGroup.id} ${subGroup.label} ${subGroup.needsProfile}`,
+    );
+  }
+
+  private initializeInventoryState(hotels: HotelCandidate[]): Map<
+    string,
+    {
+      remainingRooms: number;
+      roomTypeAvailability: Map<string, number>;
+    }
+  > {
+    const state = new Map<
+      string,
+      {
+        remainingRooms: number;
+        roomTypeAvailability: Map<string, number>;
+      }
+    >();
+
+    for (const hotel of hotels) {
+      const roomTypeAvailability = new Map<string, number>();
+      for (const roomType of hotel.roomTypes) {
+        roomTypeAvailability.set(
+          roomType.rateKey,
+          Math.max(0, Math.floor(roomType.available)),
+        );
+      }
+
+      state.set(hotel.id, {
+        remainingRooms: Math.max(
+          0,
+          Math.floor(
+            hotel.totalAvailableRooms ||
+              hotel.roomTypes.reduce(
+                (sum, roomType) => sum + roomType.available,
+                0,
+              ) ||
+              0,
+          ),
+        ),
+        roomTypeAvailability,
+      });
+    }
+
+    return state;
+  }
+
+  private sortHotelsByScoring(
+    hotels: HotelCandidate[],
+    scoredHotelIds: string[],
+  ): HotelCandidate[] {
+    const scoreOrder = new Map<string, number>();
+    scoredHotelIds.forEach((hotelId, index) => {
+      scoreOrder.set(hotelId, index);
+    });
+
+    return [...hotels].sort((a, b) => {
+      const aIndex = scoreOrder.has(a.id)
+        ? (scoreOrder.get(a.id) as number)
+        : Number.MAX_SAFE_INTEGER;
+      const bIndex = scoreOrder.has(b.id)
+        ? (scoreOrder.get(b.id) as number)
+        : Number.MAX_SAFE_INTEGER;
+      return aIndex - bIndex;
+    });
+  }
+
+  private reserveRoomsForBooking(
+    booking: BookingEntity,
+    scoredHotels: HotelCandidate[],
+    inventoryState: Map<
+      string,
+      {
+        remainingRooms: number;
+        roomTypeAvailability: Map<string, number>;
+      }
+    >,
+    bookingContext: {
+      checkIn: string;
+      checkOut: string;
+      subgroupId: string;
+      requestId: string;
+      airport: { iataCode: string; latitude: number; longitude: number };
+      airlinePreferences: { allowedStars: number[]; maxDistanceKm: number };
+    },
+  ):
+    | {
+        success: true;
+        plan: {
+          booking: BookingEntity;
+          reservedHotel: HotelCandidate;
+          reservedHotelIndex: number;
+          rooms: Array<{
+            roomType: string;
+            capacity: number;
+            pricePerNight: number;
+            totalCost: number;
+            rateKey: string;
+          }>;
+          rateKey: string;
+          totalCost: number;
+          scoredHotels: HotelCandidate[];
+          bookingContext: {
+            checkIn: string;
+            checkOut: string;
+            subgroupId: string;
+            requestId: string;
+            airport: { iataCode: string; latitude: number; longitude: number };
+            airlinePreferences: {
+              allowedStars: number[];
+              maxDistanceKm: number;
+            };
+          };
+        };
+      }
+    | { success: false; reason: string } {
+    const totalPassengers = booking.adults + booking.children;
+
+    for (
+      let hotelIndex = 0;
+      hotelIndex < scoredHotels.length;
+      hotelIndex += 1
+    ) {
+      const hotel = scoredHotels[hotelIndex];
+      const reservation = this.tryReserveRooms(
+        hotel,
+        inventoryState,
+        totalPassengers,
+      );
+
+      if (!reservation.success) {
+        continue;
+      }
+
+      return {
+        success: true,
+        plan: {
+          booking,
+          reservedHotel: hotel,
+          reservedHotelIndex: hotelIndex,
+          rooms: reservation.rooms,
+          rateKey: reservation.rateKey,
+          totalCost: reservation.totalCost,
+          scoredHotels,
+          bookingContext,
+        },
+      };
+    }
+
+    return {
+      success: false,
+      reason: "No available rooms matching passenger requirements",
+    };
+  }
+
+  private async bookReservedPlan(
+    plan: {
+      booking: BookingEntity;
+      reservedHotel: HotelCandidate;
+      reservedHotelIndex: number;
+      rooms: Array<{
+        roomType: string;
+        capacity: number;
+        pricePerNight: number;
+        totalCost: number;
+        rateKey: string;
+      }>;
+      rateKey: string;
+      totalCost: number;
+      scoredHotels: HotelCandidate[];
+      bookingContext: {
+        checkIn: string;
+        checkOut: string;
+        subgroupId: string;
+        requestId: string;
+        airport: { iataCode: string; latitude: number; longitude: number };
+        airlinePreferences: { allowedStars: number[]; maxDistanceKm: number };
+      };
+    },
+    inventoryState: Map<
+      string,
+      {
+        remainingRooms: number;
+        roomTypeAvailability: Map<string, number>;
+      }
+    >,
+  ): Promise<
+    | {
+        success: true;
+        allocation: {
+          responseItem: AllocateHotelsResponseDto["allocations"][number];
+          entityPayload: Partial<HotelAllocationEntity>;
+        };
+      }
+    | { success: false; reason: string }
+  > {
+    const booking = plan.booking;
+    const nights = 1;
+    let activeHotel = plan.reservedHotel;
+    let activeRooms = plan.rooms;
+    let activeRateKey = plan.rateKey;
+
+    for (
+      let hotelIndex = plan.reservedHotelIndex;
+      hotelIndex < plan.scoredHotels.length;
+      hotelIndex += 1
+    ) {
+      if (hotelIndex !== plan.reservedHotelIndex) {
+        const nextHotel = plan.scoredHotels[hotelIndex];
+        const reReserve = this.tryReserveRooms(
+          nextHotel,
+          inventoryState,
+          booking.adults + booking.children,
+        );
+        if (!reReserve.success) {
+          continue;
+        }
+        activeHotel = nextHotel;
+        activeRooms = reReserve.rooms;
+        activeRateKey = reReserve.rateKey;
+      }
+
+      try {
+        const bookingResult = await this.hotelPartnerService.bookHotelByParams(
+          {
+            firstName: booking.firstName,
+            lastName: booking.lastName,
+            bookingId: booking.id,
+            pnr: booking.pnr,
+            rateKey: activeRateKey,
+          },
+          plan.bookingContext.requestId,
+        );
+
+        const calculatedPrice = Number(
+          (
+            activeRooms.reduce((sum, room) => sum + room.totalCost, 0) * nights
+          ).toFixed(2),
+        );
+        const price = Number(
+          (bookingResult.price || calculatedPrice || plan.totalCost).toFixed(2),
+        );
+        const buyingPrice = Number(
+          (bookingResult.buyingPrice || price).toFixed(2),
+        );
+        const platformFee = Number((price * 0.05).toFixed(2));
+        const sellingPrice = Number((buyingPrice + platformFee).toFixed(2));
+        const earnings = Number(
+          (sellingPrice - buyingPrice - platformFee).toFixed(2),
+        );
+
+        const responseItem: AllocateHotelsResponseDto["allocations"][number] = {
+          bookingId: booking.id,
+          pnr: booking.pnr,
+          passengerName: `${booking.firstName} ${booking.lastName}`,
+          travelClass: String(booking.travelClass),
+          subGroup: plan.bookingContext.subgroupId,
+          adults: booking.adults,
+          children: booking.children,
+          hotel: {
+            name: activeHotel.name,
+            address: activeHotel.address,
+            stars: activeHotel.stars,
+            checkIn: plan.bookingContext.checkIn,
+            checkOut: plan.bookingContext.checkOut,
+          },
+          rooms: activeRooms.map((room) => ({
+            roomType: room.roomType,
+            capacity: room.capacity,
+            pricePerNight: Number(room.pricePerNight.toFixed(2)),
+            totalCost: Number(room.totalCost.toFixed(2)),
+          })),
+          totalRooms: activeRooms.length,
+          totalCost: price,
+          buyingPrice,
+          sellingPrice,
+          platformFee,
+          earnings,
+          bookingReference: bookingResult.bookingReference,
+          vendor: "hotelbeds",
+          status: HotelAllocationStatus.CONFIRMED,
+        };
+
+        return {
+          success: true,
+          allocation: {
+            responseItem,
+            entityPayload: {
+              cancelledFlightId: booking.cancelledFlightId,
+              bookingId: booking.id,
+              hotelName: activeHotel.name,
+              hotelAddress: activeHotel.address,
+              checkInDate: plan.bookingContext.checkIn,
+              checkOutDate: plan.bookingContext.checkOut,
+              totalRooms: activeRooms.length,
+              costPerRoom: Number((price / activeRooms.length).toFixed(2)),
+              bookingReference: bookingResult.bookingReference,
+              status: HotelAllocationStatus.CONFIRMED,
+              rateKey: activeRateKey,
+              price,
+              buyingPrice,
+              sellingPrice,
+              platformFee,
+              earnings,
+            },
+          },
+        };
+      } catch (error: any) {
+        const errorMessage = String(error?.message ?? "Booking failed");
+        this.releaseReservedRooms(activeHotel, inventoryState, activeRooms);
+
+        if (this.isRateKeyExpiredError(errorMessage)) {
+          const refreshedRateKey = await this.refreshRateKeyForHotel(
+            activeHotel,
+            booking.adults + booking.children,
+            plan.bookingContext,
+            activeRooms,
+          );
+
+          if (refreshedRateKey) {
+            const retryReservation = this.tryReserveRooms(
+              activeHotel,
+              inventoryState,
+              booking.adults + booking.children,
+              refreshedRateKey,
+            );
+            if (retryReservation.success) {
+              activeRooms = retryReservation.rooms;
+              activeRateKey = refreshedRateKey;
+              // Move the loop counter back so its increment retries this same hotel once.
+              hotelIndex -= 1;
+              continue;
+            }
+          }
+        }
+      }
+    }
+
+    return {
+      success: false,
+      reason: "Booking failed for all scored hotels",
+    };
+  }
+
+  private tryReserveRooms(
+    hotel: HotelCandidate,
+    inventoryState: Map<
+      string,
+      {
+        remainingRooms: number;
+        roomTypeAvailability: Map<string, number>;
+      }
+    >,
+    totalPassengers: number,
+    preferredRateKey?: string,
+  ):
+    | {
+        success: true;
+        rooms: Array<{
+          roomType: string;
+          capacity: number;
+          pricePerNight: number;
+          totalCost: number;
+          rateKey: string;
+        }>;
+        rateKey: string;
+        totalCost: number;
+      }
+    | { success: false; reason: string } {
+    const hotelState = inventoryState.get(hotel.id);
+    if (!hotelState || hotelState.remainingRooms <= 0) {
+      return { success: false, reason: "Hotel is full" };
+    }
+
+    const availableRoomTypes = hotel.roomTypes.filter((roomType) => {
+      const availability =
+        hotelState.roomTypeAvailability.get(roomType.rateKey) ?? 0;
+      return availability > 0;
+    });
+
+    if (availableRoomTypes.length === 0) {
+      const fallbackRoomsNeeded = Math.ceil(totalPassengers / 2);
+      if (hotelState.remainingRooms < fallbackRoomsNeeded) {
+        return {
+          success: false,
+          reason: "No room type inventory and fallback rooms unavailable",
+        };
+      }
+
+      hotelState.remainingRooms -= fallbackRoomsNeeded;
+      const fallbackRateKey = preferredRateKey || hotel.rateKey;
+      if (!fallbackRateKey) {
+        hotelState.remainingRooms += fallbackRoomsNeeded;
+        return { success: false, reason: "No valid rate key available" };
+      }
+
+      const rooms = Array.from({ length: fallbackRoomsNeeded }).map(() => ({
+        roomType: "Standard Room",
+        capacity: 2,
+        pricePerNight: Number(hotel.minRate),
+        totalCost: Number(hotel.minRate),
+        rateKey: fallbackRateKey,
+      }));
+
+      return {
+        success: true,
+        rooms,
+        rateKey: fallbackRateKey,
+        totalCost: rooms.reduce((sum, room) => sum + room.totalCost, 0),
+      };
+    }
+
+    const sortedByCapacityAsc = [...availableRoomTypes].sort(
+      (a, b) => a.capacity - b.capacity,
+    );
+
+    const singleRoom = sortedByCapacityAsc.find(
+      (roomType) => roomType.capacity >= totalPassengers,
+    );
+
+    if (singleRoom) {
+      const availability =
+        hotelState.roomTypeAvailability.get(singleRoom.rateKey) ?? 0;
+      if (availability <= 0) {
+        return {
+          success: false,
+          reason: "Selected room type is not available",
+        };
+      }
+      hotelState.roomTypeAvailability.set(singleRoom.rateKey, availability - 1);
+      hotelState.remainingRooms -= 1;
+
+      return {
+        success: true,
+        rooms: [
+          {
+            roomType: singleRoom.type,
+            capacity: singleRoom.capacity,
+            pricePerNight: singleRoom.pricePerNight,
+            totalCost: singleRoom.pricePerNight,
+            rateKey: preferredRateKey || singleRoom.rateKey,
+          },
+        ],
+        rateKey: preferredRateKey || singleRoom.rateKey,
+        totalCost: singleRoom.pricePerNight,
+      };
+    }
+
+    const sortedByCapacityDesc = [...availableRoomTypes].sort(
+      (a, b) => b.capacity - a.capacity,
+    );
+
+    const selectedRooms: Array<{
+      roomType: string;
+      capacity: number;
+      pricePerNight: number;
+      totalCost: number;
+      rateKey: string;
+    }> = [];
+    const availabilitySnapshot = new Map(hotelState.roomTypeAvailability);
+    let remainingPassengers = totalPassengers;
+
+    for (const roomType of sortedByCapacityDesc) {
+      let availability =
+        hotelState.roomTypeAvailability.get(roomType.rateKey) ?? 0;
+      while (availability > 0 && remainingPassengers > 0) {
+        selectedRooms.push({
+          roomType: roomType.type,
+          capacity: roomType.capacity,
+          pricePerNight: roomType.pricePerNight,
+          totalCost: roomType.pricePerNight,
+          rateKey: roomType.rateKey,
+        });
+        remainingPassengers -= roomType.capacity;
+        availability -= 1;
+      }
+      hotelState.roomTypeAvailability.set(roomType.rateKey, availability);
+      if (remainingPassengers <= 0) {
+        break;
+      }
+    }
+
+    if (remainingPassengers > 0) {
+      hotelState.roomTypeAvailability = availabilitySnapshot;
+      return {
+        success: false,
+        reason: "Insufficient room capacity for passenger count",
+      };
+    }
+
+    hotelState.remainingRooms -= selectedRooms.length;
+
+    const effectiveRateKey =
+      preferredRateKey || selectedRooms[0]?.rateKey || hotel.rateKey;
+    if (!effectiveRateKey) {
+      hotelState.roomTypeAvailability = availabilitySnapshot;
+      hotelState.remainingRooms += selectedRooms.length;
+      return { success: false, reason: "No valid rate key available" };
+    }
+
+    return {
+      success: true,
+      rooms: selectedRooms,
+      rateKey: effectiveRateKey,
+      totalCost: selectedRooms.reduce((sum, room) => sum + room.totalCost, 0),
+    };
+  }
+
+  private releaseReservedRooms(
+    hotel: HotelCandidate,
+    inventoryState: Map<
+      string,
+      {
+        remainingRooms: number;
+        roomTypeAvailability: Map<string, number>;
+      }
+    >,
+    rooms: Array<{ rateKey: string }>,
+  ) {
+    const hotelState = inventoryState.get(hotel.id);
+    if (!hotelState || rooms.length === 0) {
+      return;
+    }
+
+    for (const room of rooms) {
+      const current = hotelState.roomTypeAvailability.get(room.rateKey) ?? 0;
+      hotelState.roomTypeAvailability.set(room.rateKey, current + 1);
+    }
+    hotelState.remainingRooms += rooms.length;
+  }
+
+  private isRateKeyExpiredError(errorMessage: string): boolean {
+    return /rate\s*key|invalid\s*rate|expired/i.test(errorMessage);
+  }
+
+  private async refreshRateKeyForHotel(
+    hotel: HotelCandidate,
+    totalPassengers: number,
+    context: {
+      checkIn: string;
+      checkOut: string;
+      subgroupId: string;
+      requestId: string;
+      airport: { iataCode: string; latitude: number; longitude: number };
+      airlinePreferences: { allowedStars: number[]; maxDistanceKm: number };
+    },
+    previousRooms: Array<{ capacity: number }>,
+  ): Promise<string | null> {
+    try {
+      const refreshedHotels = await this.hotelPartnerService.searchNearbyHotels(
+        context.airport,
+        context.checkIn,
+        context.checkOut,
+        context.requestId,
+        {
+          radiusKm: context.airlinePreferences.maxDistanceKm,
+          allowedStars: context.airlinePreferences.allowedStars,
+        },
+      );
+      const refreshedHotel = refreshedHotels.find(
+        (candidate) => candidate.id === hotel.id,
+      );
+      if (!refreshedHotel) {
+        return null;
+      }
+
+      const minRequiredCapacity = previousRooms[0]?.capacity || totalPassengers;
+      const match = refreshedHotel.roomTypes.find(
+        (roomType) =>
+          roomType.capacity >= minRequiredCapacity && !!roomType.rateKey,
+      );
+      return match?.rateKey ?? refreshedHotel.rateKey ?? null;
+    } catch (error: any) {
+      this.logger.warn(
+        `Failed to refresh rate key for hotel '${hotel.id}': ${String(error?.message ?? "Unknown error")}`,
+        this.context,
+        context.requestId,
+      );
+      return null;
+    }
   }
 }
