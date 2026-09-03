@@ -540,7 +540,7 @@ export class CancelledFlightsController {
   })
   @ApiParam({
     name: "cancelledFlightId",
-    description: "Cancelled flight UUID",
+    description: "Cancelled flight Id",
   })
   @ApiConflictResponse({
     schema: createConflictErrorSchema(
