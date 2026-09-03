@@ -19,11 +19,6 @@ export class CreateCancelledFlightDto {
   @ApiProperty({ example: 1 })
   @IsInt()
   @Min(1)
-  airlineId!: number;
-
-  @ApiProperty({ example: 1 })
-  @IsInt()
-  @Min(1)
   departureAirportId!: number;
 
   @ApiProperty({ example: 2 })
