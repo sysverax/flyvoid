@@ -10,6 +10,7 @@ import {
 import { JwtAccessPayload } from "../interfaces/jwt-access-payload.interface";
 import { AuthenticatedRequest } from "../interfaces/authenticated-request.interface";
 import { AuthRepository } from "../repositories/auth.repository";
+import { Logger } from "winston";
 
 @Injectable()
 export class JwtAuthGuard extends AuthGuard("jwt") {
@@ -22,7 +23,8 @@ export class JwtAuthGuard extends AuthGuard("jwt") {
     if (!isValid) return false;
 
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
-    const requestId = this.getRequestId(request);
+    const requestId = request.requestId;
+    const logger: Logger = request.logger;
     const tokenUser = request.user as JwtAccessPayload;
 
     if (!tokenUser.userType) {
@@ -33,10 +35,10 @@ export class JwtAuthGuard extends AuthGuard("jwt") {
 
     if (userType === UserType.PLATFORM) {
       const [admin, accessControls] = await Promise.all([
-        this.authRepository.findAdminById(tokenUser.sub, requestId),
+        this.authRepository.findAdminById(tokenUser.sub, logger),
         this.authRepository.findPlatformAccessControlsByAdminId(
           tokenUser.sub,
-          requestId,
+          logger,
         ),
       ]);
 

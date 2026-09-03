@@ -42,11 +42,18 @@ import {
   AirlineSigninTwoFactorVerifyRequestDto,
   RefreshTokenRequestDto,
   SignoutRequestDto,
+  AirlineUserProfileDto,
 } from "../dto";
 import { JwtAccessPayload } from "../interfaces/jwt-access-payload.interface";
 import { JwtRefreshPayload } from "../interfaces/jwt-refresh-payload.interface";
 import { AuthenticatedUser } from "../interfaces/authenticated-request.interface";
 import { AuthRepository } from "../repositories/auth.repository";
+import {
+  AccessAction,
+  AirlineAsset,
+  PlatformAsset,
+  UserAccessControlEntry,
+} from "../../common/constants/access-control.constants";
 
 @Injectable()
 export class AirlineAuthService {
@@ -208,21 +215,23 @@ export class AirlineAuthService {
         manager,
       );
 
-      const savedUser = await this.airlineUserRepository.create(
-        {
-          airlineId: airline.id,
-          firstName: meta.adminFirstName,
-          lastName: meta.adminLastName,
-          email: meta.adminEmail,
-          jobTitle: meta.adminJobTitle,
-          passwordHash,
-          role: AirlineRole.AIRLINE_ADMIN,
-          isActive: true,
-          requirePasswordReset: false,
-        },
-        requestId,
-        manager,
-      );
+      const savedUser =
+        await this.airlineUserRepository.createAirlineUserWithAccessControls(
+          {
+            airlineId: airline.id,
+            firstName: meta.adminFirstName,
+            lastName: meta.adminLastName,
+            email: meta.adminEmail,
+            jobTitle: meta.adminJobTitle,
+            passwordHash,
+            role: AirlineRole.AIRLINE_ADMIN,
+            isActive: true,
+            requirePasswordReset: false,
+          },
+          this.buildAirlineAdminAccessControls(),
+          requestId,
+          manager,
+        );
 
       await this.airlineInvitationRepository.markAirlineAdminInviteAccepted(
         lockedInvite.id,
@@ -810,6 +819,17 @@ export class AirlineAuthService {
       requestId,
     );
   }
+  private buildAirlineAdminAccessControls(): Array<{
+    asset: AirlineAsset;
+    access: AccessAction[];
+  }> {
+    const allActions = Object.values(AccessAction);
+
+    return Object.values(AirlineAsset).map((asset) => ({
+      asset,
+      access: allActions,
+    }));
+  }
 
   private async issueSessionTokens(
     user: AirlineUserEntity,
@@ -861,13 +881,18 @@ export class AirlineAuthService {
       new Date(),
       requestId,
     );
+    const airlineAccessControl =
+      await this.authRepository.findAirlineAccessControlsByAirlineUserId(
+        user.id,
+        requestId,
+      );
 
     return {
       accessToken,
       refreshToken,
       accessTokenExpiresIn: config.jwt.accessExpiresIn,
       refreshTokenExpiresIn: config.jwt.refreshExpiresIn,
-      user: this.toAirlineUserProfile(user),
+      user: this.toAirlineUserProfile(user, airlineAccessControl),
     };
   }
 
@@ -1196,7 +1221,10 @@ export class AirlineAuthService {
     }
   }
 
-  private toAirlineUserProfile(user: AirlineUserEntity) {
+  private toAirlineUserProfile(
+    user: AirlineUserEntity,
+    airlineAccessControl?: UserAccessControlEntry[],
+  ): AirlineUserProfileDto {
     return {
       id: user.id,
       airlineId: user.airlineId,
@@ -1204,6 +1232,10 @@ export class AirlineAuthService {
       lastName: user.lastName,
       email: user.email,
       role: user.role as AirlineRole,
+      accessControls: (airlineAccessControl ?? []).map((ac) => ({
+        asset: ac.moduleKey as AirlineAsset,
+        access: ac.permissions as AccessAction[],
+      })),
     };
   }
 

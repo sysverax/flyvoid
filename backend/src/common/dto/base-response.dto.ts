@@ -19,13 +19,24 @@ export class BaseResponseDto<T> {
     };
   }
 
-  static error<T>(message: string, requestId: string): BaseResponseDto<T> {
+  static error<T>(
+    message: string,
+    requestId: string,
+    error?: { detail: string; solution: string; code?: string },
+  ): BaseResponseDto<T> {
     return {
       success: false,
       requestId,
       timestamp: new Date().toISOString(),
       data: null,
       message,
+      ...(error && {
+        error: {
+          detail: error.detail,
+          solution: error.solution,
+          ...(error.code && { code: error.code }),
+        },
+      }),
     };
   }
 }
