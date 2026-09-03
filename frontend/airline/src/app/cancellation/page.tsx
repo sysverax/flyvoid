@@ -319,11 +319,12 @@ function PublishedDetailView({ cancellation, onClose }: { cancellation: Cancella
             totalResults={cancellation.bookings}
             resultsPerPage={resultsPerPage}
             currentPage={currentPage}
-            onPageChange={setCurrentPage}
-            onResultsPerPageChange={(val) => {
+            setCurrentPage={setCurrentPage}
+            setResultsPerPage={(val: number) => {
               setResultsPerPage(val);
               setCurrentPage(1);
             }}
+            totalPages={Math.ceil(cancellation.bookings / resultsPerPage) || 1}
           />
         </div>
 
