@@ -148,6 +148,48 @@ export class AirlineAuthController {
         1. Credentials must be valid (401 if invalid email or password)
         2. Airline account must be active (401 if inactive)`,
   })
+  @ApiOkResponse({
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(BaseResponseDto) },
+        {
+          properties: {
+            success: { type: "boolean", example: true },
+            requestId: { type: "string", example: REQUEST_ID_EXAMPLE },
+            timestamp: { type: "string", example: TIMESTAMP_EXAMPLE },
+            message: {
+              type: "string",
+              example: "Airline signin successful",
+            },
+            data: {
+              oneOf: [
+                { $ref: getSchemaPath(AirlineSigninResponseDto) },
+                {
+                  $ref: getSchemaPath(
+                    AirlineSigninTwoFactorChallengeResponseDto,
+                  ),
+                },
+                {
+                  $ref: getSchemaPath(
+                    AirlineSigninPasswordResetChallengeResponseDto,
+                  ),
+                },
+              ],
+            },
+          },
+        },
+      ],
+    },
+  })
+  @ApiUnauthorizedResponse({
+    schema: createUnauthorizedErrorSchema(
+      "/api/v1/auth/airline/signin",
+      "Invalid email or password",
+    ),
+  })
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema("/api/v1/auth/airline/signin"),
+  })
   @ApiBody({ type: AirlineSigninRequestDto })
   async signin(
     @Body() dto: AirlineSigninRequestDto,

@@ -47,6 +47,7 @@ import {
   PlatformAsset,
   UserAccessControlEntry,
 } from "../../common/constants/access-control.constants";
+import { AdminProfileDto } from "../../admin/dto";
 
 @Injectable()
 export class AuthService {
@@ -1155,7 +1156,7 @@ export class AuthService {
   private toAdminProfile(
     admin: AdminEntity,
     accessControls?: UserAccessControlEntry[],
-  ): AdminSigninResponseDto["admin"] {
+  ): AdminProfileDto {
     return {
       id: admin.id,
       firstName: admin.firstName,
