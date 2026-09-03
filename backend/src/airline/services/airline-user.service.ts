@@ -12,6 +12,7 @@ import { AuthenticatedUser } from "../../auth/interfaces/authenticated-request.i
 import {
   AccessAction,
   AirlineAsset,
+  UserAccessControlEntry,
 } from "../../common/constants/access-control.constants";
 import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
 import { AirlineRole, UserType } from "../../common/constants/user.constants";
@@ -28,6 +29,7 @@ import {
 import { AirlineEntity } from "../entities/airline.entity";
 import { AirlineUserEntity } from "../entities/airline-user.entity";
 import { AirlineUserRepository } from "../repositories/airline-user.repository";
+import { AirlineUserProfileDto } from "../../auth/dto";
 
 @Injectable()
 export class AirlineUserService {
@@ -59,21 +61,23 @@ export class AirlineUserService {
     const temporaryPassword = this.generateTemporaryPassword();
     const passwordHash = await bcrypt.hash(temporaryPassword, 10);
 
-    const createdUser = await this.airlineUserRepository.create(
-      {
-        airlineId: actor.airlineId,
-        firstName: dto.firstName.trim(),
-        lastName: dto.lastName.trim(),
-        email,
-        jobTitle: dto.jobTitle.trim(),
-        passwordHash,
-        role: AirlineRole.AIRLINE_STAFF,
-        isActive: dto.isActive ?? true,
-        requirePasswordReset: true,
-      },
-      requestId,
-      this.airlineRepository.manager,
-    );
+    const createdUser =
+      await this.airlineUserRepository.createAirlineUserWithAccessControls(
+        {
+          airlineId: actor.airlineId,
+          firstName: dto.firstName.trim(),
+          lastName: dto.lastName.trim(),
+          email,
+          jobTitle: dto.jobTitle.trim(),
+          passwordHash,
+          role: AirlineRole.AIRLINE_STAFF,
+          isActive: dto.isActive ?? true,
+          requirePasswordReset: true,
+        },
+        dto.accessControls,
+        requestId,
+        this.airlineRepository.manager,
+      );
 
     await this.airlineUserRepository.replaceAirlineAccessControls(
       createdUser.id,
@@ -201,16 +205,7 @@ export class AirlineUserService {
     authenticatedUser: AuthenticatedUser,
     requestId: string,
   ): Promise<AirlineUserProfileResponseDto> {
-    const user = await this.requireAirlineUser(authenticatedUser, requestId);
-
-    return {
-      id: user.id,
-      airlineId: user.airlineId,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
-      role: user.role,
-    };
+    return await this.requireAirlineUser(authenticatedUser, requestId);
   }
 
   async getAirlineProfile(
@@ -240,7 +235,7 @@ export class AirlineUserService {
   private async requireAirlineUser(
     authenticatedUser: AuthenticatedUser,
     requestId: string,
-  ): Promise<AirlineUserEntity> {
+  ): Promise<AirlineUserProfileDto> {
     if (authenticatedUser.userType !== UserType.AIRLINE) {
       throw new UnauthorizedException("Unauthorized");
     }
@@ -257,7 +252,21 @@ export class AirlineUserService {
       throw new UnauthorizedException("Airline user not found");
     }
 
-    return user;
+    const accessControls =
+      await this.airlineUserRepository.findAirlineUserAccessControls(
+        user.id,
+        requestId,
+      );
+
+    return {
+      id: user.id,
+      airlineId: user.airlineId,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      role: user.role as AirlineRole,
+      accessControls: accessControls,
+    };
   }
 
   private async ensureAirlineAdmin(
