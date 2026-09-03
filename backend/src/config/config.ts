@@ -25,6 +25,7 @@ export const config = {
     port: parseInt(process.env.APP_PORT ?? "3000", 10),
     name: process.env.APP_NAME ?? "backend",
     env: process.env.NODE_ENV ?? "development",
+    apiPrefix: process.env.APP_API_PREFIX ?? "api",
   },
   db: {
     host: process.env.DB_HOST ?? "localhost",
