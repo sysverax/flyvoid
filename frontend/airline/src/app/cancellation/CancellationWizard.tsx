@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import {
   X,
   Plus,
@@ -30,7 +30,17 @@ import {
   Info,
   Star,
   Upload,
+  Edit,
+  Trash2,
+  Bed,
+  Percent,
+  DollarSign,
+  Wallet,
+  Eye,
 } from "lucide-react";
+import { BookingDetailsDrawer } from "@/src/components/ui/BookingDetailsDrawer";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/src/components/ui/table";
+import { Pagination } from "@/src/components/ui/pagination";
 import { toast } from "react-toastify";
 import { Dropdown } from "@/src/components/ui/Dropdown";
 import { DatePicker } from "@/src/components/ui/DatePicker";
@@ -76,7 +86,7 @@ interface Cancellation {
   bookings: number;
   passengers: number;
   totalCost: number;
-  status: "Published" | "Draft" | "In Progress";
+  status: "Published" | "Verified" | "Allocated" | "Draft" | "Paid";
   reason: string;
 }
 
@@ -99,16 +109,35 @@ function formatDateString(dateStr: string): string {
 export default function CancellationWizard({ onClose, onSave }: CancellationWizardProps) {
   const [activeStep, setActiveStep] = useState(1);
 
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [activeStep]);
+
   // Flight Details Form Inputs
   const [newFlight, setNewFlight] = useState("");
   const [newDate, setNewDate] = useState("");
   const [newDepartureAirport, setNewDepartureAirport] = useState("");
   const [newArrivalAirport, setNewArrivalAirport] = useState("");
+  const [checkInDate, setCheckInDate] = useState("");
+  const [checkOutDate, setCheckOutDate] = useState("");
   const [selectedReasonTag, setSelectedReasonTag] = useState("");
   const [newReason, setNewReason] = useState("");
 
+  useEffect(() => {
+    if (newDate) {
+      setCheckInDate(newDate);
+      const dateObj = new Date(newDate);
+      if (!isNaN(dateObj.getTime())) {
+        dateObj.setDate(dateObj.getDate() + 1);
+        setCheckOutDate(dateObj.toISOString().split("T")[0]);
+      }
+    }
+  }, [newDate]);
+
   // Step 2 Manual booking states
   const [bookingTab, setBookingTab] = useState<"upload" | "manual">("manual");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [resultsPerPage, setResultsPerPage] = useState(5);
   const [bookingPnr, setBookingPnr] = useState("");
   const [bookingFirstName, setBookingFirstName] = useState("");
   const [bookingLastName, setBookingLastName] = useState("");
@@ -153,6 +182,19 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
   // Step 6 Payment state
   const [paymentMethod, setPaymentMethod] = useState("visa");
   const [isAddingCard, setIsAddingCard] = useState(false);
+  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
+
+  // Step 5 Drawer state
+  const [isBookingDetailsOpen, setIsBookingDetailsOpen] = useState(false);
+  const [selectedBookingForDrawer, setSelectedBookingForDrawer] = useState<any>(null);
+
+  // Step 3 Pagination state
+  const [step3CurrentPage, setStep3CurrentPage] = useState(1);
+  const [step3ResultsPerPage, setStep3ResultsPerPage] = useState(5);
+
+  // Step 5 Pagination state
+  const [step5CurrentPage, setStep5CurrentPage] = useState(1);
+  const [step5ResultsPerPage, setStep5ResultsPerPage] = useState(5);
 
   // Step 7 Publish state
   const [notifySMS, setNotifySMS] = useState(true);
@@ -162,9 +204,12 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
   // Calculated state values
   const totalBookingsCount = addedBookings.length;
   const totalPassengersCount = addedBookings.reduce((sum, b) => sum + b.adults + b.children, 0);
-  const hotelRoomsCost = totalBookingsCount * 120;
-  const platformFee = Math.round(hotelRoomsCost * 0.05);
-  const calculatedTotalCost = hotelRoomsCost + platformFee;
+  const hotelCost = totalBookingsCount * 120;
+  const platformDiscount = hotelCost * 0.10;
+  const hotelTax = hotelCost * 0.08;
+  const subtotal = hotelCost - platformDiscount + hotelTax;
+  const platformFee = subtotal * 0.05;
+  const totalPayment = subtotal + platformFee;
 
   const handleTagClick = (tag: string) => {
     setSelectedReasonTag(tag);
@@ -175,9 +220,9 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
     }
   };
 
-  const simulateExcelUpload = () => {
+  const simulateCsvUpload = () => {
     setIsManifestUploaded(true);
-    setManifestFileName("passenger_manifest_" + (newFlight || "SW1234") + ".xlsx");
+    setManifestFileName("passenger_manifest_" + (newFlight || "SW1234") + ".csv");
 
     // Add mock bookings
     const mockBookings: ManualBooking[] = [
@@ -349,7 +394,7 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
         cancellationDate: formatDateString(newDate),
         bookings: totalBookingsCount,
         passengers: totalPassengersCount,
-        totalCost: calculatedTotalCost,
+        totalCost: totalPayment,
         status: "Published",
         reason: newReason || "Not specified",
       };
@@ -362,57 +407,64 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
 
   const renderStepper = () => {
     const steps = [
-      { number: 1, label: "Flight Details", desc: "Basic information" },
+      { number: 1, label: "Flight Details", desc: "Basic information & stay dates" },
       { number: 2, label: "Bookings", desc: "Upload passengers" },
       { number: 3, label: "Review", desc: "Verify details" },
       { number: 4, label: "Allocation", desc: "Assign hotels" },
-      { number: 5, label: "Preview", desc: "Cost summary" },
-      { number: 6, label: "Payment", desc: "Select card" },
+      { number: 5, label: "Booking Summary", desc: "Review booked hotels & final costs" },
+      { number: 6, label: "Payment", desc: "Review & pay" },
       { number: 7, label: "Publish", desc: "Notify passengers" },
     ];
 
     return (
       <div className="w-full bg-white border border-[#E5E7EB] rounded-2xl p-6 overflow-x-auto">
-        <div className="flex items-center justify-between min-w-[800px] px-4">
+        <div className="flex items-start w-full min-w-[800px]">
           {steps.map((step, idx) => {
             const isActive = activeStep === step.number;
             const isCompleted = activeStep > step.number;
             return (
-              <div key={step.number} className="flex items-center flex-1 last:flex-none">
-                <div className="flex flex-col items-center text-center">
+              <Fragment key={step.number}>
+                <div className="flex flex-col items-center shrink-0 w-[140px] z-10">
+                  {/* Circle */}
                   <div
                     className={cn(
                       "size-10 rounded-full flex items-center justify-center text-base font-semibold transition-all duration-200 border",
                       isActive
-                        ? "bg-[#0F2757] text-white border-[#0F2757]"
+                        ? "bg-[#0F2757] text-white border-transparent ring-4 ring-gray-200"
                         : isCompleted
-                          ? "bg-[#10B981] text-white border-emerald-500"
-                          : "bg-black text-gray-550 border-gray-200"
+                          ? "bg-[#1FAD53] text-white border-transparent"
+                          : "bg-gray-200 text-gray-500 border-gray-300"
                     )}
                   >
                     {isCompleted ? <Check className="h-5 w-5" /> : step.number}
                   </div>
-                  <span
-                    className={cn(
-                      "text-[14px] font-semibold mt-2 transition-colors",
-                      isActive ? "text-[#1F2937]" : "text-gray-500"
-                    )}
-                  >
-                    {step.label}
-                  </span>
-                  <span className="text-[12px] text-gray-400 mt-0.5 whitespace-nowrap">
-                    {step.desc}
-                  </span>
+
+                  {/* Text Content */}
+                  <div className="flex flex-col items-center text-center mt-2 px-1 w-full">
+                    <span
+                      className={cn(
+                        "text-[14px] font-semibold transition-colors whitespace-nowrap",
+                        isActive || isCompleted ? "text-[#1F2937]" : "text-gray-500"
+                      )}
+                    >
+                      {step.label}
+                    </span>
+                    <span className="text-[12px] text-gray-400 mt-0.5 leading-tight">
+                      {step.desc}
+                    </span>
+                  </div>
                 </div>
+
+                {/* Connecting Line */}
                 {idx < steps.length - 1 && (
                   <div
                     className={cn(
-                      "h-0.5 flex-1 mx-4 -translate-y-4 transition-all duration-305",
-                      isCompleted ? "bg-emerald-500" : "bg-gray-200"
+                      "flex-1 h-0.5 mt-[19px] -mx-[36px] transition-all duration-300 z-0",
+                      isCompleted ? "bg-[#1FAD53]" : "bg-gray-200"
                     )}
                   />
                 )}
-              </div>
+              </Fragment>
             );
           })}
         </div>
@@ -425,13 +477,13 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
       case 1:
         return (
           <div className="space-y-6">
-            <div className="flex items-center gap-3 pb-4 border-b border-gray-100">
+            <div className="flex items-center gap-3 pb-4">
               <div className="size-11 p-2.5 bg-slate-100 text-slate-700 rounded-xl flex justify-center items-center shrink-0">
                 <Plane className="h-6 w-6 text-[#0F2757]" />
               </div>
               <div className="text-left">
                 <h3 className="text-xl font-semibold text-gray-900 font-figtree">Flight Details</h3>
-                <p className="text-sm text-gray-500 mt-0.5">Enter the cancelled flight information</p>
+                <p className="text-sm text-gray-500 mt-0.5">Enter the cancelled flight information and default stay dates</p>
               </div>
             </div>
 
@@ -479,6 +531,34 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
                   widthClass="w-full"
                   bgClass="bg-[#F9FAFB]"
                 />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-left">
+              <div className="flex flex-col gap-2">
+                <label className="text-base font-semibold text-gray-700">Default Check-in Date *</label>
+                <DatePicker
+                  value={checkInDate}
+                  onChange={setCheckInDate}
+                  className="block h-11 w-full rounded-lg border border-[#D1D5DB] px-4 text-base text-gray-900 bg-[#F9FAFB] focus:bg-white focus:border-[#0F2757] focus:outline-none focus:ring-1 focus:ring-[#0F2757]"
+                  placeholder="mm/dd/yyyy"
+                />
+                <p className="text-[13px] text-gray-500 font-medium">
+                  Defaults to the cancelled flight date. You can change this date if required.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="text-base font-semibold text-gray-700">Default Check-out Date *</label>
+                <DatePicker
+                  value={checkOutDate}
+                  onChange={setCheckOutDate}
+                  className="block h-11 w-full rounded-lg border border-[#D1D5DB] px-4 text-base text-gray-900 bg-[#F9FAFB] focus:bg-white focus:border-[#0F2757] focus:outline-none focus:ring-1 focus:ring-[#0F2757]"
+                  placeholder="mm/dd/yyyy"
+                />
+                <p className="text-[13px] text-gray-500 font-medium">
+                  Defaults to the day after the cancelled flight date. You can change this date if required.
+                </p>
               </div>
             </div>
 
@@ -531,7 +611,7 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
       case 2:
         return (
           <div className="space-y-6">
-            <div className="flex items-center gap-3 pb-4 border-b border-gray-100">
+            <div className="flex items-center gap-3 pb-4">
               <div className="size-11 p-2.5 bg-slate-100 text-slate-700 rounded-xl flex justify-center items-center shrink-0">
                 <Users className="h-6 w-6 text-[#0F2757]" />
               </div>
@@ -554,7 +634,7 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
                 )}
               >
                 <UploadCloud className="h-4 w-4" />
-                <span>Upload Excel File</span>
+                <span>Upload CSV File</span>
               </button>
               <button
                 type="button"
@@ -580,7 +660,7 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
                       ? "border-emerald-300 bg-emerald-50/20 cursor-pointer"
                       : "border-gray-300 bg-[#FAFAFA]"
                   )}
-                  onClick={!isManifestUploaded ? undefined : simulateExcelUpload}
+                  onClick={!isManifestUploaded ? undefined : simulateCsvUpload}
                 >
                   <div className="size-[52px] rounded-full bg-[#E5E7EB] flex items-center justify-center mb-4">
                     <Upload className={cn("h-6 w-6", isManifestUploaded ? "text-emerald-600" : "text-[#374151]")} />
@@ -595,18 +675,18 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
                     <>
                       <h4 className="text-[18px] font-semibold text-[#111827] mb-2 font-figtree">Upload Booking File</h4>
                       <p className="text-[15px] text-[#6B7280] mb-6 max-w-[400px]">
-                        Drag and drop an Excel file containing booking data, or click to browse your files
+                        Drag and drop a CSV file containing booking data, or click to browse your files
                       </p>
                       <button
                         type="button"
-                        onClick={simulateExcelUpload}
+                        onClick={simulateCsvUpload}
                         className="h-[42px] bg-[#233159] hover:bg-[#1A2542] text-white px-6 rounded-[8px] font-medium text-[15px] flex items-center gap-2 mb-4 transition-colors cursor-pointer"
                       >
                         <Upload className="h-4 w-4" />
                         Choose File
                       </button>
                       <p className="text-[13px] text-[#9CA3AF]">
-                        Supports .xlsx, .xls, .csv • Max 10MB
+                        Supports .csv • Max 10MB
                       </p>
                     </>
                   )}
@@ -751,7 +831,7 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
 
                 {/* Info Alert Box */}
                 <div className="bg-[#EFF6FF] border border-[#D1D5DB] p-4 rounded-lg flex items-start gap-3 text-left">
-                  <HelpCircle className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
+                  <AlertCircle className="h-4 w-4 shrink-0 mt-1 opacity-80 text-blue-900 " />
                   <p className="text-sm text-blue-900 leading-relaxed font-figtree">
                     Each booking can contain multiple passengers. Room allocation: 2 passengers per room. Business class passengers are assigned 4-star hotels, economy passengers get 3-star hotels.
                   </p>
@@ -763,72 +843,74 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
                   className="bg-[#0F2757] hover:bg-[#162259] text-white font-medium py-2 px-4 rounded-lg transition-colors cursor-pointer text-sm inline-flex items-center gap-1.5"
                 >
                   <Plus className="h-4 w-4" />
-                  <span>{editingBookingId ? "Save Booking" : "Add Booking"}</span>
+                  <span>{editingBookingId ? "Update Booking" : "Add Booking"}</span>
                 </button>
               </div>
             )}
 
             {/* Bookings List / Table */}
-            <div className="border border-gray-200 rounded-xl bg-white p-5 space-y-4">
+            <div className="space-y-4">
               {addedBookings.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-10 text-center text-gray-505">
-                  <Users className="h-10 w-10 text-gray-300 mb-3" />
-                  <p className="text-sm font-medium text-gray-700">No bookings added yet.</p>
-                  <p className="text-xs text-gray-400 mt-1">Use the form above to add your first booking.</p>
-                </div>
+                bookingTab === "manual" ? (
+                  <div className="flex flex-col items-center justify-center py-10 text-center text-gray-505">
+                    <Users className="h-10 w-10 text-gray-300 mb-3" />
+                    <p className="text-sm font-medium text-gray-700">No bookings added yet.</p>
+                    <p className="text-xs text-gray-400 mt-1">Use the form above to add your first booking.</p>
+                  </div>
+                ) : null
               ) : (
                 <div className="space-y-4 text-left">
                   {/* Summary Grid stats */}
-                  <div className="grid grid-cols-4 border border-gray-200 rounded-xl divide-x divide-gray-200 bg-gray-50/50 py-3 text-center">
-                    <div>
-                      <div className="text-xl font-bold text-gray-900">{addedBookings.length}</div>
-                      <div className="text-[11px] font-semibold text-gray-505 uppercase tracking-wider mt-0.5">Bookings</div>
+                  <div className="grid grid-cols-4 gap-4">
+                    <div className="bg-[#F6F7F8] rounded-xl py-4 flex flex-col items-center justify-center">
+                      <div className="text-[22px] leading-tight font-bold text-[#111827]">{addedBookings.length}</div>
+                      <div className="text-[13px] text-[#6B7280] mt-1">Bookings</div>
                     </div>
-                    <div>
-                      <div className="text-xl font-bold text-gray-900">
+                    <div className="bg-[#F6F7F8] rounded-xl py-4 flex flex-col items-center justify-center">
+                      <div className="text-[22px] leading-tight font-bold text-[#111827]">
                         {totalPassengersCount}
                       </div>
-                      <div className="text-[11px] font-semibold text-gray-505 uppercase tracking-wider mt-0.5">Passengers</div>
+                      <div className="text-[13px] text-[#6B7280] mt-1">Passengers</div>
                     </div>
-                    <div>
-                      <div className="text-xl font-bold text-gray-950">
+                    <div className="bg-[#F6F7F8] rounded-xl py-4 flex flex-col items-center justify-center">
+                      <div className="text-[22px] leading-tight font-bold text-[#111827]">
                         {addedBookings.reduce((sum, b) => sum + Math.ceil((b.adults + b.children) / 2), 0)}
                       </div>
-                      <div className="text-[11px] font-semibold text-gray-505 uppercase tracking-wider mt-0.5">Est. Rooms</div>
+                      <div className="text-[13px] text-[#6B7280] mt-1">Est. Rooms</div>
                     </div>
-                    <div>
-                      <div className="text-xl font-bold text-gray-900">
+                    <div className="bg-[#F6F7F8] rounded-xl py-4 flex flex-col items-center justify-center">
+                      <div className="text-[22px] leading-tight font-bold text-[#111827]">
                         {addedBookings.filter(b => b.travelClass === "Business" || b.travelClass === "First Class").length}
                       </div>
-                      <div className="text-[11px] font-semibold text-gray-505 uppercase tracking-wider mt-0.5">Business</div>
+                      <div className="text-[13px] text-[#6B7280] mt-1">Business</div>
                     </div>
                   </div>
 
                   {/* Bookings Table */}
                   <div className="overflow-x-auto border border-gray-200 rounded-xl">
-                    <table className="min-w-full divide-y divide-gray-200 text-sm">
-                      <thead className="bg-gray-55 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
-                        <tr>
-                          <th className="px-4 py-3 text-left">PNR</th>
-                          <th className="px-4 py-3 text-left">Contact Name</th>
-                          <th className="px-4 py-3 text-left">Email</th>
-                          <th className="px-4 py-3 text-left">Phone</th>
-                          <th className="px-4 py-3 text-center">Adults</th>
-                          <th className="px-4 py-3 text-center">Children</th>
-                          <th className="px-4 py-3 text-center">Class</th>
-                          <th className="px-4 py-3 text-center">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200 bg-white text-gray-700">
-                        {addedBookings.map((b) => (
-                          <tr key={b.id} className="hover:bg-slate-50/50">
-                            <td className="px-4 py-3.5 font-medium text-gray-900">{b.pnr}</td>
-                            <td className="px-4 py-3.5">{b.firstName} {b.lastName}</td>
-                            <td className="px-4 py-3.5 text-gray-550">{b.email}</td>
-                            <td className="px-4 py-3.5 text-gray-550">{b.phone}</td>
-                            <td className="px-4 py-3.5 text-center">{b.adults}</td>
-                            <td className="px-4 py-3.5 text-center">{b.children}</td>
-                            <td className="px-4 py-3.5 text-center">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="min-w-[80px]">PNR</TableHead>
+                          <TableHead className="min-w-[140px]">Contact Name</TableHead>
+                          <TableHead className="min-w-[160px]">Email</TableHead>
+                          <TableHead className="min-w-[120px]">Phone</TableHead>
+                          <TableHead className="min-w-[80px] text-center">Adults</TableHead>
+                          <TableHead className="min-w-[80px] text-center">Children</TableHead>
+                          <TableHead className="min-w-[100px] text-center">Class</TableHead>
+                          <TableHead className="min-w-[80px] text-center">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {addedBookings.slice((currentPage - 1) * resultsPerPage, currentPage * resultsPerPage).map((b) => (
+                          <TableRow key={b.id}>
+                            <TableCell className="font-medium text-gray-900">{b.pnr}</TableCell>
+                            <TableCell>{b.firstName} {b.lastName}</TableCell>
+                            <TableCell className="text-gray-550">{b.email}</TableCell>
+                            <TableCell className="text-gray-550">{b.phone}</TableCell>
+                            <TableCell>{b.adults}</TableCell>
+                            <TableCell>{b.children}</TableCell>
+                            <TableCell>
                               <span className={cn(
                                 "rounded px-2.5 py-1 text-xs font-semibold inline-block",
                                 b.travelClass === "Business" || b.travelClass === "First Class"
@@ -837,8 +919,8 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
                               )}>
                                 {b.travelClass}
                               </span>
-                            </td>
-                            <td className="px-4 py-3.5 text-center">
+                            </TableCell>
+                            <TableCell className="text-center">
                               <div className="flex items-center justify-center gap-2">
                                 <button
                                   type="button"
@@ -846,9 +928,7 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
                                   className="text-gray-400 hover:text-[#0F2757] transition-colors cursor-pointer"
                                   title="Edit"
                                 >
-                                  <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                  </svg>
+                                  <Edit className="h-[18px] w-[18px]" />
                                 </button>
                                 <button
                                   type="button"
@@ -856,17 +936,25 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
                                   className="text-gray-400 hover:text-red-600 transition-colors cursor-pointer"
                                   title="Delete"
                                 >
-                                  <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                  </svg>
+                                  <Trash2 className="h-[18px] w-[18px]" />
                                 </button>
                               </div>
-                            </td>
-                          </tr>
+                            </TableCell>
+                          </TableRow>
                         ))}
-                      </tbody>
-                    </table>
+                      </TableBody>
+                    </Table>
                   </div>
+
+                  {/* Pagination */}
+                  <Pagination
+                    totalResults={addedBookings.length}
+                    currentPage={currentPage}
+                    setCurrentPage={setCurrentPage}
+                    resultsPerPage={resultsPerPage}
+                    setResultsPerPage={setResultsPerPage}
+                    totalPages={Math.ceil(addedBookings.length / resultsPerPage)}
+                  />
                 </div>
               )}
             </div>
@@ -875,7 +963,7 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
       case 3:
         return (
           <div className="space-y-6">
-            <div className="flex items-center gap-3 bg-slate-100/50 p-4 rounded-xl">
+            <div className="flex items-center gap-3 pb-4">
               <div className="size-10 bg-slate-200/50 text-slate-700 rounded-lg flex justify-center items-center shrink-0">
                 <Users className="h-5 w-5" />
               </div>
@@ -885,7 +973,7 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
               </div>
             </div>
 
-            <div className="flex items-center justify-between bg-gray-50/50 border border-gray-100 rounded-xl p-5">
+            <div className="flex items-center justify-between bg-gray-100/40 rounded-xl p-5">
               <div className="flex items-start gap-3">
                 <Plane className="h-5 w-5 text-gray-400 mt-0.5" />
                 <div>
@@ -916,54 +1004,73 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
             </div>
 
             <div className="grid grid-cols-4 gap-4">
-              <div className="bg-gray-100 rounded-xl p-5 flex flex-col items-center justify-center text-center">
-                <span className="text-2xl font-bold text-gray-900">{totalBookingsCount || 1}</span>
-                <span className="text-xs text-gray-600 mt-1 font-medium">Total Bookings</span>
+              <div className="bg-[#F6F7F8] rounded-xl py-5 flex flex-col items-center justify-center text-center">
+                <span className="text-[22px] leading-tight font-bold text-[#111827]">{addedBookings.length}</span>
+                <span className="text-[13px] text-[#6B7280] mt-1">Total Bookings</span>
               </div>
-              <div className="bg-gray-100 rounded-xl p-5 flex flex-col items-center justify-center text-center">
-                <span className="text-2xl font-bold text-gray-900">{totalPassengersCount || 1}</span>
-                <span className="text-xs text-gray-600 mt-1 font-medium">Total Passengers</span>
+              <div className="bg-[#F6F7F8] rounded-xl py-5 flex flex-col items-center justify-center text-center">
+                <span className="text-[22px] leading-tight font-bold text-[#111827]">{totalPassengersCount}</span>
+                <span className="text-[13px] text-[#6B7280] mt-1">Total Passengers</span>
               </div>
-              <div className="bg-gray-100 rounded-xl p-5 flex flex-col items-center justify-center text-center">
-                <span className="text-2xl font-bold text-gray-900">{addedBookings.reduce((sum, b) => sum + Math.ceil((b.adults + b.children) / 2), 0) || 1}</span>
-                <span className="text-xs text-gray-600 mt-1 font-medium">Est. Rooms Required</span>
+              <div className="bg-[#F6F7F8] rounded-xl py-5 flex flex-col items-center justify-center text-center">
+                <span className="text-[22px] leading-tight font-bold text-[#111827]">{addedBookings.reduce((sum, b) => sum + Math.ceil((b.adults + b.children) / 2), 0)}</span>
+                <span className="text-[13px] text-[#6B7280] mt-1">Est. Rooms Required</span>
               </div>
-              <div className="bg-gray-100 rounded-xl p-5 flex flex-col items-center justify-center text-center">
-                <span className="text-2xl font-bold text-gray-900">{addedBookings.filter(b => b.travelClass === "Business" || b.travelClass === "First Class").length || 0}</span>
-                <span className="text-xs text-gray-600 mt-1 font-medium">Business Class</span>
+              <div className="bg-[#F6F7F8] rounded-xl py-5 flex flex-col items-center justify-center text-center">
+                <span className="text-[22px] leading-tight font-bold text-[#111827]">{addedBookings.filter(b => b.travelClass === "Business" || b.travelClass === "First Class").length}</span>
+                <span className="text-[13px] text-[#6B7280] mt-1">Business Class</span>
               </div>
             </div>
 
-            <div className="overflow-x-auto border-t border-gray-100 pt-2">
-              <table className="min-w-full text-sm text-left">
-                <thead className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-100">
-                  <tr>
-                    <th className="px-4 py-3">PNR</th>
-                    <th className="px-4 py-3">CONTACT</th>
-                    <th className="px-4 py-3">EMAIL</th>
-                    <th className="px-4 py-3">ADULTS</th>
-                    <th className="px-4 py-3">CHILDREN</th>
-                    <th className="px-4 py-3">CLASS</th>
-                    <th className="px-4 py-3">EST. ROOMS</th>
-                  </tr>
-                </thead>
-                <tbody className="text-gray-700">
+            <div className="overflow-x-auto border border-gray-200 rounded-xl mt-4">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="min-w-[80px]">PNR</TableHead>
+                    <TableHead className="min-w-[140px]">Contact Name</TableHead>
+                    <TableHead className="min-w-[160px]">Email</TableHead>
+                    <TableHead className="min-w-[80px]">Adults</TableHead>
+                    <TableHead className="min-w-[80px]">Children</TableHead>
+                    <TableHead className="min-w-[100px]">Class</TableHead>
+                    <TableHead className="min-w-[100px]">Est. Rooms</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {(addedBookings.length > 0 ? addedBookings : [{
                     id: "1", pnr: "DDJU", firstName: "New", lastName: "Admin", email: "ops@summitair.com", adults: 1, children: 0, travelClass: "Economy"
-                  }]).map((b, idx) => (
-                    <tr key={b.id || idx} className="border-b border-gray-50 last:border-0">
-                      <td className="px-4 py-3.5 font-medium text-gray-900">{b.pnr}</td>
-                      <td className="px-4 py-3.5">{b.firstName} {b.lastName}</td>
-                      <td className="px-4 py-3.5 text-gray-500">{b.email}</td>
-                      <td className="px-4 py-3.5">{b.adults}</td>
-                      <td className="px-4 py-3.5">{b.children}</td>
-                      <td className="px-4 py-3.5">{b.travelClass}</td>
-                      <td className="px-4 py-3.5">{Math.ceil((b.adults + b.children) / 2)}</td>
-                    </tr>
+                  }] as typeof addedBookings).slice((step3CurrentPage - 1) * step3ResultsPerPage, step3CurrentPage * step3ResultsPerPage).map((b, idx) => (
+                    <TableRow key={b.id || idx}>
+                      <TableCell className="font-medium text-gray-900">{b.pnr}</TableCell>
+                      <TableCell>{b.firstName} {b.lastName}</TableCell>
+                      <TableCell className="text-gray-550">{b.email}</TableCell>
+                      <TableCell>{b.adults}</TableCell>
+                      <TableCell>{b.children}</TableCell>
+                      <TableCell>
+                        <span className={cn(
+                          "rounded px-2.5 py-1 text-xs font-semibold inline-block",
+                          b.travelClass === "Business" || b.travelClass === "First Class"
+                            ? "bg-purple-100 text-purple-800"
+                            : "bg-gray-100 text-gray-700"
+                        )}>
+                          {b.travelClass}
+                        </span>
+                      </TableCell>
+                      <TableCell>{Math.ceil((b.adults + b.children) / 2)}</TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
+
+            {/* Pagination */}
+            <Pagination
+              totalResults={addedBookings.length || 1}
+              currentPage={step3CurrentPage}
+              setCurrentPage={setStep3CurrentPage}
+              resultsPerPage={step3ResultsPerPage}
+              setResultsPerPage={setStep3ResultsPerPage}
+              totalPages={Math.ceil((addedBookings.length || 1) / step3ResultsPerPage)}
+            />
           </div>
         );
       case 4:
@@ -1018,7 +1125,7 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
 
         return (
           <div className="space-y-6 animate-in fade-in duration-300">
-            <div className="flex items-center gap-3 bg-slate-50 border border-gray-100 p-4 rounded-xl">
+            <div className="flex items-center gap-3 pb-4">
               <div className="size-10 bg-[#0F2757]/10 text-[#0F2757] rounded-lg flex justify-center items-center shrink-0 border border-[#0F2757]/20">
                 <Building2 className="h-5 w-5" />
               </div>
@@ -1062,72 +1169,172 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
           </div>
         );
       case 5:
+        const roomsCount = addedBookings.reduce((sum, b) => sum + Math.ceil((b.adults + b.children) / 2), 0) || 11;
+        const baseCost = hotelCost > 0 ? hotelCost : 1320;
+        const discountAmt = baseCost * 0.10;
+        const taxAmt = baseCost * 0.08;
+        const feeAmt = (baseCost - discountAmt + taxAmt) * 0.05;
+        const finalAmt = baseCost - discountAmt + taxAmt + feeAmt;
+
         return (
           <div className="space-y-6">
-            <div className="flex items-center gap-3 bg-slate-50 border border-gray-100 p-4 rounded-xl">
-              <div className="size-10 bg-emerald-50 text-emerald-600 rounded-lg flex justify-center items-center shrink-0 border border-emerald-100">
-                <ShieldCheck className="h-5 w-5" />
+            <div className="flex items-center gap-3 pb-4">
+              <div className="size-10 bg-[#ECFDF5] text-[#10B981] rounded-lg flex justify-center items-center shrink-0 border border-[#D1FAE5]">
+                <CheckCircle2 className="h-5 w-5" />
               </div>
               <div className="text-left">
-                <h3 className="text-lg font-semibold text-gray-900 font-figtree">Allocation Preview</h3>
-                <p className="text-sm text-gray-500 mt-0.5">Review hotel assignments and costs</p>
+                <h3 className="text-lg font-semibold text-gray-900 font-figtree">Booking Summary</h3>
+                <p className="text-sm text-gray-500 mt-0.5">Review the booked hotels, room details, and final payment amount before proceeding.</p>
               </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm text-left">
-                <thead className="bg-gray-50/80 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
-                  <tr>
-                    <th className="px-4 py-3">BOOKING REF</th>
-                    <th className="px-4 py-3">CONTACT</th>
-                    <th className="px-4 py-3">CLASS</th>
-                    <th className="px-4 py-3">PASSENGERS</th>
-                    <th className="px-4 py-3">HOTEL</th>
-                    <th className="px-4 py-3">RATING</th>
-                    <th className="px-4 py-3">ROOMS</th>
-                    <th className="px-4 py-3">TOTAL COST</th>
-                  </tr>
-                </thead>
-                <tbody className="text-gray-700 divide-y divide-gray-100 border-b border-gray-200">
+            {/* Summary Cards */}
+            <div className="grid grid-cols-3 gap-4">
+              {/* Card 1 */}
+              <div className="bg-[#F6F7F8] border border-gray-200 rounded-xl p-5 text-left">
+                <div className="flex items-center gap-2 text-gray-500 mb-3">
+                  <Bed className="h-4 w-4" />
+                  <span className="text-[13px] font-semibold uppercase">Total Room Bookings</span>
+                </div>
+                <div className="text-[24px] font-bold text-gray-900">{roomsCount}</div>
+                <div className="text-sm text-gray-400 mt-1">Rooms booked</div>
+              </div>
+              {/* Card 2 */}
+              <div className="bg-[#F6F7F8] border border-gray-200 rounded-xl p-5 text-left">
+                <div className="flex items-center gap-2 text-gray-500 mb-3">
+                  <Receipt className="h-4 w-4" />
+                  <span className="text-[13px] font-semibold uppercase">Total Hotel Cost</span>
+                </div>
+                <div className="text-[24px] font-bold text-gray-900">${baseCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div className="text-sm text-gray-400 mt-1">Hotel charges before platform discount</div>
+              </div>
+              {/* Card 3 */}
+              <div className="bg-[#F6F7F8] border border-gray-200 rounded-xl p-5 text-left">
+                <div className="flex items-center gap-2 text-gray-500 mb-3">
+                  <Percent className="h-4 w-4" />
+                  <span className="text-[13px] font-semibold uppercase">Platform Discount</span>
+                </div>
+                <div className="text-[24px] font-bold text-green-600">-${discountAmt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div className="text-sm text-gray-400 mt-1">Discount provided by platform</div>
+              </div>
+              {/* Card 4 */}
+              <div className="bg-[#F6F7F8] border border-gray-200 rounded-xl p-5 text-left">
+                <div className="flex items-center gap-2 text-gray-500 mb-3">
+                  <DollarSign className="h-4 w-4" />
+                  <span className="text-[13px] font-semibold uppercase">Hotel Tax</span>
+                </div>
+                <div className="text-[24px] font-bold text-gray-900">${taxAmt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div className="text-sm text-gray-400 mt-1">Applicable hotel taxes</div>
+              </div>
+              {/* Card 5 */}
+              <div className="bg-[#F6F7F8] border border-gray-200 rounded-xl p-5 text-left">
+                <div className="flex items-center gap-2 text-gray-500 mb-3">
+                  <Percent className="h-4 w-4" />
+                  <span className="text-[13px] font-semibold uppercase">Platform Fee (5%)</span>
+                </div>
+                <div className="text-[24px] font-bold text-gray-900">${feeAmt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div className="text-sm text-gray-400 mt-1">Platform fee on the hotel payment</div>
+              </div>
+              {/* Card 6 */}
+              <div className="bg-[#F6F7F8] border-[2px] border-[#0F2757] rounded-xl p-5 text-left">
+                <div className="flex items-center gap-2 text-[#0F2757] mb-3">
+                  <Wallet className="h-4 w-4" />
+                  <span className="text-[13px] font-semibold uppercase">Total Payment</span>
+                </div>
+                <div className="text-[24px] font-bold text-[#0F2757]">${finalAmt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div className="text-sm text-gray-500 mt-1">Total amount to be charged</div>
+              </div>
+            </div>
+
+            {/* Table Header */}
+            <div className="mt-8 text-left">
+              <h4 className="text-[16px] font-semibold text-[#0F2757]">Booked Hotels</h4>
+              <p className="text-sm text-gray-500 mt-1">Review the hotel assigned to each booking and the associated room costs.</p>
+            </div>
+
+            {/* Table */}
+            <div className="overflow-x-auto border border-gray-200 rounded-xl mt-4">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="min-w-[140px]">Hotel Booking ID</TableHead>
+                    <TableHead className="min-w-[100px]">PNR</TableHead>
+                    <TableHead className="min-w-[160px]">Contact</TableHead>
+                    <TableHead className="min-w-[100px]">Class</TableHead>
+                    <TableHead className="min-w-[120px]">Passengers</TableHead>
+                    <TableHead className="min-w-[180px]">Hotel</TableHead>
+                    <TableHead className="min-w-[100px]">Rating</TableHead>
+                    <TableHead className="min-w-[80px]">Rooms</TableHead>
+                    <TableHead className="min-w-[100px]">Total</TableHead>
+                    <TableHead className="min-w-[80px]">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {(addedBookings.length > 0 ? addedBookings : [{
                     id: "1", pnr: "AAAAA", firstName: "New", lastName: "Admin", email: "ops@summitair.com", adults: 1, children: 0, travelClass: "Economy"
-                  }]).map((b, idx) => {
+                  }]).slice((step5CurrentPage - 1) * step5ResultsPerPage, step5CurrentPage * step5ResultsPerPage).map((b, idx) => {
                     const isBusiness = b.travelClass === "Business" || b.travelClass === "First Class";
                     const hotelName = isBusiness ? "Hyatt Regency LAX" : "Holiday Inn Express LAX";
                     const stars = isBusiness ? 4 : 3;
                     const rooms = Math.ceil((b.adults + b.children) / 2);
-                    const cost = rooms * (isBusiness ? 160 : 120);
+                    const bookingCost = rooms * (isBusiness ? 160 : 120);
+                    const passengersStr = b.adults + b.children > 1 ? `${b.adults + b.children} Passengers` : `${b.adults + b.children} Passenger`;
 
                     return (
-                      <tr key={b.id || idx}>
-                        <td className="px-4 py-4 font-medium text-gray-900">{b.pnr}</td>
-                        <td className="px-4 py-4">
-                          <p className="font-semibold text-gray-900">{b.firstName} {b.lastName}</p>
-                          <p className="text-xs text-gray-500">{b.email}</p>
-                        </td>
-                        <td className="px-4 py-4">{b.travelClass}</td>
-                        <td className="px-4 py-4">{b.adults + b.children} {b.adults + b.children > 1 ? "Passengers" : "Adult"}</td>
-                        <td className="px-4 py-4 font-medium max-w-[120px]">{hotelName}</td>
-                        <td className="px-4 py-4">
-                          <div className="flex items-center text-amber-400">
+                      <TableRow key={b.id || idx}>
+                        <TableCell className="font-medium text-gray-900">HB-00023{idx + 1}</TableCell>
+                        <TableCell className="font-medium text-gray-900">{b.pnr}</TableCell>
+                        <TableCell>
+                          <div className="font-semibold text-gray-900">{b.firstName} {b.lastName}</div>
+                          <div className="text-xs text-gray-500">{b.email}</div>
+                        </TableCell>
+                        <TableCell>
+                          <span className={cn(
+                            "rounded px-2.5 py-1 text-xs font-semibold inline-block capitalize",
+                            isBusiness ? "bg-purple-100 text-purple-800" : "bg-gray-100 text-gray-700"
+                          )}>
+                            {b.travelClass}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-center">{passengersStr}</TableCell>
+                        <TableCell className="font-medium">{hotelName}</TableCell>
+                        <TableCell>
+                          <div className="flex justify-center items-center text-amber-400">
                             {[...Array(stars)].map((_, i) => (
                               <Star key={i} className="h-3 w-3 fill-current" />
                             ))}
                           </div>
-                        </td>
-                        <td className="px-4 py-4">{rooms}</td>
-                        <td className="px-4 py-4 font-semibold text-gray-900">${cost}</td>
-                      </tr>
+                        </TableCell>
+                        <TableCell className="text-center">{rooms}</TableCell>
+                        <TableCell className="text-right font-semibold text-gray-900">${bookingCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                        <TableCell>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedBookingForDrawer(b);
+                              setIsBookingDetailsOpen(true);
+                            }}
+                            className="p-1.5 text-gray-400 hover:text-[#0F2757] hover:bg-gray-100 rounded transition-colors"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                        </TableCell>
+                      </TableRow>
                     );
                   })}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
 
-            <div className="bg-gray-50 rounded-xl p-6 flex justify-between items-center text-base">
-              <span className="font-semibold text-gray-900">Total Hotel Cost</span>
-              <span className="font-bold text-gray-900 text-xl">${calculatedTotalCost || 120}</span>
-            </div>
+            {/* Pagination */}
+            <Pagination
+              totalResults={addedBookings.length || 1}
+              currentPage={step5CurrentPage}
+              setCurrentPage={setStep5CurrentPage}
+              resultsPerPage={step5ResultsPerPage}
+              setResultsPerPage={setStep5ResultsPerPage}
+              totalPages={Math.ceil((addedBookings.length || 1) / step5ResultsPerPage)}
+            />
           </div>
         );
       case 6:
@@ -1138,12 +1345,41 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
                 <CreditCard className="h-6 w-6 text-[#0F2757]" />
               </div>
               <div className="text-left">
-                <h3 className="text-xl font-semibold text-gray-900 font-figtree">Payment Method</h3>
-                <p className="text-sm text-gray-500 mt-0.5">Select the card to charge for these hotel bookings</p>
+                <h3 className="text-xl font-semibold text-gray-900 font-figtree">Payment</h3>
+                <p className="text-sm text-gray-500 mt-0.5">Review the final amount and select the card to pay for the hotel bookings.</p>
               </div>
             </div>
 
-            <div className="space-y-4 text-left">
+            <div className="bg-gray-50/80 rounded-xl p-6 space-y-4 text-left text-sm border border-gray-100">
+              <div className="flex justify-between items-center text-gray-500">
+                <span>Hotel Cost</span>
+                <span className="font-semibold text-gray-900">${hotelCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div className="flex justify-between items-center text-gray-500">
+                <span>Platform Discount</span>
+                <span className="font-semibold text-[#1FAD53]">-${platformDiscount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div className="flex justify-between items-center text-gray-500">
+                <span>Hotel Tax</span>
+                <span className="font-semibold text-gray-900">${hotelTax.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div className="flex justify-between items-center text-gray-500">
+                <span>Platform Fee (5%)</span>
+                <span className="font-semibold text-gray-900">${platformFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div className="h-px bg-gray-200 w-full" />
+              <div className="flex justify-between items-center font-bold text-gray-900 text-base">
+                <span>Total Payment</span>
+                <span className="text-[20px]">${totalPayment.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              </div>
+            </div>
+
+            <div className="space-y-4 text-left pt-4">
+              <div>
+                <h3 className="text-base font-semibold text-gray-900 font-figtree">Payment Method</h3>
+                <p className="text-sm text-gray-500 mt-0.5">Select the card to charge for these hotel bookings.</p>
+              </div>
+
               <AddCardModal isOpen={isAddingCard} onClose={() => setIsAddingCard(false)} />
 
               {[
@@ -1157,7 +1393,7 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
                     onClick={() => setPaymentMethod(method.id)}
                     className={cn(
                       "p-4 rounded-xl border flex items-center justify-between cursor-pointer transition-all duration-150",
-                      isSelected ? "border-[#0F2757] bg-[#0F2757]/5 ring-1 ring-[#0F2757]" : "border-gray-200 hover:border-gray-300 bg-gray-50/30"
+                      isSelected ? "border-[#0F2757] bg-[#0F2757]/5 ring-1 ring-[#0F2757]" : "border-gray-200 hover:border-gray-300 bg-white"
                     )}
                   >
                     <div className="flex items-center gap-4 text-left">
@@ -1189,7 +1425,7 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
                 );
               })}
 
-              <div className="flex items-center gap-3 mt-1.5">
+              <div className="flex items-center gap-3 mt-2">
                 <button
                   type="button"
                   onClick={() => setIsAddingCard(true)}
@@ -1198,97 +1434,66 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
                   <Plus className="h-4 w-4 text-gray-500" />
                   Add New Card
                 </button>
+              </div>
 
-                {paymentMethod !== "visa" && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      toast.success("Card set as default successfully!");
-                      setPaymentMethod("visa");
-                    }}
-                    className="flex items-center gap-1.5 py-2.5 px-4 text-sm font-semibold text-[#1F2937] hover:bg-gray-50 cursor-pointer bg-transparent rounded-lg"
-                  >
-                    Make default card
-                  </button>
-                )}
+              <div className="pt-4">
+                <label className="flex items-center gap-3 p-4 border border-gray-200 rounded-xl cursor-pointer hover:bg-gray-50 transition-colors group">
+                  <div className="relative flex items-center justify-center">
+                    <input
+                      type="checkbox"
+                      className="peer sr-only"
+                      checked={paymentConfirmed}
+                      onChange={(e) => setPaymentConfirmed(e.target.checked)}
+                    />
+                    <div className={cn(
+                      "size-5 rounded border flex items-center justify-center transition-colors shrink-0",
+                      paymentConfirmed
+                        ? "bg-[#0F2757] border-[#0F2757]"
+                        : "border-gray-300 bg-white group-hover:border-[#0F2757]"
+                    )}>
+                      {paymentConfirmed && <Check className="h-3.5 w-3.5 text-white stroke-[3]" />}
+                    </div>
+                  </div>
+                  <span className="text-sm text-gray-700">I confirm that I want to charge ${totalPayment.toLocaleString(undefined, { minimumFractionDigits: 2 })} to the selected card.</span>
+                </label>
               </div>
             </div>
-
-            <div className="bg-gray-50/80 rounded-xl p-6 mt-4 space-y-4 text-left text-sm border border-gray-100">
-              <div className="flex justify-between items-center text-gray-500">
-                <span>Hotel cost (charged to your card)</span>
-                <span className="font-semibold text-gray-900">${hotelRoomsCost.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between items-center text-gray-500">
-                <span>Platform service fee (5%)</span>
-                <span className="font-semibold text-gray-900">${platformFee.toLocaleString()}</span>
-              </div>
-              <div className="h-px bg-gray-200 w-full" />
-              <div className="flex justify-between items-center font-semibold text-gray-900 text-base">
-                <span>Charged now to card</span>
-                <span className="text-lg font-bold">${hotelRoomsCost.toLocaleString()}</span>
-              </div>
-            </div>
-
-            <div className="bg-slate-100/70 border border-slate-200 p-4 rounded-xl text-sm flex items-start gap-3 text-left">
-              <Info className="h-5 w-5 text-slate-500 shrink-0 mt-0.5" />
-              <p className="text-slate-600 text-xs">
-                The service fee of ${platformFee.toLocaleString()} is added to your outstanding platform balance ($6,287 of $25,000 credit limit used) and paid periodically from the Billing page.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleNextStep}
-              className="w-full bg-[#0F2757] hover:bg-[#162259] text-white font-medium py-3 px-4 rounded-lg mt-6 transition-colors flex items-center justify-center text-base cursor-pointer shadow-xs"
-            >
-              Pay ${hotelRoomsCost.toLocaleString()}
-            </button>
           </div>
         );
       case 7:
         return (
           <div className="space-y-6 animate-in fade-in duration-300">
-            <div className="flex items-start gap-3 bg-slate-50 border border-gray-100 p-4 rounded-xl">
-              <div className="size-10 bg-[#0F2757]/10 text-[#0F2757] rounded-lg flex justify-center items-center shrink-0 border border-[#0F2757]/20">
-                <Send className="h-5 w-5" />
+            <div className="flex items-center gap-3 pb-4">
+              <div className="size-11 p-2.5 bg-slate-100 text-slate-700 rounded-xl flex justify-center items-center shrink-0">
+                <Send className="h-6 w-6 text-[#0F2757]" />
               </div>
-              <div className="text-left flex-1">
-                <h3 className="text-lg font-semibold text-gray-900 font-figtree">Ready to Publish</h3>
-                <p className="text-sm text-gray-500 mt-0.5 leading-relaxed">
-                  Publishing will charge the hotel cost to your selected card, finalize the hotel bookings and send confirmation PDF emails to all booking contact addresses.
+              <div className="text-left">
+                <h3 className="text-xl font-semibold text-gray-900 font-figtree">Notify Passengers</h3>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  Payment is complete. Publishing will send the hotel booking confirmation email, including the booking confirmation PDF, to every booking contact address.
                 </p>
               </div>
             </div>
 
-            <div className="w-full bg-orange-50/50 border border-orange-200 p-3.5 rounded-xl text-sm">
-              <p className="text-orange-600 text-xs font-medium">
+            <div className="w-full bg-[#F3F8ED] border border-[#D1E5CA] p-4 rounded-xl text-sm flex items-center justify-start gap-2 text-[#4CAF50]">
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              <span>Payment successfully processed for this cancelled flight.</span>
+            </div>
+
+            <div className="w-full bg-[#FFF7E8] border border-[#FBE0C3] p-4 rounded-xl text-sm text-[#F59E0B] text-left">
+              <p>
                 <span className="font-bold">Note:</span> This action cannot be undone. Passengers will receive their hotel booking confirmations immediately.
               </p>
             </div>
 
-            <div className="w-full bg-gray-50/80 rounded-xl p-5 space-y-3 text-left text-sm border border-gray-100">
-              <div className="flex justify-between items-center text-gray-600">
-                <span>Total Bookings:</span>
+            <div className="w-full bg-[#F8F9FA] rounded-xl p-5 space-y-4 text-left text-sm">
+              <div className="flex justify-between items-center text-gray-800">
+                <span>Confirmation Emails:</span>
                 <span className="font-semibold text-gray-900">{totalBookingsCount}</span>
               </div>
-              <div className="flex justify-between items-center text-gray-600">
+              <div className="flex justify-between items-center text-gray-800">
                 <span>Total Passengers:</span>
                 <span className="font-semibold text-gray-900">{totalPassengersCount}</span>
-              </div>
-              <div className="flex justify-between items-center text-gray-600 pt-3 border-t border-gray-200/60 mt-1">
-                <span>Total Hotel Cost:</span>
-                <span className="font-bold text-gray-900 text-base">${hotelRoomsCost.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between items-center text-gray-600">
-                <span>Charged to:</span>
-                <span className="font-bold text-gray-900 text-base uppercase">
-                  {paymentMethod === "visa" ? "VISA •••• 4242" : paymentMethod === "mastercard" ? "MASTERCARD •••• 5599" : "CORP CARD"}
-                </span>
-              </div>
-              <div className="flex justify-between items-center text-gray-600">
-                <span>Platform service fee (billed later):</span>
-                <span className="font-semibold text-gray-900">${platformFee.toLocaleString()}</span>
               </div>
             </div>
 
@@ -1303,7 +1508,7 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
                     cancellationDate: newDate ? new Date(newDate).toISOString() : new Date().toISOString(),
                     bookings: totalBookingsCount || 1,
                     passengers: totalPassengersCount || 1,
-                    totalCost: calculatedTotalCost || 120,
+                    totalCost: totalPayment || 120,
                     status: "Published",
                     reason: newReason || selectedReasonTag || "Weather disruption",
                   });
@@ -1311,7 +1516,7 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
                 className="bg-[#2B3B67] hover:bg-[#1E2B4D] text-white font-medium py-2.5 px-6 rounded-lg transition-colors cursor-pointer text-sm inline-flex items-center gap-2"
               >
                 <Send className="h-4 w-4" />
-                <span>Pay & Publish</span>
+                <span>Send Confirmations & Publish</span>
               </button>
             </div>
           </div>
@@ -1342,28 +1547,49 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
         {renderActiveStep()}
 
         {/* Footer Actions */}
-        {activeStep !== 4 && (
-          <div className="mt-8 pt-6 flex items-center justify-between">
-            <button
-              onClick={handlePrevStep}
-              className="flex items-center gap-2 border border-gray-300 bg-gray-55 hover:bg-gray-100 text-gray-700 font-medium py-2.5 px-5 rounded-lg transition-colors cursor-pointer text-sm"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              <span>Back</span>
-            </button>
+        {activeStep !== 4 && activeStep !== 7 && (
+          <div className={cn("mt-8 pt-6 flex items-center", activeStep === 5 ? "justify-end" : "justify-between")}>
+            {activeStep !== 5 && (
+              <button
+                onClick={handlePrevStep}
+                className="flex items-center gap-2 border border-gray-200 bg-gray-100 hover:bg-gray-300 text-gray-700 font-medium py-2.5 px-5 rounded-lg transition-colors cursor-pointer text-sm"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                <span>Back</span>
+              </button>
+            )}
 
-            {activeStep !== 7 && activeStep !== 6 && (
+            {activeStep !== 7 && (
               <button
                 onClick={handleNextStep}
-                className="flex items-center gap-2 bg-[#0F2757] hover:bg-[#162259] text-white font-medium py-2.5 px-5 rounded-lg transition-colors cursor-pointer text-sm"
+                disabled={activeStep === 6 && !paymentConfirmed}
+                className={cn(
+                  "flex items-center gap-2 font-medium py-2.5 px-5 rounded-lg transition-colors cursor-pointer text-sm",
+                  activeStep === 6 && !paymentConfirmed ? "bg-[#9CA3AF] text-white cursor-not-allowed border-none" : "bg-[#0F2757] hover:bg-[#162259] text-white"
+                )}
               >
-                <span>{activeStep === 5 ? "Continue to Payment" : "Continue"}</span>
-                <ArrowRight className="h-4 w-4" />
+                {activeStep === 6 ? (
+                  <>
+                    <CreditCard className="h-4 w-4" />
+                    <span>Pay ${totalPayment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </>
+                ) : (
+                  <>
+                    <span>{activeStep === 5 ? "Continue to Payment" : "Continue"}</span>
+                    <ArrowRight className="h-4 w-4" />
+                  </>
+                )}
               </button>
             )}
           </div>
         )}
       </div>
+
+      <BookingDetailsDrawer
+        isOpen={isBookingDetailsOpen}
+        onClose={() => setIsBookingDetailsOpen(false)}
+        booking={selectedBookingForDrawer}
+      />
     </div>
   );
 }
