@@ -11,6 +11,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -62,8 +63,12 @@ import {
   ImportBookingResponseDto,
   UpdateBookingDto,
   ReviewCancelledFlightResponseDto,
+  AllocateHotelDto,
+  CheckRateRequestDto,
+  BookHotelRequestDto,
 } from "./dto";
 import { PaginationQueryDto } from "../common/dto/pagination-query.dto";
+import { AuthenticatedRequest } from "../auth/interfaces/authenticated-request.interface";
 
 @ApiTags("Cancelled Flights")
 @ApiBearerAuth("access-token")
@@ -119,10 +124,22 @@ export class CancelledFlightsController {
     ),
   })
   async createCancelledFlight(
+    @Req() req: AuthenticatedRequest,
     @Body() dto: CreateCancelledFlightDto,
     @RequestId() requestId: string,
   ): Promise<BaseResponseDto<CancelledFlightResponseDto>> {
-    const data = await this.service.createCancelledFlight(dto, requestId);
+    const user = req.user;
+    const airlineId = user.airlineId;
+    if (!airlineId) {
+      throw new BadRequestException(
+        "Authenticated user does not have an associated airlineId",
+      );
+    }
+    const data = await this.service.createCancelledFlight(
+      airlineId,
+      dto,
+      requestId,
+    );
     return BaseResponseDto.success(data, requestId, "Cancelled flight created");
   }
 
@@ -423,6 +440,150 @@ export class CancelledFlightsController {
       data,
       requestId,
       "Passenger booking details confirmed",
+    );
+  }
+
+  // ── GET /cancelled-flights/:id/bookings/:bookingId/hotel-recommendations ──
+
+  @Get(":id/bookings/:bookingId/hotel-recommendations")
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.VIEW],
+    },
+  })
+  @ApiOperation({
+    summary: "Get AI-recommended hotels for a passenger on a cancelled flight",
+    description:
+      "Fetches a list of local candidate hotels and scores them dynamically using Groq's Llama model based on the passenger's class and special needs.",
+  })
+  @ApiParam({ name: "id", description: "Cancelled flight UUID" })
+  @ApiParam({ name: "bookingId", description: "Booking UUID" })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/cancelled-flights/:id/bookings/:bookingId/hotel-recommendations",
+      "Cancelled flight or booking not found",
+    ),
+  })
+  async getHotelRecommendations(
+    @Param("id", ParseIntPipe) id: number,
+    @Param("bookingId", ParseIntPipe) bookingId: number,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<object>> {
+    const data = await this.service.getHotelRecommendations(
+      id,
+      bookingId,
+      requestId,
+    );
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "AI Hotel recommendations fetched successfully",
+    );
+  }
+
+  // ── POST /cancelled-flights/:id/bookings/:bookingId/allocate-hotel ───────
+
+  @Post(":id/bookings/:bookingId/allocate-hotel")
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.EDIT],
+    },
+  })
+  @ApiOperation({
+    summary: "Allocate a hotel to a passenger booking",
+    description: "Saves hotel details for a passenger's allocation record.",
+  })
+  @ApiParam({ name: "id", description: "Cancelled flight UUID" })
+  @ApiParam({ name: "bookingId", description: "Booking UUID" })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/cancelled-flights/:id/bookings/:bookingId/allocate-hotel",
+      "Cancelled flight or booking not found",
+    ),
+  })
+  async allocateHotel(
+    @Param("id", ParseIntPipe) id: number,
+    @Param("bookingId", ParseIntPipe) bookingId: number,
+    @Body() dto: AllocateHotelDto,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<object>> {
+    const data = await this.service.allocateHotel(
+      id,
+      bookingId,
+      dto,
+      requestId,
+    );
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Hotel allocated successfully",
+    );
+  }
+
+  // ── POST /cancelled-flights/:id/bookings/:bookingId/check-rate ────────────
+
+  @Post(":id/bookings/:bookingId/check-rate")
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.EDIT],
+    },
+  })
+  @ApiOperation({
+    summary: "Check rate key availability and pricing details",
+    description:
+      "Queries Hotelbeds CheckRate API to verify room rate availability, cancellation policies, and cost details.",
+  })
+  @ApiParam({ name: "id", description: "Cancelled flight UUID" })
+  @ApiParam({ name: "bookingId", description: "Booking UUID" })
+  async checkRate(
+    @Param("id", ParseIntPipe) id: number,
+    @Param("bookingId", ParseIntPipe) bookingId: number,
+    @Body() dto: CheckRateRequestDto,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<object>> {
+    const data = await this.service.checkRate(
+      id,
+      bookingId,
+      dto.rateKey,
+      requestId,
+    );
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Room rate details retrieved successfully",
+    );
+  }
+
+  // ── POST /cancelled-flights/:id/bookings/:bookingId/book-hotel ────────────
+
+  @Post(":id/bookings/:bookingId/book-hotel")
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.EDIT],
+    },
+  })
+  @ApiOperation({
+    summary: "Perform live hotel reservation and allocate it to the booking",
+    description:
+      "Queries Hotelbeds Bookings API to confirm reservation, then stores allocation details in the database.",
+  })
+  @ApiParam({ name: "id", description: "Cancelled flight UUID" })
+  @ApiParam({ name: "bookingId", description: "Booking UUID" })
+  async bookHotel(
+    @Param("id", ParseIntPipe) id: number,
+    @Param("bookingId", ParseIntPipe) bookingId: number,
+    @Body() dto: BookHotelRequestDto,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<object>> {
+    const data = await this.service.bookHotel(id, bookingId, dto, requestId);
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Hotel booked and allocated successfully",
     );
   }
 }

@@ -97,4 +97,13 @@ export const config = {
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? "",
     fromEmail: process.env.AWS_SES_FROM_EMAIL ?? "noreply@example.com",
   },
+  groq: {
+    apiKey: process.env.GROQ_API_KEY ?? "",
+    model: process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile",
+  },
+  hotelbeds: {
+    apiKey: process.env.HOTELBEDS_API_KEY ?? "",
+    secret: process.env.HOTELBEDS_SECRET ?? "",
+    useSandbox: process.env.HOTELBEDS_USE_SANDBOX !== "false",
+  },
 } as const;

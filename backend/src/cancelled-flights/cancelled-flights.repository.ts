@@ -5,6 +5,7 @@ import { LoggerService } from "../common/logger/logger.service";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
 import { BookingEntity } from "./entities/booking.entity";
 import { FlightStatus } from "./entities/enums";
+import { HotelAllocationEntity } from "./entities/hotel-allocation.entity";
 
 @Injectable()
 export class CancelledFlightsRepository {
@@ -13,6 +14,8 @@ export class CancelledFlightsRepository {
     private readonly flightRepo: Repository<CancelledFlightEntity>,
     @InjectRepository(BookingEntity)
     private readonly bookingRepo: Repository<BookingEntity>,
+    @InjectRepository(HotelAllocationEntity)
+    private readonly allocationRepo: Repository<HotelAllocationEntity>,
     private readonly logger: LoggerService,
   ) {}
 
@@ -298,5 +301,25 @@ export class CancelledFlightsRepository {
       totalAdults: Number(stats?.totalAdults ?? 0),
       totalChildren: Number(stats?.totalChildren ?? 0),
     };
+  }
+
+  // ── HotelAllocation ──────────────────────────────────────────────────────
+
+  async saveHotelAllocation(
+    payload: Partial<HotelAllocationEntity>,
+    requestId: string,
+  ): Promise<HotelAllocationEntity> {
+    this.logger.debug(
+      "Saving hotel allocation",
+      "CancelledFlightsRepository",
+      requestId,
+      {
+        cancelledFlightId: payload.cancelledFlightId,
+        bookingId: payload.bookingId,
+        hotelName: payload.hotelName,
+      },
+    );
+    const entity = this.allocationRepo.create(payload);
+    return this.allocationRepo.save(entity);
   }
 }
