@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { toast } from "react-toastify";
+import { authService } from "@/src/services/auth.service";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -90,13 +91,22 @@ export default function LoginPage() {
     setErrors({});
     setIsLoading(true);
 
-    // Mock API call
-    setTimeout(() => {
+    try {
+      const result = await authService.signin(email, password);
+      
+      if (result?.requiresPasswordReset) {
+        sessionStorage.setItem("reset_password_token", result.resetPasswordToken);
+        toast.info(result.message || "Password reset required");
+        router.push("/verify");
+      } else {
+        toast.success("Successfully signed in");
+        router.push("/");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Sign in failed");
+    } finally {
       setIsLoading(false);
-      sessionStorage.setItem("airline_current_user", email);
-      toast.success("Successfully signed in");
-      router.push("/");
-    }, 1500);
+    }
   };
 
   return (
