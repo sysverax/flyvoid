@@ -24,6 +24,7 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${figtree.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
       <body className={`${figtree.className} font-figtree min-h-screen flex flex-col antialiased`}>
         <MainLayout>{children}</MainLayout>

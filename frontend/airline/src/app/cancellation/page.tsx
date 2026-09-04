@@ -114,10 +114,10 @@ function PublishedDetailView({ cancellation, onClose }: { cancellation: Cancella
       <div className="flex justify-between items-center w-full mt-2">
         <button
           onClick={onClose}
-          className="flex items-center gap-2 text-[#6B7280] hover:text-[#111827] transition-colors cursor-pointer"
+          className="relative -top-1 flex items-center gap-1.5 text-[16px] text-[#6B7280] hover:text-[#1F2937] transition-colors duration-150 font-medium group cursor-pointer"
         >
-          <ArrowLeft className="w-5 h-5" />
-          <span className="font-medium">Back to Cancelled Flights</span>
+          <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" />
+          <span>Back to Cancelled Flights</span>
         </button>
         <StatusBadge status="Published" className="h-[28px] px-3.5 text-[14px]" />
       </div>
@@ -440,6 +440,20 @@ export default function CancellationPage() {
           cancellation={detailCancellation}
           onClose={() => setDetailCancellation(null)}
         />
+      ) : detailCancellation && detailCancellation.status !== "Published" ? (
+        <CancellationWizard
+          initialData={detailCancellation}
+          onClose={() => setDetailCancellation(null)}
+          onSave={(updatedOrAdded) => {
+            setCancellations((prev) =>
+              prev.some((item) => item.id === updatedOrAdded.id)
+                ? prev.map((item) => (item.id === updatedOrAdded.id ? updatedOrAdded : item))
+                : [updatedOrAdded, ...prev]
+            );
+            setDetailCancellation(null);
+            toast.success(`Successfully updated cancellation`);
+          }}
+        />
       ) : isAddingNew ? (
         <CancellationWizard
           onClose={() => setIsAddingNew(false)}
@@ -639,110 +653,7 @@ export default function CancellationPage() {
         </div>
       )}
 
-      {/* Details Modal */}
-      {detailCancellation && detailCancellation.status !== "Published" && (
-        <div
-          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center transition-opacity duration-300 p-4"
-          onClick={() => setDetailCancellation(null)}
-        >
-          {/* Modal Container */}
-          <div
-            className="w-[540px] max-w-[calc(100vw-32px)] bg-white rounded-3xl flex flex-col justify-start items-start gap-4 overflow-hidden shadow-2xl transition-all duration-300"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="self-stretch px-6 py-5 border-b border-gray-300 flex justify-between items-center">
-              <div className="flex justify-start items-center gap-2">
-                <h2 className="text-gray-900 text-2xl font-semibold font-figtree translate-y-0.5">
-                  Cancellation Details
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => setDetailCancellation(null)}
-                className="p-1 rounded-lg transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5 text-gray-955" />
-              </button>
-            </div>
 
-            {/* Body */}
-            <div className="self-stretch px-6 pb-5 flex flex-col justify-start items-start gap-6">
-              <div className="self-stretch flex flex-col gap-3.5 text-left">
-                <div className="self-stretch flex justify-between items-center">
-                  <div className="text-gray-550 text-[16px] font-normal font-figtree h-[19px] leading-normal">Flight Code</div>
-                  <div className="text-right text-gray-900 text-[16px] font-medium font-figtree h-[19px] leading-normal">
-                    {detailCancellation.flight}
-                  </div>
-                </div>
-
-                <div className="self-stretch flex justify-between items-center">
-                  <div className="text-gray-550 text-[16px] font-normal font-figtree h-[19px] leading-normal">Route</div>
-                  <div className="text-right text-gray-900 text-[16px] font-medium font-figtree h-[19px] leading-normal">
-                    {detailCancellation.route}
-                  </div>
-                </div>
-
-                <div className="self-stretch flex justify-between items-center">
-                  <div className="text-gray-550 text-[16px] font-normal font-figtree h-[19px] leading-normal">Cancellation Date</div>
-                  <div className="text-right text-gray-900 text-[16px] font-medium font-figtree h-[19px] leading-normal">
-                    {detailCancellation.cancellationDate}
-                  </div>
-                </div>
-
-                <div className="self-stretch flex justify-between items-center">
-                  <div className="text-gray-550 text-[16px] font-normal font-figtree h-[19px] leading-normal">Bookings</div>
-                  <div className="text-right text-gray-900 text-[16px] font-medium font-figtree h-[19px] leading-normal">
-                    {detailCancellation.bookings}
-                  </div>
-                </div>
-
-                <div className="self-stretch flex justify-between items-center">
-                  <div className="text-gray-550 text-[16px] font-normal font-figtree h-[19px] leading-normal">Passengers</div>
-                  <div className="text-right text-gray-900 text-[16px] font-medium font-figtree h-[19px] leading-normal">
-                    {detailCancellation.passengers}
-                  </div>
-                </div>
-
-                <div className="self-stretch flex justify-between items-center">
-                  <div className="text-gray-550 text-[16px] font-normal font-figtree h-[19px] leading-normal">Total Cost</div>
-                  <div className="text-right text-gray-900 text-[16px] font-medium font-figtree h-[19px] leading-normal">
-                    ${detailCancellation.totalCost.toLocaleString()}
-                  </div>
-                </div>
-
-                <div className="self-stretch flex justify-between items-center">
-                  <div className="text-gray-550 text-[16px] font-normal font-figtree h-[19px] leading-normal">Reason</div>
-                  <div className="text-right text-gray-900 text-[16px] font-medium font-figtree h-[19px] leading-normal">
-                    {detailCancellation.reason}
-                  </div>
-                </div>
-
-                <div className="self-stretch flex justify-between items-center">
-                  <div className="text-gray-550 text-[16px] font-normal font-figtree h-[19px] leading-normal">Status</div>
-                  <div className="text-right">
-                    <StatusBadge status={detailCancellation.status} />
-                  </div>
-                </div>
-              </div>
-
-              {/* Divider */}
-              <div className="self-stretch h-0 border-t border-gray-300"></div>
-
-              {/* Close Button */}
-              <div className="self-stretch inline-flex justify-end items-center gap-2.5 translate-y-0.5">
-                <button
-                  type="button"
-                  onClick={() => setDetailCancellation(null)}
-                  className="h-[42px] w-[128px] flex items-center justify-center bg-[#0F2757] hover:bg-[#162259] text-white text-lg font-normal font-figtree rounded-[10px] transition-colors cursor-pointer"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Publish Confirmation Modal */}
       {publishTarget && (

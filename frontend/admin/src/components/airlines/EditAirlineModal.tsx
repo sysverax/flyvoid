@@ -104,6 +104,9 @@ function validate(key: string, value: any): string {
     case "website":
       if (v && !URL_RE.test(v)) return "Please enter a valid website URL";
       return "";
+    case "logoUrl":
+      if (v && !URL_RE.test(v)) return "Please enter a valid logo URL";
+      return "";
     case "creditLimit":
       if (v === "" || v === undefined) return "";
       if (isNaN(Number(v)) || Number(v) < 0) return "Credit Limit must be a valid number";

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Fragment } from "react";
+import { useState, useEffect, useMemo, useRef, Fragment } from "react";
 import {
   X,
   Plus,
@@ -46,6 +46,52 @@ import { Dropdown } from "@/src/components/ui/Dropdown";
 import { DatePicker } from "@/src/components/ui/DatePicker";
 import { AddCardModal } from "@/src/components/ui/AddCardModal";
 import { cn } from "@/src/lib/utils";
+import { cancellationService, CreateBookingPayload, BookingDTO } from "@/src/services/cancellation.service";
+
+const NOTE_TAG_TO_ENUM: Record<string, string> = {
+  "Wheelchair Assistance": "wheelchair_assistance",
+  "Medical Needs": "medical_needs",
+  "Infant": "infant",
+  "Late Arrival": "late_arrival",
+  "Dietary Requirements": "dietary_requirements",
+  "Elderly Passenger": "elderly_passenger",
+};
+
+const ENUM_TO_NOTE_TAG: Record<string, string> = {
+  wheelchair_assistance: "Wheelchair Assistance",
+  medical_needs: "Medical Needs",
+  infant: "Infant",
+  late_arrival: "Late Arrival",
+  dietary_requirements: "Dietary Requirements",
+  elderly_passenger: "Elderly Passenger",
+};
+
+const AIRPORT_ID_MAP: Record<string, number> = {
+  LAX: 1,
+  JFK: 2,
+  LHR: 3,
+  HND: 4,
+  CDG: 5,
+  SIN: 6,
+  FRA: 7,
+};
+
+function getAirportId(val: string): number {
+  if (!val) return 1;
+  const parsed = parseInt(val, 10);
+  if (!isNaN(parsed) && parsed > 0) return parsed;
+  return AIRPORT_ID_MAP[val.toUpperCase()] || 1;
+}
+
+function mapCancellationReason(tag: string, text: string): string {
+  const combined = (tag + " " + text).toLowerCase();
+  if (combined.includes("weather")) return "weather_disruption";
+  if (combined.includes("tech") || combined.includes("engine") || combined.includes("maintenance")) return "technical_issue";
+  if (combined.includes("crew") || combined.includes("pilot") || combined.includes("staff")) return "crew_unavailability";
+  if (combined.includes("operation")) return "operational_issue";
+  if (combined.includes("traffic") || combined.includes("atc") || combined.includes("control")) return "air_traffic_control";
+  return "weather_disruption";
+}
 
 const AIRPORT_OPTIONS = [
   { value: "", label: "Select airport" },
@@ -93,6 +139,7 @@ interface Cancellation {
 interface CancellationWizardProps {
   onClose: () => void;
   onSave: (added: Cancellation) => void;
+  initialData?: Cancellation | null;
 }
 
 function formatDateString(dateStr: string): string {
@@ -106,22 +153,159 @@ function formatDateString(dateStr: string): string {
   return `${month} ${day}, ${year}`;
 }
 
-export default function CancellationWizard({ onClose, onSave }: CancellationWizardProps) {
-  const [activeStep, setActiveStep] = useState(1);
+function getInitialStepFromStatus(status?: string): number {
+  if (!status) return 1;
+  const s = status.toLowerCase();
+  if (s === "draft") return 1;
+  if (s === "verified") return 4;
+  if (s === "allocated") return 5;
+  if (s === "paid") return 7;
+  return 1;
+}
+
+export default function CancellationWizard({ onClose, onSave, initialData }: CancellationWizardProps) {
+  const [activeStep, setActiveStep] = useState(() => getInitialStepFromStatus(initialData?.status));
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [activeStep]);
 
   // Flight Details Form Inputs
-  const [newFlight, setNewFlight] = useState("");
-  const [newDate, setNewDate] = useState("");
-  const [newDepartureAirport, setNewDepartureAirport] = useState("");
-  const [newArrivalAirport, setNewArrivalAirport] = useState("");
-  const [checkInDate, setCheckInDate] = useState("");
+  const routeParts = initialData?.route ? initialData.route.split(/➔|->|→/).map((s) => s.trim()) : [];
+  const [newFlight, setNewFlight] = useState(initialData?.flight || "");
+  const [newDate, setNewDate] = useState(initialData?.cancellationDate || "");
+  const [newDepartureAirport, setNewDepartureAirport] = useState(routeParts[0] || "");
+  const [newArrivalAirport, setNewArrivalAirport] = useState(routeParts[1] || "");
+  const [checkInDate, setCheckInDate] = useState(initialData?.cancellationDate || "");
   const [checkOutDate, setCheckOutDate] = useState("");
   const [selectedReasonTag, setSelectedReasonTag] = useState("");
-  const [newReason, setNewReason] = useState("");
+  const [newReason, setNewReason] = useState(initialData?.reason || "");
+
+  // Step 1 Validation & Error State (matching admin invite modal)
+  type Step1Field = "flightNumber" | "cancellationDate" | "departureAirport" | "arrivalAirport" | "checkInDate" | "checkOutDate";
+  const [step1Errors, setStep1Errors] = useState<Partial<Record<Step1Field, string>>>({});
+  const [step1Touched, setStep1Touched] = useState<Partial<Record<Step1Field, boolean>>>({});
+
+  const validateStep1 = (
+    field: Step1Field,
+    val: string,
+    currentValues?: { departureAirport?: string; arrivalAirport?: string; checkInDate?: string; checkOutDate?: string }
+  ): string => {
+    const v = val?.trim() ?? "";
+    switch (field) {
+      case "flightNumber":
+        if (!v) return "Flight Number is required";
+        if (!/^[A-Z0-9]+$/i.test(v)) return "Flight Number must contain only letters and numbers";
+        return "";
+      case "cancellationDate":
+        if (!v) return "Cancellation Date is required";
+        return "";
+      case "departureAirport":
+        if (!v) return "Departure Airport is required";
+        return "";
+      case "arrivalAirport":
+        if (!v) return "Arrival Airport is required";
+        const dep = currentValues?.departureAirport ?? newDepartureAirport;
+        if (dep && dep === val) return "Departure and Arrival airports cannot be the same";
+        return "";
+      case "checkInDate":
+        if (!v) return "Default Check-in Date is required";
+        return "";
+      case "checkOutDate":
+        if (!v) return "Default Check-out Date is required";
+        const cIn = currentValues?.checkInDate ?? checkInDate;
+        if (cIn && v && new Date(v) <= new Date(cIn)) {
+          return "Check-out Date must be after Check-in Date";
+        }
+        return "";
+      default:
+        return "";
+    }
+  };
+
+  const handleStep1Blur = (field: Step1Field) => () => {
+    setStep1Touched((prev) => ({ ...prev, [field]: true }));
+    const val =
+      field === "flightNumber" ? newFlight :
+      field === "cancellationDate" ? newDate :
+      field === "departureAirport" ? newDepartureAirport :
+      field === "arrivalAirport" ? newArrivalAirport :
+      field === "checkInDate" ? checkInDate :
+      checkOutDate;
+    const msg = validateStep1(field, val);
+    setStep1Errors((prev) => ({ ...prev, [field]: msg || undefined }));
+  };
+
+  const handleFlightChange = (val: string) => {
+    setNewFlight(val);
+    if (step1Touched.flightNumber) {
+      const msg = validateStep1("flightNumber", val);
+      setStep1Errors((prev) => ({ ...prev, flightNumber: msg || undefined }));
+    }
+  };
+
+  const handleDateChange = (val: string) => {
+    setNewDate(val);
+    if (step1Touched.cancellationDate) {
+      const msg = validateStep1("cancellationDate", val);
+      setStep1Errors((prev) => ({ ...prev, cancellationDate: msg || undefined }));
+    }
+  };
+
+  const handleDepartureAirportChange = (val: string) => {
+    setNewDepartureAirport(val);
+    if (step1Touched.departureAirport) {
+      const msg = validateStep1("departureAirport", val);
+      setStep1Errors((prev) => ({ ...prev, departureAirport: msg || undefined }));
+    }
+    if (step1Touched.arrivalAirport && newArrivalAirport) {
+      const msg = validateStep1("arrivalAirport", newArrivalAirport, { departureAirport: val });
+      setStep1Errors((prev) => ({ ...prev, arrivalAirport: msg || undefined }));
+    }
+  };
+
+  const handleArrivalAirportChange = (val: string) => {
+    setNewArrivalAirport(val);
+    if (step1Touched.arrivalAirport) {
+      const msg = validateStep1("arrivalAirport", val, { departureAirport: newDepartureAirport });
+      setStep1Errors((prev) => ({ ...prev, arrivalAirport: msg || undefined }));
+    }
+  };
+
+  const handleCheckInDateChange = (val: string) => {
+    setCheckInDate(val);
+    if (step1Touched.checkInDate) {
+      const msg = validateStep1("checkInDate", val);
+      setStep1Errors((prev) => ({ ...prev, checkInDate: msg || undefined }));
+    }
+    if (step1Touched.checkOutDate && checkOutDate) {
+      const msg = validateStep1("checkOutDate", checkOutDate, { checkInDate: val });
+      setStep1Errors((prev) => ({ ...prev, checkOutDate: msg || undefined }));
+    }
+  };
+
+  const handleCheckOutDateChange = (val: string) => {
+    setCheckOutDate(val);
+    if (step1Touched.checkOutDate) {
+      const msg = validateStep1("checkOutDate", val, { checkInDate });
+      setStep1Errors((prev) => ({ ...prev, checkOutDate: msg || undefined }));
+    }
+  };
+
+  useEffect(() => {
+    if (initialData) {
+      setActiveStep(getInitialStepFromStatus(initialData.status));
+      if (initialData.status?.toLowerCase() === "paid") {
+        setPaymentConfirmed(true);
+      }
+      setNewFlight(initialData.flight || "");
+      setNewDate(initialData.cancellationDate || "");
+      const parts = initialData.route ? initialData.route.split(/➔|->|→/).map((s) => s.trim()) : [];
+      setNewDepartureAirport(parts[0] || "");
+      setNewArrivalAirport(parts[1] || "");
+      setNewReason(initialData.reason || "");
+    }
+  }, [initialData]);
 
   useEffect(() => {
     if (newDate) {
@@ -135,6 +319,7 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
   }, [newDate]);
 
   // Step 2 Manual booking states
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [bookingTab, setBookingTab] = useState<"upload" | "manual">("manual");
   const [currentPage, setCurrentPage] = useState(1);
   const [resultsPerPage, setResultsPerPage] = useState(5);
@@ -148,12 +333,168 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
   const [bookingChildren, setBookingChildren] = useState("0");
   const [bookingNotesText, setBookingNotesText] = useState("");
   const [selectedNoteTags, setSelectedNoteTags] = useState<string[]>([]);
+
+  // Step 2 Validation & Error State (matching admin invite modal)
+  type Step2Field = "pnr" | "firstName" | "lastName" | "email" | "phone" | "travelClass" | "adults";
+  const [step2Errors, setStep2Errors] = useState<Partial<Record<Step2Field, string>>>({});
+  const [step2Touched, setStep2Touched] = useState<Partial<Record<Step2Field, boolean>>>({});
+
+  const validateStep2 = (field: Step2Field, val: string): string => {
+    const v = val?.trim() ?? "";
+    switch (field) {
+      case "pnr":
+        if (!v) return "Booking Reference (PNR) is required";
+        return "";
+      case "firstName":
+        if (!v) return "First Name is required";
+        return "";
+      case "lastName":
+        if (!v) return "Last Name is required";
+        return "";
+      case "email":
+        if (!v) return "Email is required";
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return "Please enter a valid email address";
+        return "";
+      case "phone":
+        if (!v) return "Phone number is required";
+        if (!/^[\+]?[\d\s\-\(\)]{7,20}$/.test(v)) return "Please enter a valid phone number";
+        return "";
+      case "travelClass":
+        if (!v) return "Travel Class is required";
+        return "";
+      case "adults":
+        if (!v) return "Number of adults is required";
+        if (isNaN(Number(v)) || Number(v) < 1) return "Adults must be at least 1";
+        return "";
+      default:
+        return "";
+    }
+  };
+
+  const handleStep2Blur = (field: Step2Field) => () => {
+    setStep2Touched((prev) => ({ ...prev, [field]: true }));
+    const val =
+      field === "pnr" ? bookingPnr :
+      field === "firstName" ? bookingFirstName :
+      field === "lastName" ? bookingLastName :
+      field === "email" ? bookingEmail :
+      field === "travelClass" ? bookingClass :
+      field === "adults" ? bookingAdults :
+      bookingPhone;
+    const msg = validateStep2(field, val);
+    setStep2Errors((prev) => ({ ...prev, [field]: msg || undefined }));
+  };
+
+  const handleBookingPnrChange = (val: string) => {
+    setBookingPnr(val);
+    if (step2Touched.pnr) {
+      const msg = validateStep2("pnr", val);
+      setStep2Errors((prev) => ({ ...prev, pnr: msg || undefined }));
+    }
+  };
+
+  const handleBookingFirstNameChange = (val: string) => {
+    setBookingFirstName(val);
+    if (step2Touched.firstName) {
+      const msg = validateStep2("firstName", val);
+      setStep2Errors((prev) => ({ ...prev, firstName: msg || undefined }));
+    }
+  };
+
+  const handleBookingLastNameChange = (val: string) => {
+    setBookingLastName(val);
+    if (step2Touched.lastName) {
+      const msg = validateStep2("lastName", val);
+      setStep2Errors((prev) => ({ ...prev, lastName: msg || undefined }));
+    }
+  };
+
+  const handleBookingEmailChange = (val: string) => {
+    setBookingEmail(val);
+    if (step2Touched.email) {
+      const msg = validateStep2("email", val);
+      setStep2Errors((prev) => ({ ...prev, email: msg || undefined }));
+    }
+  };
+
+  const handleBookingPhoneChange = (val: string) => {
+    setBookingPhone(val);
+    if (step2Touched.phone) {
+      const msg = validateStep2("phone", val);
+      setStep2Errors((prev) => ({ ...prev, phone: msg || undefined }));
+    }
+  };
+
+  const handleBookingClassChange = (val: string) => {
+    setBookingClass(val);
+    if (step2Touched.travelClass) {
+      const msg = validateStep2("travelClass", val);
+      setStep2Errors((prev) => ({ ...prev, travelClass: msg || undefined }));
+    }
+  };
+
+  const handleBookingAdultsChange = (val: string) => {
+    setBookingAdults(val);
+    if (step2Touched.adults) {
+      const msg = validateStep2("adults", val);
+      setStep2Errors((prev) => ({ ...prev, adults: msg || undefined }));
+    }
+  };
   const [addedBookings, setAddedBookings] = useState<ManualBooking[]>([]);
   const [editingBookingId, setEditingBookingId] = useState<string | null>(null);
+  const [isLoadingBookings, setIsLoadingBookings] = useState(false);
+  const [isSavingBooking, setIsSavingBooking] = useState(false);
+  const [isUploadingCsv, setIsUploadingCsv] = useState(false);
+  const [isConfirmingBookings, setIsConfirmingBookings] = useState(false);
+  const [importSummary, setImportSummary] = useState<{
+    totalBookings: number;
+    validBookings: number;
+    errorBookings: number;
+  } | null>(null);
+  const [importErrors, setImportErrors] = useState<Array<{ row: number; errors: string[] }>>([]);
 
   // Manifest File Upload (Excel simulator)
   const [isManifestUploaded, setIsManifestUploaded] = useState(false);
   const [manifestFileName, setManifestFileName] = useState("");
+
+  const [createdFlightId, setCreatedFlightId] = useState<number | null>(() => (initialData?.id && !isNaN(Number(initialData.id)) ? Number(initialData.id) : null));
+  const [isCreatingFlight, setIsCreatingFlight] = useState(false);
+
+  const flightId = createdFlightId || (initialData?.id && !isNaN(Number(initialData.id)) ? Number(initialData.id) : null);
+
+  const fetchBookings = async (fId: number) => {
+    setIsLoadingBookings(true);
+    try {
+      const res = await cancellationService.listBookings(fId);
+      const bookingsData = res?.data?.bookings || (Array.isArray(res?.data) ? res.data : []);
+      if (Array.isArray(bookingsData)) {
+        const mapped: ManualBooking[] = bookingsData.map((b: any) => ({
+          id: String(b.id),
+          pnr: b.pnr,
+          firstName: b.firstName,
+          lastName: b.lastName,
+          email: b.email,
+          phone: b.phone,
+          travelClass: b.travelClass ? b.travelClass.charAt(0).toUpperCase() + b.travelClass.slice(1).toLowerCase() : "Economy",
+          adults: b.adults || 1,
+          children: b.children || 0,
+          notes: b.additionalNotes || b.notes || "",
+          tags: (b.specialNotes || []).map((sn: string) => ENUM_TO_NOTE_TAG[sn] || sn),
+        }));
+        setAddedBookings(mapped);
+      }
+    } catch (err: any) {
+      console.error("Failed to load bookings:", err);
+    } finally {
+      setIsLoadingBookings(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeStep === 2 && flightId) {
+      fetchBookings(flightId);
+    }
+  }, [activeStep, flightId]);
 
   // Step 4 Allocation state
   const [selectedHotels, setSelectedHotels] = useState<string[]>([]);
@@ -182,7 +523,7 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
   // Step 6 Payment state
   const [paymentMethod, setPaymentMethod] = useState("visa");
   const [isAddingCard, setIsAddingCard] = useState(false);
-  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
+  const [paymentConfirmed, setPaymentConfirmed] = useState(() => initialData?.status?.toLowerCase() === "paid");
 
   // Step 5 Drawer state
   const [isBookingDetailsOpen, setIsBookingDetailsOpen] = useState(false);
@@ -278,75 +619,176 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
     setSelectedNoteTags(booking.tags);
   };
 
-  const handleDeleteBooking = (id: string) => {
-    setAddedBookings(prev => prev.filter(b => b.id !== id));
+  const handleDeleteBooking = async (id: string) => {
+    if (flightId) {
+      try {
+        await cancellationService.deleteBooking(flightId, id);
+        setAddedBookings((prev) => prev.filter((b) => b.id !== id));
+        toast.success("Booking deleted successfully");
+      } catch (err: any) {
+        toast.error(err.message || "Failed to delete booking");
+      }
+    } else {
+      setAddedBookings((prev) => prev.filter((b) => b.id !== id));
+      toast.success("Booking removed");
+    }
   };
 
-  const handleAddBooking = () => {
-    if (!bookingPnr.trim()) {
-      alert("Booking Reference (PNR) is required.");
-      return;
-    }
-    if (!bookingFirstName.trim()) {
-      alert("First Name is required.");
-      return;
-    }
-    if (!bookingLastName.trim()) {
-      alert("Last Name is required.");
-      return;
-    }
-    if (!bookingEmail.trim()) {
-      alert("Email is required.");
-      return;
-    }
-    if (!bookingPhone.trim()) {
-      alert("Phone is required.");
+  const handleCsvFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith(".csv") && file.type !== "text/csv" && file.type !== "application/csv") {
+      toast.error("Please upload a valid .csv file.");
       return;
     }
 
-    if (editingBookingId) {
-      setAddedBookings(prev => prev.map(b => b.id === editingBookingId ? {
-        ...b,
-        pnr: bookingPnr,
-        firstName: bookingFirstName,
-        lastName: bookingLastName,
-        email: bookingEmail,
-        phone: bookingPhone,
-        travelClass: bookingClass,
-        adults: Number(bookingAdults) || 1,
-        children: Number(bookingChildren) || 0,
-        notes: bookingNotesText,
-        tags: selectedNoteTags,
-      } : b));
-      setEditingBookingId(null);
+    setManifestFileName(file.name);
+    setIsUploadingCsv(true);
+
+    if (flightId) {
+      try {
+        const res = await cancellationService.importBookings(flightId, file);
+        setIsManifestUploaded(true);
+        if (res?.data?.summary) {
+          setImportSummary(res.data.summary);
+        }
+        if (res?.data?.errorList && res.data.errorList.length > 0) {
+          setImportErrors(res.data.errorList);
+        } else {
+          setImportErrors([]);
+        }
+        await fetchBookings(flightId);
+        toast.success(res?.message || "Bookings imported successfully");
+      } catch (err: any) {
+        toast.error(err.message || "Failed to import CSV bookings");
+      } finally {
+        setIsUploadingCsv(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
     } else {
-      const newB: ManualBooking = {
-        id: String(Date.now()),
-        pnr: bookingPnr,
-        firstName: bookingFirstName,
-        lastName: bookingLastName,
-        email: bookingEmail,
-        phone: bookingPhone,
-        travelClass: bookingClass,
-        adults: Number(bookingAdults) || 1,
-        children: Number(bookingChildren) || 0,
-        notes: bookingNotesText,
-        tags: selectedNoteTags,
-      };
-      setAddedBookings(prev => [...prev, newB]);
+      setTimeout(() => {
+        simulateCsvUpload();
+        setIsUploadingCsv(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }, 500);
+    }
+  };
+
+  const handleAddBooking = async () => {
+    // Run all validations
+    const fields: Step2Field[] = ["pnr", "firstName", "lastName", "email", "phone", "travelClass", "adults"];
+    const values: Record<Step2Field, string> = {
+      pnr: bookingPnr,
+      firstName: bookingFirstName,
+      lastName: bookingLastName,
+      email: bookingEmail,
+      phone: bookingPhone,
+      travelClass: bookingClass,
+      adults: bookingAdults,
+    };
+    const errs: Partial<Record<Step2Field, string>> = {};
+    for (const f of fields) {
+      const msg = validateStep2(f, values[f]);
+      if (msg) errs[f] = msg;
+    }
+    if (Object.keys(errs).length > 0) {
+      setStep2Errors(errs);
+      setStep2Touched({ pnr: true, firstName: true, lastName: true, email: true, phone: true, travelClass: true, adults: true });
+      setTimeout(() => {
+        const first = document.querySelector(".step2-field-error");
+        first?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 50);
+      return;
     }
 
-    // Reset booking form
-    setBookingPnr("");
-    setBookingFirstName("");
-    setBookingLastName("");
-    setBookingEmail("");
-    setBookingPhone("");
-    setBookingClass("Economy");
-    setBookingAdults("1");
-    setBookingChildren("0");
-    setBookingNotesText("");
-    setSelectedNoteTags([]);
+    const mappedTravelClass = bookingClass.toLowerCase() === "business" ? "business" : "economy";
+    const mappedSpecialNotes = selectedNoteTags.map((t) => NOTE_TAG_TO_ENUM[t] || t.toLowerCase().replace(/\s+/g, "_"));
+
+    const payload: CreateBookingPayload = {
+      pnr: bookingPnr.trim().toUpperCase(),
+      firstName: bookingFirstName.trim(),
+      lastName: bookingLastName.trim(),
+      email: bookingEmail.trim(),
+      phone: bookingPhone.trim(),
+      travelClass: mappedTravelClass,
+      adults: Number(bookingAdults) || 1,
+      children: Number(bookingChildren) || 0,
+      specialNotes: mappedSpecialNotes,
+      additionalNotes: bookingNotesText.trim() || undefined,
+    };
+
+    setIsSavingBooking(true);
+    try {
+      if (editingBookingId) {
+        if (flightId) {
+          await cancellationService.updateBooking(flightId, editingBookingId, payload);
+          await fetchBookings(flightId);
+        } else {
+          setAddedBookings((prev) =>
+            prev.map((b) =>
+              b.id === editingBookingId
+                ? {
+                    ...b,
+                    pnr: bookingPnr,
+                    firstName: bookingFirstName,
+                    lastName: bookingLastName,
+                    email: bookingEmail,
+                    phone: bookingPhone,
+                    travelClass: bookingClass,
+                    adults: Number(bookingAdults) || 1,
+                    children: Number(bookingChildren) || 0,
+                    notes: bookingNotesText,
+                    tags: selectedNoteTags,
+                  }
+                : b
+            )
+          );
+        }
+        toast.success("Booking updated successfully");
+        setEditingBookingId(null);
+      } else {
+        if (flightId) {
+          const res = await cancellationService.addBooking(flightId, payload);
+          await fetchBookings(flightId);
+          toast.success(res?.message || "Booking added successfully");
+        } else {
+          const newB: ManualBooking = {
+            id: String(Date.now()),
+            pnr: bookingPnr,
+            firstName: bookingFirstName,
+            lastName: bookingLastName,
+            email: bookingEmail,
+            phone: bookingPhone,
+            travelClass: bookingClass,
+            adults: Number(bookingAdults) || 1,
+            children: Number(bookingChildren) || 0,
+            notes: bookingNotesText,
+            tags: selectedNoteTags,
+          };
+          setAddedBookings((prev) => [...prev, newB]);
+          toast.success("Booking added");
+        }
+      }
+
+      // Reset booking form
+      setBookingPnr("");
+      setBookingFirstName("");
+      setBookingLastName("");
+      setBookingEmail("");
+      setBookingPhone("");
+      setBookingClass("Economy");
+      setBookingAdults("1");
+      setBookingChildren("0");
+      setBookingNotesText("");
+      setSelectedNoteTags([]);
+      setStep2Errors({});
+      setStep2Touched({});
+    } catch (error: any) {
+      toast.error(error.message || "Failed to save booking");
+    } finally {
+      setIsSavingBooking(false);
+    }
   };
 
   const handlePrevStep = () => {
@@ -357,35 +799,107 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
     }
   };
 
-  const handleNextStep = () => {
+  const handleNextStep = async () => {
     if (activeStep === 1) {
-      if (!newFlight.trim()) {
-        alert("Flight number is required.");
+      const errs: Partial<Record<Step1Field, string>> = {};
+      const flightErr = validateStep1("flightNumber", newFlight);
+      if (flightErr) errs.flightNumber = flightErr;
+
+      const dateErr = validateStep1("cancellationDate", newDate);
+      if (dateErr) errs.cancellationDate = dateErr;
+
+      const depErr = validateStep1("departureAirport", newDepartureAirport);
+      if (depErr) errs.departureAirport = depErr;
+
+      const arrErr = validateStep1("arrivalAirport", newArrivalAirport, { departureAirport: newDepartureAirport });
+      if (arrErr) errs.arrivalAirport = arrErr;
+
+      const checkInErr = validateStep1("checkInDate", checkInDate);
+      if (checkInErr) errs.checkInDate = checkInErr;
+
+      const checkOutErr = validateStep1("checkOutDate", checkOutDate, { checkInDate });
+      if (checkOutErr) errs.checkOutDate = checkOutErr;
+
+      if (Object.keys(errs).length > 0) {
+        setStep1Errors(errs);
+        setStep1Touched({
+          flightNumber: true,
+          cancellationDate: true,
+          departureAirport: true,
+          arrivalAirport: true,
+          checkInDate: true,
+          checkOutDate: true,
+        });
+        setTimeout(() => {
+          const first = document.querySelector(".field-error");
+          first?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }, 50);
         return;
       }
-      if (!newDate.trim()) {
-        alert("Cancellation date is required.");
-        return;
+
+      setIsCreatingFlight(true);
+      try {
+        let airlineId = 1;
+        if (typeof window !== "undefined") {
+          const userStr = sessionStorage.getItem("airline_current_user");
+          if (userStr) {
+            try {
+              const u = JSON.parse(userStr);
+              if (u.airlineId) airlineId = Number(u.airlineId);
+            } catch (e) {}
+          }
+        }
+
+        const formattedDate = newDate.includes("T")
+          ? newDate.split("T")[0]
+          : newDate;
+
+        const depId = getAirportId(newDepartureAirport);
+        const arrId = getAirportId(newArrivalAirport);
+        const reasonEnum = mapCancellationReason(selectedReasonTag, newReason);
+        const reasonText = newReason.trim() || selectedReasonTag || "Severe weather conditions at departure";
+
+        const response = await cancellationService.createCancelledFlight({
+          flightNumber: newFlight.trim(),
+          airlineId: airlineId,
+          departureAirportId: depId,
+          arrivalAirportId: arrId,
+          cancellationDate: formattedDate,
+          cancellationReason: reasonEnum,
+          cancellationReasonText: reasonText,
+        });
+
+        if (response?.data?.id) {
+          setCreatedFlightId(response.data.id);
+        }
+        toast.success(response?.message || "Cancelled flight created");
+        setActiveStep(2);
+      } catch (error: any) {
+        toast.error(error.message || "Failed to create cancelled flight");
+      } finally {
+        setIsCreatingFlight(false);
       }
-      if (!newDepartureAirport) {
-        alert("Departure airport is required.");
-        return;
-      }
-      if (!newArrivalAirport) {
-        alert("Arrival airport is required.");
-        return;
-      }
-      if (newDepartureAirport === newArrivalAirport) {
-        alert("Departure and Arrival airports cannot be the same.");
-        return;
-      }
-      setActiveStep(2);
     } else if (activeStep === 2) {
       if (addedBookings.length === 0) {
-        alert("Please add at least one booking (either manually or by uploading an Excel file).");
+        toast.error("Please add at least one booking (either manually or by uploading an Excel file).");
         return;
       }
       setActiveStep(3);
+    } else if (activeStep === 3) {
+      if (!flightId) {
+        setActiveStep(4);
+        return;
+      }
+      setIsConfirmingBookings(true);
+      try {
+        const res = await cancellationService.confirmBookings(flightId);
+        toast.success(res?.message || "Bookings confirmed successfully");
+        setActiveStep(4);
+      } catch (error: any) {
+        toast.error(error.message || "Failed to confirm bookings");
+      } finally {
+        setIsConfirmingBookings(false);
+      }
     } else if (activeStep === 7) {
       const added: Cancellation = {
         id: String(Date.now()),
@@ -488,74 +1002,117 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-left">
-              <div className="flex flex-col gap-2">
-                <label className="text-base font-semibold text-gray-700">Flight Number *</label>
+              <div className="flex flex-col gap-1.5">
+                <label className="block text-[16px] font-medium text-[#1F2937]">Flight Number *</label>
                 <input
                   type="text"
                   placeholder="e.g., SW1234"
                   value={newFlight}
-                  onChange={(e) => setNewFlight(e.target.value)}
-                  className="block h-11 w-full rounded-lg border border-[#D1D5DB] px-4 text-base text-gray-900 bg-[#F9FAFB] focus:bg-white focus:border-[#0F2757] focus:outline-none focus:ring-1 focus:ring-[#0F2757]"
+                  onChange={(e) => handleFlightChange(e.target.value)}
+                  onBlur={handleStep1Blur("flightNumber")}
+                  className={cn(
+                    "w-full h-[49px] px-4 rounded-lg border text-[16px] text-[#1F2937] bg-white focus:outline-none focus:ring-2 transition-all placeholder:text-[#9CA3AF]",
+                    step1Errors.flightNumber && step1Touched.flightNumber
+                      ? "border-red-500 focus:ring-red-500/20 focus:border-red-500"
+                      : "border-[#D1D5DB] focus:ring-[#1B2B6B]/20 focus:border-[#1B2B6B]"
+                  )}
                 />
+                {step1Errors.flightNumber && step1Touched.flightNumber && (
+                  <p className="field-error mt-1 text-xs text-red-500">{step1Errors.flightNumber}</p>
+                )}
               </div>
 
-              <div className="flex flex-col gap-2">
-                <label className="text-base font-semibold text-gray-700">Cancellation Date *</label>
+              <div className="flex flex-col gap-1.5">
+                <label className="block text-[16px] font-medium text-[#1F2937]">Cancellation Date *</label>
                 <DatePicker
                   value={newDate}
-                  onChange={setNewDate}
-                  className="block h-11 w-full rounded-lg border border-[#D1D5DB] px-4 text-base text-gray-900 bg-[#F9FAFB] focus:bg-white focus:border-[#0F2757] focus:outline-none focus:ring-1 focus:ring-[#0F2757]"
+                  onChange={handleDateChange}
+                  className={cn(
+                    "w-full h-[49px] px-4 rounded-lg border text-[16px] text-[#1F2937] bg-white focus:outline-none focus:ring-2 transition-all placeholder:text-[#9CA3AF]",
+                    step1Errors.cancellationDate && step1Touched.cancellationDate
+                      ? "border-red-500 focus:ring-red-500/20 focus:border-red-500"
+                      : "border-[#D1D5DB] focus:ring-[#1B2B6B]/20 focus:border-[#1B2B6B]"
+                  )}
                   placeholder="Select date"
                 />
+                {step1Errors.cancellationDate && step1Touched.cancellationDate && (
+                  <p className="field-error mt-1 text-xs text-red-500">{step1Errors.cancellationDate}</p>
+                )}
               </div>
 
-              <div className="flex flex-col gap-2">
-                <label className="text-base font-semibold text-gray-700">Departure Airport *</label>
+              <div className="flex flex-col gap-1.5">
+                <label className="block text-[16px] font-medium text-[#1F2937]">Departure Airport *</label>
                 <Dropdown
                   value={newDepartureAirport}
-                  onChange={setNewDepartureAirport}
+                  onChange={handleDepartureAirportChange}
                   options={AIRPORT_OPTIONS}
                   triggerWidthClass="w-full"
                   widthClass="w-full"
-                  bgClass="bg-[#F9FAFB]"
+                  heightClass="h-[49px]"
+                  bgClass="bg-white"
+                  error={!!(step1Errors.departureAirport && step1Touched.departureAirport)}
                 />
+                {step1Errors.departureAirport && step1Touched.departureAirport && (
+                  <p className="field-error mt-1 text-xs text-red-500">{step1Errors.departureAirport}</p>
+                )}
               </div>
 
-              <div className="flex flex-col gap-2">
-                <label className="text-base font-semibold text-gray-700">Arrival Airport *</label>
+              <div className="flex flex-col gap-1.5">
+                <label className="block text-[16px] font-medium text-[#1F2937]">Arrival Airport *</label>
                 <Dropdown
                   value={newArrivalAirport}
-                  onChange={setNewArrivalAirport}
+                  onChange={handleArrivalAirportChange}
                   options={AIRPORT_OPTIONS}
                   triggerWidthClass="w-full"
                   widthClass="w-full"
-                  bgClass="bg-[#F9FAFB]"
+                  heightClass="h-[49px]"
+                  bgClass="bg-white"
+                  error={!!(step1Errors.arrivalAirport && step1Touched.arrivalAirport)}
                 />
+                {step1Errors.arrivalAirport && step1Touched.arrivalAirport && (
+                  <p className="field-error mt-1 text-xs text-red-500">{step1Errors.arrivalAirport}</p>
+                )}
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-left">
-              <div className="flex flex-col gap-2">
-                <label className="text-base font-semibold text-gray-700">Default Check-in Date *</label>
+              <div className="flex flex-col gap-1.5">
+                <label className="block text-[16px] font-medium text-[#1F2937]">Default Check-in Date *</label>
                 <DatePicker
                   value={checkInDate}
-                  onChange={setCheckInDate}
-                  className="block h-11 w-full rounded-lg border border-[#D1D5DB] px-4 text-base text-gray-900 bg-[#F9FAFB] focus:bg-white focus:border-[#0F2757] focus:outline-none focus:ring-1 focus:ring-[#0F2757]"
+                  onChange={handleCheckInDateChange}
+                  className={cn(
+                    "w-full h-[49px] px-4 rounded-lg border text-[16px] text-[#1F2937] bg-white focus:outline-none focus:ring-2 transition-all placeholder:text-[#9CA3AF]",
+                    step1Errors.checkInDate && step1Touched.checkInDate
+                      ? "border-red-500 focus:ring-red-500/20 focus:border-red-500"
+                      : "border-[#D1D5DB] focus:ring-[#1B2B6B]/20 focus:border-[#1B2B6B]"
+                  )}
                   placeholder="mm/dd/yyyy"
                 />
+                {step1Errors.checkInDate && step1Touched.checkInDate && (
+                  <p className="field-error mt-1 text-xs text-red-500">{step1Errors.checkInDate}</p>
+                )}
                 <p className="text-[13px] text-gray-500 font-medium">
                   Defaults to the cancelled flight date. You can change this date if required.
                 </p>
               </div>
 
-              <div className="flex flex-col gap-2">
-                <label className="text-base font-semibold text-gray-700">Default Check-out Date *</label>
+              <div className="flex flex-col gap-1.5">
+                <label className="block text-[16px] font-medium text-[#1F2937]">Default Check-out Date *</label>
                 <DatePicker
                   value={checkOutDate}
-                  onChange={setCheckOutDate}
-                  className="block h-11 w-full rounded-lg border border-[#D1D5DB] px-4 text-base text-gray-900 bg-[#F9FAFB] focus:bg-white focus:border-[#0F2757] focus:outline-none focus:ring-1 focus:ring-[#0F2757]"
+                  onChange={handleCheckOutDateChange}
+                  className={cn(
+                    "w-full h-[49px] px-4 rounded-lg border text-[16px] text-[#1F2937] bg-white focus:outline-none focus:ring-2 transition-all placeholder:text-[#9CA3AF]",
+                    step1Errors.checkOutDate && step1Touched.checkOutDate
+                      ? "border-red-500 focus:ring-red-500/20 focus:border-red-500"
+                      : "border-[#D1D5DB] focus:ring-[#1B2B6B]/20 focus:border-[#1B2B6B]"
+                  )}
                   placeholder="mm/dd/yyyy"
                 />
+                {step1Errors.checkOutDate && step1Touched.checkOutDate && (
+                  <p className="field-error mt-1 text-xs text-red-500">{step1Errors.checkOutDate}</p>
+                )}
                 <p className="text-[13px] text-gray-500 font-medium">
                   Defaults to the day after the cancelled flight date. You can change this date if required.
                 </p>
@@ -563,7 +1120,7 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
             </div>
 
             <div className="flex flex-col gap-3.5 pt-2 text-left">
-              <label className="text-base font-semibold text-gray-700">
+              <label className="block text-[16px] font-medium text-[#1F2937]">
                 Cancellation Reason <span className="text-gray-400 font-normal">(Optional)</span>
               </label>
 
@@ -600,7 +1157,7 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
                 value={newReason}
                 onChange={(e) => setNewReason(e.target.value)}
                 rows={4}
-                className="block w-full rounded-lg border border-[#D1D5DB] p-4 text-base text-gray-900 bg-[#F9FAFB] focus:bg-white focus:border-[#0F2757] focus:outline-none focus:ring-1 focus:ring-[#0F2757]"
+                className="block w-full rounded-lg border border-[#D1D5DB] p-4 text-[16px] text-[#1F2937] bg-white focus:outline-none focus:ring-2 focus:ring-[#1B2B6B]/20 focus:border-[#1B2B6B] transition-all placeholder:text-[#9CA3AF]"
               />
               <p className="text-xs text-gray-400">
                 Select a common reason above or type a custom explanation. This can be updated later.
@@ -653,6 +1210,13 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
 
             {bookingTab === "upload" ? (
               <div className="pt-2">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept=".csv,text/csv,application/csv"
+                  className="hidden"
+                  onChange={handleCsvFileSelected}
+                />
                 <div
                   className={cn(
                     "border border-dashed rounded-xl py-12 px-6 flex flex-col items-center justify-center text-center transition-colors duration-200",
@@ -660,16 +1224,35 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
                       ? "border-emerald-300 bg-emerald-50/20 cursor-pointer"
                       : "border-gray-300 bg-[#FAFAFA]"
                   )}
-                  onClick={!isManifestUploaded ? undefined : simulateCsvUpload}
+                  onClick={() => fileInputRef.current?.click()}
                 >
                   <div className="size-[52px] rounded-full bg-[#E5E7EB] flex items-center justify-center mb-4">
-                    <Upload className={cn("h-6 w-6", isManifestUploaded ? "text-emerald-600" : "text-[#374151]")} />
+                    {isUploadingCsv ? (
+                      <Loader2 className="h-6 w-6 text-[#0F2757] animate-spin" />
+                    ) : (
+                      <Upload className={cn("h-6 w-6", isManifestUploaded ? "text-emerald-600" : "text-[#374151]")} />
+                    )}
                   </div>
 
-                  {isManifestUploaded ? (
+                  {isUploadingCsv ? (
+                    <div>
+                      <h4 className="text-lg font-semibold text-[#111827] mb-1">Importing Bookings...</h4>
+                      <p className="text-sm text-gray-500">Please wait while we parse and validate your CSV file.</p>
+                    </div>
+                  ) : isManifestUploaded ? (
                     <div>
                       <h4 className="text-lg font-semibold text-emerald-800 mb-1">{manifestFileName}</h4>
-                      <p className="text-sm text-emerald-600">Upload complete. Parsed {addedBookings.length} bookings successfully.</p>
+                      <p className="text-sm text-emerald-600">Upload complete. Loaded {addedBookings.length} bookings.</p>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          fileInputRef.current?.click();
+                        }}
+                        className="mt-3 text-xs text-[#0F2757] underline font-medium hover:text-[#1B2B6B]"
+                      >
+                        Upload a different CSV
+                      </button>
                     </div>
                   ) : (
                     <>
@@ -679,7 +1262,10 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
                       </p>
                       <button
                         type="button"
-                        onClick={simulateCsvUpload}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          fileInputRef.current?.click();
+                        }}
                         className="h-[42px] bg-[#233159] hover:bg-[#1A2542] text-white px-6 rounded-[8px] font-medium text-[15px] flex items-center gap-2 mb-4 transition-colors cursor-pointer"
                       >
                         <Upload className="h-4 w-4" />
@@ -691,101 +1277,209 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
                     </>
                   )}
                 </div>
+
+                {importSummary && (
+                  <div className="mt-4 p-4 rounded-xl border border-blue-200 bg-blue-50/50 flex items-center justify-between text-left">
+                    <div>
+                      <h5 className="font-semibold text-blue-900 text-sm">Import Summary</h5>
+                      <p className="text-xs text-blue-700 mt-0.5">
+                        Total: {importSummary.totalBookings} | Valid: {importSummary.validBookings} | Errors: {importSummary.errorBookings}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {importErrors.length > 0 && (
+                  <div className="mt-3 p-4 rounded-xl border border-red-200 bg-red-50/50 text-left">
+                    <h5 className="font-semibold text-red-900 text-sm mb-1">Errors Encountered in CSV:</h5>
+                    <ul className="list-disc list-inside text-xs text-red-700 space-y-1">
+                      {importErrors.map((err, idx) => (
+                        <li key={idx}>
+                          Row {err.row}: {err.errors.join(", ")}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
               </div>
             ) : (
               <div className="border border-gray-200 rounded-xl p-5 bg-white space-y-4 text-left">
-                <h4 className="font-semibold text-gray-900 text-base">
-                  {editingBookingId ? "Edit Booking" : "Add New Booking"}
-                </h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="font-semibold text-gray-900 text-base">
+                    {editingBookingId ? "Edit Booking" : "Add New Booking"}
+                  </h4>
+                  {editingBookingId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingBookingId(null);
+                        setBookingPnr("");
+                        setBookingFirstName("");
+                        setBookingLastName("");
+                        setBookingEmail("");
+                        setBookingPhone("");
+                        setBookingClass("Economy");
+                        setBookingAdults("1");
+                        setBookingChildren("0");
+                        setBookingNotesText("");
+                        setSelectedNoteTags([]);
+                        setStep2Errors({});
+                        setStep2Touched({});
+                      }}
+                      className="text-xs text-gray-500 hover:text-gray-800 underline cursor-pointer"
+                    >
+                      Cancel Edit
+                    </button>
+                  )}
+                </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-base font-semibold text-gray-600">Booking Reference (PNR) *</label>
+                    <label className="text-[15px] font-medium text-[#1F2937]">Booking Reference (PNR) *</label>
                     <input
                       type="text"
                       placeholder="e.g., ABC123"
                       value={bookingPnr}
-                      onChange={(e) => setBookingPnr(e.target.value)}
-                      className="block h-10 w-full rounded-lg border border-[#D1D5DB] px-3 text-base text-gray-900 bg-[#F9FAFB] focus:bg-white focus:border-[#0F2757] focus:outline-none"
+                      onChange={(e) => handleBookingPnrChange(e.target.value)}
+                      onBlur={handleStep2Blur("pnr")}
+                      className={cn(
+                        "block h-[42px] w-full rounded-lg border px-3 text-[15px] text-[#1F2937] bg-white focus:outline-none focus:ring-2 transition-all placeholder:text-[#9CA3AF]",
+                        step2Errors.pnr && step2Touched.pnr
+                          ? "border-red-500 focus:ring-red-500/20 focus:border-red-500"
+                          : "border-[#D1D5DB] focus:ring-[#1B2B6B]/20 focus:border-[#1B2B6B]"
+                      )}
                     />
+                    {step2Errors.pnr && step2Touched.pnr && (
+                      <p className="step2-field-error mt-0.5 text-xs text-red-500">{step2Errors.pnr}</p>
+                    )}
                   </div>
 
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-base font-semibold text-gray-600">First Name *</label>
+                    <label className="text-[15px] font-medium text-[#1F2937]">First Name *</label>
                     <input
                       type="text"
                       placeholder="John"
                       value={bookingFirstName}
-                      onChange={(e) => setBookingFirstName(e.target.value)}
-                      className="block h-10 w-full rounded-lg border border-[#D1D5DB] px-3 text-base text-gray-900 bg-[#F9FAFB] focus:bg-white focus:border-[#0F2757] focus:outline-none"
+                      onChange={(e) => handleBookingFirstNameChange(e.target.value)}
+                      onBlur={handleStep2Blur("firstName")}
+                      className={cn(
+                        "block h-[42px] w-full rounded-lg border px-3 text-[15px] text-[#1F2937] bg-white focus:outline-none focus:ring-2 transition-all placeholder:text-[#9CA3AF]",
+                        step2Errors.firstName && step2Touched.firstName
+                          ? "border-red-500 focus:ring-red-500/20 focus:border-red-500"
+                          : "border-[#D1D5DB] focus:ring-[#1B2B6B]/20 focus:border-[#1B2B6B]"
+                      )}
                     />
+                    {step2Errors.firstName && step2Touched.firstName && (
+                      <p className="step2-field-error mt-0.5 text-xs text-red-500">{step2Errors.firstName}</p>
+                    )}
                   </div>
 
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-base font-semibold text-gray-600">Last Name *</label>
+                    <label className="text-[15px] font-medium text-[#1F2937]">Last Name *</label>
                     <input
                       type="text"
                       placeholder="Doe"
                       value={bookingLastName}
-                      onChange={(e) => setBookingLastName(e.target.value)}
-                      className="block h-10 w-full rounded-lg border border-[#D1D5DB] px-3 text-base text-gray-900 bg-[#F9FAFB] focus:bg-white focus:border-[#0F2757] focus:outline-none"
+                      onChange={(e) => handleBookingLastNameChange(e.target.value)}
+                      onBlur={handleStep2Blur("lastName")}
+                      className={cn(
+                        "block h-[42px] w-full rounded-lg border px-3 text-[15px] text-[#1F2937] bg-white focus:outline-none focus:ring-2 transition-all placeholder:text-[#9CA3AF]",
+                        step2Errors.lastName && step2Touched.lastName
+                          ? "border-red-500 focus:ring-red-500/20 focus:border-red-500"
+                          : "border-[#D1D5DB] focus:ring-[#1B2B6B]/20 focus:border-[#1B2B6B]"
+                      )}
                     />
+                    {step2Errors.lastName && step2Touched.lastName && (
+                      <p className="step2-field-error mt-0.5 text-xs text-red-500">{step2Errors.lastName}</p>
+                    )}
                   </div>
 
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-base font-semibold text-gray-600">Email *</label>
+                    <label className="text-[15px] font-medium text-[#1F2937]">Email *</label>
                     <input
                       type="email"
                       placeholder="john@email.com"
                       value={bookingEmail}
-                      onChange={(e) => setBookingEmail(e.target.value)}
-                      className="block h-10 w-full rounded-lg border border-[#D1D5DB] px-3 text-base text-gray-900 bg-[#F9FAFB] focus:bg-white focus:border-[#0F2757] focus:outline-none"
+                      onChange={(e) => handleBookingEmailChange(e.target.value)}
+                      onBlur={handleStep2Blur("email")}
+                      className={cn(
+                        "block h-[42px] w-full rounded-lg border px-3 text-[15px] text-[#1F2937] bg-white focus:outline-none focus:ring-2 transition-all placeholder:text-[#9CA3AF]",
+                        step2Errors.email && step2Touched.email
+                          ? "border-red-500 focus:ring-red-500/20 focus:border-red-500"
+                          : "border-[#D1D5DB] focus:ring-[#1B2B6B]/20 focus:border-[#1B2B6B]"
+                      )}
                     />
+                    {step2Errors.email && step2Touched.email && (
+                      <p className="step2-field-error mt-0.5 text-xs text-red-500">{step2Errors.email}</p>
+                    )}
                   </div>
 
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-base font-semibold text-gray-600">Phone *</label>
+                    <label className="text-[15px] font-medium text-[#1F2937]">Phone *</label>
                     <input
                       type="text"
                       placeholder="+1 555-0100"
                       value={bookingPhone}
-                      onChange={(e) => setBookingPhone(e.target.value)}
-                      className="block h-10 w-full rounded-lg border border-[#D1D5DB] px-3 text-base text-gray-900 bg-[#F9FAFB] focus:bg-white focus:border-[#0F2757] focus:outline-none"
+                      onChange={(e) => handleBookingPhoneChange(e.target.value)}
+                      onBlur={handleStep2Blur("phone")}
+                      className={cn(
+                        "block h-[42px] w-full rounded-lg border px-3 text-[15px] text-[#1F2937] bg-white focus:outline-none focus:ring-2 transition-all placeholder:text-[#9CA3AF]",
+                        step2Errors.phone && step2Touched.phone
+                          ? "border-red-500 focus:ring-red-500/20 focus:border-red-500"
+                          : "border-[#D1D5DB] focus:ring-[#1B2B6B]/20 focus:border-[#1B2B6B]"
+                      )}
                     />
+                    {step2Errors.phone && step2Touched.phone && (
+                      <p className="step2-field-error mt-0.5 text-xs text-red-500">{step2Errors.phone}</p>
+                    )}
                   </div>
 
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-base font-semibold text-gray-600">Travel Class *</label>
+                    <label className="text-[15px] font-medium text-[#1F2937]">Travel Class *</label>
                     <Dropdown
                       value={bookingClass}
-                      onChange={setBookingClass}
+                      onChange={handleBookingClassChange}
                       options={TRAVEL_CLASS_OPTIONS}
                       triggerWidthClass="w-full"
                       widthClass="w-full"
-                      bgClass="bg-[#F9FAFB]"
-                      heightClass="h-10"
+                      bgClass="bg-white"
+                      heightClass="h-[42px]"
+                      error={!!(step2Errors.travelClass && step2Touched.travelClass)}
                     />
+                    {step2Errors.travelClass && step2Touched.travelClass && (
+                      <p className="step2-field-error mt-0.5 text-xs text-red-500">{step2Errors.travelClass}</p>
+                    )}
                   </div>
 
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-base font-semibold text-gray-600">Adults *</label>
+                    <label className="text-[15px] font-medium text-[#1F2937]">Adults *</label>
                     <input
                       type="number"
                       min={1}
                       value={bookingAdults}
-                      onChange={(e) => setBookingAdults(e.target.value)}
-                      className="block h-10 w-full rounded-lg border border-[#D1D5DB] px-3 text-base text-gray-900 bg-[#F9FAFB] focus:bg-white focus:border-[#0F2757] focus:outline-none"
+                      onChange={(e) => handleBookingAdultsChange(e.target.value)}
+                      onBlur={handleStep2Blur("adults")}
+                      className={cn(
+                        "block h-[42px] w-full rounded-lg border px-3 text-[15px] text-[#1F2937] bg-white focus:outline-none focus:ring-2 transition-all",
+                        step2Errors.adults && step2Touched.adults
+                          ? "border-red-500 focus:ring-red-500/20 focus:border-red-500"
+                          : "border-[#D1D5DB] focus:ring-[#1B2B6B]/20 focus:border-[#1B2B6B]"
+                      )}
                     />
+                    {step2Errors.adults && step2Touched.adults && (
+                      <p className="step2-field-error mt-0.5 text-xs text-red-500">{step2Errors.adults}</p>
+                    )}
                   </div>
 
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-base font-semibold text-gray-600">Children</label>
+                    <label className="text-[15px] font-medium text-[#1F2937]">Children</label>
                     <input
                       type="number"
                       min={0}
                       value={bookingChildren}
                       onChange={(e) => setBookingChildren(e.target.value)}
-                      className="block h-10 w-full rounded-lg border border-[#D1D5DB] px-3 text-base text-gray-900 bg-[#F9FAFB] focus:bg-white focus:border-[#0F2757] focus:outline-none"
+                      className="block h-[42px] w-full rounded-lg border border-[#D1D5DB] px-3 text-[15px] text-[#1F2937] bg-white focus:outline-none focus:ring-2 focus:ring-[#1B2B6B]/20 focus:border-[#1B2B6B] transition-all"
                     />
                   </div>
                 </div>
@@ -839,11 +1533,22 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
 
                 <button
                   type="button"
+                  disabled={isSavingBooking}
                   onClick={handleAddBooking}
-                  className="bg-[#0F2757] hover:bg-[#162259] text-white font-medium py-2 px-4 rounded-lg transition-colors cursor-pointer text-sm inline-flex items-center gap-1.5"
+                  className="bg-[#0F2757] hover:bg-[#162259] disabled:opacity-60 text-white font-medium py-2 px-4 rounded-lg transition-colors cursor-pointer text-sm inline-flex items-center gap-1.5"
                 >
-                  <Plus className="h-4 w-4" />
-                  <span>{editingBookingId ? "Update Booking" : "Add Booking"}</span>
+                  {isSavingBooking ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Plus className="h-4 w-4" />
+                  )}
+                  <span>
+                    {isSavingBooking
+                      ? "Saving..."
+                      : editingBookingId
+                        ? "Update Booking"
+                        : "Add Booking"}
+                  </span>
                 </button>
               </div>
             )}
@@ -1502,7 +2207,7 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
                 type="button"
                 onClick={() => {
                   onSave({
-                    id: Math.random().toString(36).substring(7),
+                    id: initialData?.id || Math.random().toString(36).substring(7),
                     flight: newFlight || "TRE",
                     route: newDepartureAirport && newArrivalAirport ? `${newDepartureAirport} ➔ ${newArrivalAirport}` : "LAX ➔ ORD",
                     cancellationDate: newDate ? new Date(newDate).toISOString() : new Date().toISOString(),
@@ -1532,9 +2237,9 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
       <div className="flex items-center">
         <button
           onClick={onClose}
-          className="flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-gray-900 cursor-pointer transition-colors"
+          className="relative -top-1 flex items-center gap-1.5 text-[16px] text-[#6B7280] hover:text-[#1F2937] transition-colors duration-150 font-medium group cursor-pointer"
         >
-          <ArrowLeft className="h-4 w-4" />
+          <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" />
           <span>Back to Cancelled Flights</span>
         </button>
       </div>
@@ -1562,13 +2267,23 @@ export default function CancellationWizard({ onClose, onSave }: CancellationWiza
             {activeStep !== 7 && (
               <button
                 onClick={handleNextStep}
-                disabled={activeStep === 6 && !paymentConfirmed}
+                disabled={isCreatingFlight || isConfirmingBookings || (activeStep === 6 && !paymentConfirmed)}
                 className={cn(
                   "flex items-center gap-2 font-medium py-2.5 px-5 rounded-lg transition-colors cursor-pointer text-sm",
-                  activeStep === 6 && !paymentConfirmed ? "bg-[#9CA3AF] text-white cursor-not-allowed border-none" : "bg-[#0F2757] hover:bg-[#162259] text-white"
+                  (isCreatingFlight || isConfirmingBookings || (activeStep === 6 && !paymentConfirmed)) ? "bg-[#9CA3AF] text-white cursor-not-allowed border-none" : "bg-[#0F2757] hover:bg-[#162259] text-white"
                 )}
               >
-                {activeStep === 6 ? (
+                {isCreatingFlight ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Creating...</span>
+                  </>
+                ) : isConfirmingBookings ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Confirming...</span>
+                  </>
+                ) : activeStep === 6 ? (
                   <>
                     <CreditCard className="h-4 w-4" />
                     <span>Pay ${totalPayment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>

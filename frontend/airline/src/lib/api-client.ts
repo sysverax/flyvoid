@@ -20,7 +20,6 @@ export function extractErrorMessage(error: any, defaultMsg: string): string {
 
 export function setCookie(name: string, value: string, maxAgeSeconds?: number) {
   if (maxAgeSeconds !== undefined) {
-    // js-cookie expires option expects number of days (fractional days are supported)
     const days = maxAgeSeconds / (24 * 60 * 60);
     Cookies.set(name, value, { expires: days, path: "/", sameSite: "Lax" });
   } else {
@@ -36,11 +35,10 @@ export function eraseCookie(name: string) {
   Cookies.remove(name, { path: "/" });
 }
 
-// Request interceptor to attach JWT token
 apiClient.interceptors.request.use(
   (config) => {
     if (typeof window !== "undefined") {
-      const token = sessionStorage.getItem("flyvoid_access_token");
+      const token = sessionStorage.getItem("airline_access_token");
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
       }
@@ -66,28 +64,24 @@ const processQueue = (error: any, token: string | null = null) => {
   failedQueue = [];
 };
 
-// Response interceptor to handle unauthorized access and automatically refresh tokens
 apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
 
-    // Do not attempt token refresh for public routes or refresh requests
     const isPublicRoute =
-      originalRequest.url?.includes("/auth/admin/signin") ||
-      originalRequest.url?.includes("/auth/admin/signup") ||
-      originalRequest.url?.includes("/auth/admin/forgot-password") ||
-      originalRequest.url?.includes("/auth/admin/refresh") ||
-      originalRequest.url?.includes("/auth/admin/2fa/recover") ||
-      originalRequest.url?.includes("/auth/admin/signout");
+      originalRequest.url?.includes("/auth/airline/signin") ||
+      originalRequest.url?.includes("/auth/airline/onboard") ||
+      originalRequest.url?.includes("/auth/airline/forgot-password") ||
+      originalRequest.url?.includes("/auth/airline/refresh") ||
+      originalRequest.url?.includes("/auth/airline/signout");
 
     if (isPublicRoute) {
-      // For refresh failures, clean storage and redirect
-      if (originalRequest.url?.includes("/auth/admin/refresh")) {
+      if (originalRequest.url?.includes("/auth/airline/refresh")) {
         if (typeof window !== "undefined") {
-          sessionStorage.removeItem("flyvoid_access_token");
-          sessionStorage.removeItem("flyvoid_current_user");
-          eraseCookie("flyvoid_refresh_token");
+          sessionStorage.removeItem("airline_access_token");
+          sessionStorage.removeItem("airline_current_user");
+          eraseCookie("airline_refresh_token");
           if (window.location.pathname !== "/login") {
             window.location.href = "/login";
           }
@@ -113,12 +107,12 @@ apiClient.interceptors.response.use(
       originalRequest._retry = true;
       isRefreshing = true;
 
-      const refreshToken = getCookie("flyvoid_refresh_token");
+      const refreshToken = getCookie("airline_refresh_token");
       if (!refreshToken) {
         isRefreshing = false;
         if (typeof window !== "undefined") {
-          sessionStorage.removeItem("flyvoid_access_token");
-          sessionStorage.removeItem("flyvoid_current_user");
+          sessionStorage.removeItem("airline_access_token");
+          sessionStorage.removeItem("airline_current_user");
           if (window.location.pathname !== "/login") {
             window.location.href = "/login";
           }
@@ -127,15 +121,15 @@ apiClient.interceptors.response.use(
       }
 
       try {
-        const response = await axios.post(`${API_BASE_URL}/auth/admin/refresh`, {
+        const response = await axios.post(`${API_BASE_URL}/auth/airline/refresh`, {
           refreshToken: refreshToken,
         });
 
         const { accessToken: newAccessToken, refreshToken: newRefreshToken } = response.data.data;
 
         if (typeof window !== "undefined") {
-          sessionStorage.setItem("flyvoid_access_token", newAccessToken);
-          setCookie("flyvoid_refresh_token", newRefreshToken);
+          sessionStorage.setItem("airline_access_token", newAccessToken);
+          setCookie("airline_refresh_token", newRefreshToken);
         }
 
         processQueue(null, newAccessToken);
@@ -148,9 +142,9 @@ apiClient.interceptors.response.use(
         isRefreshing = false;
 
         if (typeof window !== "undefined") {
-          sessionStorage.removeItem("flyvoid_access_token");
-          sessionStorage.removeItem("flyvoid_current_user");
-          eraseCookie("flyvoid_refresh_token");
+          sessionStorage.removeItem("airline_access_token");
+          sessionStorage.removeItem("airline_current_user");
+          eraseCookie("airline_refresh_token");
           if (window.location.pathname !== "/login") {
             window.location.href = "/login";
           }
@@ -162,4 +156,3 @@ apiClient.interceptors.response.use(
     return Promise.reject(error);
   }
 );
-
