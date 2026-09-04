@@ -74,6 +74,10 @@ function validate(key: keyof InviteFormState, value: string): string {
     case "website":
       if (v && !URL_RE.test(v)) return "Please enter a valid website URL";
       return "";
+    // logo URL
+    case "logoUrl":
+      if (v && !URL_RE.test(v)) return "Please enter a valid logo URL";
+      return "";
     case "creditLimit":
       if (!v) return "";
       if (isNaN(Number(v)) || Number(v) < 0) return "Credit Limit must be a valid number";
@@ -277,6 +281,7 @@ export function InviteModal({
 
                 <Field label="Logo URL">
                   <input placeholder="https://..." value={formState.logoUrl} onChange={handleChange("logoUrl")} onBlur={handleBlur("logoUrl")} className={ic("logoUrl")} disabled={isLoading} />
+                  {err("logoUrl")}
                 </Field>
 
                 {/* Currency — custom Dropdown */}

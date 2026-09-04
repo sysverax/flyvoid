@@ -17,10 +17,10 @@ export function MainLayout({ children }: MainLayoutProps) {
     setMounted(true);
   }, []);
 
-  const isAuthPage =
-    pathname === "/login" ||
-    pathname === "/forgot-password" ||
-    pathname === "/two-factor";
+  const authRoutes = ["/login", "/forgot-password", "/two-factor", "/onboard", "/verify"];
+  const isAuthPage = authRoutes.some(
+    (route) => pathname === route || pathname.endsWith(`/airline${route}`)
+  );
 
   if (isAuthPage) {
     return (

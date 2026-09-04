@@ -1,0 +1,135 @@
+import { apiClient, extractErrorMessage } from "@/src/lib/api-client";
+
+export interface CreateCancelledFlightPayload {
+  flightNumber: string;
+  airlineId: number;
+  departureAirportId: number;
+  arrivalAirportId: number;
+  cancellationDate: string;
+  cancellationReason?: string;
+  cancellationReasonText?: string;
+}
+
+export interface BookingDTO {
+  id: number | string;
+  cancelledFlightId?: number;
+  pnr: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  travelClass: string;
+  adults: number;
+  children: number;
+  specialNotes?: string[];
+  additionalNotes?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CreateBookingPayload {
+  pnr: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  travelClass: string;
+  adults: number;
+  children: number;
+  specialNotes?: string[];
+  additionalNotes?: string;
+}
+
+export interface ImportBookingResponse {
+  bookings: BookingDTO[];
+  summary?: {
+    totalBookings: number;
+    validBookings: number;
+    errorBookings: number;
+  };
+  errorList?: Array<{
+    row: number;
+    errors: string[];
+  }>;
+}
+
+export const cancellationService = {
+  async createCancelledFlight(payload: CreateCancelledFlightPayload) {
+    try {
+      const response = await apiClient.post("/cancelled-flights", payload);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(extractErrorMessage(error, "Failed to create cancelled flight"));
+    }
+  },
+
+  async addBooking(flightId: number | string, payload: CreateBookingPayload) {
+    try {
+      const response = await apiClient.post(`/cancelled-flights/${flightId}/bookings`, payload);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(extractErrorMessage(error, "Failed to add booking"));
+    }
+  },
+
+  async listBookings(flightId: number | string, params?: { page?: number; limit?: number }) {
+    try {
+      const response = await apiClient.get(`/cancelled-flights/${flightId}/bookings`, {
+        params: {
+          page: params?.page || 1,
+          limit: params?.limit || 50,
+        },
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(extractErrorMessage(error, "Failed to fetch bookings"));
+    }
+  },
+
+  async importBookings(flightId: number | string, file: File): Promise<{ success: boolean; message?: string; data: ImportBookingResponse }> {
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await apiClient.post(`/cancelled-flights/${flightId}/bookings/import`, formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(extractErrorMessage(error, "Failed to import bookings"));
+    }
+  },
+
+  async updateBooking(
+    flightId: number | string,
+    bookingId: number | string,
+    payload: Partial<CreateBookingPayload>
+  ) {
+    try {
+      const response = await apiClient.patch(`/cancelled-flights/${flightId}/bookings/${bookingId}`, payload);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(extractErrorMessage(error, "Failed to update booking"));
+    }
+  },
+
+  async deleteBooking(flightId: number | string, bookingId: number | string) {
+    try {
+      const response = await apiClient.delete(`/cancelled-flights/${flightId}/bookings/${bookingId}`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(extractErrorMessage(error, "Failed to delete booking"));
+    }
+  },
+
+  async confirmBookings(flightId: number | string) {
+    try {
+      const response = await apiClient.post(`/cancelled-flights/${flightId}/bookings/confirm`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(extractErrorMessage(error, "Failed to confirm bookings"));
+    }
+  },
+};
