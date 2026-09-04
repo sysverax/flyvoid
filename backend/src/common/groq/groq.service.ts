@@ -27,6 +27,72 @@ export class GroqService {
 
   constructor(private readonly logger: LoggerService) {}
 
+  private buildDeterministicHotelScores(
+    subGroupProfile: {
+      needsProfile: string;
+    },
+    hotels: HotelScoreInput[],
+  ): Array<{
+    hotelId: string;
+    score: number;
+    reason: string;
+  }> {
+    const needsText = String(subGroupProfile.needsProfile ?? "").toLowerCase();
+    const accessibilityNeeded = /accessib|wheelchair|mobility|medical/.test(
+      needsText,
+    );
+
+    return [...hotels]
+      .sort((a, b) => {
+        const aRooms = Number.isFinite(a.totalAvailableRooms)
+          ? a.totalAvailableRooms
+          : 0;
+        const bRooms = Number.isFinite(b.totalAvailableRooms)
+          ? b.totalAvailableRooms
+          : 0;
+        const aRate = Number.isFinite(a.minRate) ? a.minRate : Number.MAX_VALUE;
+        const bRate = Number.isFinite(b.minRate) ? b.minRate : Number.MAX_VALUE;
+
+        if (accessibilityNeeded && a.isAccessible !== b.isAccessible) {
+          return a.isAccessible ? -1 : 1;
+        }
+        if (a.stars !== b.stars) {
+          return b.stars - a.stars;
+        }
+        if (aRooms !== bRooms) {
+          return bRooms - aRooms;
+        }
+        return aRate - bRate;
+      })
+      .map((hotel, index) => {
+        let score = 70 - index;
+        if (accessibilityNeeded && hotel.isAccessible) {
+          score += 15;
+        }
+        score += Math.min(10, Math.max(0, hotel.stars * 2));
+        if (Number.isFinite(hotel.minRate)) {
+          score += hotel.minRate <= 120 ? 5 : 0;
+        }
+
+        const boundedScore = Math.max(1, Math.min(100, score));
+        const reasonParts = [
+          `${hotel.stars}-star property`,
+          `${hotel.totalAvailableRooms} rooms available`,
+          accessibilityNeeded
+            ? hotel.isAccessible
+              ? "matches accessibility needs"
+              : "limited accessibility match"
+            : "ranked by quality and availability",
+        ];
+
+        return {
+          hotelId: hotel.id,
+          score: boundedScore,
+          reason: reasonParts.join(", "),
+        };
+      });
+  }
+
   async getHotelRecommendations(
     booking: {
       firstName: string;
@@ -283,11 +349,16 @@ Rules:
   }> {
     if (!this.apiKey) {
       this.logger.warn(
-        "Groq API Key is not configured.",
+        "Groq API Key is not configured. Falling back to deterministic scoring.",
         "GroqService",
         requestId,
       );
-      throw new ServiceUnavailableException("Groq API Key is not configured");
+      return {
+        scoredHotels: this.buildDeterministicHotelScores(
+          subGroupProfile,
+          hotels,
+        ),
+      };
     }
 
     const systemPrompt = `You are an AI scoring assistant for flight-disruption hotel allocation.
@@ -345,6 +416,74 @@ Rules:
 
       if (!response.ok) {
         const errorText = await response.text();
+        const isJsonValidationError =
+          response.status === 400 && /json_validate_failed/i.test(errorText);
+
+        if (isJsonValidationError) {
+          this.logger.warn(
+            "Groq JSON-mode validation failed. Retrying without strict response_format.",
+            "GroqService",
+            requestId,
+            { model: this.model },
+          );
+
+          const retryResponse = await fetch(this.apiUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${this.apiKey}`,
+            },
+            body: JSON.stringify({
+              model: this.model,
+              messages: [
+                { role: "system", content: systemPrompt },
+                {
+                  role: "user",
+                  content: `${userPrompt}\n\nReturn only valid JSON object with key \"scoredHotels\". No markdown fences.`,
+                },
+              ],
+              temperature: 0.1,
+            }),
+          });
+
+          if (!retryResponse.ok) {
+            const retryErrorText = await retryResponse.text();
+            throw new Error(
+              `Groq API retry returned status ${retryResponse.status}: ${retryErrorText}`,
+            );
+          }
+
+          const retryData = await retryResponse.json();
+          const retryContent = retryData?.choices?.[0]?.message?.content;
+          if (!retryContent) {
+            throw new Error(
+              "Empty message content received from Groq API retry",
+            );
+          }
+
+          const parsedRetry = JSON.parse(retryContent) as {
+            scoredHotels?: Array<{
+              hotelId?: string;
+              score?: number;
+              reason?: string;
+            }>;
+          };
+
+          const knownIds = new Set(hotels.map((hotel) => hotel.id));
+          const retryScoredHotels = (parsedRetry.scoredHotels ?? [])
+            .filter((hotel) => knownIds.has(String(hotel.hotelId ?? "")))
+            .map((hotel) => ({
+              hotelId: String(hotel.hotelId),
+              score: Math.max(1, Math.min(100, Number(hotel.score ?? 50))),
+              reason: String(hotel.reason ?? "No reason provided").trim(),
+            }))
+            .sort((a, b) => b.score - a.score);
+
+          if (retryScoredHotels.length > 0) {
+            return { scoredHotels: retryScoredHotels };
+          }
+        }
+
         throw new Error(
           `Groq API returned status ${response.status}: ${errorText}`,
         );
@@ -376,27 +515,26 @@ Rules:
 
       if (scoredHotels.length === 0) {
         return {
-          scoredHotels: hotels
-            .map((hotel) => ({
-              hotelId: hotel.id,
-              score: 50,
-              reason: "Default score applied",
-            }))
-            .sort((a, b) => b.score - a.score),
+          scoredHotels: this.buildDeterministicHotelScores(
+            subGroupProfile,
+            hotels,
+          ),
         };
       }
 
       return { scoredHotels };
     } catch (error: any) {
-      this.logger.error(
-        `Failed to score hotels with Groq API: ${error.message}`,
+      this.logger.warn(
+        `Groq hotel scoring failed, using deterministic fallback: ${error.message}`,
         "GroqService",
         requestId,
-        { stack: error.stack },
       );
-      throw new ServiceUnavailableException(
-        `Groq API hotel scoring failed: ${error.message}`,
-      );
+      return {
+        scoredHotels: this.buildDeterministicHotelScores(
+          subGroupProfile,
+          hotels,
+        ),
+      };
     }
   }
 }

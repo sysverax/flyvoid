@@ -70,6 +70,8 @@ import {
 } from "./dto";
 import { PaginationQueryDto } from "../common/dto/pagination-query.dto";
 import { AuthenticatedRequest } from "../auth/interfaces/authenticated-request.interface";
+import { RequestLogger } from "../common/decorators/request-logger.decorator";
+import { Logger } from "winston";
 
 @ApiTags("Cancelled Flights")
 @ApiBearerAuth("access-token")
@@ -433,10 +435,12 @@ export class CancelledFlightsController {
   async confirmPassengerBookingDetails(
     @Param("id", ParseIntPipe) id: number,
     @RequestId() requestId: string,
+    @RequestLogger() logger: Logger,
   ): Promise<BaseResponseDto<CancelledFlightResponseDto>> {
     const data = await this.service.confirmPassengerBookingDetails(
       id,
       requestId,
+      logger,
     );
     return BaseResponseDto.success(
       data,
@@ -471,11 +475,13 @@ export class CancelledFlightsController {
     @Param("id", ParseIntPipe) id: number,
     @Param("bookingId", ParseIntPipe) bookingId: number,
     @RequestId() requestId: string,
+    @RequestLogger() logger: Logger,
   ): Promise<BaseResponseDto<object>> {
     const data = await this.service.getHotelRecommendations(
       id,
       bookingId,
       requestId,
+      logger,
     );
     return BaseResponseDto.success(
       data,
@@ -551,10 +557,15 @@ export class CancelledFlightsController {
   async allocateHotelsForFlight(
     @Param("cancelledFlightId", ParseIntPipe) cancelledFlightId: number,
     @RequestId() requestId: string,
+    @RequestLogger() logger: Logger,
   ): Promise<BaseResponseDto<AllocateHotelsResponseDto>> {
+    logger.info(
+      `Allocating hotels for cancelled flight ID: ${cancelledFlightId}`,
+    );
     const data = await this.service.allocateHotelsForFlight(
       cancelledFlightId,
       requestId,
+      logger,
     );
     return BaseResponseDto.success(
       data,

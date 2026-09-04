@@ -33,7 +33,9 @@ import { PaginationQueryDto } from "../common/dto/pagination-query.dto";
 import { HotelCandidate, HotelPartnerService } from "./hotel-partner.service";
 import { GroqService } from "../common/groq/groq.service";
 import { HotelAllocationEntity } from "./entities/hotel-allocation.entity";
+import { Logger } from "winston";
 
+const DEFAULT_MAX_DISTANCE_KM: number = 5;
 @Injectable()
 export class CancelledFlightsService {
   private readonly context = "CancelledFlightsService";
@@ -522,6 +524,7 @@ export class CancelledFlightsService {
   async confirmPassengerBookingDetails(
     flightId: number,
     requestId: string,
+    logger: Logger,
   ): Promise<CancelledFlightResponseDto> {
     const [flight, bookingStats] = await Promise.all([
       this.cancelledFlightsRepository.findFlightWithRelations(
@@ -560,6 +563,7 @@ export class CancelledFlightsService {
         },
         HotelBookingStats: null, // No hotel booking stats at this point
         requestId,
+        logger,
       });
 
     return this.toCancelledFlightResponse(updatedFlight);
@@ -571,11 +575,14 @@ export class CancelledFlightsService {
     flightId: number,
     bookingId: number,
     requestId: string,
+    logger: Logger,
   ) {
-    this.logger.debug(
-      `Starting hotel recommendations process for flight: ${flightId}, booking: ${bookingId}`,
-      this.context,
-      requestId,
+    logger.debug(
+      `Starting hotel recommendations process for flight: ${flightId}`,
+      {
+        context: this.context,
+        bookingId: bookingId,
+      },
     );
 
     const flight =
@@ -653,6 +660,7 @@ export class CancelledFlightsService {
       checkIn,
       finalCheckOut,
       requestId,
+      logger,
     );
     this.logger.debug(
       `Received ${candidateHotels.length} candidate hotels from Hotelbeds`,
@@ -928,8 +936,9 @@ export class CancelledFlightsService {
   async allocateHotelsForFlight(
     cancelledFlightId: number,
     requestId: string,
+    logger: Logger,
   ): Promise<AllocateHotelsResponseDto> {
-    this.logger.debug(
+    logger.debug(
       `Starting bulk hotel allocation for flight: ${cancelledFlightId}`,
       this.context,
       requestId,
@@ -939,15 +948,24 @@ export class CancelledFlightsService {
       await this.cancelledFlightsRepository.findFlightWithBookingsRelations(
         cancelledFlightId,
         requestId,
+        logger,
       );
 
     if (!flight) {
+      logger.error(`Cancelled flight '${cancelledFlightId}' not found`, {
+        context: this.context,
+        cancelledFlightId: cancelledFlightId,
+      });
       throw new NotFoundException(
         `Cancelled flight '${cancelledFlightId}' not found`,
       );
     }
 
     if (flight.status !== FlightStatus.PASSENGERS_BOOKING_CONFIRMED) {
+      logger.error(
+        `Flight '${cancelledFlightId}' is not ready for hotel allocation`,
+        { context: this.context, cancelledFlightId: cancelledFlightId },
+      );
       throw new BadRequestException(
         `Flight '${cancelledFlightId}' is not ready for hotel allocation`,
       );
@@ -957,9 +975,14 @@ export class CancelledFlightsService {
       await this.cancelledFlightsRepository.countHotelAllocationsByFlightId(
         cancelledFlightId,
         requestId,
+        logger,
       );
 
     if (existingAllocationsCount > 0) {
+      logger.error(
+        `Hotel allocations already exist for flight '${cancelledFlightId}'`,
+        { context: this.context, cancelledFlightId: cancelledFlightId },
+      );
       throw new ConflictException(
         `Hotel allocations already exist for flight '${cancelledFlightId}'`,
       );
@@ -969,13 +992,22 @@ export class CancelledFlightsService {
     const confirmedBookings = flight.bookings ?? [];
 
     if (confirmedBookings.length === 0) {
+      logger.error(
+        `No confirmed bookings found for flight '${cancelledFlightId}'`,
+        { context: this.context, cancelledFlightId: cancelledFlightId },
+      );
       throw new BadRequestException(
         `No confirmed bookings found for flight '${cancelledFlightId}'`,
       );
     }
 
+    // Assign check-in and check-out dates from flight user input in future
     const checkIn = flight.cancellationDate;
     if (!checkIn) {
+      logger.error(
+        `Cancellation date not found for flight '${cancelledFlightId}'`,
+        { context: this.context, cancelledFlightId: cancelledFlightId },
+      );
       throw new BadRequestException(
         `Cancellation date not found for flight '${cancelledFlightId}'`,
       );
@@ -983,9 +1015,26 @@ export class CancelledFlightsService {
 
     const checkOut = this.getDatePlusDays(checkIn, 1);
 
-    const airlinePreferences = this.getAirlineHotelPreferences(flight.airline);
+    logger.info(
+      `Preparing hotel allocation for flight '${cancelledFlightId}'`,
+      {
+        context: this.context,
+        cancelledFlightId: cancelledFlightId,
+        checkIn,
+        checkOut,
+      },
+    );
+
+    const airlinePreferences = this.getAirlineHotelPreferences(
+      flight.airline,
+      logger,
+    );
     const departureAirport = flight.departureAirport;
     if (!departureAirport) {
+      logger.error(
+        `Departure airport not found for flight '${cancelledFlightId}'`,
+        { context: this.context, cancelledFlightId: cancelledFlightId },
+      );
       throw new NotFoundException(
         `Departure airport not found for flight '${cancelledFlightId}'`,
       );
@@ -1002,7 +1051,13 @@ export class CancelledFlightsService {
         },
         HotelBookingStats: null,
         requestId,
+        logger,
       });
+
+      logger.info(
+        `Updated flight status to 'HOTEL_ALLOCATION_IN_PROGRESS' for flight '${cancelledFlightId}'`,
+        { context: this.context, cancelledFlightId: cancelledFlightId },
+      );
 
       const hotels = await this.hotelPartnerService.searchNearbyHotels(
         {
@@ -1013,6 +1068,7 @@ export class CancelledFlightsService {
         checkIn,
         checkOut,
         requestId,
+        logger,
         {
           radiusKm: airlinePreferences.maxDistanceKm,
           allowedStars: airlinePreferences.allowedStars,
@@ -1020,6 +1076,10 @@ export class CancelledFlightsService {
       );
 
       if (hotels.length === 0) {
+        logger.warn(
+          `No hotels found near airport '${departureAirport.iataCode}'`,
+          { context: this.context, cancelledFlightId: cancelledFlightId },
+        );
         throw new NotFoundException(
           `No hotels found near airport '${departureAirport.iataCode}'`,
         );
@@ -1048,6 +1108,14 @@ export class CancelledFlightsService {
             additionalNotes: booking.additionalNotes,
           })),
           requestId,
+        );
+        logger.debug(
+          `Class group with travel class '${classGroup.travelClass}' has been sub-grouped`,
+          {
+            context: this.context,
+            cancelledFlightId: cancelledFlightId,
+            classSubGroups,
+          },
         );
 
         for (const subGroup of classSubGroups.subGroups) {
@@ -1178,6 +1246,7 @@ export class CancelledFlightsService {
             const bookingAttempt = await this.bookReservedPlan(
               plan,
               inventoryState,
+              logger,
             );
             if (!bookingAttempt.success) {
               failedAllocations.push({
@@ -1245,6 +1314,7 @@ export class CancelledFlightsService {
             totalEarnings: totals.totalEarnings,
           },
           requestId,
+          logger,
         });
 
       this.logger.info(
@@ -1289,6 +1359,7 @@ export class CancelledFlightsService {
         },
         HotelBookingStats: null,
         requestId,
+        logger,
       });
       throw error;
     }
@@ -1303,7 +1374,11 @@ export class CancelledFlightsService {
     return parsed.toISOString().split("T")[0];
   }
 
-  private getAirlineHotelPreferences(airline: AirlineEntity): {
+  // TODO: Implement proper validation and handling for airline hotel preferences using airline settings
+  private getAirlineHotelPreferences(
+    airline: AirlineEntity,
+    logger: Logger,
+  ): {
     allowedStars: number[];
     maxDistanceKm: number;
   } {
@@ -1326,7 +1401,9 @@ export class CancelledFlightsService {
       : [];
 
     const maxDistanceRaw = Number(
-      preferences.maxDistanceKm ?? preferences.max_distance_km ?? 20,
+      preferences.maxDistanceKm ??
+        preferences.max_distance_km ??
+        DEFAULT_MAX_DISTANCE_KM,
     );
 
     return {
@@ -1334,7 +1411,7 @@ export class CancelledFlightsService {
       maxDistanceKm:
         Number.isFinite(maxDistanceRaw) && maxDistanceRaw > 0
           ? maxDistanceRaw
-          : 20,
+          : DEFAULT_MAX_DISTANCE_KM,
     };
   }
 
@@ -1569,6 +1646,7 @@ export class CancelledFlightsService {
         roomTypeAvailability: Map<string, number>;
       }
     >,
+    logger: Logger,
   ): Promise<
     | {
         success: true;
@@ -1700,6 +1778,7 @@ export class CancelledFlightsService {
             booking.adults + booking.children,
             plan.bookingContext,
             activeRooms,
+            logger,
           );
 
           if (refreshedRateKey) {
@@ -1930,6 +2009,7 @@ export class CancelledFlightsService {
       airlinePreferences: { allowedStars: number[]; maxDistanceKm: number };
     },
     previousRooms: Array<{ capacity: number }>,
+    logger: Logger,
   ): Promise<string | null> {
     try {
       const refreshedHotels = await this.hotelPartnerService.searchNearbyHotels(
@@ -1937,6 +2017,7 @@ export class CancelledFlightsService {
         context.checkIn,
         context.checkOut,
         context.requestId,
+        logger,
         {
           radiusKm: context.airlinePreferences.maxDistanceKm,
           allowedStars: context.airlinePreferences.allowedStars,
@@ -1956,11 +2037,10 @@ export class CancelledFlightsService {
       );
       return match?.rateKey ?? refreshedHotel.rateKey ?? null;
     } catch (error: any) {
-      this.logger.warn(
-        `Failed to refresh rate key for hotel '${hotel.id}': ${String(error?.message ?? "Unknown error")}`,
-        this.context,
-        context.requestId,
-      );
+      logger.warn(`Failed to refresh rate key for hotel '${hotel.id}'`, {
+        error: String(error?.message ?? "Unknown error"),
+        context,
+      });
       return null;
     }
   }

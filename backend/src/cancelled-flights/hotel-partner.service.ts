@@ -8,6 +8,7 @@ import * as crypto from "node:crypto";
 import { config } from "../config/config";
 import { LoggerService } from "../common/logger/logger.service";
 import { HotelAllocationStatus } from "./entities/enums";
+import { Logger } from "winston";
 
 export interface HotelRoomTypeCandidate {
   type: string;
@@ -54,10 +55,12 @@ export interface IHotelVendor {
   searchHotels(
     params: SearchHotelsParams,
     requestId: string,
+    logger: Logger,
   ): Promise<HotelCandidate[]>;
   bookHotelByParams(
     params: BookHotelParams,
     requestId: string,
+    logger: Logger,
   ): Promise<{
     bookingReference: string;
     status: HotelAllocationStatus;
@@ -84,12 +87,14 @@ export class HotelPartnerService implements IHotelVendor {
   async searchHotels(
     params: SearchHotelsParams,
     requestId: string,
+    logger: Logger,
   ): Promise<HotelCandidate[]> {
     return this.searchNearbyHotels(
       params.airport,
       params.checkInDate,
       params.checkOutDate,
       requestId,
+      logger,
       {
         radiusKm: params.radiusKm,
         allowedStars: params.allowedStars,
@@ -102,17 +107,25 @@ export class HotelPartnerService implements IHotelVendor {
     checkInDate: string,
     checkOutDate: string,
     requestId: string,
+    logger: Logger,
     options?: {
       radiusKm?: number;
       allowedStars?: number[];
     },
   ): Promise<HotelCandidate[]> {
+    logger.info("Searching nearby hotels for airport", {
+      context: "HotelPartnerService",
+      requestId,
+      airportIataCode: airport.iataCode,
+      airportLatitude: Number(airport.latitude),
+      airportLongitude: Number(airport.longitude),
+      radiusKm: options?.radiusKm ?? 5,
+      allowedStars: options?.allowedStars ?? [],
+    });
     if (!this.apiKey || !this.secret) {
-      this.logger.warn(
-        "Hotelbeds credentials not configured.",
-        "HotelPartnerService",
-        requestId,
-      );
+      logger.warn("Hotelbeds credentials not configured.", {
+        context: "HotelPartnerService",
+      });
       throw new ServiceUnavailableException(
         "Hotelbeds API credentials not configured",
       );
@@ -147,17 +160,19 @@ export class HotelPartnerService implements IHotelVendor {
       geolocation: {
         latitude: Number(airport.latitude),
         longitude: Number(airport.longitude),
-        radius: options?.radiusKm ?? 20,
+        radius: options?.radiusKm ?? 5,
         unit: "km",
       },
     };
 
     try {
-      this.logger.info(
+      logger.info(
         `Fetching hotel availability from Hotelbeds API near airport: ${airport.iataCode} (${airport.latitude}, ${airport.longitude})`,
-        "HotelPartnerService",
-        requestId,
-        { useSandbox: this.useSandbox },
+        {
+          context: "HotelPartnerService",
+          requestId,
+          useSandbox: this.useSandbox,
+        },
       );
 
       const response = await fetch(endpoint, {
@@ -173,6 +188,11 @@ export class HotelPartnerService implements IHotelVendor {
 
       if (!response.ok) {
         const errorText = await response.text();
+        logger.error(`Hotelbeds API returned status ${response.status}`, {
+          context: "HotelPartnerService",
+          errorText,
+          useSandbox: this.useSandbox,
+        });
         throw new Error(
           `Hotelbeds API returned status ${response.status}: ${errorText}`,
         );
@@ -181,18 +201,18 @@ export class HotelPartnerService implements IHotelVendor {
       const responseData = await response.json();
       const rawHotels = responseData?.hotels?.hotels || [];
 
-      this.logger.info(
+      logger.info(
         `Successfully received ${rawHotels.length} hotels from Hotelbeds API`,
-        "HotelPartnerService",
-        requestId,
+        {
+          context: "HotelPartnerService",
+        },
       );
 
       if (rawHotels.length === 0) {
-        this.logger.warn(
-          "Hotelbeds returned 0 hotels.",
-          "HotelPartnerService",
+        logger.warn("Hotelbeds returned 0 hotels.", {
+          context: "HotelPartnerService",
           requestId,
-        );
+        });
         throw new NotFoundException(
           `No hotels found near airport ${airport.iataCode}`,
         );
@@ -558,22 +578,43 @@ export class HotelPartnerService implements IHotelVendor {
       }
 
       const responseData = await response.json();
+      const booking = responseData?.booking;
+      if (!booking) {
+        throw new Error(
+          "Hotelbeds Bookings API response missing booking object",
+        );
+      }
+
+      const responseRooms = Array.isArray(booking.rooms) ? booking.rooms : [];
+      const fallbackNet = Number.parseFloat(
+        String(
+          booking.totalNet ??
+            booking.totalSellingRate ??
+            responseData?.totalNet ??
+            0,
+        ),
+      );
+      const safePrice = Number.isFinite(fallbackNet) ? fallbackNet : 0;
+
       this.logger.info(
         "Successfully created booking with Hotelbeds",
         "HotelPartnerService",
         requestId,
       );
       return {
-        bookingReference: responseData.booking.reference,
+        bookingReference: String(booking.reference ?? bookingData.pnr),
         status: HotelAllocationStatus.CONFIRMED,
-        hotelName: responseData.booking.hotel.name,
-        hotelAddress: responseData.booking.hotel.address,
-        checkInDate: responseData.booking.stay.checkIn,
-        checkOutDate: responseData.booking.stay.checkOut,
-        totalRooms: responseData.booking.rooms.length,
-        costPerRoom: responseData.booking.rooms[0].totalNet,
-        price: responseData.booking.totalNet,
-        buyingPrice: responseData.booking.buyingPrice,
+        hotelName: String(booking.hotel?.name ?? "Unknown Hotel"),
+        hotelAddress: String(booking.hotel?.address ?? ""),
+        checkInDate: String(booking.stay?.checkIn ?? ""),
+        checkOutDate: String(booking.stay?.checkOut ?? ""),
+        totalRooms: responseRooms.length || 1,
+        costPerRoom:
+          Number.parseFloat(String(responseRooms[0]?.totalNet ?? "")) ||
+          safePrice,
+        price: safePrice,
+        buyingPrice:
+          Number.parseFloat(String(booking.buyingPrice ?? "")) || safePrice,
       };
     } catch (error: any) {
       this.logger.error(

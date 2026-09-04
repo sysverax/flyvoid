@@ -6,6 +6,7 @@ import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
 import { BookingEntity } from "./entities/booking.entity";
 import { FlightStatus } from "./entities/enums";
 import { HotelAllocationEntity } from "./entities/hotel-allocation.entity";
+import { Logger } from "winston";
 
 @Injectable()
 export class CancelledFlightsRepository {
@@ -67,8 +68,9 @@ export class CancelledFlightsRepository {
   async findFlightWithBookingsRelations(
     id: number,
     requestId: string,
+    logger: Logger,
   ): Promise<CancelledFlightEntity | null> {
-    this.logger.debug(
+    logger.debug(
       "Finding cancelled flight with bookings and relations",
       "CancelledFlightsRepository",
       requestId,
@@ -86,6 +88,7 @@ export class CancelledFlightsRepository {
     passengerBookingStats,
     HotelBookingStats,
     requestId,
+    logger,
   }: {
     cancelledFlightEntity: CancelledFlightEntity;
     status: FlightStatus;
@@ -103,13 +106,13 @@ export class CancelledFlightsRepository {
       totalEarnings: number | null;
     } | null;
     requestId: string;
+    logger: Logger;
   }): Promise<CancelledFlightEntity> {
-    this.logger.debug(
-      "Updating cancelled flight status",
-      "CancelledFlightsRepository",
-      requestId,
-      { flightId: cancelledFlightEntity.id, status },
-    );
+    logger.debug("Updating cancelled flight status", {
+      context: "CancelledFlightsRepository",
+      flightId: cancelledFlightEntity.id,
+      status,
+    });
 
     cancelledFlightEntity.status = status;
     if (passengerBookingStats.totalBookings !== null) {
@@ -352,15 +355,18 @@ export class CancelledFlightsRepository {
     if (payloads.length === 0) {
       return [];
     }
-    const entities = payloads.map((payload) => this.allocationRepo.create(payload));
+    const entities = payloads.map((payload) =>
+      this.allocationRepo.create(payload),
+    );
     return this.allocationRepo.save(entities);
   }
 
   async countHotelAllocationsByFlightId(
     cancelledFlightId: number,
     requestId: string,
+    logger: Logger,
   ): Promise<number> {
-    this.logger.debug(
+    logger.debug(
       "Counting hotel allocations by flight id",
       "CancelledFlightsRepository",
       requestId,
