@@ -1,14 +1,19 @@
 import { Request } from "express";
-import { JwtAccessPayload } from "./jwt-access-payload.interface";
 import {
   AdminRole,
   AirlineRole,
   UserType,
 } from "../../common/constants/user.constants";
 import { UserAccessControlEntry } from "../../common/constants/access-control.constants";
+import { Logger } from "winston";
 
-export type AuthenticatedRequest = Request & {
-  requestId?: string;
+// backend request contain requestId, logger,
+export type BackendRequest = Request & {
+  requestId: string;
+  logger: Logger;
+};
+
+export type AuthenticatedRequest = BackendRequest & {
   user: AuthenticatedUser;
 };
 

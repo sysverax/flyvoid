@@ -16,6 +16,7 @@ import { AirlinePasswordResetOtpEntity } from "../entities/airline-password-rese
 import { AirlineRefreshTokenEntity } from "../entities/airline-refresh-token.entity";
 import { AdminPasswordResetOtpEntity } from "../entities/admin-password-reset-otp.entity";
 import { RefreshTokenEntity } from "../entities/refresh-token.entity";
+import { Logger } from "winston";
 
 @Injectable()
 export class AuthRepository {
@@ -43,14 +44,11 @@ export class AuthRepository {
 
   async findPlatformAccessControlsByAdminId(
     adminId: number,
-    requestId: string,
+    logger: Logger,
   ): Promise<UserAccessControlEntry[]> {
-    this.logger.debug(
-      "Finding platform access controls by admin id",
-      "AuthRepository",
-      requestId,
-      { adminId },
-    );
+    logger.debug("Finding platform access controls by admin id", {
+      adminId,
+    });
 
     const rows = await this.platformAccessControlRepository.find({
       where: { adminId },
@@ -109,20 +107,17 @@ export class AuthRepository {
 
   async findAdminByEmail(
     email: string,
-    requestId: string,
+    logger: Logger,
   ): Promise<AdminEntity | null> {
-    this.logger.debug("Finding admin by email", "AuthRepository", requestId, {
+    logger.debug("Finding admin by email", {
       email,
     });
 
     return this.adminRepository.findOne({ where: { email } });
   }
 
-  async findAdminById(
-    id: number,
-    requestId: string,
-  ): Promise<AdminEntity | null> {
-    this.logger.debug("Finding admin by id", "AuthRepository", requestId, {
+  async findAdminById(id: number, logger: Logger): Promise<AdminEntity | null> {
+    logger.debug("Finding admin by id", {
       adminId: id,
     });
 
@@ -163,18 +158,13 @@ export class AuthRepository {
       | "requirePasswordReset"
     >,
     controls: Array<{ asset: PlatformAsset; access: AccessAction[] }>,
-    requestId: string,
+    logger: Logger,
   ): Promise<AdminEntity> {
-    this.logger.debug(
-      "Creating admin with platform access controls",
-      "AuthRepository",
-      requestId,
-      {
-        email: payload.email,
-        role: payload.role,
-        controlCount: controls.length,
-      },
-    );
+    logger.debug("Creating admin with platform access controls", {
+      email: payload.email,
+      role: payload.role,
+      controlCount: controls.length,
+    });
 
     return this.adminRepository.manager.transaction(async (entityManager) => {
       const adminRepository = entityManager.getRepository(AdminEntity);
@@ -214,9 +204,10 @@ export class AuthRepository {
     adminId: number,
     tokenHash: string,
     expiresAt: Date,
-    requestId: string,
+    logger: Logger,
   ): Promise<RefreshTokenEntity> {
-    this.logger.debug("Saving refresh token", "AuthRepository", requestId, {
+    logger.debug("Saving refresh token", {
+      context: "AuthRepository",
       adminId,
       expiresAt: expiresAt.toISOString(),
     });
@@ -233,14 +224,12 @@ export class AuthRepository {
 
   async findActiveRefreshTokenByAdminId(
     adminId: number,
-    requestId: string,
+    logger: Logger,
   ): Promise<RefreshTokenEntity | null> {
-    this.logger.debug(
-      "Finding active refresh token by admin id",
-      "AuthRepository",
-      requestId,
-      { adminId },
-    );
+    logger.debug("Finding active refresh token by admin id", {
+      context: "AuthRepository",
+      adminId,
+    });
 
     return this.refreshTokenRepository.findOne({
       where: {
@@ -254,8 +243,9 @@ export class AuthRepository {
     });
   }
 
-  async revokeRefreshToken(id: number, requestId: string): Promise<void> {
-    this.logger.debug("Revoking refresh token", "AuthRepository", requestId, {
+  async revokeRefreshToken(id: number, logger: Logger): Promise<void> {
+    logger.debug("Revoking refresh token", {
+      context: "AuthRepository",
       refreshTokenId: id,
     });
 
@@ -264,14 +254,12 @@ export class AuthRepository {
 
   async revokeActiveRefreshTokensByAdminId(
     adminId: number,
-    requestId: string,
+    logger: Logger,
   ): Promise<void> {
-    this.logger.debug(
-      "Revoking active refresh tokens by admin id",
-      "AuthRepository",
-      requestId,
-      { adminId },
-    );
+    logger.debug("Revoking active refresh tokens by admin id", {
+      context: "AuthRepository",
+      adminId,
+    });
 
     await this.refreshTokenRepository.update(
       { adminId, isRevoked: false },
@@ -282,17 +270,13 @@ export class AuthRepository {
   async updateLastLogin(
     adminId: number,
     lastLoginAt: Date,
-    requestId: string,
+    logger: Logger,
   ): Promise<void> {
-    this.logger.debug(
-      "Updating admin last login",
-      "AuthRepository",
-      requestId,
-      {
-        adminId,
-        lastLoginAt: lastLoginAt.toISOString(),
-      },
-    );
+    logger.debug("Updating admin last login", {
+      context: "AuthRepository",
+      adminId,
+      lastLoginAt: lastLoginAt.toISOString(),
+    });
 
     await this.adminRepository.update({ id: adminId }, { lastLoginAt });
   }
@@ -300,17 +284,13 @@ export class AuthRepository {
   async countRecentAdminForgotPasswordOtps(
     adminId: number,
     since: Date,
-    requestId: string,
+    logger: Logger,
   ): Promise<number> {
-    this.logger.debug(
-      "Counting recent admin forgot password OTP requests",
-      "AuthRepository",
-      requestId,
-      {
-        adminId,
-        since: since.toISOString(),
-      },
-    );
+    logger.debug("Counting recent admin forgot password OTP requests", {
+      context: "AuthRepository",
+      adminId,
+      since: since.toISOString(),
+    });
 
     return this.adminPasswordResetOtpRepository.count({
       where: {
@@ -322,14 +302,12 @@ export class AuthRepository {
 
   async invalidateActiveAdminForgotPasswordOtpsByAdminId(
     adminId: number,
-    requestId: string,
+    logger: Logger,
   ): Promise<void> {
-    this.logger.debug(
-      "Invalidating active admin forgot password OTPs",
-      "AuthRepository",
-      requestId,
-      { adminId },
-    );
+    logger.debug("Invalidating active admin forgot password OTPs", {
+      context: "AuthRepository",
+      adminId,
+    });
 
     await this.adminPasswordResetOtpRepository.update(
       {
@@ -347,17 +325,13 @@ export class AuthRepository {
     adminId: number,
     otpHash: string,
     expiresAt: Date,
-    requestId: string,
+    logger: Logger,
   ): Promise<AdminPasswordResetOtpEntity> {
-    this.logger.debug(
-      "Saving admin forgot password OTP",
-      "AuthRepository",
-      requestId,
-      {
-        adminId,
-        expiresAt: expiresAt.toISOString(),
-      },
-    );
+    logger.debug("Saving admin forgot password OTP", {
+      context: "AuthRepository",
+      adminId,
+      expiresAt: expiresAt.toISOString(),
+    });
 
     const otpRecord = this.adminPasswordResetOtpRepository.create({
       adminId,
@@ -373,14 +347,12 @@ export class AuthRepository {
 
   async findActiveAdminForgotPasswordOtpByAdminId(
     adminId: number,
-    requestId: string,
+    logger: Logger,
   ): Promise<AdminPasswordResetOtpEntity | null> {
-    this.logger.debug(
-      "Finding active admin forgot password OTP",
-      "AuthRepository",
-      requestId,
-      { adminId },
-    );
+    logger.debug("Finding active admin forgot password OTP", {
+      context: "AuthRepository",
+      adminId,
+    });
 
     return this.adminPasswordResetOtpRepository.findOne({
       where: {
@@ -396,14 +368,12 @@ export class AuthRepository {
 
   async findAdminForgotPasswordOtpById(
     otpId: number,
-    requestId: string,
+    logger: Logger,
   ): Promise<AdminPasswordResetOtpEntity | null> {
-    this.logger.debug(
-      "Finding admin forgot password OTP by id",
-      "AuthRepository",
-      requestId,
-      { otpId },
-    );
+    logger.debug("Finding admin forgot password OTP by id", {
+      context: "AuthRepository",
+      otpId,
+    });
 
     return this.adminPasswordResetOtpRepository.findOne({
       where: { id: otpId },
@@ -413,17 +383,13 @@ export class AuthRepository {
   async incrementAdminForgotPasswordOtpAttempts(
     otpId: number,
     currentAttemptCount: number,
-    requestId: string,
+    logger: Logger,
   ): Promise<void> {
-    this.logger.debug(
-      "Incrementing admin forgot password OTP attempts",
-      "AuthRepository",
-      requestId,
-      {
-        otpId,
-        nextAttemptCount: currentAttemptCount + 1,
-      },
-    );
+    logger.debug("Incrementing admin forgot password OTP attempts", {
+      context: "AuthRepository",
+      otpId,
+      nextAttemptCount: currentAttemptCount + 1,
+    });
 
     await this.adminPasswordResetOtpRepository.update(
       { id: otpId },
@@ -435,14 +401,12 @@ export class AuthRepository {
 
   async markAdminForgotPasswordOtpVerified(
     otpId: number,
-    requestId: string,
+    logger: Logger,
   ): Promise<void> {
-    this.logger.debug(
-      "Marking admin forgot password OTP verified",
-      "AuthRepository",
-      requestId,
-      { otpId },
-    );
+    logger.debug("Marking admin forgot password OTP verified", {
+      context: "AuthRepository",
+      otpId,
+    });
 
     await this.adminPasswordResetOtpRepository.update(
       { id: otpId },
@@ -452,14 +416,12 @@ export class AuthRepository {
 
   async markAdminForgotPasswordOtpUsed(
     otpId: number,
-    requestId: string,
+    logger: Logger,
   ): Promise<void> {
-    this.logger.debug(
-      "Marking admin forgot password OTP used",
-      "AuthRepository",
-      requestId,
-      { otpId },
-    );
+    logger.debug("Marking admin forgot password OTP used", {
+      context: "AuthRepository",
+      otpId,
+    });
 
     await this.adminPasswordResetOtpRepository.update(
       { id: otpId },
@@ -470,16 +432,12 @@ export class AuthRepository {
   async updateAdminPasswordHash(
     adminId: number,
     passwordHash: string,
-    requestId: string,
+    logger: Logger,
   ): Promise<void> {
-    this.logger.debug(
-      "Updating admin password hash",
-      "AuthRepository",
-      requestId,
-      {
-        adminId,
-      },
-    );
+    logger.debug("Updating admin password hash", {
+      context: "AuthRepository",
+      adminId,
+    });
 
     await this.adminRepository.update(
       { id: adminId },
@@ -490,14 +448,12 @@ export class AuthRepository {
   async saveAdminTwoFactorTempSecret(
     adminId: number,
     tempSecretEncrypted: string,
-    requestId: string,
+    logger: Logger,
   ): Promise<void> {
-    this.logger.debug(
-      "Saving admin 2FA temporary secret",
-      "AuthRepository",
-      requestId,
-      { adminId },
-    );
+    logger.debug("Saving admin 2FA temporary secret", {
+      context: "AuthRepository",
+      adminId,
+    });
 
     await this.adminRepository.update(
       { id: adminId },
@@ -509,9 +465,10 @@ export class AuthRepository {
     adminId: number,
     secretEncrypted: string,
     recoveryCodeHashes: string[],
-    requestId: string,
+    logger: Logger,
   ): Promise<void> {
-    this.logger.debug("Enabling admin 2FA", "AuthRepository", requestId, {
+    logger.debug("Enabling admin 2FA", {
+      context: "AuthRepository",
       adminId,
     });
 
@@ -526,11 +483,9 @@ export class AuthRepository {
     );
   }
 
-  async disableAdminTwoFactor(
-    adminId: number,
-    requestId: string,
-  ): Promise<void> {
-    this.logger.debug("Disabling admin 2FA", "AuthRepository", requestId, {
+  async disableAdminTwoFactor(adminId: number, logger: Logger): Promise<void> {
+    logger.debug("Disabling admin 2FA", {
+      context: "AuthRepository",
       adminId,
     });
 
@@ -545,23 +500,7 @@ export class AuthRepository {
     );
   }
 
-  async updateAdminTwoFactorRecoveryCodeHashes(
-    adminId: number,
-    recoveryCodeHashes: string[],
-    requestId: string,
-  ): Promise<void> {
-    this.logger.debug(
-      "Updating admin 2FA recovery code hashes",
-      "AuthRepository",
-      requestId,
-      { adminId, codeCount: recoveryCodeHashes.length },
-    );
-
-    await this.adminRepository.update(
-      { id: adminId },
-      { twoFactorRecoveryCodeHashes: recoveryCodeHashes },
-    );
-  }
+  
 
   async findAirlineUserByEmail(
     email: string,
@@ -978,5 +917,4 @@ export class AuthRepository {
     const user = this.airlineUserRepository.create(payload);
     return this.airlineUserRepository.save(user);
   }
-
 }
