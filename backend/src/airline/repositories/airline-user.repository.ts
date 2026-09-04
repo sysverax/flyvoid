@@ -63,7 +63,7 @@ export class AirlineUserRepository {
     return repository.findOne({ where: { email } });
   }
 
-  async create(
+  async createAirlineUserWithAccessControls(
     payload: Pick<
       AirlineUserEntity,
       | "airlineId"
@@ -76,6 +76,7 @@ export class AirlineUserRepository {
       | "isActive"
       | "requirePasswordReset"
     >,
+    controls: Array<{ asset: AirlineAsset; access: AccessAction[] }>,
     requestId: string,
     manager: EntityManager,
   ): Promise<AirlineUserEntity> {
@@ -89,9 +90,38 @@ export class AirlineUserRepository {
       },
     );
 
-    const repository = manager.getRepository(AirlineUserEntity);
-    const user = repository.create(payload);
-    return repository.save(user);
+    const airlineUserRepository = manager.getRepository(AirlineUserEntity);
+    const airlineAccessControlRepository = manager.getRepository(
+      AirlineAccessControlEntity,
+    );
+
+    const airlineUser = await airlineUserRepository.save(
+      airlineUserRepository.create(payload),
+    );
+    const flattened = controls.flatMap((control) =>
+      control.access.map((accessAction) => ({
+        airlineUserId: airlineUser.id,
+        asset: control.asset,
+        accessAction,
+      })),
+    );
+
+    if (flattened.length > 0) {
+      const deduped = Array.from(
+        new Map(
+          flattened.map((entry) => [
+            `${entry.airlineUserId}:${entry.asset}:${entry.accessAction}`,
+            entry,
+          ]),
+        ).values(),
+      );
+
+      await airlineAccessControlRepository.save(
+        airlineAccessControlRepository.create(deduped),
+      );
+    }
+
+    return airlineUser;
   }
 
   async updateAirlineUser(
@@ -207,13 +237,12 @@ export class AirlineUserRepository {
       this.airlineAccessControlRepository.create(deduped),
     );
   }
-
-  async findAirlineAccessControls(
+  async findAirlineUserAccessControls(
     airlineUserId: number,
     requestId: string,
   ): Promise<Array<{ asset: AirlineAsset; access: AccessAction[] }>> {
     this.logger.debug(
-      "Finding airline user access controls",
+      "Finding airline access controls",
       "AirlineUserRepository",
       requestId,
       {

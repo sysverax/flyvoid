@@ -9,6 +9,7 @@ import {
 } from "typeorm";
 import { CancelledFlightEntity } from "./cancelled-flight.entity";
 import { BookingEntity } from "./booking.entity";
+import { HotelAllocationStatus } from "./enums";
 
 // Stub entity — allocation logic not yet implemented
 @Entity("hotel_allocations")
@@ -21,12 +22,6 @@ export class HotelAllocationEntity {
 
   @Column({ name: "booking_id", type: "integer" })
   bookingId!: number;
-
-  @Column({ name: "hotel_name", type: "varchar", length: 255 })
-  hotelName!: string;
-
-  @Column({ name: "hotel_address", type: "text", nullable: true })
-  hotelAddress?: string | null;
 
   @Column({ name: "check_in_date", type: "date" })
   checkInDate!: string;
@@ -89,5 +84,40 @@ export class HotelAllocationEntity {
   @UpdateDateColumn({ name: "updated_at" })
   updatedAt!: Date;
 
+  @Column({
+    name: "status",
+    type: "enum",
+    enum: HotelAllocationStatus,
+    default: HotelAllocationStatus.DRAFT,
+  })
+  status!: HotelAllocationStatus;
+
   // Add hotel details as well
+  @Column({ name: "hotel_name", type: "varchar", length: 255 })
+  hotelName!: string;
+
+  @Column({ name: "hotel_address", type: "text", nullable: true })
+  hotelAddress?: string | null;
+
+  @Column({
+    name: "total_rooms",
+    type: "integer",
+    nullable: true,
+  })
+  totalRooms?: number | null;
+
+  @Column({
+    name: "cost_per_room",
+    type: "decimal",
+    precision: 10,
+    scale: 2,
+    nullable: true,
+  })
+  costPerRoom?: number | null;
+
+  @Column({ name: "booking_reference", type: "varchar", length: 255 })
+  bookingReference!: string;
+
+  @Column({ name: "rate_key", type: "text", nullable: true })
+  rateKey?: string | null;
 }

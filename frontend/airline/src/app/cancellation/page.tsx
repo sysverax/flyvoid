@@ -324,7 +324,7 @@ function PublishedDetailView({ cancellation, onClose }: { cancellation: Cancella
               setResultsPerPage(val);
               setCurrentPage(1);
             }}
-            totalPages={Math.ceil(cancellation.bookings / resultsPerPage)}
+            totalPages={Math.ceil(cancellation.bookings / resultsPerPage) || 1}
           />
         </div>
 

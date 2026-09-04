@@ -47,6 +47,8 @@ import {
   PlatformAsset,
   UserAccessControlEntry,
 } from "../../common/constants/access-control.constants";
+import { AdminProfileDto } from "../../admin/dto";
+import { Logger } from "winston";
 
 @Injectable()
 export class AuthService {
@@ -73,9 +75,9 @@ export class AuthService {
 
   async signup(
     dto: AdminSignupRequestDto,
-    requestId: string,
+    logger: Logger,
   ): Promise<AdminSignupResponseDto> {
-    this.logger.info("Admin signup attempt", this.context, requestId, {
+    logger.info("Admin signup attempt", {
       email: dto.email,
       role: AdminRole.SUPER_ADMIN,
     });
@@ -83,18 +85,14 @@ export class AuthService {
     const normalizedEmail = dto.email.toLowerCase().trim();
     const existingAdmin = await this.authRepository.findAdminByEmail(
       normalizedEmail,
-      requestId,
+      logger,
     );
 
     if (existingAdmin) {
-      this.logger.warn(
-        "Duplicate admin email on signup",
-        this.context,
-        requestId,
-        {
-          email: normalizedEmail,
-        },
-      );
+      logger.warn("Duplicate admin email on signup", {
+        context: this.context,
+        email: normalizedEmail,
+      });
       throw new ConflictException("Admin with this email already registered");
     }
 
@@ -111,10 +109,11 @@ export class AuthService {
           requirePasswordReset: false,
         },
         this.buildSuperAdminAccessControls(),
-        requestId,
+        logger,
       );
 
-    this.logger.info("Admin signup success", this.context, requestId, {
+    logger.info("Admin signup success", {
+      context: this.context,
       adminId: createdAdmin.id,
       email: createdAdmin.email,
     });
@@ -128,31 +127,28 @@ export class AuthService {
 
   async signin(
     dto: AdminSigninRequestDto,
-    requestId: string,
+    logger: Logger,
   ): Promise<
     | AdminSigninResponseDto
     | AdminSigninTwoFactorChallengeResponseDto
     | AdminSigninPasswordResetChallengeResponseDto
   > {
-    this.logger.info("Admin signin attempt", this.context, requestId, {
+    logger.info("Admin signin attempt", {
       email: dto.email,
+      context: this.context,
     });
 
     const normalizedEmail = dto.email.toLowerCase().trim();
     const admin = await this.authRepository.findAdminByEmail(
       normalizedEmail,
-      requestId,
+      logger,
     );
 
     if (!admin || !admin.isActive) {
-      this.logger.warn(
-        "Admin signin invalid credentials",
-        this.context,
-        requestId,
-        {
-          email: normalizedEmail,
-        },
-      );
+      logger.warn("Admin signin invalid credentials", {
+        context: this.context,
+        email: normalizedEmail,
+      });
       throw new UnauthorizedException("Invalid credentials");
     }
 
@@ -161,25 +157,19 @@ export class AuthService {
       admin.passwordHash,
     );
     if (!isPasswordValid) {
-      this.logger.warn(
-        "Admin signin invalid credentials",
-        this.context,
-        requestId,
-        {
-          email: normalizedEmail,
-        },
-      );
+      logger.warn("Admin signin invalid credentials", {
+        context: this.context,
+        email: normalizedEmail,
+      });
       throw new UnauthorizedException("Invalid credentials");
     }
 
     if (admin.twoFactorEnabled) {
       if (!admin.twoFactorSecretEncrypted) {
-        this.logger.error(
-          "Admin has 2FA enabled but secret is missing",
-          this.context,
-          requestId,
-          { adminId: admin.id },
-        );
+        logger.error("Admin has 2FA enabled but secret is missing", {
+          context: this.context,
+          adminId: admin.id,
+        });
         throw new UnauthorizedException("2FA setup is invalid");
       }
 
@@ -197,14 +187,10 @@ export class AuthService {
         },
       );
 
-      this.logger.info(
-        "Admin signin requires 2FA verification",
-        this.context,
-        requestId,
-        {
-          adminId: admin.id,
-        },
-      );
+      logger.info("Admin signin requires 2FA verification", {
+        context: this.context,
+        adminId: admin.id,
+      });
 
       return {
         requiresTwoFactor: true,
@@ -218,28 +204,23 @@ export class AuthService {
       return this.buildInitialPasswordResetChallenge(admin);
     }
 
-    return this.issueSessionTokens(admin, requestId);
+    return this.issueSessionTokens(admin, logger);
   }
 
   async verifyAdminSigninTwoFactor(
     dto: AdminSigninTwoFactorVerifyRequestDto,
-    requestId: string,
+    logger: Logger,
   ): Promise<
     AdminSigninResponseDto | AdminSigninPasswordResetChallengeResponseDto
   > {
-    this.logger.info(
-      "Admin 2FA signin verification attempt",
-      this.context,
-      requestId,
-    );
+    logger.info("Admin 2FA signin verification attempt", {
+      context: this.context,
+    });
 
     const payload = await this.verifyAdminTwoFactorChallengeToken(
       dto.twoFactorToken,
     );
-    const admin = await this.authRepository.findAdminById(
-      payload.sub,
-      requestId,
-    );
+    const admin = await this.authRepository.findAdminById(payload.sub, logger);
 
     if (
       !admin ||
@@ -261,21 +242,18 @@ export class AuthService {
       return this.buildInitialPasswordResetChallenge(admin);
     }
 
-    return this.issueSessionTokens(admin, requestId);
+    return this.issueSessionTokens(admin, logger);
   }
 
   async adminInitialPasswordReset(
     dto: AdminInitialPasswordResetRequestDto,
-    requestId: string,
+    logger: Logger,
   ): Promise<void> {
     const payload = await this.verifyAdminInitialPasswordResetToken(
       dto.resetPasswordToken,
     );
 
-    const admin = await this.authRepository.findAdminById(
-      payload.sub,
-      requestId,
-    );
+    const admin = await this.authRepository.findAdminById(payload.sub, logger);
     if (!admin || !admin.isActive || !admin.requirePasswordReset) {
       throw new UnauthorizedException(
         "Invalid or expired initial password reset token",
@@ -286,21 +264,21 @@ export class AuthService {
     await this.authRepository.updateAdminPasswordHash(
       admin.id,
       newPasswordHash,
-      requestId,
+      logger,
     );
     await this.authRepository.revokeActiveRefreshTokensByAdminId(
       admin.id,
-      requestId,
+      logger,
     );
   }
 
   async setupAdminTwoFactor(
     authenticatedUser: AuthenticatedUser,
-    requestId: string,
+    logger: Logger,
   ): Promise<AdminTwoFactorSetupResponseDto> {
     const admin = await this.authRepository.findAdminById(
       authenticatedUser.sub,
-      requestId,
+      logger,
     );
 
     if (!admin) {
@@ -327,7 +305,7 @@ export class AuthService {
     await this.authRepository.saveAdminTwoFactorTempSecret(
       admin.id,
       this.encryptTwoFactorSecret(generatedSecret.base32),
-      requestId,
+      logger,
     );
 
     const qrCodeDataUrl = await QRCode.toDataURL(generatedSecret.otpauth_url);
@@ -341,11 +319,11 @@ export class AuthService {
   async enableAdminTwoFactor(
     authenticatedUser: AuthenticatedUser,
     dto: AdminTwoFactorEnableRequestDto,
-    requestId: string,
+    logger: Logger,
   ): Promise<AdminTwoFactorEnableResponseDto> {
     const admin = await this.authRepository.findAdminById(
       authenticatedUser.sub,
-      requestId,
+      logger,
     );
 
     if (!admin) {
@@ -380,7 +358,7 @@ export class AuthService {
       admin.id,
       this.encryptTwoFactorSecret(secret),
       recoveryCodeHashes,
-      requestId,
+      logger,
     );
 
     return { recoveryCodes };
@@ -389,11 +367,11 @@ export class AuthService {
   async disableAdminTwoFactor(
     authenticatedUser: AuthenticatedUser,
     dto: AdminTwoFactorDisableRequestDto,
-    requestId: string,
+    logger: Logger,
   ): Promise<void> {
     const admin = await this.authRepository.findAdminById(
       authenticatedUser.sub,
-      requestId,
+      logger,
     );
 
     if (!admin) {
@@ -413,27 +391,36 @@ export class AuthService {
       throw new UnauthorizedException("Invalid 2FA code");
     }
 
-    await this.authRepository.disableAdminTwoFactor(admin.id, requestId);
+    await this.authRepository.disableAdminTwoFactor(admin.id, logger);
   }
 
   async recoverAdminTwoFactor(
     dto: AdminTwoFactorRecoverRequestDto,
-    requestId: string,
+    logger: Logger,
   ): Promise<void> {
-    this.logger.info("Admin 2FA recovery attempt", this.context, requestId, {
+    logger.info("Admin 2FA recovery attempt", {
+      context: this.context,
       email: dto.email,
     });
 
     const normalizedEmail = dto.email.toLowerCase().trim();
     const admin = await this.authRepository.findAdminByEmail(
       normalizedEmail,
-      requestId,
+      logger,
     );
 
     if (!admin) {
+      logger.error("Admin not found", {
+        context: this.context,
+        email: dto.email,
+      });
       throw new UnauthorizedException("Admin not found");
     }
     if (!admin.isActive) {
+      logger.error("Admin account is inactive", {
+        context: this.context,
+        email: dto.email,
+      });
       throw new ForbiddenException("Admin account is inactive");
     }
     if (
@@ -441,6 +428,10 @@ export class AuthService {
       !admin.twoFactorRecoveryCodeHashes ||
       admin.twoFactorRecoveryCodeHashes.length === 0
     ) {
+      logger.error("Invalid recovery credentials", {
+        context: this.context,
+        email: dto.email,
+      });
       throw new UnauthorizedException("Invalid recovery credentials");
     }
 
@@ -449,6 +440,10 @@ export class AuthService {
       admin.passwordHash,
     );
     if (!isPasswordValid) {
+      logger.error("Invalid recovery credentials", {
+        context: this.context,
+        email: dto.email,
+      });
       throw new UnauthorizedException("Invalid recovery credentials");
     }
 
@@ -458,29 +453,29 @@ export class AuthService {
     );
 
     if (matchedIndex === -1) {
+      logger.error("Invalid recovery credentials", {
+        context: this.context,
+        email: dto.email,
+      });
       throw new UnauthorizedException("Invalid recovery credentials");
     }
 
-    await this.authRepository.disableAdminTwoFactor(admin.id, requestId);
+    await this.authRepository.disableAdminTwoFactor(admin.id, logger);
     await this.authRepository.revokeActiveRefreshTokensByAdminId(
       admin.id,
-      requestId,
+      logger,
     );
 
-    this.logger.warn(
-      "Admin 2FA recovered and disabled",
-      this.context,
-      requestId,
-      {
-        adminId: admin.id,
-        usedRecoveryCodeIndex: matchedIndex,
-      },
-    );
+    logger.warn("Admin 2FA recovered and disabled", {
+      context: this.context,
+      adminId: admin.id,
+      usedRecoveryCodeIndex: matchedIndex,
+    });
   }
 
   private async issueSessionTokens(
     admin: AdminEntity,
-    requestId: string,
+    logger: Logger,
   ): Promise<AdminSigninResponseDto> {
     const accessTokenPayload: JwtAccessPayload = {
       sub: admin.id,
@@ -513,22 +508,23 @@ export class AuthService {
 
     await this.authRepository.revokeActiveRefreshTokensByAdminId(
       admin.id,
-      requestId,
+      logger,
     );
     await this.authRepository.saveRefreshToken(
       admin.id,
       refreshTokenHash,
       refreshTokenExpiresAt,
-      requestId,
+      logger,
     );
-    await this.authRepository.updateLastLogin(admin.id, new Date(), requestId);
+    await this.authRepository.updateLastLogin(admin.id, new Date(), logger);
     const accessControls =
       await this.authRepository.findPlatformAccessControlsByAdminId(
         admin.id,
-        requestId,
+        logger,
       );
 
-    this.logger.info("Admin signin success", this.context, requestId, {
+    logger.info("Admin signin success", {
+      context: this.context,
       adminId: admin.id,
       email: admin.email,
     });
@@ -544,40 +540,38 @@ export class AuthService {
 
   async refreshToken(
     dto: RefreshTokenRequestDto,
-    requestId: string,
+    logger: Logger,
   ): Promise<AdminSigninResponseDto> {
-    this.logger.info("Refresh token attempt", this.context, requestId);
+    logger.info("Refresh token attempt", {
+      context: this.context,
+    });
 
     const payload = await this.verifyRefreshToken(dto.refreshToken);
     const adminId = payload.sub;
 
-    const admin = await this.authRepository.findAdminById(adminId, requestId);
+    const admin = await this.authRepository.findAdminById(adminId, logger);
     if (!admin) {
-      this.logger.warn("Invalid refresh token", this.context, requestId, {
+      logger.warn("Invalid refresh token", {
         adminId,
       });
       throw new UnauthorizedException("Invalid refresh token");
     }
     if (!admin.isActive) {
-      this.logger.warn(
-        "Inactive admin on refresh token",
-        this.context,
-        requestId,
-        {
-          adminId,
-        },
-      );
+      logger.warn("Inactive admin on refresh token", {
+        context: this.context,
+        adminId,
+      });
       throw new ForbiddenException("Invalid refresh token");
     }
 
     const existingToken =
       await this.authRepository.findActiveRefreshTokenByAdminId(
         adminId,
-        requestId,
+        logger,
       );
 
     if (!existingToken) {
-      this.logger.warn("Invalid refresh token", this.context, requestId, {
+      logger.warn("Invalid refresh token", {
         adminId,
       });
       throw new UnauthorizedException("Invalid refresh token");
@@ -588,13 +582,13 @@ export class AuthService {
       existingToken.tokenHash,
     );
     if (!isMatch) {
-      this.logger.warn("Invalid refresh token", this.context, requestId, {
+      logger.warn("Invalid refresh token", {
         adminId,
       });
       throw new UnauthorizedException("Invalid refresh token");
     }
 
-    await this.authRepository.revokeRefreshToken(existingToken.id, requestId);
+    await this.authRepository.revokeRefreshToken(existingToken.id, logger);
 
     const accessTokenPayload: JwtAccessPayload = {
       sub: admin.id,
@@ -629,10 +623,11 @@ export class AuthService {
       admin.id,
       newRefreshTokenHash,
       newRefreshTokenExpiresAt,
-      requestId,
+      logger,
     );
 
-    this.logger.info("Refresh token success", this.context, requestId, {
+    logger.info("Refresh token success", {
+      context: this.context,
       adminId: admin.id,
     });
 
@@ -655,38 +650,30 @@ export class AuthService {
   async signout(
     authenticatedUser: AuthenticatedUser,
     dto: SignoutRequestDto,
-    requestId: string,
+    logger: Logger,
   ): Promise<void> {
     const adminId = authenticatedUser.sub;
     const payload = await this.verifyRefreshToken(dto.refreshToken);
 
     if (payload.sub !== adminId) {
-      this.logger.warn(
-        "Invalid refresh token on signout",
-        this.context,
-        requestId,
-        {
-          adminId,
-        },
-      );
+      logger.warn("Invalid refresh token on signout", {
+        context: this.context,
+        adminId,
+      });
       throw new UnauthorizedException("Invalid refresh token");
     }
 
     const existingToken =
       await this.authRepository.findActiveRefreshTokenByAdminId(
         adminId,
-        requestId,
+        logger,
       );
 
     if (!existingToken) {
-      this.logger.warn(
-        "Invalid refresh token on signout",
-        this.context,
-        requestId,
-        {
-          adminId,
-        },
-      );
+      logger.warn("Invalid refresh token on signout", {
+        context: this.context,
+        adminId,
+      });
       throw new UnauthorizedException("Invalid refresh token");
     }
 
@@ -695,63 +682,53 @@ export class AuthService {
       existingToken.tokenHash,
     );
     if (!isMatch) {
-      this.logger.warn(
-        "Invalid refresh token on signout",
-        this.context,
-        requestId,
-        {
-          adminId,
-        },
-      );
+      logger.warn("Invalid refresh token on signout", {
+        context: this.context,
+        adminId,
+      });
       throw new UnauthorizedException("Invalid refresh token");
     }
 
-    await this.authRepository.revokeRefreshToken(existingToken.id, requestId);
+    await this.authRepository.revokeRefreshToken(existingToken.id, logger);
 
-    this.logger.info("Admin signout success", this.context, requestId, {
+    logger.info("Admin signout success", {
+      context: this.context,
       adminId,
     });
   }
 
   async adminForgotPasswordSendOtp(
     dto: AdminForgotPasswordSendOtpRequestDto,
-    requestId: string,
+    logger: Logger,
   ): Promise<void> {
-    this.logger.info(
-      "Admin forgot password send OTP attempt",
-      this.context,
-      requestId,
-      {
-        email: dto.email,
-      },
-    );
+    logger.info("Admin forgot password send OTP attempt", {
+      context: this.context,
+      email: dto.email,
+    });
 
     const normalizedEmail = dto.email.toLowerCase().trim();
     const admin = await this.authRepository.findAdminByEmail(
       normalizedEmail,
-      requestId,
+      logger,
     );
 
     if (!admin) {
-      this.logger.info(
+      logger.info(
         "Admin forgot password send OTP accepted with no active admin match",
-        this.context,
-        requestId,
-        { email: normalizedEmail },
+        {
+          context: this.context,
+          email: normalizedEmail,
+        },
       );
       throw new UnauthorizedException("Admin not found");
     }
 
     if (!admin.isActive) {
-      this.logger.warn(
-        "Inactive admin forgot password OTP attempt",
-        this.context,
-        requestId,
-        {
-          adminId: admin.id,
-          email: normalizedEmail,
-        },
-      );
+      logger.warn("Inactive admin forgot password OTP attempt", {
+        context: this.context,
+        adminId: admin.id,
+        email: normalizedEmail,
+      });
       throw new ForbiddenException("Admin account is inactive");
     }
 
@@ -762,19 +739,15 @@ export class AuthService {
           Date.now() -
             config.auth.adminForgotPasswordOtpSendWindowMinutes * 60 * 1000,
         ),
-        requestId,
+        logger,
       );
 
     if (recentOtpCount >= config.auth.adminForgotPasswordOtpSendLimit) {
-      this.logger.warn(
-        "Admin forgot password OTP send limit reached",
-        this.context,
-        requestId,
-        {
-          adminId: admin.id,
-          sendLimit: config.auth.adminForgotPasswordOtpSendLimit,
-        },
-      );
+      logger.warn("Admin forgot password OTP send limit reached", {
+        context: this.context,
+        adminId: admin.id,
+        sendLimit: config.auth.adminForgotPasswordOtpSendLimit,
+      });
       throw new HttpException(
         "Too many OTP requests. Please try again later.",
         HttpStatus.TOO_MANY_REQUESTS,
@@ -791,21 +764,20 @@ export class AuthService {
 
     await this.authRepository.invalidateActiveAdminForgotPasswordOtpsByAdminId(
       admin.id,
-      requestId,
+      logger,
     );
     await this.authRepository.saveAdminForgotPasswordOtp(
       admin.id,
       otpHash,
       expiresAt,
-      requestId,
+      logger,
     );
 
     if (this.isOtpRestrictedEnvironment()) {
-      this.logger.info(
+      logger.info(
         "Admin forgot password OTP generated in non-production mode",
-        this.context,
-        requestId,
         {
+          context: this.context,
           adminId: admin.id,
           otp,
         },
@@ -813,35 +785,27 @@ export class AuthService {
       return;
     }
 
-    await this.sendAdminForgotPasswordOtpEmail(admin.email, otp, requestId);
+    await this.sendAdminForgotPasswordOtpEmail(admin.email, otp, logger);
 
-    this.logger.info(
-      "Admin forgot password OTP email sent",
-      this.context,
-      requestId,
-      {
-        adminId: admin.id,
-        email: admin.email,
-      },
-    );
+    logger.info("Admin forgot password OTP email sent", {
+      context: this.context,
+      adminId: admin.id,
+      email: admin.email,
+    });
   }
 
   async adminForgotPasswordVerifyOtp(
     dto: AdminForgotPasswordVerifyOtpRequestDto,
-    requestId: string,
+    logger: Logger,
   ): Promise<AdminForgotPasswordVerifyOtpResponseDto> {
-    this.logger.info(
-      "Admin forgot password verify OTP attempt",
-      this.context,
-      requestId,
-      {
-        email: dto.email,
-      },
-    );
+    logger.info("Admin forgot password verify OTP attempt", {
+      context: this.context,
+      email: dto.email,
+    });
 
     const admin = await this.authRepository.findAdminByEmail(
       dto.email.toLowerCase().trim(),
-      requestId,
+      logger,
     );
 
     if (!admin) {
@@ -854,7 +818,7 @@ export class AuthService {
     const activeOtp =
       await this.authRepository.findActiveAdminForgotPasswordOtpByAdminId(
         admin.id,
-        requestId,
+        logger,
       );
 
     if (!activeOtp) {
@@ -866,17 +830,13 @@ export class AuthService {
     ) {
       await this.authRepository.markAdminForgotPasswordOtpUsed(
         activeOtp.id,
-        requestId,
+        logger,
       );
-      this.logger.warn(
-        "Admin forgot password OTP max attempts reached",
-        this.context,
-        requestId,
-        {
-          adminId: admin.id,
-          otpId: activeOtp.id,
-        },
-      );
+      logger.warn("Admin forgot password OTP max attempts reached", {
+        context: this.context,
+        adminId: admin.id,
+        otpId: activeOtp.id,
+      });
       throw new ForbiddenException(
         "Maximum OTP verification attempts exceeded. Please request a new OTP.",
       );
@@ -887,23 +847,19 @@ export class AuthService {
       await this.authRepository.incrementAdminForgotPasswordOtpAttempts(
         activeOtp.id,
         activeOtp.attemptCount,
-        requestId,
+        logger,
       );
-      this.logger.warn(
-        "Admin forgot password OTP invalid attempt",
-        this.context,
-        requestId,
-        {
-          adminId: admin.id,
-          otpId: activeOtp.id,
-        },
-      );
+      logger.warn("Admin forgot password OTP invalid attempt", {
+        context: this.context,
+        adminId: admin.id,
+        otpId: activeOtp.id,
+      });
       throw new UnauthorizedException("Invalid or expired OTP");
     }
 
     await this.authRepository.markAdminForgotPasswordOtpVerified(
       activeOtp.id,
-      requestId,
+      logger,
     );
 
     const resetPasswordToken = await this.jwtService.signAsync(
@@ -929,22 +885,16 @@ export class AuthService {
 
   async adminForgotPasswordReset(
     dto: AdminForgotPasswordResetRequestDto,
-    requestId: string,
+    logger: Logger,
   ): Promise<void> {
-    this.logger.info(
-      "Admin forgot password reset attempt",
-      this.context,
-      requestId,
-      {},
-    );
+    logger.info("Admin forgot password reset attempt", {
+      context: this.context,
+    });
 
     const payload = await this.verifyAdminForgotPasswordResetToken(
       dto.resetPasswordToken,
     );
-    const admin = await this.authRepository.findAdminById(
-      payload.sub,
-      requestId,
-    );
+    const admin = await this.authRepository.findAdminById(payload.sub, logger);
     if (!admin) {
       throw new UnauthorizedException(
         "Invalid or expired reset password token",
@@ -956,7 +906,7 @@ export class AuthService {
 
     const otpRecord = await this.authRepository.findAdminForgotPasswordOtpById(
       payload.otpId,
-      requestId,
+      logger,
     );
 
     if (
@@ -976,25 +926,21 @@ export class AuthService {
     await this.authRepository.updateAdminPasswordHash(
       admin.id,
       newPasswordHash,
-      requestId,
+      logger,
     );
     await this.authRepository.revokeActiveRefreshTokensByAdminId(
       admin.id,
-      requestId,
+      logger,
     );
     await this.authRepository.markAdminForgotPasswordOtpUsed(
       otpRecord.id,
-      requestId,
+      logger,
     );
 
-    this.logger.info(
-      "Admin forgot password reset success",
-      this.context,
-      requestId,
-      {
-        adminId: admin.id,
-      },
-    );
+    logger.info("Admin forgot password reset success", {
+      context: this.context,
+      adminId: admin.id,
+    });
   }
 
   private async verifyRefreshToken(token: string): Promise<JwtRefreshPayload> {
@@ -1155,7 +1101,7 @@ export class AuthService {
   private toAdminProfile(
     admin: AdminEntity,
     accessControls?: UserAccessControlEntry[],
-  ): AdminSigninResponseDto["admin"] {
+  ): AdminProfileDto {
     return {
       id: admin.id,
       firstName: admin.firstName,
@@ -1278,7 +1224,7 @@ export class AuthService {
   private async sendAdminForgotPasswordOtpEmail(
     recipientEmail: string,
     otp: string,
-    requestId: string,
+    logger: Logger,
   ): Promise<void> {
     try {
       await this.sesClient.send(
@@ -1300,15 +1246,11 @@ export class AuthService {
         }),
       );
     } catch (error) {
-      this.logger.error(
-        "Failed to send admin forgot password OTP email",
-        this.context,
-        requestId,
-        {
-          recipientEmail,
-          error: error instanceof Error ? error.message : String(error),
-        },
-      );
+      logger.error("Failed to send admin forgot password OTP email", {
+        context: this.context,
+        recipientEmail,
+        error: error instanceof Error ? error.message : String(error),
+      });
       throw error;
     }
   }

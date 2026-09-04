@@ -58,6 +58,8 @@ import { JwtAuthGuard } from "../guards/jwt-auth.guard";
 import { RbacGuard } from "../guards/rbac.guard";
 import { AuthenticatedRequest } from "../interfaces/authenticated-request.interface";
 import { AuthService } from "../services/admin-auth.service";
+import { RequestLogger } from "../../common/decorators/request-logger.decorator";
+import { Logger } from "winston";
 
 @ApiExtraModels(
   BaseResponseDto,
@@ -130,8 +132,12 @@ export class AuthController {
   async adminSignup(
     @Body() dto: AdminSignupRequestDto,
     @RequestId() requestId: string,
+    @RequestLogger() logger: Logger,
   ): Promise<BaseResponseDto<AdminSignupResponseDto>> {
-    const createdAdmin = await this.authService.signup(dto, requestId);
+    logger.info("Admin signup request received", {
+      email: dto.email,
+    });
+    const createdAdmin = await this.authService.signup(dto, logger);
     return BaseResponseDto.success(
       createdAdmin,
       requestId,
@@ -200,6 +206,7 @@ export class AuthController {
   async adminSignin(
     @Body() dto: AdminSigninRequestDto,
     @RequestId() requestId: string,
+    @RequestLogger() logger: Logger,
   ): Promise<
     BaseResponseDto<
       | AdminSigninResponseDto
@@ -207,7 +214,10 @@ export class AuthController {
       | AdminSigninPasswordResetChallengeResponseDto
     >
   > {
-    const signinResponse = await this.authService.signin(dto, requestId);
+    logger.info("Admin signin request received", {
+      email: dto.email,
+    });
+    const signinResponse = await this.authService.signin(dto, logger);
     const message =
       "requiresPasswordReset" in signinResponse
         ? "Initial password reset required"
@@ -272,14 +282,18 @@ export class AuthController {
   async adminSigninTwoFactorVerify(
     @Body() dto: AdminSigninTwoFactorVerifyRequestDto,
     @RequestId() requestId: string,
+    @RequestLogger() logger: Logger,
   ): Promise<
     BaseResponseDto<
       AdminSigninResponseDto | AdminSigninPasswordResetChallengeResponseDto
     >
   > {
+    logger.info("Verifying admin signin 2FA", {
+      context: "AdminAuthController",
+    });
     const signinResponse = await this.authService.verifyAdminSigninTwoFactor(
       dto,
-      requestId,
+      logger,
     );
     const message =
       "requiresPasswordReset" in signinResponse
@@ -338,8 +352,12 @@ export class AuthController {
   async adminInitialPasswordReset(
     @Body() dto: AdminInitialPasswordResetRequestDto,
     @RequestId() requestId: string,
+    @RequestLogger() logger: Logger,
   ): Promise<BaseResponseDto<null>> {
-    await this.authService.adminInitialPasswordReset(dto, requestId);
+    logger.info("Admin initial password reset requested", {
+      context: "AdminAuthController",
+    });
+    await this.authService.adminInitialPasswordReset(dto, logger);
     return BaseResponseDto.success(
       null,
       requestId,
@@ -398,10 +416,16 @@ export class AuthController {
   async setupAdminTwoFactor(
     @Req() req: AuthenticatedRequest,
     @RequestId() requestId: string,
+    @RequestLogger() logger: Logger,
   ): Promise<BaseResponseDto<AdminTwoFactorSetupResponseDto>> {
+    logger.info("Setting up admin 2FA", {
+      context: "AdminAuthController",
+      adminId: req.user.sub,
+    });
+
     const setupResponse = await this.authService.setupAdminTwoFactor(
       req.user,
-      requestId,
+      logger,
     );
     return BaseResponseDto.success(
       setupResponse,
@@ -464,11 +488,16 @@ export class AuthController {
     @Req() req: AuthenticatedRequest,
     @Body() dto: AdminTwoFactorEnableRequestDto,
     @RequestId() requestId: string,
+    @RequestLogger() logger: Logger,
   ): Promise<BaseResponseDto<AdminTwoFactorEnableResponseDto>> {
+    logger.debug("Enabling admin 2FA", {
+      context: "AdminAuthController",
+      adminId: req.user.sub,
+    });
     const enableResponse = await this.authService.enableAdminTwoFactor(
       req.user,
       dto,
-      requestId,
+      logger,
     );
     return BaseResponseDto.success(
       enableResponse,
@@ -530,8 +559,13 @@ export class AuthController {
     @Req() req: AuthenticatedRequest,
     @Body() dto: AdminTwoFactorDisableRequestDto,
     @RequestId() requestId: string,
+    @RequestLogger() logger: Logger,
   ): Promise<BaseResponseDto<null>> {
-    await this.authService.disableAdminTwoFactor(req.user, dto, requestId);
+    logger.debug("Disabling admin 2FA", {
+      context: "AdminAuthController",
+      adminId: req.user.sub,
+    });
+    await this.authService.disableAdminTwoFactor(req.user, dto, logger);
     return BaseResponseDto.success(
       null,
       requestId,
@@ -586,8 +620,13 @@ export class AuthController {
   async recoverAdminTwoFactor(
     @Body() dto: AdminTwoFactorRecoverRequestDto,
     @RequestId() requestId: string,
+    @RequestLogger() logger: Logger,
   ): Promise<BaseResponseDto<null>> {
-    await this.authService.recoverAdminTwoFactor(dto, requestId);
+    logger.debug("Recovering admin 2FA", {
+      context: "AdminAuthController",
+      email: dto.email,
+    });
+    await this.authService.recoverAdminTwoFactor(dto, logger);
     return BaseResponseDto.success(
       null,
       requestId,
@@ -647,8 +686,13 @@ export class AuthController {
   async adminForgotPasswordSendOtp(
     @Body() dto: AdminForgotPasswordSendOtpRequestDto,
     @RequestId() requestId: string,
+    @RequestLogger() logger: Logger,
   ): Promise<BaseResponseDto<null>> {
-    await this.authService.adminForgotPasswordSendOtp(dto, requestId);
+    logger.debug("Sending admin forgot password OTP", {
+      context: "AdminAuthController",
+      email: dto.email,
+    });
+    await this.authService.adminForgotPasswordSendOtp(dto, logger);
     return BaseResponseDto.success(null, requestId, "OTP sent successfully");
   }
 
@@ -712,9 +756,14 @@ export class AuthController {
   async adminForgotPasswordVerifyOtp(
     @Body() dto: AdminForgotPasswordVerifyOtpRequestDto,
     @RequestId() requestId: string,
+    @RequestLogger() logger: Logger,
   ): Promise<BaseResponseDto<AdminForgotPasswordVerifyOtpResponseDto>> {
+    logger.debug("Verifying admin forgot password OTP", {
+      context: "AdminAuthController",
+      email: dto.email,
+    });
     const verifyOtpResponse =
-      await this.authService.adminForgotPasswordVerifyOtp(dto, requestId);
+      await this.authService.adminForgotPasswordVerifyOtp(dto, logger);
     return BaseResponseDto.success(
       verifyOtpResponse,
       requestId,
@@ -770,8 +819,12 @@ export class AuthController {
   async adminForgotPasswordReset(
     @Body() dto: AdminForgotPasswordResetRequestDto,
     @RequestId() requestId: string,
+    @RequestLogger() logger: Logger,
   ): Promise<BaseResponseDto<null>> {
-    await this.authService.adminForgotPasswordReset(dto, requestId);
+    logger.info("Resetting admin forgot password", {
+      context: "AdminAuthController",
+    });
+    await this.authService.adminForgotPasswordReset(dto, logger);
     return BaseResponseDto.success(
       null,
       requestId,
@@ -827,8 +880,12 @@ export class AuthController {
   async refreshToken(
     @Body() dto: RefreshTokenRequestDto,
     @RequestId() requestId: string,
+    @RequestLogger() logger: Logger,
   ): Promise<BaseResponseDto<AdminSigninResponseDto>> {
-    const refreshResponse = await this.authService.refreshToken(dto, requestId);
+    logger.info("Refreshing admin token", {
+      context: "AdminAuthController",
+    });
+    const refreshResponse = await this.authService.refreshToken(dto, logger);
     return BaseResponseDto.success(
       refreshResponse,
       requestId,
@@ -886,8 +943,12 @@ export class AuthController {
     @Req() req: AuthenticatedRequest,
     @Body() dto: SignoutRequestDto,
     @RequestId() requestId: string,
+    @RequestLogger() logger: Logger,
   ): Promise<BaseResponseDto<null>> {
-    await this.authService.signout(req.user, dto, requestId);
+    logger.info("Signing out admin", {
+      context: "AdminAuthController",
+    });
+    await this.authService.signout(req.user, dto, logger);
     return BaseResponseDto.success(null, requestId, "Signout successful");
   }
 }

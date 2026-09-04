@@ -29,3 +29,11 @@ export enum FlightStatus {
   ALLOCATED = "allocated",
   PUBLISHED = "published",
 }
+
+export enum HotelAllocationStatus {
+  DRAFT = "draft",
+  IN_PROGRESS = "in_progress",
+  CONFIRMED = "confirmed",
+  CANCELLED = "cancelled",
+  COMPLETED = "completed",
+}

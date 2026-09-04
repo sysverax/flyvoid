@@ -25,6 +25,7 @@ export const config = {
     port: parseInt(process.env.APP_PORT ?? "3000", 10),
     name: process.env.APP_NAME ?? "backend",
     env: process.env.NODE_ENV ?? "development",
+    apiPrefix: process.env.APP_API_PREFIX ?? "api",
   },
   db: {
     host: process.env.DB_HOST ?? "localhost",
@@ -96,5 +97,14 @@ export const config = {
     accessKeyId: process.env.AWS_ACCESS_KEY_ID ?? "",
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? "",
     fromEmail: process.env.AWS_SES_FROM_EMAIL ?? "noreply@example.com",
+  },
+  groq: {
+    apiKey: process.env.GROQ_API_KEY ?? "",
+    model: process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile",
+  },
+  hotelbeds: {
+    apiKey: process.env.HOTELBEDS_API_KEY ?? "",
+    secret: process.env.HOTELBEDS_SECRET ?? "",
+    useSandbox: process.env.HOTELBEDS_USE_SANDBOX !== "false",
   },
 } as const;

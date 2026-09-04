@@ -549,3 +549,114 @@ CREATE INDEX IF NOT EXISTS idx_payments_wallet_id
 
 CREATE INDEX IF NOT EXISTS idx_payments_status
   ON public.payments (status);
+
+
+-- ─── Cancelled Flights & Bookings ───────────────────────────────────────────
+
+DROP TABLE IF EXISTS public.cancelled_flights CASCADE;
+
+CREATE TABLE public.cancelled_flights (
+  id serial PRIMARY KEY,
+  flight_number varchar(20) NOT NULL,
+  airline_id integer NOT NULL,
+  departure_airport_id integer NOT NULL,
+  arrival_airport_id integer NOT NULL,
+  cancellation_date date NOT NULL,
+  cancellation_reason varchar(50),
+  cancellation_reason_text text,
+  status varchar(40) NOT NULL DEFAULT 'draft',
+  total_booking integer NOT NULL DEFAULT 0,
+  total_adults integer NOT NULL DEFAULT 0,
+  total_children integer NOT NULL DEFAULT 0,
+  total_hotel_rooms integer NOT NULL DEFAULT 0,
+  total_price decimal(10,2) NOT NULL DEFAULT 0,
+  total_buying_price decimal(10,2) NOT NULL DEFAULT 0,
+  total_selling_price decimal(10,2) NOT NULL DEFAULT 0,
+  total_platform_fee decimal(10,2) NOT NULL DEFAULT 0,
+  total_earnings decimal(10,2) NOT NULL DEFAULT 0,
+  created_at timestamp without time zone NOT NULL DEFAULT now(),
+  updated_at timestamp without time zone NOT NULL DEFAULT now(),
+  CONSTRAINT fk_cancelled_flights_airline
+    FOREIGN KEY (airline_id)
+    REFERENCES public.airlines(id)
+    ON DELETE RESTRICT,
+  CONSTRAINT fk_cancelled_flights_departure_airport
+    FOREIGN KEY (departure_airport_id)
+    REFERENCES public.airports(id)
+    ON DELETE RESTRICT,
+  CONSTRAINT fk_cancelled_flights_arrival_airport
+    FOREIGN KEY (arrival_airport_id)
+    REFERENCES public.airports(id)
+    ON DELETE RESTRICT
+);
+
+CREATE INDEX IF NOT EXISTS idx_cancelled_flights_airline_id
+  ON public.cancelled_flights (airline_id);
+
+DROP TABLE IF EXISTS public.cancelled_flight_bookings CASCADE;
+
+CREATE TABLE public.cancelled_flight_bookings (
+  id serial PRIMARY KEY,
+  cancelled_flight_id integer NOT NULL,
+  pnr varchar(20) NOT NULL,
+  first_name varchar(100) NOT NULL,
+  last_name varchar(100) NOT NULL,
+  email varchar(255) NOT NULL,
+  phone varchar(30) NOT NULL,
+  travel_class varchar(20) NOT NULL,
+  adults integer NOT NULL DEFAULT 1,
+  children integer NOT NULL DEFAULT 0,
+  special_notes text,
+  additional_notes text,
+  created_at timestamp without time zone NOT NULL DEFAULT now(),
+  updated_at timestamp without time zone NOT NULL DEFAULT now(),
+  CONSTRAINT fk_cancelled_flight_bookings_flight
+    FOREIGN KEY (cancelled_flight_id)
+    REFERENCES public.cancelled_flights(id)
+    ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_cancelled_flight_bookings_flight_id
+  ON public.cancelled_flight_bookings (cancelled_flight_id);
+
+DROP TABLE IF EXISTS public.hotel_allocations CASCADE;
+
+CREATE TABLE public.hotel_allocations (
+  id serial PRIMARY KEY,
+  cancelled_flight_id integer NOT NULL,
+  booking_id integer NOT NULL,
+  check_in_date date NOT NULL,
+  check_out_date date NOT NULL,
+  price decimal(10,2) NOT NULL,
+  buying_price decimal(10,2) NOT NULL,
+  selling_price decimal(10,2) NOT NULL,
+  platform_fee decimal(10,2) NOT NULL,
+  earnings decimal(10,2) NOT NULL,
+  status varchar(50) NOT NULL DEFAULT 'draft',
+  hotel_name varchar(255) NOT NULL,
+  hotel_address text,
+  total_rooms integer,
+  cost_per_room decimal(10,2),
+  booking_reference varchar(255) NOT NULL,
+  rate_key text,
+  created_at timestamp without time zone NOT NULL DEFAULT now(),
+  updated_at timestamp without time zone NOT NULL DEFAULT now(),
+  CONSTRAINT fk_hotel_allocations_flight
+    FOREIGN KEY (cancelled_flight_id)
+    REFERENCES public.cancelled_flights(id)
+    ON DELETE CASCADE,
+  CONSTRAINT fk_hotel_allocations_booking
+    FOREIGN KEY (booking_id)
+    REFERENCES public.cancelled_flight_bookings(id)
+    ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_hotel_allocations_flight_id
+  ON public.hotel_allocations (cancelled_flight_id);
+
+CREATE INDEX IF NOT EXISTS idx_hotel_allocations_booking_id
+  ON public.hotel_allocations (booking_id);
+
+
+
+
