@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Lock, Eye, EyeOff } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { authService } from "@/src/services/auth.service";
@@ -9,8 +9,11 @@ import { toast } from "react-toastify";
 
 type Step = "reset" | "success";
 
-export default function VerifyPage() {
+function OnboardForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const invitationToken = searchParams.get("token");
+
   const [step, setStep] = useState<Step>("reset");
 
   const [newPassword, setNewPassword] = useState("");
@@ -28,19 +31,12 @@ export default function VerifyPage() {
     confirmPassword?: boolean;
   }>({});
 
-  const [resetPasswordToken, setResetPasswordToken] = useState("");
-
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const token = sessionStorage.getItem("reset_password_token");
-      if (token) {
-        setResetPasswordToken(token);
-      } else {
-        toast.error("Invalid or expired session. Please sign in again.");
-        router.push("/login");
-      }
+    if (!invitationToken) {
+      toast.error("Invalid onboarding link.");
+      router.push("/auth/login");
     }
-  }, [router]);
+  }, [invitationToken, router]);
 
   const validatePassword = (value: string): string => {
     if (!value) return "Password is required";
@@ -105,7 +101,7 @@ export default function VerifyPage() {
     }));
   };
 
-  const handlePasswordResetSubmit = async (e: React.FormEvent) => {
+  const handleOnboardSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setTouched({ newPassword: true, confirmPassword: true });
 
@@ -120,15 +116,19 @@ export default function VerifyPage() {
       return;
     }
 
+    if (!invitationToken) {
+      toast.error("Invalid onboarding link.");
+      return;
+    }
+
     setIsLoading(true);
 
     try {
-      const msg = await authService.resetInitialPassword(resetPasswordToken, newPassword);
-      toast.success(msg);
-      sessionStorage.removeItem("reset_password_token");
+      const response = await authService.onboard(invitationToken, newPassword);
+      toast.success(response?.message || "Airline onboarded successfully");
       setStep("success");
     } catch (err: any) {
-      toast.error(err.message || "Failed to update password.");
+      toast.error(err.message || "Failed to complete onboarding.");
     } finally {
       setIsLoading(false);
     }
@@ -164,15 +164,15 @@ export default function VerifyPage() {
               </div>
               <div className="flex flex-col gap-1">
                 <h2 className="text-gray-800 text-lg font-semibold font-figtree leading-tight">
-                  Set initial password
+                  Welcome to FlyVoid
                 </h2>
                 <p className="text-gray-500 text-[14px] font-normal font-figtree leading-tight">
-                  Choose a new secure password for your first login
+                  Set up your password to complete your onboarding process.
                 </p>
               </div>
             </div>
 
-            <form onSubmit={handlePasswordResetSubmit} className="flex flex-col gap-5" noValidate>
+            <form onSubmit={handleOnboardSubmit} className="flex flex-col gap-5" noValidate>
               <div className="flex flex-col gap-2">
                 <label className="text-gray-800 text-base font-semibold font-figtree leading-tight">
                   New Password
@@ -253,7 +253,7 @@ export default function VerifyPage() {
                     <span>Saving...</span>
                   </>
                 ) : (
-                  <span>Reset password</span>
+                  <span>Set password</span>
                 )}
               </button>
             </form>
@@ -268,15 +268,15 @@ export default function VerifyPage() {
 
             <div className="flex flex-col gap-4 mb-2.5 translate-y-0.5">
               <h2 className="text-gray-800 text-lg font-semibold font-figtree leading-tight">
-                Password updated
+                Setup complete
               </h2>
               <p className="text-gray-500 text-[14px] font-normal font-figtree leading-tight">
-                Your password has been reset successfully. You can now sign in with your new password.
+                Your account is now ready. You can sign in with your new password.
               </p>
             </div>
 
             <button
-              onClick={() => router.push("/login")}
+              onClick={() => router.push("/auth/login")}
               className="w-full h-[48px] rounded-[10px] bg-[#0F2757] hover:bg-[#162259] active:bg-[#091a3c] text-white text-base font-figtree transition-colors duration-150 cursor-pointer translate-y-0.5"
             >
               Continue to login
@@ -293,5 +293,13 @@ export default function VerifyPage() {
         </span>
       </div>
     </div>
+  );
+}
+
+export default function OnboardPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
+      <OnboardForm />
+    </Suspense>
   );
 }

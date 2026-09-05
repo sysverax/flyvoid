@@ -1,7 +1,8 @@
 import axios from "axios";
 import Cookies from "js-cookie";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -35,6 +36,30 @@ export function eraseCookie(name: string) {
   Cookies.remove(name, { path: "/" });
 }
 
+function clearAuthStorage() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  sessionStorage.removeItem("airline_access_token");
+  sessionStorage.removeItem("airline_current_user");
+  eraseCookie("airline_refresh_token");
+}
+
+function redirectToLoginWithCurrentPath() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (window.location.pathname === "/auth/login") {
+    return;
+  }
+
+  const currentPath = `${window.location.pathname}${window.location.search || ""}`;
+  const target = encodeURIComponent(currentPath || "/");
+  window.location.href = `/auth/login?redirect=${target}`;
+}
+
 apiClient.interceptors.request.use(
   (config) => {
     if (typeof window !== "undefined") {
@@ -47,11 +72,14 @@ apiClient.interceptors.request.use(
   },
   (error) => {
     return Promise.reject(error);
-  }
+  },
 );
 
 let isRefreshing = false;
-let failedQueue: Array<{ resolve: (token: string) => void; reject: (error: any) => void }> = [];
+let failedQueue: Array<{
+  resolve: (token: string) => void;
+  reject: (error: any) => void;
+}> = [];
 
 const processQueue = (error: any, token: string | null = null) => {
   failedQueue.forEach((prom) => {
@@ -63,6 +91,59 @@ const processQueue = (error: any, token: string | null = null) => {
   });
   failedQueue = [];
 };
+
+export async function refreshAccessToken(): Promise<string | null> {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  if (isRefreshing) {
+    try {
+      return await new Promise<string>((resolve, reject) => {
+        failedQueue.push({ resolve, reject });
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  isRefreshing = true;
+
+  const refreshToken = getCookie("airline_refresh_token");
+  if (!refreshToken) {
+    isRefreshing = false;
+    clearAuthStorage();
+    return null;
+  }
+
+  try {
+    const response = await axios.post(`${API_BASE_URL}/auth/airline/refresh`, {
+      refreshToken,
+    });
+
+    const refreshData = response.data?.data || response.data;
+    const newAccessToken = refreshData?.accessToken;
+    const newRefreshToken = refreshData?.refreshToken;
+
+    if (!newAccessToken) {
+      throw new Error("Missing access token in refresh response");
+    }
+
+    sessionStorage.setItem("airline_access_token", newAccessToken);
+    if (newRefreshToken) {
+      setCookie("airline_refresh_token", newRefreshToken);
+    }
+
+    processQueue(null, newAccessToken);
+    return newAccessToken;
+  } catch (refreshError) {
+    processQueue(refreshError, null);
+    clearAuthStorage();
+    return null;
+  } finally {
+    isRefreshing = false;
+  }
+}
 
 apiClient.interceptors.response.use(
   (response) => response,
@@ -82,77 +163,25 @@ apiClient.interceptors.response.use(
           sessionStorage.removeItem("airline_access_token");
           sessionStorage.removeItem("airline_current_user");
           eraseCookie("airline_refresh_token");
-          if (window.location.pathname !== "/login") {
-            window.location.href = "/login";
-          }
+          redirectToLoginWithCurrentPath();
         }
       }
       return Promise.reject(error);
     }
 
     if (error.response?.status === 401 && !originalRequest._retry) {
-      if (isRefreshing) {
-        return new Promise((resolve, reject) => {
-          failedQueue.push({ resolve, reject });
-        })
-          .then((token) => {
-            originalRequest.headers.Authorization = `Bearer ${token}`;
-            return apiClient(originalRequest);
-          })
-          .catch((err) => {
-            return Promise.reject(err);
-          });
-      }
-
       originalRequest._retry = true;
-      isRefreshing = true;
+      const newAccessToken = await refreshAccessToken();
 
-      const refreshToken = getCookie("airline_refresh_token");
-      if (!refreshToken) {
-        isRefreshing = false;
-        if (typeof window !== "undefined") {
-          sessionStorage.removeItem("airline_access_token");
-          sessionStorage.removeItem("airline_current_user");
-          if (window.location.pathname !== "/login") {
-            window.location.href = "/login";
-          }
-        }
+      if (!newAccessToken) {
+        redirectToLoginWithCurrentPath();
         return Promise.reject(error);
       }
 
-      try {
-        const response = await axios.post(`${API_BASE_URL}/auth/airline/refresh`, {
-          refreshToken: refreshToken,
-        });
-
-        const { accessToken: newAccessToken, refreshToken: newRefreshToken } = response.data.data;
-
-        if (typeof window !== "undefined") {
-          sessionStorage.setItem("airline_access_token", newAccessToken);
-          setCookie("airline_refresh_token", newRefreshToken);
-        }
-
-        processQueue(null, newAccessToken);
-        isRefreshing = false;
-
-        originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
-        return apiClient(originalRequest);
-      } catch (refreshError) {
-        processQueue(refreshError, null);
-        isRefreshing = false;
-
-        if (typeof window !== "undefined") {
-          sessionStorage.removeItem("airline_access_token");
-          sessionStorage.removeItem("airline_current_user");
-          eraseCookie("airline_refresh_token");
-          if (window.location.pathname !== "/login") {
-            window.location.href = "/login";
-          }
-        }
-        return Promise.reject(refreshError);
-      }
+      originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
+      return apiClient(originalRequest);
     }
 
     return Promise.reject(error);
-  }
+  },
 );
