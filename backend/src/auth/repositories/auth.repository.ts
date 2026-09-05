@@ -121,6 +121,7 @@ export class AuthRepository {
       adminId: id,
     });
 
+    
     return this.adminRepository.findOne({ where: { id } });
   }
 

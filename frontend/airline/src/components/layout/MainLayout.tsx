@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Sidebar } from "./Sidebar";
 import { cn } from "@/src/lib/utils";
 import { refreshAccessToken } from "@/src/lib/api-client";
@@ -27,7 +27,6 @@ function isPublicPath(pathname: string): boolean {
 
 export function MainLayout({ children }: MainLayoutProps) {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const router = useRouter();
   const [authStatus, setAuthStatus] = useState<AuthStatus>("loading");
   const isClient = useSyncExternalStore(
@@ -82,11 +81,11 @@ export function MainLayout({ children }: MainLayoutProps) {
       return;
     }
 
-    const query = searchParams.toString();
+    const query = typeof window !== "undefined" ? window.location.search : "";
     const currentPath = `${pathname}${query ? `?${query}` : ""}`;
     const target = encodeURIComponent(currentPath || "/");
     router.replace(`/auth/login?redirect=${target}`);
-  }, [isClient, isAuthPage, authStatus, pathname, searchParams, router]);
+  }, [isClient, isAuthPage, authStatus, pathname, router]);
 
   if (isAuthPage) {
     return (

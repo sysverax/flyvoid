@@ -90,7 +90,7 @@ export const config = {
       process.env.AIRLINE_ADMIN_INVITE_EXPIRES_IN ?? "48h",
     airlineAdminOnboardingBaseUrl:
       process.env.AIRLINE_ADMIN_ONBOARDING_BASE_URL ??
-      "http://localhost:3000/airline/onboard",
+      "http://localhost:3000/auth/onboard",
   },
   ses: {
     region: process.env.AWS_REGION ?? "ap-south-1",
