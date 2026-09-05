@@ -20,6 +20,7 @@ async function bootstrap(): Promise<void> {
     bufferLogs: true,
   });
 
+  
   app.enableCors();
   // const allowedOrigins = config.cors.allowedOrigins
   //   ?.split(",")
