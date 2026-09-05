@@ -14,13 +14,29 @@ import {
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { SignOutDialog } from "./SignOutDialog";
+import { authService } from "@/src/services/auth.service";
 
 const navItems = [
   { title: "Dashboard", icon: LayoutDashboard, path: "/", key: "dashboard" },
-  { title: "Airports", icon: "/icons/plane1.svg", path: "/airports", key: "airports" },
-  { title: "Cancelled Flights", icon: "/icons/cancel.svg", path: "/cancellation", key: "cancellation" },
+  {
+    title: "Airports",
+    icon: "/icons/plane1.svg",
+    path: "/airports",
+    key: "airports",
+  },
+  {
+    title: "Cancelled Flights",
+    icon: "/icons/cancel.svg",
+    path: "/cancellation",
+    key: "cancellation",
+  },
   { title: "Bookings", icon: Plane, path: "/bookings", key: "bookings" },
-  { title: "Billing", icon: "/icons/payment.svg", path: "/billing", key: "billing" },
+  {
+    title: "Billing",
+    icon: "/icons/payment.svg",
+    path: "/billing",
+    key: "billing",
+  },
   { title: "Settings", icon: Settings, path: "/settings", key: "settings" },
 ];
 
@@ -36,8 +52,8 @@ export function Sidebar() {
 
   const confirmLogout = () => {
     setSignOutOpen(false);
-    sessionStorage.removeItem("airline_current_user");
-    router.push("/login");
+    authService.logout();
+    router.push("/auth/login");
   };
 
   const renderNavContent = (mobile = false) => (
@@ -69,7 +85,10 @@ export function Sidebar() {
         <nav className="scrollbar-hide flex-1 overflow-y-auto">
           <div className="flex w-full flex-col items-start gap-3">
             {navItems.map((item) => {
-              const isActive = pathname === item.path;
+              const isActive =
+                item.key === "dashboard"
+                  ? pathname === "/" || pathname === "/dashboard"
+                  : pathname === item.path;
               return (
                 <Link
                   key={item.path}
