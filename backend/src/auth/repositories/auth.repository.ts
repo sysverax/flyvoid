@@ -46,9 +46,10 @@ export class AuthRepository {
     adminId: number,
     logger: Logger,
   ): Promise<UserAccessControlEntry[]> {
-    logger.debug("Finding platform access controls by admin id", {
-      adminId,
-    });
+    this.logger.debug(
+      `Finding platform access controls by admin id: ${adminId}`,
+      "AuthRepository",
+    );
 
     const rows = await this.platformAccessControlRepository.find({
       where: { adminId },
@@ -109,19 +110,14 @@ export class AuthRepository {
     email: string,
     logger: Logger,
   ): Promise<AdminEntity | null> {
-    logger.debug("Finding admin by email", {
-      email,
-    });
+    this.logger.debug(`Finding admin by email: ${email}`, "AuthRepository");
 
     return this.adminRepository.findOne({ where: { email } });
   }
 
   async findAdminById(id: number, logger: Logger): Promise<AdminEntity | null> {
-    // logger.debug("Finding admin by id", {
-    //   adminId: id,
-    // });
+    this.logger.debug(`Finding admin by id: ${id}`, "AuthRepository");
 
-    
     return this.adminRepository.findOne({ where: { id } });
   }
 
@@ -500,8 +496,6 @@ export class AuthRepository {
       },
     );
   }
-
-  
 
   async findAirlineUserByEmail(
     email: string,
