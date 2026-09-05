@@ -20,16 +20,16 @@ async function bootstrap(): Promise<void> {
     bufferLogs: true,
   });
 
-  // app.enableCors();
-  const allowedOrigins = config.cors.allowedOrigins
-    ?.split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean);
+  app.enableCors();
+  // const allowedOrigins = config.cors.allowedOrigins
+  //   ?.split(",")
+  //   .map((origin) => origin.trim())
+  //   .filter(Boolean);
 
-  app.enableCors({
-    origin: allowedOrigins,
-    credentials: true,
-  });
+  // app.enableCors({
+  //   origin: allowedOrigins,
+  //   credentials: true,
+  // });
 
   // app.useGlobalPipes(
   //   new ValidationPipe({
