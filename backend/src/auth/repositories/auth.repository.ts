@@ -117,9 +117,9 @@ export class AuthRepository {
   }
 
   async findAdminById(id: number, logger: Logger): Promise<AdminEntity | null> {
-    logger.debug("Finding admin by id", {
-      adminId: id,
-    });
+    // logger.debug("Finding admin by id", {
+    //   adminId: id,
+    // });
 
     
     return this.adminRepository.findOne({ where: { id } });
