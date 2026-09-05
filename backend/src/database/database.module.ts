@@ -87,20 +87,26 @@ import { config } from "../config/config";
           database: config.db.name,
 
           synchronize: isAutomationTest ? true : config.db.synchronize,
-
           logging: config.db.logging,
-
           autoLoadEntities: true,
 
-          // Neon PostgreSQL connection
-          ssl: {
-            rejectUnauthorized: false,
-          },
+          ssl: config.db.ssl
+            ? {
+                rejectUnauthorized: false,
+              }
+            : false,
 
-          // PostgreSQL connection pool settings
           extra: {
-            max: 5,
-            connectionTimeoutMillis: 10000,
+            max: 10,
+
+            /**
+             * Aurora Serverless v2 can pause after inactivity
+             * (your cluster is set to pause after 5 min idle).
+             * Give the first connection after a pause enough
+             * time to resume before giving up.
+             */
+            connectionTimeoutMillis: 15000,
+
             idleTimeoutMillis: 30000,
           },
         };
@@ -112,9 +118,27 @@ import { config } from "../config/config";
         }
 
         try {
-          const dataSource = new DataSource(options as DataSourceOptions);
+          console.log("========================================");
+          console.log("INITIALIZING DATABASE CONNECTION");
+          console.log("========================================");
+          const connectionOptions = options as unknown as {
+            host?: string;
+            port?: number;
+            database?: string;
+            ssl?: boolean;
+          };
+          console.log(`Database host: ${connectionOptions.host}`);
+          console.log(`Database port: ${connectionOptions.port}`);
+          console.log(`Database name: ${connectionOptions.database}`);
+          console.log(`SSL enabled: ${Boolean(connectionOptions.ssl)}`);
+          console.log("========================================");
 
+          const dataSource = new DataSource(options as DataSourceOptions);
           await dataSource.initialize();
+
+          console.log("========================================");
+          console.log("DATABASE CONNECTION SUCCESSFUL");
+          console.log("========================================");
 
           return dataSource;
         } catch (error) {
@@ -124,7 +148,8 @@ import { config } from "../config/config";
           console.error("========================================");
           console.error("DATABASE CONNECTION ERROR");
           console.error("========================================");
-          console.error(error);
+          console.error("Error object:", error);
+          console.error("========================================");
 
           throw new Error(`Database connection failed: ${message}`);
         }
@@ -140,9 +165,7 @@ export class DatabaseModule implements OnModuleDestroy {
   async onModuleDestroy(): Promise<void> {
     if (config.db.mode === "automation_test") {
       try {
-        // Wipe all data at the end of each test run
         await this.dataSource.dropDatabase();
-
         this.logger.log("Test database dropped successfully.");
       } catch (error) {
         this.logger.error(
@@ -154,7 +177,6 @@ export class DatabaseModule implements OnModuleDestroy {
 
     if (this.dataSource.isInitialized) {
       await this.dataSource.destroy();
-
       this.logger.log("Database connection closed.");
     }
   }
