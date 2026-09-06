@@ -6,11 +6,11 @@ import { AirportEntity } from "../airline/entities/airport.entity";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
 import { BookingEntity } from "./entities/booking.entity";
 import { HotelAllocationEntity } from "./entities/hotel-allocation.entity";
-import { CancelledFlightsController } from "./cancel-flights.controller";
-import { CancelledFlightsService } from "./cancel-flights.service";
-import { CancelledFlightsRepository } from "./cancel-flights.repository";
+import { CancelledFlightsController } from "./cancelled-flights.controller";
+import { CancelledFlightsService } from "./cancelled-flights.service";
+import { CancelledFlightsRepository } from "./cancelled-flights.repository";
 import { GroqService } from "../common/groq/groq.service";
-import { HotelPartnerService } from "./hotel-partners.service";
+import { HotelPartnerService } from "./hotel-partner.service";
 
 @Module({
   imports: [
