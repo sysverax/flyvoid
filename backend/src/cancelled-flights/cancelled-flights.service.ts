@@ -21,6 +21,7 @@ import {
   BookingResponseDto,
   UpdateBookingDto,
   CancelledFlightResponseDto,
+  CancelledFlightListResponseDto,
   ImportBookingResponseDto,
   ReviewCancelledFlightResponseDto,
   AllocateHotelDto,
@@ -36,6 +37,9 @@ import {
 } from "./hotel-partner.service";
 import { GroqService } from "../common/groq/groq.service";
 import { Logger } from "winston";
+import { AuthenticatedUser } from "../auth/interfaces/authenticated-request.interface";
+import { UserType } from "../common/constants/user.constants";
+import { GetCancelledFlightsQueryDto } from "./dto/get-cancelled-flights-query.dto";
 
 type AllocationStatus =
   | "RECOMMENDED"
@@ -818,6 +822,104 @@ export class CancelledFlightsService {
     );
     await this.cancelledFlightsRepository.deleteBooking(booking, requestId);
     return { message: "Booking deleted successfully" };
+  }
+
+  async listCancelledFlights(
+    user: AuthenticatedUser,
+    query: GetCancelledFlightsQueryDto,
+    requestId: string,
+    requestLogger: Logger,
+  ): Promise<CancelledFlightListResponseDto> {
+    const page = query.page || 1;
+    const limit = query.limit || 10;
+
+    const startDate = query.startDate;
+    const endDate = query.endDate;
+
+    if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
+      throw new BadRequestException("startDate cannot be later than endDate");
+    }
+
+    let airlineScopeId: number | undefined;
+
+    if (user.userType === UserType.AIRLINE) {
+      airlineScopeId = user.airlineId;
+
+      if (!airlineScopeId) {
+        requestLogger.error(
+          "Authenticated airline user does not have an associated airlineId",
+          {
+            user,
+          },
+        );
+        throw new BadRequestException(
+          "Authenticated airline user does not have an associated airlineId",
+        );
+      }
+
+      if (query.airlineId && query.airlineId !== airlineScopeId) {
+        throw new BadRequestException(
+          "airlineId filter is not allowed for other airlines",
+        );
+      }
+    } else {
+      airlineScopeId = query.airlineId;
+    }
+
+    requestLogger.info(
+      "Fetching cancelled flights with pagination and filters",
+      {
+        page,
+        limit,
+        status: query.status,
+        search: query.search,
+        airlineId: airlineScopeId,
+        startDate,
+        endDate,
+      },
+    );
+
+    const { flights, totalCount } =
+      await this.cancelledFlightsRepository.findFlightsWithPaginationAndFilters(
+        {
+          page,
+          limit,
+          status: query.status,
+          search: query.search,
+          airlineId: airlineScopeId,
+          startDate,
+          endDate,
+        },
+        requestId,
+      );
+
+    return {
+      cancelledFlights: flights.map((flight) => ({
+        id: flight.id,
+        flightNumber: flight.flightNumber,
+        departureAirport: {
+          id: flight.departureAirport.id,
+          code: flight.departureAirport.iataCode,
+          name: flight.departureAirport.name,
+        },
+        arrivalAirport: {
+          id: flight.arrivalAirport.id,
+          code: flight.arrivalAirport.iataCode,
+          name: flight.arrivalAirport.name,
+        },
+        cancellationDate: flight.cancellationDate,
+        totalBookings: flight.totalBooking ?? 0,
+        totalPassengers:
+          (flight.totalAdults ?? 0) + (flight.totalChildren ?? 0),
+        totalCost: Number(flight.totalPrice ?? 0),
+        status: flight.status,
+      })),
+      pagination: {
+        currentPage: page,
+        limit,
+        totalCount,
+      },
+    };
   }
 
   // ── List bookings ────────────────────────────────────────────────────────

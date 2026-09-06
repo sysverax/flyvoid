@@ -64,6 +64,69 @@ export class CancelledFlightsRepository {
     });
   }
 
+  async findFlightsWithPaginationAndFilters(
+    {
+      page,
+      limit,
+      status,
+      search,
+      airlineId,
+      startDate,
+      endDate,
+    }: {
+      page: number;
+      limit: number;
+      status?: FlightStatus;
+      search?: string;
+      airlineId?: number;
+      startDate?: string;
+      endDate?: string;
+    },
+    requestId: string,
+  ): Promise<{ flights: CancelledFlightEntity[]; totalCount: number }> {
+    this.logger.debug(
+      "Finding cancelled flights with pagination and filters",
+      "CancelledFlightsRepository",
+      requestId,
+      { page, limit, status, search, airlineId, startDate, endDate },
+    );
+
+    const skip = (page - 1) * limit;
+
+    const qb = this.flightRepo
+      .createQueryBuilder("flight")
+      .leftJoinAndSelect("flight.departureAirport", "departureAirport")
+      .leftJoinAndSelect("flight.arrivalAirport", "arrivalAirport")
+      .orderBy("flight.createdAt", "DESC")
+      .skip(skip)
+      .take(limit);
+
+    if (typeof airlineId === "number") {
+      qb.andWhere("flight.airlineId = :airlineId", { airlineId });
+    }
+
+    if (status) {
+      qb.andWhere("flight.status = :status", { status });
+    }
+
+    if (search?.trim()) {
+      qb.andWhere("CAST(flight.flight_number AS TEXT) ILIKE :search", {
+        search: `%${search.trim()}%`,
+      });
+    }
+
+    if (startDate) {
+      qb.andWhere("flight.cancellationDate >= :startDate", { startDate });
+    }
+
+    if (endDate) {
+      qb.andWhere("flight.cancellationDate <= :endDate", { endDate });
+    }
+
+    const [flights, totalCount] = await qb.getManyAndCount();
+    return { flights, totalCount };
+  }
+
   async updateFlightStatus({
     cancelledFlightEntity,
     status,

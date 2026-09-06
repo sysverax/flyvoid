@@ -60,6 +60,7 @@ import {
   CancelledFlightResponseDto,
   CreateBookingDto,
   BookingResponseDto,
+  CancelledFlightListResponseDto,
   ImportBookingResponseDto,
   UpdateBookingDto,
   ReviewCancelledFlightResponseDto,
@@ -71,6 +72,7 @@ import { PaginationQueryDto } from "../common/dto/pagination-query.dto";
 import { AuthenticatedRequest } from "../auth/interfaces/authenticated-request.interface";
 import { RequestLogger } from "../common/decorators/request-logger.decorator";
 import { Logger } from "winston";
+import { GetCancelledFlightsQueryDto } from "./dto/get-cancelled-flights-query.dto";
 
 @ApiTags("Cancelled Flights")
 @ApiBearerAuth("access-token")
@@ -80,10 +82,76 @@ import { Logger } from "winston";
 @ApiExtraModels(
   CancelledFlightResponseDto,
   BookingResponseDto,
+  CancelledFlightListResponseDto,
   ImportBookingResponseDto,
 )
 export class CancelledFlightsController {
   constructor(private readonly service: CancelledFlightsService) {}
+
+  // ── GET /cancelled-flights ───────────────────────────────────────────────
+
+  @Get("/")
+  @RequireUserTypes(UserType.PLATFORM, UserType.AIRLINE)
+  @RequireAccessControl({
+    platform: {
+      asset: PlatformAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.VIEW],
+    },
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.VIEW],
+    },
+  })
+  @ApiOperation({
+    summary: "List cancelled flights",
+    description:
+      "Returns paginated cancelled flights with optional filters: status, search, airlineId, startDate, endDate. Platform users can view all airlines and can filter by airlineId; airline users only see flights for their own airline.",
+  })
+  @ApiOkResponse({
+    schema: {
+      properties: {
+        success: { type: "boolean", example: true },
+        requestId: { type: "string", example: REQUEST_ID_EXAMPLE },
+        timestamp: { type: "string", example: TIMESTAMP_EXAMPLE },
+        message: {
+          type: "string",
+          example: "Cancelled flights fetched successfully",
+        },
+        data: { $ref: "#/components/schemas/CancelledFlightListResponseDto" },
+      },
+    },
+  })
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema("/api/v1/cancelled-flights"),
+  })
+  @ApiUnauthorizedResponse({
+    schema: createUnauthorizedErrorSchema(
+      "/api/v1/cancelled-flights",
+      "Unauthorized",
+    ),
+  })
+  async listCancelledFlights(
+    @Req() req: AuthenticatedRequest,
+    @Query() query: GetCancelledFlightsQueryDto,
+    @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
+  ): Promise<BaseResponseDto<CancelledFlightListResponseDto>> {
+    requestLogger.info("Listing cancelled flights", {
+      query,
+      user: req.user,
+    });
+    const data = await this.service.listCancelledFlights(
+      req.user,
+      query,
+      requestId,
+      requestLogger,
+    );
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Cancelled flights fetched successfully",
+    );
+  }
 
   // ── POST /cancelled-flights ──────────────────────────────────────────────
 

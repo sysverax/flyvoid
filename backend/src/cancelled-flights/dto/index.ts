@@ -7,6 +7,7 @@ export * from "./import-booking-response.dto";
 export * from "./update-booking.dto";
 
 export * from "./cancelled-flight-list-response.dto";
+export * from "./get-cancelled-flights-query.dto";
 export * from "./review-cancelled-flight-response.dto";
 
 export * from "./allocate-hotel.dto";
