@@ -8,8 +8,10 @@ export enum CancellationReason {
 }
 
 export enum TravelClass {
-  ECONOMY = "economy",
+  FIRST_CLASS = "first_class",
   BUSINESS = "business",
+  PREMIUM_ECONOMY = "premium_economy",
+  ECONOMY = "economy",
 }
 
 export enum SpecialNote {
