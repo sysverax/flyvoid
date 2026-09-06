@@ -54,7 +54,7 @@ import {
   createNotFoundErrorSchema,
   createUnauthorizedErrorSchema,
 } from "../common/constants/swagger.constants";
-import { CancelledFlightsService } from "./cancelled-flights.service";
+import { CancelledFlightsService } from "./cancel-flights.service";
 import {
   CreateCancelledFlightDto,
   CancelledFlightResponseDto,

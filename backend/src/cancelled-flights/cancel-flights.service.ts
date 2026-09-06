@@ -6,7 +6,7 @@ import {
 } from "@nestjs/common";
 import { Readable } from "stream";
 import { LoggerService } from "../common/logger/logger.service";
-import { CancelledFlightsRepository } from "./cancelled-flights.repository";
+import { CancelledFlightsRepository } from "./cancel-flights.repository";
 import { BookingEntity } from "./entities/booking.entity";
 import {
   CancellationReason,
@@ -33,8 +33,8 @@ import {
   AvailabilityRoomRate,
   HotelPartnerService,
   RoomOccupancy,
-} from "./hotel-partner.service";
-import { GroqService } from "../common/groq/groq.service";
+} from "./hotel-partners.service";
+import { GroqService } from "../common/groq/groq.services";
 import { Logger } from "winston";
 
 type AllocationStatus =
