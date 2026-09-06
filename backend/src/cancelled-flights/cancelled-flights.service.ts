@@ -28,8 +28,152 @@ import {
 } from "./dto";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
 import { PaginationQueryDto } from "../common/dto/pagination-query.dto";
-import { HotelPartnerService } from "./hotel-partner.service";
+import {
+  AvailabilityHotel,
+  AvailabilityRoomRate,
+  HotelPartnerService,
+  RoomOccupancy,
+} from "./hotel-partner.service";
 import { GroqService } from "../common/groq/groq.service";
+import { Logger } from "winston";
+
+type AllocationStatus =
+  | "RECOMMENDED"
+  | "NO_SUITABLE_HOTEL"
+  | "INVALID_PASSENGER_DATA"
+  | "NO_AVAILABILITY";
+
+interface RoomSplitPlan {
+  preferred: RoomOccupancy[];
+  fallbacks: RoomOccupancy[][];
+}
+
+interface BookingRecommendationResult {
+  bookingId: number;
+  pnr: string;
+  class: TravelClass;
+  passengers: {
+    adults: number;
+    children: number;
+  };
+  splitTried?: "preferred" | "fallback";
+  hotel?: {
+    hotelCode: string;
+    hotelName: string;
+    category: string;
+  };
+  rooms?: Array<{
+    adults: number;
+    children: number;
+    rateKey: string;
+    roomName: string;
+    boardName: string;
+    price: number;
+    currency: string;
+  }>;
+  totalPrice?: number;
+  allocationStatus: AllocationStatus;
+  reason?: string;
+}
+
+const room = (adults: number, children = 0): RoomOccupancy => ({
+  adults,
+  children,
+});
+
+const ROOM_SPLIT_RULES: Record<string, RoomSplitPlan> = {
+  "1_0": { preferred: [room(1)], fallbacks: [] },
+  "2_0": { preferred: [room(2)], fallbacks: [] },
+  "3_0": { preferred: [room(3)], fallbacks: [[room(2), room(1)]] },
+  "4_0": { preferred: [room(2), room(2)], fallbacks: [[room(3), room(1)]] },
+  "5_0": {
+    preferred: [room(2), room(2), room(1)],
+    fallbacks: [[room(3), room(2)]],
+  },
+  "6_0": { preferred: [room(2), room(2), room(2)], fallbacks: [] },
+  "7_0": {
+    preferred: [room(2), room(2), room(2), room(1)],
+    fallbacks: [[room(3), room(2), room(2)]],
+  },
+  "8_0": { preferred: [room(2), room(2), room(2), room(2)], fallbacks: [] },
+  "9_0": {
+    preferred: [room(2), room(2), room(2), room(2), room(1)],
+    fallbacks: [[room(3), room(2), room(2), room(2)]],
+  },
+  "1_1": { preferred: [room(1, 1)], fallbacks: [] },
+  "1_2": { preferred: [room(1, 2)], fallbacks: [] },
+  "1_3": { preferred: [room(1, 3)], fallbacks: [] },
+  "1_4": { preferred: [room(1, 4)], fallbacks: [] },
+  "2_1": { preferred: [room(2, 1)], fallbacks: [[room(1, 1), room(1)]] },
+  "2_2": { preferred: [room(2, 2)], fallbacks: [[room(1, 1), room(1, 1)]] },
+  "2_3": { preferred: [room(2, 3)], fallbacks: [[room(1, 2), room(1, 1)]] },
+  "2_4": { preferred: [room(2, 4)], fallbacks: [[room(1, 2), room(1, 2)]] },
+  "3_1": {
+    preferred: [room(2), room(1, 1)],
+    fallbacks: [[room(2, 1), room(1)]],
+  },
+  "3_2": {
+    preferred: [room(2, 1), room(1, 1)],
+    fallbacks: [[room(2), room(1, 1), room(1)]],
+  },
+  "3_3": {
+    preferred: [room(2, 2), room(1, 1)],
+    fallbacks: [[room(2, 1), room(1, 1), room(1, 1)]],
+  },
+  "3_4": {
+    preferred: [room(2, 2), room(1, 2)],
+    fallbacks: [[room(2, 1), room(1, 1), room(1, 2)]],
+  },
+  "4_1": {
+    preferred: [room(2), room(2, 1)],
+    fallbacks: [[room(2, 1), room(1, 1), room(1)]],
+  },
+  "4_2": {
+    preferred: [room(2), room(1, 1), room(1, 1)],
+    fallbacks: [[room(2, 1), room(1, 1), room(1)]],
+  },
+  "4_3": {
+    preferred: [room(2, 1), room(1, 1), room(1, 1)],
+    fallbacks: [[room(2), room(1, 1), room(1, 1), room(1)]],
+  },
+  "4_4": {
+    preferred: [room(2, 2), room(2, 1)],
+    fallbacks: [[room(2, 1), room(1, 1), room(1, 1), room(1)]],
+  },
+  "5_1": {
+    preferred: [room(2), room(2), room(1, 1)],
+    fallbacks: [[room(2, 1), room(1, 1), room(1, 1), room(1)]],
+  },
+  "5_2": {
+    preferred: [room(2), room(2, 1), room(1, 1)],
+    fallbacks: [[room(2, 1), room(1, 1), room(1, 1), room(1)]],
+  },
+  // Fixed based on explicit business validation: preserve exact 5 adults + 3 children.
+  "5_3": {
+    preferred: [room(2, 1), room(2, 1), room(1, 1)],
+    fallbacks: [[room(2, 1), room(1, 1), room(1, 1), room(1)]],
+  },
+  "5_4": {
+    preferred: [room(2, 2), room(2, 1), room(1, 1)],
+    fallbacks: [[room(2, 1), room(1, 1), room(1, 1), room(1, 1)]],
+  },
+  "6_1": {
+    preferred: [room(2), room(2), room(2), room(1)],
+    fallbacks: [[room(1, 1), room(2), room(2), room(1)]],
+  },
+  "6_2": {
+    preferred: [room(2), room(2), room(1, 1), room(1, 1)],
+    fallbacks: [[room(2, 1), room(2, 1), room(1), room(1)]],
+  },
+  "6_3": {
+    preferred: [room(2), room(2, 1), room(1, 1), room(1, 1)],
+    fallbacks: [[room(2, 1), room(2, 1), room(1, 1), room(1)]],
+  },
+  "7_2": {
+    preferred: [room(2), room(2), room(2, 1), room(1, 1)],
+    fallbacks: [[room(2, 1), room(2, 1), room(2), room(1)]],
+  },
+};
 
 @Injectable()
 export class CancelledFlightsService {
@@ -77,6 +221,274 @@ export class CancelledFlightsService {
       createdAt: booking.createdAt.toISOString(),
       updatedAt: booking.updatedAt?.toISOString() ?? null,
     };
+  }
+
+  private occupancyKey(occupancy: RoomOccupancy): string {
+    const ages = (occupancy.childrenAges ?? []).join("-");
+    return `${occupancy.adults}_${occupancy.children}_${ages}`;
+  }
+
+  private validateSplit(
+    adults: number,
+    children: number,
+    rooms: RoomOccupancy[],
+  ): boolean {
+    const totalAdults = rooms.reduce((sum, value) => sum + value.adults, 0);
+    const totalChildren = rooms.reduce((sum, value) => sum + value.children, 0);
+    const hasChildAlone = rooms.some(
+      (value) => value.children > 0 && value.adults === 0,
+    );
+
+    return (
+      totalAdults === adults &&
+      totalChildren === children &&
+      !hasChildAlone &&
+      rooms.every((value) => value.adults >= 1)
+    );
+  }
+
+  private resolveRoomSplitPlan(
+    booking: BookingEntity,
+    requestLogger: Logger,
+  ): {
+    plan?: RoomSplitPlan;
+    reason?: string;
+  } {
+    if (booking.adults < 1) {
+      requestLogger.error(
+        `Invalid passenger data for booking '${booking.id}': adults must be at least 1`,
+        {
+          context: this.context,
+          bookingId: booking.id,
+        },
+      );
+      return { reason: "Adults must be at least 1" };
+    }
+    if (booking.children < 0) {
+      requestLogger.error(
+        `Invalid passenger data for booking '${booking.id}': children cannot be negative`,
+        {
+          context: this.context,
+          bookingId: booking.id,
+        },
+      );
+      return { reason: "Children cannot be negative" };
+    }
+    if (booking.children > 0 && booking.adults === 0) {
+      requestLogger.error(
+        `Invalid passenger data for booking '${booking.id}': children cannot be allocated without an adult`,
+        {
+          context: this.context,
+          bookingId: booking.id,
+        },
+      );
+      return {
+        reason:
+          "Invalid passenger data: children cannot be allocated without an adult",
+      };
+    }
+
+    const key = `${booking.adults}_${booking.children}`;
+    const configured = ROOM_SPLIT_RULES[key];
+    if (!configured) {
+      return {
+        reason: `No room split rule configured for adults=${booking.adults}, children=${booking.children}`,
+      };
+    }
+
+    const validPreferred = this.validateSplit(
+      booking.adults,
+      booking.children,
+      configured.preferred,
+    );
+    if (!validPreferred) {
+      return {
+        reason: `Configured preferred split is invalid for adults=${booking.adults}, children=${booking.children}`,
+      };
+    }
+
+    const validFallbacks = configured.fallbacks.filter((fallback) =>
+      this.validateSplit(booking.adults, booking.children, fallback),
+    );
+
+    return {
+      plan: {
+        preferred: configured.preferred,
+        fallbacks: validFallbacks,
+      },
+    };
+  }
+
+  private toGroupKey(booking: BookingEntity): string {
+    const passengerProfile = booking.children > 0 ? "family" : "standard";
+    const notes = [...(booking.specialNotes ?? [])].sort().join("|");
+    return `${booking.travelClass}|${passengerProfile}|${notes}`;
+  }
+
+  private groupBookings(
+    bookings: BookingEntity[],
+  ): Map<string, BookingEntity[]> {
+    const groups = new Map<string, BookingEntity[]>();
+
+    for (const booking of bookings) {
+      const key = this.toGroupKey(booking);
+      const list = groups.get(key);
+      if (list) {
+        list.push(booking);
+      } else {
+        groups.set(key, [booking]);
+      }
+    }
+
+    return groups;
+  }
+
+  private toAiHotelCandidates(hotels: AvailabilityHotel[]) {
+    return hotels.map((hotel) => {
+      const minRate = hotel.rates.reduce(
+        (acc, rate) => (rate.netPrice < acc ? rate.netPrice : acc),
+        Number.POSITIVE_INFINITY,
+      );
+
+      return {
+        id: `hb-${hotel.hotelCode}`,
+        name: hotel.hotelName,
+        address: hotel.address,
+        stars: hotel.stars,
+        amenities: [
+          "WiFi",
+          ...(hotel.stars >= 4 ? ["Business Center"] : ["Free Shuttle"]),
+        ],
+        pricePerNight: Number.isFinite(minRate) ? minRate : 0,
+        description: `${hotel.hotelName} (${hotel.category}) near airport transit area.`,
+      };
+    });
+  }
+
+  private async rankHotelsByGroup(
+    groupedBookings: Map<string, BookingEntity[]>,
+    hotels: AvailabilityHotel[],
+    requestId: string,
+  ): Promise<Map<string, string[]>> {
+    const aiHotels = this.toAiHotelCandidates(hotels);
+    const fallbackOrder = aiHotels
+      .slice()
+      .sort((a, b) => a.pricePerNight - b.pricePerNight)
+      .map((item) => item.id);
+
+    const rankingByGroup = new Map<string, string[]>();
+
+    for (const [groupKey, groupBookings] of groupedBookings.entries()) {
+      const first = groupBookings[0];
+      const specialNotes = Array.from(
+        new Set(groupBookings.flatMap((booking) => booking.specialNotes ?? [])),
+      );
+
+      try {
+        const aiResult = await this.groqService.rankHotelsForPassengerGroup(
+          {
+            travelClass: first.travelClass,
+            passengerProfile: first.children > 0 ? "family" : "standard",
+            totalBookings: groupBookings.length,
+            totalAdults: groupBookings.reduce(
+              (sum, item) => sum + item.adults,
+              0,
+            ),
+            totalChildren: groupBookings.reduce(
+              (sum, item) => sum + item.children,
+              0,
+            ),
+            specialNotes,
+          },
+          aiHotels,
+          requestId,
+        );
+
+        const aiRanked = (aiResult?.recommendations ?? [])
+          .filter((item: any) => typeof item?.hotelId === "string")
+          .sort(
+            (a: any, b: any) => Number(b?.score ?? 0) - Number(a?.score ?? 0),
+          )
+          .map((item: any) => String(item.hotelId));
+
+        const mergedOrder = Array.from(
+          new Set([...aiRanked, ...fallbackOrder]),
+        );
+        rankingByGroup.set(groupKey, mergedOrder);
+      } catch (error: any) {
+        this.logger.warn(
+          `Groq ranking failed for group ${groupKey}, using deterministic fallback order`,
+          this.context,
+          requestId,
+          { error: error.message },
+        );
+        rankingByGroup.set(groupKey, fallbackOrder);
+      }
+    }
+
+    return rankingByGroup;
+  }
+
+  private getBestRatesForHotelAndSplit(
+    rates: AvailabilityRoomRate[],
+    split: RoomOccupancy[],
+  ): Array<{
+    adults: number;
+    children: number;
+    rateKey: string;
+    roomName: string;
+    boardName: string;
+    price: number;
+    currency: string;
+  }> | null {
+    const buckets = new Map<string, AvailabilityRoomRate[]>();
+    for (const rate of rates) {
+      const key = this.occupancyKey({
+        adults: rate.adults,
+        children: rate.children,
+        childrenAges: rate.childrenAges,
+      });
+      const existing = buckets.get(key);
+      if (existing) {
+        existing.push(rate);
+      } else {
+        buckets.set(key, [rate]);
+      }
+    }
+
+    const selected: Array<{
+      adults: number;
+      children: number;
+      rateKey: string;
+      roomName: string;
+      boardName: string;
+      price: number;
+      currency: string;
+    }> = [];
+
+    for (const occupancy of split) {
+      const key = this.occupancyKey(occupancy);
+      const candidates = (buckets.get(key) ?? [])
+        .filter((rate) => rate.allotment === null || rate.allotment > 0)
+        .sort((a, b) => a.netPrice - b.netPrice);
+
+      if (!candidates.length) {
+        return null;
+      }
+
+      const best = candidates[0];
+      selected.push({
+        adults: occupancy.adults,
+        children: occupancy.children,
+        rateKey: best.rateKey,
+        roomName: best.roomName,
+        boardName: best.boardName,
+        price: best.netPrice,
+        currency: best.currency,
+      });
+    }
+
+    return selected;
   }
 
   // ── Create cancelled flight ──────────────────────────────────────────────
@@ -707,6 +1119,383 @@ export class CancelledFlightsService {
       specialNotes: booking.specialNotes || [],
       airportCode: departureAirport.iataCode,
       recommendations: recommendedHotels,
+    };
+  }
+
+  async getHotelRecommendationsForFlight(
+    flightId: number,
+    requestId: string,
+    requestLogger: Logger,
+  ) {
+    requestLogger.info("Starting flight-level hotel recommendation process", {
+      context: this.context,
+      flightId,
+    });
+
+    const flight =
+      await this.cancelledFlightsRepository.findFlightWithRelations(
+        flightId,
+        requestId,
+      );
+    if (!flight) {
+      requestLogger.error(`Cancelled flight '${flightId}' not found`, {
+        context: this.context,
+        flightId,
+      });
+      throw new NotFoundException(`Cancelled flight '${flightId}' not found`);
+    }
+
+    if (flight.status !== FlightStatus.PASSENGERS_BOOKING_CONFIRMED) {
+      requestLogger.error(
+        `Flight '${flightId}' is not eligible for hotel recommendation in status '${flight.status}'`,
+        {
+          context: this.context,
+          flightId,
+          status: flight.status,
+        },
+      );
+      throw new BadRequestException(
+        `Flight '${flightId}' is not eligible for hotel recommendation in status '${flight.status}'`,
+      );
+    }
+
+    const checkIn = flight.cancellationDate;
+    if (!checkIn) {
+      requestLogger.error(
+        `Cancellation date not found for flight '${flightId}'`,
+        {
+          context: this.context,
+          flightId,
+        },
+      );
+      throw new BadRequestException(
+        `Cancellation date not found for flight '${flightId}'`,
+      );
+    }
+
+    const checkInDateObj = new Date(checkIn);
+    if (Number.isNaN(checkInDateObj.getTime())) {
+      requestLogger.error(
+        `Invalid cancellation date '${checkIn}' for flight '${flightId}'`,
+        {
+          context: this.context,
+          flightId,
+        },
+      );
+      throw new BadRequestException(
+        `Invalid cancellation date '${checkIn}' for flight '${flightId}'`,
+      );
+    }
+
+    const checkOutDateObj = new Date(checkInDateObj);
+    checkOutDateObj.setDate(checkOutDateObj.getDate() + 1);
+    const checkOut = checkOutDateObj.toISOString().split("T")[0];
+    requestLogger.info(
+      `Calculated check-in date ${checkIn} and check-out date ${checkOut} for flight '${flightId}'`,
+      {
+        context: this.context,
+        flightId,
+      },
+    );
+
+    const departureAirport = flight.departureAirport;
+    if (!departureAirport) {
+      requestLogger.error(
+        `Departure airport not found for flight '${flightId}'`,
+        {
+          context: this.context,
+          flightId,
+        },
+      );
+      throw new NotFoundException(
+        `Departure airport not found for flight '${flightId}'`,
+      );
+    }
+
+    const bookings =
+      await this.cancelledFlightsRepository.findBookingsByFlightId(
+        flightId,
+        requestId,
+      );
+    if (bookings.length === 0) {
+      requestLogger.error(
+        `No eligible bookings found for flight '${flightId}'`,
+        {
+          context: this.context,
+          flightId,
+        },
+      );
+      throw new BadRequestException(
+        `No eligible bookings found for flight '${flightId}'`,
+      );
+    }
+
+    requestLogger.info(
+      `Loaded bookings for recommendation for flight '${flightId}'`,
+      {
+        context: this.context,
+        flightId,
+        bookingCount: bookings.length,
+        totalPassengers: bookings.reduce(
+          (sum, item) => sum + item.adults + item.children,
+          0,
+        ),
+      },
+    );
+
+    const splitPlansByBooking = new Map<number, RoomSplitPlan>();
+    const results: BookingRecommendationResult[] = [];
+
+    for (const booking of bookings) {
+      const split = this.resolveRoomSplitPlan(booking, requestLogger);
+      if (!split.plan) {
+        results.push({
+          bookingId: booking.id,
+          pnr: booking.pnr,
+          class: booking.travelClass,
+          passengers: {
+            adults: booking.adults,
+            children: booking.children,
+          },
+          allocationStatus: "INVALID_PASSENGER_DATA",
+          reason: split.reason,
+        });
+        continue;
+      }
+      splitPlansByBooking.set(booking.id, split.plan);
+    }
+
+    const eligibleBookings = bookings.filter((booking) =>
+      splitPlansByBooking.has(booking.id),
+    );
+
+    if (eligibleBookings.length === 0) {
+      requestLogger.error(
+        `No eligible bookings with valid room split plans found for flight '${flightId}'`,
+        {
+          context: this.context,
+          flightId,
+        },
+      );
+      return {
+        cancelledFlightId: flight.id,
+        status: "RECOMMENDATIONS_READY",
+        summary: {
+          totalBookings: bookings.length,
+          allocatedBookings: 0,
+          failedBookings: results.length,
+          totalRooms: 0,
+          totalBuyingPrice: 0,
+          currency: "EUR",
+        },
+        allocations: results,
+      };
+    }
+
+    const uniqueOccupancies = Array.from(
+      new Map(
+        eligibleBookings.flatMap((booking) => {
+          const split = splitPlansByBooking.get(booking.id)!;
+          const allRooms = [split.preferred, ...split.fallbacks].flat();
+          return allRooms.map(
+            (occupancy) => [this.occupancyKey(occupancy), occupancy] as const,
+          );
+        }),
+      ).values(),
+    );
+
+    requestLogger.info("Calculated deduplicated occupancy requirements", {
+      context: this.context,
+      flightId,
+      occupancyCount: uniqueOccupancies.length,
+    });
+
+    let hotels: AvailabilityHotel[] = [];
+    try {
+      hotels = await this.hotelPartnerService.searchNearbyHotelsWithOccupancies(
+        {
+          iataCode: departureAirport.iataCode,
+          latitude: Number(departureAirport.latitude),
+          longitude: Number(departureAirport.longitude),
+        },
+        checkIn,
+        checkOut,
+        uniqueOccupancies,
+        requestId,
+        requestLogger,
+      );
+    } catch (error: any) {
+      this.logger.error(
+        "Hotel availability search failed",
+        this.context,
+        requestId,
+        { error: error.message },
+      );
+
+      const noAvailability = eligibleBookings.map((booking) => ({
+        bookingId: booking.id,
+        pnr: booking.pnr,
+        class: booking.travelClass,
+        passengers: {
+          adults: booking.adults,
+          children: booking.children,
+        },
+        allocationStatus: "NO_AVAILABILITY" as AllocationStatus,
+        reason: "Failed to retrieve hotel availability",
+      }));
+
+      return {
+        cancelledFlightId: flight.id,
+        status: "RECOMMENDATIONS_READY",
+        summary: {
+          totalBookings: bookings.length,
+          allocatedBookings: 0,
+          failedBookings: noAvailability.length + results.length,
+          totalRooms: 0,
+          totalBuyingPrice: 0,
+          currency: "EUR",
+        },
+        allocations: [...results, ...noAvailability],
+      };
+    }
+
+    this.logger.info("Hotel availability loaded", this.context, requestId, {
+      flightId,
+      hotelCount: hotels.length,
+      rateCount: hotels.reduce((sum, hotel) => sum + hotel.rates.length, 0),
+    });
+
+    const groupedBookings = this.groupBookings(eligibleBookings);
+    const rankingByGroup = await this.rankHotelsByGroup(
+      groupedBookings,
+      hotels,
+      requestId,
+    );
+
+    const hotelByAiId = new Map<string, AvailabilityHotel>(
+      hotels.map((hotel) => [`hb-${hotel.hotelCode}`, hotel] as const),
+    );
+
+    for (const booking of eligibleBookings) {
+      const splitPlan = splitPlansByBooking.get(booking.id)!;
+      const groupKey = this.toGroupKey(booking);
+      const rankedHotelIds = rankingByGroup.get(groupKey) ?? [];
+
+      let allocation: BookingRecommendationResult | null = null;
+      const splitCandidates: Array<{
+        label: "preferred" | "fallback";
+        rooms: RoomOccupancy[];
+      }> = [
+        { label: "preferred", rooms: splitPlan.preferred },
+        ...splitPlan.fallbacks.map((rooms) => ({
+          label: "fallback" as const,
+          rooms,
+        })),
+      ];
+
+      for (const splitCandidate of splitCandidates) {
+        for (const aiHotelId of rankedHotelIds) {
+          const hotel = hotelByAiId.get(aiHotelId);
+          if (!hotel) {
+            continue;
+          }
+
+          const selectedRooms = this.getBestRatesForHotelAndSplit(
+            hotel.rates,
+            splitCandidate.rooms,
+          );
+
+          if (!selectedRooms) {
+            continue;
+          }
+
+          const totalPrice = selectedRooms.reduce(
+            (sum, roomRate) => sum + roomRate.price,
+            0,
+          );
+          allocation = {
+            bookingId: booking.id,
+            pnr: booking.pnr,
+            class: booking.travelClass,
+            passengers: {
+              adults: booking.adults,
+              children: booking.children,
+            },
+            splitTried: splitCandidate.label,
+            hotel: {
+              hotelCode: hotel.hotelCode,
+              hotelName: hotel.hotelName,
+              category: hotel.category,
+            },
+            rooms: selectedRooms,
+            totalPrice,
+            allocationStatus: "RECOMMENDED",
+          };
+          break;
+        }
+
+        if (allocation) {
+          break;
+        }
+      }
+
+      if (allocation) {
+        results.push(allocation);
+      } else {
+        results.push({
+          bookingId: booking.id,
+          pnr: booking.pnr,
+          class: booking.travelClass,
+          passengers: {
+            adults: booking.adults,
+            children: booking.children,
+          },
+          allocationStatus: "NO_SUITABLE_HOTEL",
+          reason:
+            "No available hotel could satisfy preferred or fallback room occupancy requirements",
+        });
+      }
+    }
+
+    const allocated = results.filter(
+      (item) => item.allocationStatus === "RECOMMENDED",
+    );
+    const failed = results.length - allocated.length;
+    const totalRooms = allocated.reduce(
+      (sum, item) => sum + (item.rooms?.length ?? 0),
+      0,
+    );
+    const totalBuyingPrice = allocated.reduce(
+      (sum, item) => sum + (item.totalPrice ?? 0),
+      0,
+    );
+    const currency =
+      allocated.find((item) => item.rooms?.[0]?.currency)?.rooms?.[0]
+        ?.currency ?? "EUR";
+
+    this.logger.info(
+      "Completed flight-level hotel recommendation process",
+      this.context,
+      requestId,
+      {
+        flightId,
+        allocatedBookings: allocated.length,
+        failedBookings: failed,
+      },
+    );
+
+    return {
+      cancelledFlightId: flight.id,
+      status: "RECOMMENDATIONS_READY",
+      summary: {
+        totalBookings: bookings.length,
+        allocatedBookings: allocated.length,
+        failedBookings: failed,
+        totalRooms,
+        totalBuyingPrice,
+        currency,
+      },
+      allocations: results,
     };
   }
 

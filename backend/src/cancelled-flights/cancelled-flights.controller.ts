@@ -69,6 +69,8 @@ import {
 } from "./dto";
 import { PaginationQueryDto } from "../common/dto/pagination-query.dto";
 import { AuthenticatedRequest } from "../auth/interfaces/authenticated-request.interface";
+import { RequestLogger } from "../common/decorators/request-logger.decorator";
+import { Logger } from "winston";
 
 @ApiTags("Cancelled Flights")
 @ApiBearerAuth("access-token")
@@ -440,6 +442,53 @@ export class CancelledFlightsController {
       data,
       requestId,
       "Passenger booking details confirmed",
+    );
+  }
+
+  // ── POST /cancelled-flights/:id/hotel-recommendations ───────────────────
+
+  @Post(":id/hotel-recommendations")
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.VIEW],
+    },
+  })
+  @ApiOperation({
+    summary:
+      "Generate hotel recommendations for all bookings of a cancelled flight",
+    description:
+      "Builds preferred/fallback room occupancies per booking, performs a single Hotelbeds availability search across deduplicated occupancies, and returns recommendation allocations without creating live hotel bookings.",
+  })
+  @ApiParam({ name: "id", description: "Cancelled flight id" })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/cancelled-flights/:id/hotel-recommendations",
+      "Cancelled flight not found",
+    ),
+  })
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema(
+      "/api/v1/cancelled-flights/:id/hotel-recommendations",
+    ),
+  })
+  async getFlightHotelRecommendations(
+    @Param("id", ParseIntPipe) id: number,
+    @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
+  ): Promise<BaseResponseDto<object>> {
+    requestLogger.info(
+      `Fetching hotel recommendations for cancelled flight ${id}`,
+    );
+    const data = await this.service.getHotelRecommendationsForFlight(
+      id,
+      requestId,
+      requestLogger,
+    );
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Hotel recommendations generated successfully",
     );
   }
 
