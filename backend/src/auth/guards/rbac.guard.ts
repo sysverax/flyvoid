@@ -58,6 +58,7 @@ export class RbacGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    const requestLogger = request.logger;
     const user = request.user as AuthenticatedUser;
 
     if (!user) {
@@ -67,26 +68,46 @@ export class RbacGuard implements CanActivate {
     const userType = user.userType as UserType;
     const userRole = user.role as AdminRole | AirlineRole;
     if (!userType) {
+      requestLogger.error("User Type is missing");
       throw new ForbiddenException("Access denied");
     }
 
     if (requiredUserTypes && requiredUserTypes.length > 0) {
       if (!requiredUserTypes.includes(userType)) {
+        requestLogger.error(
+          "User Type is not included in the required user types",
+        );
         throw new ForbiddenException("Access denied");
       }
       // If user type is specified in requirements, but role is missing, deny access
-      if (requiredUserTypes.includes(UserType.PLATFORM)) {
-        const userHasAdminRole = Object.values(AdminRole).includes(
-          userRole as AdminRole,
-        );
-        if (!userHasAdminRole) {
+      if (userType === UserType.PLATFORM) {
+        if (requiredUserTypes.includes(UserType.PLATFORM)) {
+          const userHasAdminRole = Object.values(AdminRole).includes(
+            userRole as AdminRole,
+          );
+          if (!userHasAdminRole) {
+            requestLogger.error("User does not have the required admin role");
+            throw new ForbiddenException("Access denied");
+          }
+        } else {
+          requestLogger.error(
+            "User type is PLATFORM but not included in required user types",
+          );
           throw new ForbiddenException("Access denied");
         }
-      } else if (requiredUserTypes.includes(UserType.AIRLINE)) {
-        const userHasAirlineRole = Object.values(AirlineRole).includes(
-          userRole as AirlineRole,
-        );
-        if (!userHasAirlineRole) {
+      } else {
+        if (requiredUserTypes.includes(UserType.AIRLINE)) {
+          const userHasAirlineRole = Object.values(AirlineRole).includes(
+            userRole as AirlineRole,
+          );
+          if (!userHasAirlineRole) {
+            requestLogger.error("User does not have the required airline role");
+            throw new ForbiddenException("Access denied");
+          }
+        } else {
+          requestLogger.error(
+            "User type is AIRLINE but not included in required user types",
+          );
           throw new ForbiddenException("Access denied");
         }
       }
@@ -94,6 +115,7 @@ export class RbacGuard implements CanActivate {
 
     if (requiredRoles && requiredRoles.length > 0) {
       if (!requiredRoles.includes(userRole)) {
+        requestLogger.error("User role is not included in the required roles");
         throw new ForbiddenException("Access denied");
       }
     }
@@ -109,6 +131,7 @@ export class RbacGuard implements CanActivate {
           : requiredAccessControl.airline;
 
       if (!domainRequirement) {
+        requestLogger.error("Domain requirement is missing");
         throw new ForbiddenException("Access denied");
       }
 
@@ -120,6 +143,7 @@ export class RbacGuard implements CanActivate {
           user.accessControls,
         )
       ) {
+        requestLogger.error("User does not have the required access");
         throw new ForbiddenException("Access denied");
       }
     }
