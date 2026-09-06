@@ -34,7 +34,7 @@ import {
   HotelPartnerService,
   RoomOccupancy,
 } from "./hotel-partners.service";
-import { GroqService } from "../common/groq/groq.services";
+import { GroqService } from "../common/groq/groq.service";
 import { Logger } from "winston";
 
 type AllocationStatus =
