@@ -1,11 +1,57 @@
 import { apiClient, extractErrorMessage } from "@/src/lib/api-client";
 
+export interface ListCancelledFlightsItemDTO {
+  id: number;
+  flightNumber: string;
+  departureAirport: {
+    id: number;
+    code: string;
+    name: string;
+  };
+  arrivalAirport: {
+    id: number;
+    code: string;
+    name: string;
+  };
+  cancellationDate: string;
+  totalBookings: number;
+  totalPassengers: number;
+  totalCost: number;
+  status: string;
+}
+
+export interface ListCancelledFlightsResponseDataDto {
+  cancelledFlights: ListCancelledFlightsItemDTO[];
+  pagination: {
+    page: number;
+    limit: number;
+    totalCount: number;
+  };
+}
+
+export type CancelledFlightApiStatus =
+  | "draft"
+  | "in_progress"
+  | "passengers_booking_confirmed"
+  | "hotel_allocation_in_progress"
+  | "allocated"
+  | "paid"
+  | "published";
 export interface CreateCancelledFlightPayload {
   flightNumber: string;
   airlineId: number;
   departureAirportId: number;
   arrivalAirportId: number;
   cancellationDate: string;
+  cancellationReason?: string;
+  cancellationReasonText?: string;
+}
+
+export interface UpdateCancelledFlightPayload {
+  flightNumber?: string;
+  departureAirportId?: number;
+  arrivalAirportId?: number;
+  cancellationDate?: string;
   cancellationReason?: string;
   cancellationReasonText?: string;
 }
@@ -54,6 +100,33 @@ export interface ImportBookingResponse {
 }
 
 export const cancellationService = {
+  async listCancelledFlights(params?: {
+    page?: number;
+    limit?: number;
+    status?: CancelledFlightApiStatus;
+    search?: string;
+    airlineId?: number;
+    startDate?: string;
+    endDate?: string;
+  }) {
+    try {
+      const response = await apiClient.get(`/cancelled-flights`, {
+        params: {
+          page: params?.page || 1,
+          limit: params?.limit || 10,
+          status: params?.status,
+          search: params?.search,
+          airlineId: params?.airlineId,
+          startDate: params?.startDate,
+          endDate: params?.endDate,
+        },
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(extractErrorMessage(error, "Failed to fetch bookings"));
+    }
+  },
+
   async createCancelledFlight(payload: CreateCancelledFlightPayload) {
     try {
       const response = await apiClient.post("/cancelled-flights", {
@@ -68,6 +141,23 @@ export const cancellationService = {
     } catch (error: any) {
       throw new Error(
         extractErrorMessage(error, "Failed to create cancelled flight"),
+      );
+    }
+  },
+
+  async updateCancelledFlight(
+    flightId: number | string,
+    payload: UpdateCancelledFlightPayload,
+  ) {
+    try {
+      const response = await apiClient.patch(
+        `/cancelled-flights/${flightId}`,
+        payload,
+      );
+      return response.data;
+    } catch (error: any) {
+      throw new Error(
+        extractErrorMessage(error, "Failed to update cancelled flight"),
       );
     }
   },

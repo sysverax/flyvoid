@@ -1036,17 +1036,6 @@ export default function CancellationWizard({
 
       setIsCreatingFlight(true);
       try {
-        let airlineId = 1;
-        if (typeof window !== "undefined") {
-          const userStr = sessionStorage.getItem("airline_current_user");
-          if (userStr) {
-            try {
-              const u = JSON.parse(userStr);
-              if (u.airlineId) airlineId = Number(u.airlineId);
-            } catch (e) {}
-          }
-        }
-
         const formattedDate = newDate.includes("T")
           ? newDate.split("T")[0]
           : newDate;
@@ -1059,23 +1048,57 @@ export default function CancellationWizard({
           selectedReasonTag ||
           "Severe weather conditions at departure";
 
-        const response = await cancellationService.createCancelledFlight({
-          flightNumber: newFlight.trim(),
-          airlineId: airlineId,
-          departureAirportId: depId,
-          arrivalAirportId: arrId,
-          cancellationDate: formattedDate,
-          cancellationReason: reasonEnum,
-          cancellationReasonText: reasonText,
-        });
+        const existingFlightId =
+          createdFlightId ||
+          (initialData?.id && !isNaN(Number(initialData.id))
+            ? Number(initialData.id)
+            : null);
 
-        if (response?.data?.id) {
-          setCreatedFlightId(response.data.id);
+        if (existingFlightId) {
+          const response = await cancellationService.updateCancelledFlight(
+            existingFlightId,
+            {
+              flightNumber: newFlight.trim(),
+              departureAirportId: depId,
+              arrivalAirportId: arrId,
+              cancellationDate: formattedDate,
+              cancellationReason: reasonEnum,
+              cancellationReasonText: reasonText,
+            },
+          );
+
+          toast.success(response?.message || "Cancelled flight updated");
+        } else {
+          let airlineId = 1;
+          if (typeof window !== "undefined") {
+            const userStr = sessionStorage.getItem("airline_current_user");
+            if (userStr) {
+              try {
+                const u = JSON.parse(userStr);
+                if (u.airlineId) airlineId = Number(u.airlineId);
+              } catch (e) {}
+            }
+          }
+
+          const response = await cancellationService.createCancelledFlight({
+            flightNumber: newFlight.trim(),
+            airlineId: airlineId,
+            departureAirportId: depId,
+            arrivalAirportId: arrId,
+            cancellationDate: formattedDate,
+            cancellationReason: reasonEnum,
+            cancellationReasonText: reasonText,
+          });
+
+          if (response?.data?.id) {
+            setCreatedFlightId(response.data.id);
+          }
+          toast.success(response?.message || "Cancelled flight created");
         }
-        toast.success(response?.message || "Cancelled flight created");
+
         setActiveStep(2);
       } catch (error: any) {
-        toast.error(error.message || "Failed to create cancelled flight");
+        toast.error(error.message || "Failed to save cancelled flight details");
       } finally {
         setIsCreatingFlight(false);
       }

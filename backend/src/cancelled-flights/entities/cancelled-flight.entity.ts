@@ -72,6 +72,20 @@ export class CancelledFlightEntity {
 
   // After published data is immutable, so we store the total cost of hotel allocations at the time of publishing
   @Column({
+    name: "allocated_bookings",
+    type: "integer",
+    default: 0,
+  })
+  allocatedBookings?: number;
+
+  @Column({
+    name: "failed_bookings",
+    type: "integer",
+    default: 0,
+  })
+  failedBookings?: number;
+
+  @Column({
     name: "total_hotel_rooms",
     type: "integer",
     default: 0,
@@ -79,13 +93,13 @@ export class CancelledFlightEntity {
   totalHotelRooms?: number;
 
   @Column({
-    name: "total_price",
+    name: "total_actual_price",
     type: "decimal",
     precision: 10,
     scale: 2,
     default: 0,
   })
-  totalPrice?: number;
+  totalActualPrice?: number;
 
   @Column({
     name: "total_buying_price",
@@ -106,6 +120,24 @@ export class CancelledFlightEntity {
   totalSellingPrice?: number;
 
   @Column({
+    name: "total_discounts",
+    type: "decimal",
+    precision: 10,
+    scale: 2,
+    default: 0,
+  })
+  totalDiscounts?: number;
+
+  @Column({
+    name: "total_hotel_taxes",
+    type: "decimal",
+    precision: 10,
+    scale: 2,
+    default: 0,
+  })
+  totalHotelTaxes?: number;
+
+  @Column({
     name: "total_platform_fee",
     type: "decimal",
     precision: 10,
@@ -113,6 +145,15 @@ export class CancelledFlightEntity {
     default: 0,
   })
   totalPlatformFee?: number;
+
+  @Column({
+    name: "total_price",
+    type: "decimal",
+    precision: 10,
+    scale: 2,
+    default: 0,
+  })
+  totalPrice?: number;
 
   @Column({
     name: "total_earnings",

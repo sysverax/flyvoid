@@ -30,12 +30,12 @@ export class HotelAllocationEntity {
   checkOutDate!: string;
 
   @Column({
-    name: "price",
+    name: "actual_price",
     type: "decimal",
     precision: 10,
     scale: 2,
   })
-  price!: number;
+  actualPrice!: number;
 
   @Column({
     name: "buying_price",
@@ -54,6 +54,14 @@ export class HotelAllocationEntity {
   sellingPrice!: number;
 
   @Column({
+    name: "tax",
+    type: "decimal",
+    precision: 10,
+    scale: 2,
+  })
+  tax!: number;
+
+  @Column({
     name: "platform_fee",
     type: "decimal",
     precision: 10,
@@ -62,12 +70,50 @@ export class HotelAllocationEntity {
   platformFee!: number;
 
   @Column({
+    name: "total_price",
+    type: "decimal",
+    precision: 10,
+    scale: 2,
+  })
+  totalPrice!: number;
+
+  @Column({
     name: "earnings",
     type: "decimal",
     precision: 10,
     scale: 2,
   })
   earnings!: number;
+
+  @Column({
+    name: "discount",
+    type: "decimal",
+    precision: 10,
+    scale: 2,
+  })
+  discount!: number;
+
+  @Column({ name: "hotel_code", type: "varchar", length: 255 })
+  hotelCode!: string;
+
+  @Column({ name: "hotel_name", type: "varchar", length: 255 })
+  hotelName!: string;
+
+  @Column({ name: "category", type: "varchar", length: 255 })
+  category!: string;
+
+  // adults, children, roomName, boardName, price
+  @Column({ name: "rooms", type: "jsonb", nullable: true })
+  rooms!: {
+    adults: number;
+    children: number;
+    roomName: string;
+    boardName: string;
+    price: number;
+  }[];
+
+  @Column({ name: "total_rooms", type: "integer", nullable: true })
+  totalRooms!: number;
 
   @ManyToOne(() => CancelledFlightEntity, { onDelete: "CASCADE" })
   @JoinColumn({ name: "cancelled_flight_id" })
@@ -92,32 +138,6 @@ export class HotelAllocationEntity {
   })
   status!: HotelAllocationStatus;
 
-  // Add hotel details as well
-  @Column({ name: "hotel_name", type: "varchar", length: 255 })
-  hotelName!: string;
-
-  @Column({ name: "hotel_address", type: "text", nullable: true })
-  hotelAddress?: string | null;
-
-  @Column({
-    name: "total_rooms",
-    type: "integer",
-    nullable: true,
-  })
-  totalRooms?: number | null;
-
-  @Column({
-    name: "cost_per_room",
-    type: "decimal",
-    precision: 10,
-    scale: 2,
-    nullable: true,
-  })
-  costPerRoom?: number | null;
-
   @Column({ name: "booking_reference", type: "varchar", length: 255 })
   bookingReference!: string;
-
-  @Column({ name: "rate_key", type: "text", nullable: true })
-  rateKey?: string | null;
 }
