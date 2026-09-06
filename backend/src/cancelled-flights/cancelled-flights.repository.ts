@@ -6,6 +6,7 @@ import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
 import { BookingEntity } from "./entities/booking.entity";
 import { FlightStatus } from "./entities/enums";
 import { HotelAllocationEntity } from "./entities/hotel-allocation.entity";
+import { Logger } from "winston";
 
 @Injectable()
 export class CancelledFlightsRepository {
@@ -62,6 +63,19 @@ export class CancelledFlightsRepository {
       where: { id },
       relations: ["airline", "departureAirport", "arrivalAirport"],
     });
+  }
+
+  async updateFlightEntity(
+    entity: CancelledFlightEntity,
+    requestId: string,
+  ): Promise<CancelledFlightEntity> {
+    this.logger.debug(
+      "Updating cancelled flight",
+      "CancelledFlightsRepository",
+      requestId,
+      { id: entity.id },
+    );
+    return this.flightRepo.save(entity);
   }
 
   async findFlightsWithPaginationAndFilters(
@@ -384,5 +398,52 @@ export class CancelledFlightsRepository {
     );
     const entity = this.allocationRepo.create(payload);
     return this.allocationRepo.save(entity);
+  }
+
+  async saveHotelAllocations(
+    cancelledFlightId: number,
+    payload: {
+      hotelBookings: Partial<HotelAllocationEntity>[];
+      totalActualPrice: number;
+      totalBuyingPrice: number;
+      totalSellingPrice: number;
+      totalDiscounts: number;
+      totalHotelTaxes: number;
+      totalPlatformFee: number;
+      totalPrice: number;
+      totalEarnings: number;
+    },
+    requestId: string,
+    requestLogger: Logger,
+  ): Promise<void> {
+    // transactionally save all hotel allocations, updated cancel flight
+    await this.allocationRepo.manager.transaction(
+      async (transactionalEntityManager) => {
+        const entities = payload.hotelBookings.map((p) =>
+          this.allocationRepo.create(p),
+        );
+        await transactionalEntityManager.save(entities);
+        requestLogger.info(`Saved ${entities.length} hotel allocations`, {
+          cancelledFlightId,
+        });
+
+        // Update the cancelled flight with aggregated hotel booking totals
+        await transactionalEntityManager.update(
+          CancelledFlightEntity,
+          { id: cancelledFlightId },
+          {
+            totalActualPrice: payload.totalActualPrice,
+            totalBuyingPrice: payload.totalBuyingPrice,
+            totalSellingPrice: payload.totalSellingPrice,
+            totalDiscounts: payload.totalDiscounts,
+            totalHotelTaxes: payload.totalHotelTaxes,
+            totalPlatformFee: payload.totalPlatformFee,
+            totalPrice: payload.totalPrice,
+            totalEarnings: payload.totalEarnings,
+            status: FlightStatus.ALLOCATED,
+          },
+        );
+      },
+    );
   }
 }

@@ -1,5 +1,6 @@
 export * from "./cancelled-flight-response.dto";
 export * from "./create-cancelled-flight-request.dto";
+export * from "./update-cancelled-flight-request.dto";
 
 export * from "./booking-response.dto";
 export * from "./create-booking-request.dto";

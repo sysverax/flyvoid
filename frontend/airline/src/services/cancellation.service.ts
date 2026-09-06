@@ -47,6 +47,15 @@ export interface CreateCancelledFlightPayload {
   cancellationReasonText?: string;
 }
 
+export interface UpdateCancelledFlightPayload {
+  flightNumber?: string;
+  departureAirportId?: number;
+  arrivalAirportId?: number;
+  cancellationDate?: string;
+  cancellationReason?: string;
+  cancellationReasonText?: string;
+}
+
 export interface BookingDTO {
   id: number | string;
   cancelledFlightId?: number;
@@ -132,6 +141,23 @@ export const cancellationService = {
     } catch (error: any) {
       throw new Error(
         extractErrorMessage(error, "Failed to create cancelled flight"),
+      );
+    }
+  },
+
+  async updateCancelledFlight(
+    flightId: number | string,
+    payload: UpdateCancelledFlightPayload,
+  ) {
+    try {
+      const response = await apiClient.patch(
+        `/cancelled-flights/${flightId}`,
+        payload,
+      );
+      return response.data;
+    } catch (error: any) {
+      throw new Error(
+        extractErrorMessage(error, "Failed to update cancelled flight"),
       );
     }
   },
