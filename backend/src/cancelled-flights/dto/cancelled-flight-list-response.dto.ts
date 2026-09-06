@@ -1,42 +1,61 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { BaseCancelledFlightResponseDto } from "./cancelled-flight-response.dto";
-import { CancelledFlightRouteDto } from "./review-cancelled-flight-response.dto";
+import { FlightStatus } from "../entities/enums";
 
-export class CancelledFlightSummaryDto {
-  @ApiProperty({ example: 100 })
-  totalBookings!: number;
-
+export class CancelledFlightListAirportDto {
   @ApiProperty({ example: 1 })
-  totalAdults!: number;
+  id!: number;
 
-  @ApiProperty({ example: 10 })
-  totalChildren!: number;
+  @ApiProperty({ example: "JFK" })
+  code!: string;
 
-  @ApiProperty({ example: 5 })
-  totalHotelRooms!: number;
-
-  @ApiProperty({ example: 10000.0 })
-  totalCost!: number;
+  @ApiProperty({ example: "John F. Kennedy International Airport" })
+  name!: string;
 }
 
-export class CancelledFlightListItemDto extends BaseCancelledFlightResponseDto {
-  @ApiProperty({ type: CancelledFlightRouteDto })
-  route: CancelledFlightRouteDto;
+export class CancelledFlightListItemDto {
+  @ApiProperty({ example: 101 })
+  id!: number;
 
-  @ApiProperty({ type: CancelledFlightSummaryDto })
-  summary: CancelledFlightSummaryDto;
+  @ApiProperty({ example: "SW1234" })
+  flightNumber!: string;
+
+  @ApiProperty({ type: CancelledFlightListAirportDto })
+  departureAirport!: CancelledFlightListAirportDto;
+
+  @ApiProperty({ type: CancelledFlightListAirportDto })
+  arrivalAirport!: CancelledFlightListAirportDto;
+
+  @ApiProperty({ example: "2026-09-07" })
+  cancellationDate!: string;
+
+  @ApiProperty({ example: 48 })
+  totalBookings!: number;
+
+  @ApiProperty({ example: 72 })
+  totalPassengers!: number;
+
+  @ApiProperty({ example: 9420.5 })
+  totalCost!: number;
+
+  @ApiProperty({ enum: FlightStatus, example: FlightStatus.IN_PROGRESS })
+  status!: FlightStatus;
+}
+
+export class CancelledFlightListPaginationDto {
+  @ApiProperty({ example: 1 })
+  currentPage!: number;
+
+  @ApiProperty({ example: 10 })
+  limit!: number;
+
+  @ApiProperty({ example: 124 })
+  totalCount!: number;
 }
 
 export class CancelledFlightListResponseDto {
   @ApiProperty({ type: [CancelledFlightListItemDto] })
   cancelledFlights!: CancelledFlightListItemDto[];
 
-  @ApiProperty({ example: 100 })
-  totalCount!: number;
-
-  @ApiProperty({ example: 1 })
-  page!: number;
-
-  @ApiProperty({ example: 10 })
-  pageSize!: number;
+  @ApiProperty({ type: CancelledFlightListPaginationDto })
+  pagination!: CancelledFlightListPaginationDto;
 }

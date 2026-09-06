@@ -1,7 +1,26 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { Search, X, Plus, Send, Eye, ArrowLeft, Plane, Calendar, FileText, Users, DollarSign, CheckCircle2, Download, Bed, Percent, Wallet, Receipt, Star } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Search,
+  X,
+  Plus,
+  Send,
+  Eye,
+  ArrowLeft,
+  Plane,
+  Calendar,
+  FileText,
+  Users,
+  DollarSign,
+  CheckCircle2,
+  Download,
+  Bed,
+  Percent,
+  Wallet,
+  Receipt,
+  Star,
+} from "lucide-react";
 import { toast } from "react-toastify";
 import {
   Table,
@@ -17,6 +36,12 @@ import { FiltersCard } from "@/src/components/ui/FiltersCard";
 import { Dropdown } from "@/src/components/ui/Dropdown";
 import { Pagination } from "@/src/components/ui/pagination";
 import CancellationWizard from "./CancellationWizard";
+import {
+  cancellationService,
+  CancelledFlightApiStatus,
+  ListCancelledFlightsItemDTO,
+  ListCancelledFlightsResponseDataDto,
+} from "@/src/services/cancellation.service";
 
 interface Cancellation {
   id: string;
@@ -27,82 +52,118 @@ interface Cancellation {
   passengers: number;
   totalCost: number;
   status: "Published" | "Verified" | "Allocated" | "Draft" | "Paid";
+  displayStatus: string;
   reason: string;
 }
 
-const INITIAL_CANCELLATIONS: Cancellation[] = [
-  {
-    id: "1",
-    flight: "AA-204",
-    route: "LAX → JFK",
-    cancellationDate: "Aug 10, 2026",
-    bookings: 24,
-    passengers: 185,
-    totalCost: 28400,
-    status: "Published",
-    reason: "Severe weather conditions (snow storm)",
-  },
-  {
-    id: "2",
-    flight: "UA-883",
-    route: "SFO → ORD",
-    cancellationDate: "Aug 9, 2026",
-    bookings: 18,
-    passengers: 120,
-    totalCost: 15600,
-    status: "Draft",
-    reason: "Technical maintenance issue",
-  },
-  {
-    id: "3",
-    flight: "SQ-012",
-    route: "SIN → LHR",
-    cancellationDate: "Aug 8, 2026",
-    bookings: 45,
-    passengers: 310,
-    totalCost: 52000,
-    status: "Allocated",
-    reason: "Air Traffic Control crew shortage",
-  },
-  {
-    id: "4",
-    flight: "LH-430",
-    route: "FRA → JFK",
-    cancellationDate: "Aug 7, 2026",
-    bookings: 30,
-    passengers: 240,
-    totalCost: 38100,
-    status: "Verified",
-    reason: "Late incoming aircraft delay",
-  },
-  {
-    id: "5",
-    flight: "EK-201",
-    route: "DXB → LHR",
-    cancellationDate: "Aug 6, 2026",
-    bookings: 12,
-    passengers: 95,
-    totalCost: 11200,
-    status: "Paid",
-    reason: "Aircraft engine sensor malfunction",
-  }
-];
-
 const STATUS_OPTIONS = [
   { value: "All Status", label: "All Status" },
-  { value: "Published", label: "Published" },
-  { value: "Verified", label: "Verified" },
+  { value: "Draft", label: "Draft" },
+  { value: "In Progress", label: "In Progress" },
+  { value: "Confirmed", label: "Confirmed" },
+  { value: "HA In Progress", label: "HA In Progress" },
   { value: "Allocated", label: "Allocated" },
   { value: "Paid", label: "Paid" },
-  { value: "Draft", label: "Draft" },
+  { value: "Published", label: "Published" },
 ];
 
-function PublishedDetailView({ cancellation, onClose }: { cancellation: Cancellation, onClose: () => void }) {
+const UI_STATUS_TO_API_STATUS: Record<
+  string,
+  CancelledFlightApiStatus | undefined
+> = {
+  "All Status": undefined,
+  Draft: "draft",
+  "In Progress": "in_progress",
+  Confirmed: "passengers_booking_confirmed",
+  "HA In Progress": "hotel_allocation_in_progress",
+  Allocated: "allocated",
+  Paid: "paid",
+  Published: "published",
+};
+
+const API_STATUS_TO_UI_STATUS: Record<
+  string,
+  { status: Cancellation["status"]; displayStatus: string }
+> = {
+  draft: { status: "Draft", displayStatus: "Draft" },
+  in_progress: { status: "Draft", displayStatus: "In Progress" },
+  passengers_booking_confirmed: {
+    status: "Verified",
+    displayStatus: "Confirmed",
+  },
+  hotel_allocation_in_progress: {
+    status: "Verified",
+    displayStatus: "HA In Progress",
+  },
+  allocated: { status: "Allocated", displayStatus: "Allocated" },
+  paid: { status: "Paid", displayStatus: "Paid" },
+  published: { status: "Published", displayStatus: "Published" },
+};
+
+function formatDateString(dateStr: string): string {
+  if (!dateStr) return "";
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return dateStr;
+  const months = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
+  return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
+}
+
+function mapApiCancelledFlight(
+  item: ListCancelledFlightsItemDTO,
+): Cancellation {
+  const mappedStatus = API_STATUS_TO_UI_STATUS[item.status] || {
+    status: "Draft" as const,
+    displayStatus: "Draft",
+  };
+
+  return {
+    id: String(item.id),
+    flight: item.flightNumber,
+    route: `${item.departureAirport.code} ➔ ${item.arrivalAirport.code}`,
+    cancellationDate: formatDateString(item.cancellationDate),
+    bookings: Number(item.totalBookings || 0),
+    passengers: Number(item.totalPassengers || 0),
+    totalCost: Number(item.totalCost || 0),
+    status: mappedStatus.status,
+    displayStatus: mappedStatus.displayStatus,
+    reason: "Not specified",
+  };
+}
+
+function withDisplayStatus(
+  item: Omit<Cancellation, "displayStatus"> | Cancellation,
+): Cancellation {
+  return {
+    ...item,
+    displayStatus: (item as Cancellation).displayStatus || item.status,
+  };
+}
+
+function PublishedDetailView({
+  cancellation,
+  onClose,
+}: {
+  cancellation: Cancellation;
+  onClose: () => void;
+}) {
   const [currentPage, setCurrentPage] = useState(1);
   const [resultsPerPage, setResultsPerPage] = useState(10);
 
   const hotelCost = cancellation.bookings * 144;
-  const platformDiscount = hotelCost * 0.10;
+  const platformDiscount = hotelCost * 0.1;
   const hotelTax = hotelCost * 0.08;
   const subtotal = hotelCost - platformDiscount + hotelTax;
   const platformFee = subtotal * 0.05;
@@ -119,7 +180,10 @@ function PublishedDetailView({ cancellation, onClose }: { cancellation: Cancella
           <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" />
           <span>Back to Cancelled Flights</span>
         </button>
-        <StatusBadge status="Published" className="h-[28px] px-3.5 text-[14px]" />
+        <StatusBadge
+          status={cancellation.displayStatus}
+          className="h-[28px] px-3.5 text-[14px]"
+        />
       </div>
 
       {/* Flight Summary Card */}
@@ -129,8 +193,12 @@ function PublishedDetailView({ cancellation, onClose }: { cancellation: Cancella
             <Plane className="w-6 h-6" />
           </div>
           <div>
-            <h2 className="text-[24px] font-bold text-[#1F2937] leading-tight">{cancellation.flight}</h2>
-            <p className="text-[#6B7280] mt-0.5">{cancellation.route.replace("➔", "→")}</p>
+            <h2 className="text-[24px] font-bold text-[#1F2937] leading-tight">
+              {cancellation.flight}
+            </h2>
+            <p className="text-[#6B7280] mt-0.5">
+              {cancellation.route.replace("➔", "→")}
+            </p>
           </div>
         </div>
 
@@ -140,28 +208,36 @@ function PublishedDetailView({ cancellation, onClose }: { cancellation: Cancella
               <Calendar className="w-[15px] h-[15px]" />
               <span className="text-[13px] font-medium">Cancellation Date</span>
             </div>
-            <p className="text-[#1F2937] font-semibold">{cancellation.cancellationDate}</p>
+            <p className="text-[#1F2937] font-semibold">
+              {cancellation.cancellationDate}
+            </p>
           </div>
           <div className="bg-[#F9FAFB] rounded-xl p-4">
             <div className="flex items-center gap-1.5 text-[#6B7280] mb-2">
               <FileText className="w-[15px] h-[15px]" />
               <span className="text-[13px] font-medium">Bookings</span>
             </div>
-            <p className="text-[#1F2937] font-semibold">{cancellation.bookings}</p>
+            <p className="text-[#1F2937] font-semibold">
+              {cancellation.bookings}
+            </p>
           </div>
           <div className="bg-[#F9FAFB] rounded-xl p-4">
             <div className="flex items-center gap-1.5 text-[#6B7280] mb-2">
               <Users className="w-[15px] h-[15px]" />
               <span className="text-[13px] font-medium">Passengers</span>
             </div>
-            <p className="text-[#1F2937] font-semibold">{cancellation.passengers}</p>
+            <p className="text-[#1F2937] font-semibold">
+              {cancellation.passengers}
+            </p>
           </div>
           <div className="bg-[#F9FAFB] rounded-xl p-4">
             <div className="flex items-center gap-1.5 text-[#6B7280] mb-2">
               <DollarSign className="w-[15px] h-[15px]" />
               <span className="text-[13px] font-medium">Total Cost</span>
             </div>
-            <p className="text-[#059669] font-semibold">${cancellation.totalCost.toLocaleString()}</p>
+            <p className="text-[#059669] font-semibold">
+              ${cancellation.totalCost.toLocaleString()}
+            </p>
           </div>
         </div>
 
@@ -181,8 +257,12 @@ function PublishedDetailView({ cancellation, onClose }: { cancellation: Cancella
               <CheckCircle2 className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="text-[18px] font-bold text-[#1F2937] leading-tight">Published Bookings</h3>
-              <p className="text-[#6B7280] text-[15px] mt-0.5">Confirmation emails have been sent to all passengers</p>
+              <h3 className="text-[18px] font-bold text-[#1F2937] leading-tight">
+                Published Bookings
+              </h3>
+              <p className="text-[#6B7280] text-[15px] mt-0.5">
+                Confirmation emails have been sent to all passengers
+              </p>
             </div>
           </div>
           <button className="flex items-center gap-2 border border-gray-300 hover:bg-gray-50 text-[#374151] px-4 py-2.5 rounded-lg font-medium transition-colors cursor-pointer text-sm">
@@ -195,69 +275,130 @@ function PublishedDetailView({ cancellation, onClose }: { cancellation: Cancella
           <div className="bg-[#F6F7F8] border border-gray-200 rounded-xl p-5 text-left">
             <div className="flex items-center gap-2 text-gray-500 mb-3">
               <Bed className="h-4 w-4" />
-              <span className="text-[13px] font-semibold uppercase">Total Room Bookings</span>
+              <span className="text-[13px] font-semibold uppercase">
+                Total Room Bookings
+              </span>
             </div>
-            <div className="text-[24px] font-bold text-gray-900">{cancellation.bookings}</div>
+            <div className="text-[24px] font-bold text-gray-900">
+              {cancellation.bookings}
+            </div>
             <div className="text-sm text-gray-400 mt-1">Rooms booked</div>
           </div>
 
           <div className="bg-[#F6F7F8] border border-gray-200 rounded-xl p-5 text-left">
             <div className="flex items-center gap-2 text-gray-500 mb-3">
               <Receipt className="h-4 w-4" />
-              <span className="text-[13px] font-semibold uppercase">Total Hotel Cost</span>
+              <span className="text-[13px] font-semibold uppercase">
+                Total Hotel Cost
+              </span>
             </div>
-            <div className="text-[24px] font-bold text-gray-900">${hotelCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-            <div className="text-sm text-gray-400 mt-1">Hotel charges before platform discount</div>
+            <div className="text-[24px] font-bold text-gray-900">
+              $
+              {hotelCost.toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
+            </div>
+            <div className="text-sm text-gray-400 mt-1">
+              Hotel charges before platform discount
+            </div>
           </div>
 
           <div className="bg-[#F6F7F8] border border-gray-200 rounded-xl p-5 text-left">
             <div className="flex items-center gap-2 text-gray-500 mb-3">
               <Percent className="h-4 w-4" />
-              <span className="text-[13px] font-semibold uppercase">Platform Discount</span>
+              <span className="text-[13px] font-semibold uppercase">
+                Platform Discount
+              </span>
             </div>
-            <div className="text-[24px] font-bold text-green-600">-${platformDiscount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-            <div className="text-sm text-gray-400 mt-1">Discount provided by platform</div>
+            <div className="text-[24px] font-bold text-green-600">
+              -$
+              {platformDiscount.toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
+            </div>
+            <div className="text-sm text-gray-400 mt-1">
+              Discount provided by platform
+            </div>
           </div>
 
           <div className="bg-[#F6F7F8] border border-gray-200 rounded-xl p-5 text-left">
             <div className="flex items-center gap-2 text-gray-500 mb-3">
               <DollarSign className="h-4 w-4" />
-              <span className="text-[13px] font-semibold uppercase">Hotel Tax</span>
+              <span className="text-[13px] font-semibold uppercase">
+                Hotel Tax
+              </span>
             </div>
-            <div className="text-[24px] font-bold text-gray-900">${hotelTax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-            <div className="text-sm text-gray-400 mt-1">Applicable hotel taxes</div>
+            <div className="text-[24px] font-bold text-gray-900">
+              $
+              {hotelTax.toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
+            </div>
+            <div className="text-sm text-gray-400 mt-1">
+              Applicable hotel taxes
+            </div>
           </div>
 
           <div className="bg-[#F6F7F8] border border-gray-200 rounded-xl p-5 text-left">
             <div className="flex items-center gap-2 text-gray-500 mb-3">
               <Percent className="h-4 w-4" />
-              <span className="text-[13px] font-semibold uppercase">Platform Fee (5%)</span>
+              <span className="text-[13px] font-semibold uppercase">
+                Platform Fee (5%)
+              </span>
             </div>
-            <div className="text-[24px] font-bold text-gray-900">${platformFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-            <div className="text-sm text-gray-400 mt-1">Platform fee on the hotel payment</div>
+            <div className="text-[24px] font-bold text-gray-900">
+              $
+              {platformFee.toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
+            </div>
+            <div className="text-sm text-gray-400 mt-1">
+              Platform fee on the hotel payment
+            </div>
           </div>
 
           <div className="bg-[#F6F7F8] border-[2px] border-[#0F2757] rounded-xl p-5 text-left">
             <div className="flex items-center gap-2 text-[#0F2757] mb-3">
               <Wallet className="h-4 w-4" />
-              <span className="text-[13px] font-semibold uppercase">Total Payment</span>
+              <span className="text-[13px] font-semibold uppercase">
+                Total Payment
+              </span>
             </div>
-            <div className="text-[24px] font-bold text-[#0F2757]">${totalPayment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-            <div className="text-sm text-gray-500 mt-1">Total amount to be charged</div>
+            <div className="text-[24px] font-bold text-[#0F2757]">
+              $
+              {totalPayment.toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
+            </div>
+            <div className="text-sm text-gray-500 mt-1">
+              Total amount to be charged
+            </div>
           </div>
         </div>
 
         {/* Booked Hotels Table */}
         <div className="mt-8 text-left">
-          <h4 className="text-[16px] font-semibold text-[#0F2757]">Booked Hotels</h4>
-          <p className="text-sm text-gray-500 mt-1">Review the hotel assigned to each booking and the associated room costs.</p>
+          <h4 className="text-[16px] font-semibold text-[#0F2757]">
+            Booked Hotels
+          </h4>
+          <p className="text-sm text-gray-500 mt-1">
+            Review the hotel assigned to each booking and the associated room
+            costs.
+          </p>
         </div>
 
         <div className="overflow-x-auto border border-gray-200 rounded-xl mt-4">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="min-w-[140px]">Hotel Booking ID</TableHead>
+                <TableHead className="min-w-[140px]">
+                  Hotel Booking ID
+                </TableHead>
                 <TableHead className="min-w-[100px]">PNR</TableHead>
                 <TableHead className="min-w-[160px]">Contact</TableHead>
                 <TableHead className="min-w-[120px]">Passengers</TableHead>
@@ -270,45 +411,64 @@ function PublishedDetailView({ cancellation, onClose }: { cancellation: Cancella
             </TableHeader>
             <TableBody>
               {Array.from({ length: cancellation.bookings })
-                .slice((currentPage - 1) * resultsPerPage, currentPage * resultsPerPage)
+                .slice(
+                  (currentPage - 1) * resultsPerPage,
+                  currentPage * resultsPerPage,
+                )
                 .map((_, idx) => {
                   const originalIdx = (currentPage - 1) * resultsPerPage + idx;
                   const isBusiness = originalIdx === 0;
-                  const hotelName = isBusiness ? "Hyatt Regency LAX" : "Holiday Inn Express LAX";
+                  const hotelName = isBusiness
+                    ? "Hyatt Regency LAX"
+                    : "Holiday Inn Express LAX";
                   const stars = isBusiness ? 4 : 3;
                   const rooms = 1;
                   const bookingCost = rooms * (isBusiness ? 160 : 120);
 
                   return (
                     <TableRow key={originalIdx}>
-                      <TableCell className="font-medium text-gray-900">HB-00023{originalIdx + 1}</TableCell>
-                      <TableCell className="font-medium text-gray-900">A{originalIdx}B{originalIdx}C</TableCell>
-                    <TableCell>
-                      <div className="font-semibold text-gray-900">Jane Doe</div>
-                      <div className="text-xs text-gray-500">jane.doe@example.com</div>
-                    </TableCell>
-                    <TableCell className="text-center">1 Passenger</TableCell>
-                    <TableCell className="font-medium">{hotelName}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center text-amber-400">
-                        {[...Array(stars)].map((_, i) => (
-                          <Star key={i} className="h-3 w-3 fill-current" />
-                        ))}
-                      </div>
-                    </TableCell>
-                    <TableCell>{rooms}</TableCell>
-                    <TableCell className="font-semibold text-gray-900">${bookingCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
-                    <TableCell>
-                      <button
-                        type="button"
-                        className="p-1.5 text-gray-400 hover:text-[#0F2757] hover:bg-gray-100 rounded transition-colors cursor-pointer"
-                      >
-                        <Eye className="h-4 w-4" />
-                      </button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
+                      <TableCell className="font-medium text-gray-900">
+                        HB-00023{originalIdx + 1}
+                      </TableCell>
+                      <TableCell className="font-medium text-gray-900">
+                        A{originalIdx}B{originalIdx}C
+                      </TableCell>
+                      <TableCell>
+                        <div className="font-semibold text-gray-900">
+                          Jane Doe
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          jane.doe@example.com
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center">1 Passenger</TableCell>
+                      <TableCell className="font-medium">{hotelName}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center text-amber-400">
+                          {[...Array(stars)].map((_, i) => (
+                            <Star key={i} className="h-3 w-3 fill-current" />
+                          ))}
+                        </div>
+                      </TableCell>
+                      <TableCell>{rooms}</TableCell>
+                      <TableCell className="font-semibold text-gray-900">
+                        $
+                        {bookingCost.toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </TableCell>
+                      <TableCell>
+                        <button
+                          type="button"
+                          className="p-1.5 text-gray-400 hover:text-[#0F2757] hover:bg-gray-100 rounded transition-colors cursor-pointer"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
             </TableBody>
           </Table>
         </div>
@@ -331,11 +491,19 @@ function PublishedDetailView({ cancellation, onClose }: { cancellation: Cancella
         {/* Success Banner */}
         <div className="mt-8 flex items-center justify-between bg-[#F0FDF4] border border-[#DCFCE7] rounded-xl px-5 py-4">
           <div>
-            <h4 className="text-[#15803D] font-medium text-[15px]">All bookings confirmed</h4>
-            <p className="text-[#64748B] text-[13px] mt-0.5">{cancellation.bookings} confirmation emails sent</p>
+            <h4 className="text-[#15803D] font-medium text-[15px]">
+              All bookings confirmed
+            </h4>
+            <p className="text-[#64748B] text-[13px] mt-0.5">
+              {cancellation.bookings} confirmation emails sent
+            </p>
           </div>
           <div className="text-[22px] font-bold text-[#0F2757]">
-            ${totalPayment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            $
+            {totalPayment.toLocaleString(undefined, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}
           </div>
         </div>
       </div>
@@ -344,9 +512,11 @@ function PublishedDetailView({ cancellation, onClose }: { cancellation: Cancella
 }
 
 export default function CancellationPage() {
-  const [cancellations, setCancellations] = useState<Cancellation[]>(INITIAL_CANCELLATIONS);
+  const [cancellations, setCancellations] = useState<Cancellation[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("All Status");
+  const [isLoading, setIsLoading] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
 
   // Sorting
   const [sortField, setSortField] = useState<keyof Cancellation | null>(null);
@@ -358,7 +528,8 @@ export default function CancellationPage() {
 
   // View state
   const [isAddingNew, setIsAddingNew] = useState(false);
-  const [detailCancellation, setDetailCancellation] = useState<Cancellation | null>(null);
+  const [detailCancellation, setDetailCancellation] =
+    useState<Cancellation | null>(null);
   const [publishTarget, setPublishTarget] = useState<Cancellation | null>(null);
 
   // Sort function
@@ -381,34 +552,51 @@ export default function CancellationPage() {
     setCurrentPage(1);
   };
 
+  useEffect(() => {
+    const fetchCancelledFlights = async () => {
+      setIsLoading(true);
+      try {
+        const response = await cancellationService.listCancelledFlights({
+          page: currentPage,
+          limit: resultsPerPage,
+          status: UI_STATUS_TO_API_STATUS[selectedStatus],
+          search: searchQuery || undefined,
+        });
+
+        const data: ListCancelledFlightsResponseDataDto | undefined =
+          response?.data;
+        const items = data?.cancelledFlights || [];
+        setCancellations(items.map(mapApiCancelledFlight));
+        setTotalCount(data?.pagination?.totalCount || 0);
+      } catch (error: any) {
+        toast.error(error?.message || "Failed to load cancelled flights");
+        setCancellations([]);
+        setTotalCount(0);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchCancelledFlights();
+  }, [currentPage, resultsPerPage, selectedStatus, searchQuery]);
+
   // Confirm Publish function (from modal)
   const confirmPublish = (id: string) => {
     setCancellations((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, status: "Published" } : c))
+      prev.map((c) =>
+        c.id === id
+          ? { ...c, status: "Published", displayStatus: "Published" }
+          : c,
+      ),
     );
     setPublishTarget(null);
     toast.success("Published successfully");
   };
 
-  // Filtering Logic
-  const filteredCancellations = useMemo(() => {
-    return cancellations.filter((c) => {
-      const matchesSearch =
-        searchQuery === "" ||
-        c.flight.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.route.toLowerCase().includes(searchQuery.toLowerCase());
-
-      const matchesStatus =
-        selectedStatus === "All Status" || c.status === selectedStatus;
-
-      return matchesSearch && matchesStatus;
-    });
-  }, [cancellations, searchQuery, selectedStatus]);
-
   // Sorting Logic
   const sortedCancellations = useMemo(() => {
-    if (!sortField) return filteredCancellations;
-    return [...filteredCancellations].sort((a, b) => {
+    if (!sortField) return cancellations;
+    return [...cancellations].sort((a, b) => {
       const valA = a[sortField];
       const valB = b[sortField];
 
@@ -423,15 +611,9 @@ export default function CancellationPage() {
       if (strA > strB) return sortOrder === "asc" ? 1 : -1;
       return 0;
     });
-  }, [filteredCancellations, sortField, sortOrder]);
+  }, [cancellations, sortField, sortOrder]);
 
-  // Pagination Logic
-  const paginatedCancellations = useMemo(() => {
-    const startIndex = (currentPage - 1) * resultsPerPage;
-    return sortedCancellations.slice(startIndex, startIndex + resultsPerPage);
-  }, [sortedCancellations, currentPage, resultsPerPage]);
-
-  const totalPages = Math.ceil(sortedCancellations.length / resultsPerPage) || 1;
+  const totalPages = Math.ceil(totalCount / resultsPerPage) || 1;
 
   return (
     <div className="flex min-h-screen flex-1 flex-col pb-16 lg:w-full lg:max-w-[calc(100vw-304px)]">
@@ -445,10 +627,13 @@ export default function CancellationPage() {
           initialData={detailCancellation}
           onClose={() => setDetailCancellation(null)}
           onSave={(updatedOrAdded) => {
+            const normalized = withDisplayStatus(updatedOrAdded);
             setCancellations((prev) =>
-              prev.some((item) => item.id === updatedOrAdded.id)
-                ? prev.map((item) => (item.id === updatedOrAdded.id ? updatedOrAdded : item))
-                : [updatedOrAdded, ...prev]
+              prev.some((item) => item.id === normalized.id)
+                ? prev.map((item) =>
+                    item.id === normalized.id ? normalized : item,
+                  )
+                : [normalized, ...prev],
             );
             setDetailCancellation(null);
             toast.success(`Successfully updated cancellation`);
@@ -458,7 +643,7 @@ export default function CancellationPage() {
         <CancellationWizard
           onClose={() => setIsAddingNew(false)}
           onSave={(added) => {
-            setCancellations((prev) => [added, ...prev]);
+            setCancellations((prev) => [withDisplayStatus(added), ...prev]);
             setIsAddingNew(false);
             toast.success(`Successfully published cancellation`);
           }}
@@ -579,14 +764,26 @@ export default function CancellationPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paginatedCancellations.length === 0 ? (
+                {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="px-6 py-12 text-center text-gray-500 font-figtree">
+                    <TableCell
+                      colSpan={8}
+                      className="px-6 py-12 text-center text-gray-500 font-figtree"
+                    >
+                      Loading cancelled flights...
+                    </TableCell>
+                  </TableRow>
+                ) : sortedCancellations.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={8}
+                      className="px-6 py-12 text-center text-gray-500 font-figtree"
+                    >
                       No flight cancellations found.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  paginatedCancellations.map((c) => (
+                  sortedCancellations.map((c) => (
                     <TableRow key={c.id}>
                       <TableCell className="text-[#1F2937]">
                         {c.flight}
@@ -595,7 +792,9 @@ export default function CancellationPage() {
                         {c.route.split("➔").map((part, i, arr) => (
                           <span key={i}>
                             {part}
-                            {i < arr.length - 1 && <span className="font-bold text-gray-900">→</span>}
+                            {i < arr.length - 1 && (
+                              <span className="font-bold text-gray-900">→</span>
+                            )}
                           </span>
                         ))}
                       </TableCell>
@@ -612,11 +811,11 @@ export default function CancellationPage() {
                         ${c.totalCost.toLocaleString()}
                       </TableCell>
                       <TableCell>
-                        <StatusBadge status={c.status} />
+                        <StatusBadge status={c.displayStatus} />
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center justify-start gap-1 -translate-x-1">
-                          {c.status === "Paid" && (
+                          {c.status === "Allocated" && (
                             <button
                               onClick={() => setPublishTarget(c)}
                               className="p-1 text-[#6B7280] hover:text-emerald-600 transition-colors cursor-pointer"
@@ -643,7 +842,7 @@ export default function CancellationPage() {
 
           {/* Pagination footer */}
           <Pagination
-            totalResults={sortedCancellations.length}
+            totalResults={totalCount}
             currentPage={currentPage}
             setCurrentPage={setCurrentPage}
             resultsPerPage={resultsPerPage}
@@ -653,12 +852,13 @@ export default function CancellationPage() {
         </div>
       )}
 
-
-
       {/* Publish Confirmation Modal */}
       {publishTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6 animate-fadeIn">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setPublishTarget(null)} />
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setPublishTarget(null)}
+          />
           <div
             className="relative bg-white flex flex-col justify-center items-start py-6 gap-5 z-10 animate-scaleIn border border-gray-100"
             style={{ width: 560, borderRadius: 16 }}
@@ -688,35 +888,48 @@ export default function CancellationPage() {
             {/* Body */}
             <div className="px-6 w-full text-left space-y-4">
               <p className="text-gray-500 text-[15px] leading-relaxed">
-                This will finalize hotel bookings and send confirmation emails to all passengers.
+                This will finalize hotel bookings and send confirmation emails
+                to all passengers.
               </p>
 
               <div className="w-full bg-[#F8F9FA] rounded-xl p-5 space-y-3 text-[15px]">
                 <div className="flex justify-between items-center text-gray-800">
                   <span>Flight</span>
-                  <span className="font-semibold text-gray-900">{publishTarget.flight}</span>
+                  <span className="font-semibold text-gray-900">
+                    {publishTarget.flight}
+                  </span>
                 </div>
                 <div className="flex justify-between items-center text-gray-800">
                   <span>Route</span>
-                  <span className="font-semibold text-gray-900">{publishTarget.route}</span>
+                  <span className="font-semibold text-gray-900">
+                    {publishTarget.route}
+                  </span>
                 </div>
                 <div className="flex justify-between items-center text-gray-800">
                   <span>Bookings</span>
-                  <span className="font-semibold text-gray-900">{publishTarget.bookings}</span>
+                  <span className="font-semibold text-gray-900">
+                    {publishTarget.bookings}
+                  </span>
                 </div>
                 <div className="flex justify-between items-center text-gray-800">
                   <span>Passengers</span>
-                  <span className="font-semibold text-gray-900">{publishTarget.passengers}</span>
+                  <span className="font-semibold text-gray-900">
+                    {publishTarget.passengers}
+                  </span>
                 </div>
                 <div className="flex justify-between items-center text-gray-800 pt-3 border-t border-gray-200 mt-1">
                   <span className="font-medium text-gray-900">Total Cost</span>
-                  <span className="font-bold text-gray-900 text-[17px]">${publishTarget.totalCost.toLocaleString()}</span>
+                  <span className="font-bold text-gray-900 text-[17px]">
+                    ${publishTarget.totalCost.toLocaleString()}
+                  </span>
                 </div>
               </div>
 
               <div className="w-full bg-[#FFF7E8] border border-[#FBE0C3] p-4 rounded-xl text-sm text-[#F59E0B] text-left">
                 <p>
-                  <span className="font-bold">Note:</span> This action cannot be undone. Passengers will receive their hotel booking confirmations immediately.
+                  <span className="font-bold">Note:</span> This action cannot be
+                  undone. Passengers will receive their hotel booking
+                  confirmations immediately.
                 </p>
               </div>
             </div>

@@ -107,4 +107,7 @@ export const config = {
     secret: process.env.HOTELBEDS_SECRET ?? "",
     useSandbox: process.env.HOTELBEDS_USE_SANDBOX !== "false",
   },
+  platformFeePercentage: parseFloat(
+    process.env.PLATFORM_FEE_PERCENTAGE ?? "10",
+  ),
 } as const;

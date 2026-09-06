@@ -30,6 +30,14 @@ const statusStyles: Record<string, { bg: string; text: string }> = {
     bg: "bg-[#DBEAFE]",
     text: "text-[#1E40AF]",
   },
+  Confirmed: {
+    bg: "bg-[#DBEAFE]",
+    text: "text-[#1E40AF]",
+  },
+  confirmed: {
+    bg: "bg-[#DBEAFE]",
+    text: "text-[#1E40AF]",
+  },
   verified: {
     bg: "bg-[#DBEAFE]",
     text: "text-[#1E40AF]",
@@ -98,6 +106,18 @@ const statusStyles: Record<string, { bg: string; text: string }> = {
     bg: "bg-[#E5E7EB]",
     text: "text-[#374151]",
   },
+  "Hotel Allocation In Progress": {
+    bg: "bg-[#FEF3C7]",
+    text: "text-[#92400E]",
+  },
+  "HA In Progress": {
+    bg: "bg-[#FEF3C7]",
+    text: "text-[#92400E]",
+  },
+  hotel_allocation_in_progress: {
+    bg: "bg-[#FEF3C7]",
+    text: "text-[#92400E]",
+  },
 };
 
 export function StatusBadge({ status, className }: StatusBadgeProps) {
@@ -114,7 +134,7 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
         "pt-[2px] pb-[2px] pl-[10px] pr-[10px]",
         styles.bg,
         styles.text,
-        className
+        className,
       )}
     >
       {status}
