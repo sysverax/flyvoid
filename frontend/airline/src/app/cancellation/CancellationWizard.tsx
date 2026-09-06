@@ -78,6 +78,20 @@ const ENUM_TO_NOTE_TAG: Record<string, string> = {
   elderly_passenger: "Elderly Passenger",
 };
 
+const TRAVEL_CLASS_TO_ENUM: Record<string, string> = {
+  "First Class": "first_class",
+  Business: "business",
+  "Premium Economy": "premium_economy",
+  Economy: "economy",
+};
+
+const ENUM_TO_TRAVEL_CLASS: Record<string, string> = {
+  first_class: "First Class",
+  business: "Business",
+  premium_economy: "Premium Economy",
+  economy: "Economy",
+};
+
 function getAirportId(
   val: string,
   airportCodeToId: Record<string, number>,
@@ -115,6 +129,7 @@ function mapCancellationReason(tag: string, text: string): string {
 
 const TRAVEL_CLASS_OPTIONS = [
   { value: "Economy", label: "Economy" },
+  { value: "Premium Economy", label: "Premium Economy" },
   { value: "Business", label: "Business" },
   { value: "First Class", label: "First Class" },
 ];
@@ -615,10 +630,7 @@ export default function CancellationWizard({
           lastName: b.lastName,
           email: b.email,
           phone: b.phone,
-          travelClass: b.travelClass
-            ? b.travelClass.charAt(0).toUpperCase() +
-              b.travelClass.slice(1).toLowerCase()
-            : "Economy",
+          travelClass: ENUM_TO_TRAVEL_CLASS[b.travelClass] || "Economy",
           adults: b.adults || 1,
           children: b.children || 0,
           notes: b.additionalNotes || b.notes || "",
@@ -877,8 +889,7 @@ export default function CancellationWizard({
       return;
     }
 
-    const mappedTravelClass =
-      bookingClass.toLowerCase() === "business" ? "business" : "economy";
+    const mappedTravelClass = TRAVEL_CLASS_TO_ENUM[bookingClass] || "economy";
     const mappedSpecialNotes = selectedNoteTags.map(
       (t) => NOTE_TAG_TO_ENUM[t] || t.toLowerCase().replace(/\s+/g, "_"),
     );
