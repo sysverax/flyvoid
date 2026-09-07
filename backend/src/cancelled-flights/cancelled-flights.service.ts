@@ -89,6 +89,7 @@ const room = (adults: number, children = 0): RoomOccupancy => ({
   children,
 });
 
+
 const ROOM_SPLIT_RULES: Record<string, RoomSplitPlan> = {
   "1_0": { preferred: [room(1)], fallbacks: [] },
   "2_0": { preferred: [room(2)], fallbacks: [] },
@@ -98,12 +99,18 @@ const ROOM_SPLIT_RULES: Record<string, RoomSplitPlan> = {
     preferred: [room(2), room(2), room(1)],
     fallbacks: [[room(3), room(2)]],
   },
-  "6_0": { preferred: [room(2), room(2), room(2)], fallbacks: [] },
+  "6_0": {
+    preferred: [room(2), room(2), room(2)],
+    fallbacks: [[room(3), room(2), room(1)]],
+  },
   "7_0": {
     preferred: [room(2), room(2), room(2), room(1)],
     fallbacks: [[room(3), room(2), room(2)]],
   },
-  "8_0": { preferred: [room(2), room(2), room(2), room(2)], fallbacks: [] },
+  "8_0": {
+    preferred: [room(2), room(2), room(2), room(2)],
+    fallbacks: [[room(3), room(2), room(2), room(1)]],
+  },
   "9_0": {
     preferred: [room(2), room(2), room(2), room(2), room(1)],
     fallbacks: [[room(3), room(2), room(2), room(2)]],
@@ -114,72 +121,80 @@ const ROOM_SPLIT_RULES: Record<string, RoomSplitPlan> = {
   "1_4": { preferred: [room(1, 4)], fallbacks: [] },
   "2_1": { preferred: [room(2, 1)], fallbacks: [[room(1, 1), room(1)]] },
   "2_2": { preferred: [room(2, 2)], fallbacks: [[room(1, 1), room(1, 1)]] },
-  "2_3": { preferred: [room(2, 3)], fallbacks: [[room(1, 2), room(1, 1)]] },
-  "2_4": { preferred: [room(2, 4)], fallbacks: [[room(1, 2), room(1, 2)]] },
+  "2_3": { preferred: [room(1, 2), room(1, 1)], fallbacks: [[room(2, 3)]] },
+  "2_4": { preferred: [room(1, 2), room(1, 2)], fallbacks: [[room(2, 4)]] },
+
   "3_1": {
     preferred: [room(2), room(1, 1)],
     fallbacks: [[room(2, 1), room(1)]],
   },
   "3_2": {
-    preferred: [room(2, 1), room(1, 1)],
-    fallbacks: [[room(2), room(1, 1), room(1)]],
+    preferred: [room(2), room(1, 2)],
+    fallbacks: [[room(2, 1), room(1, 1)]],
   },
   "3_3": {
-    preferred: [room(2, 2), room(1, 1)],
-    fallbacks: [[room(2, 1), room(1, 1), room(1, 1)]],
+    preferred: [room(2), room(1, 3)],
+    fallbacks: [[room(2, 2), room(1, 1)]],
   },
   "3_4": {
-    preferred: [room(2, 2), room(1, 2)],
-    fallbacks: [[room(2, 1), room(1, 1), room(1, 2)]],
+    preferred: [room(2, 1), room(1, 3)],
+    fallbacks: [[room(2, 2), room(1, 2)]],
   },
   "4_1": {
     preferred: [room(2), room(2, 1)],
-    fallbacks: [[room(2, 1), room(1, 1), room(1)]],
+    fallbacks: [[room(2, 1), room(1), room(1)]],
   },
   "4_2": {
-    preferred: [room(2), room(1, 1), room(1, 1)],
-    fallbacks: [[room(2, 1), room(1, 1), room(1)]],
+    preferred: [room(2), room(2, 2)],
+    fallbacks: [[room(2, 1), room(2, 1)]],
   },
   "4_3": {
-    preferred: [room(2, 1), room(1, 1), room(1, 1)],
-    fallbacks: [[room(2), room(1, 1), room(1, 1), room(1)]],
+    preferred: [room(2, 1), room(2, 2)],
+    fallbacks: [[room(2), room(1, 3), room(1)]],
   },
   "4_4": {
-    preferred: [room(2, 2), room(2, 1)],
-    fallbacks: [[room(2, 1), room(1, 1), room(1, 1), room(1)]],
+    preferred: [room(2, 2), room(2, 2)],
+    fallbacks: [[room(2), room(1, 3), room(1, 1)]],
   },
   "5_1": {
     preferred: [room(2), room(2), room(1, 1)],
-    fallbacks: [[room(2, 1), room(1, 1), room(1, 1), room(1)]],
+    fallbacks: [[room(2), room(2, 1), room(1)]],
   },
   "5_2": {
-    preferred: [room(2), room(2, 1), room(1, 1)],
-    fallbacks: [[room(2, 1), room(1, 1), room(1, 1), room(1)]],
+    preferred: [room(2), room(2), room(1, 2)],
+    fallbacks: [[room(2), room(2, 1), room(1, 1)]],
   },
-  // Fixed based on explicit business validation: preserve exact 5 adults + 3 children.
   "5_3": {
-    preferred: [room(2, 1), room(2, 1), room(1, 1)],
-    fallbacks: [[room(2, 1), room(1, 1), room(1, 1), room(1)]],
+    preferred: [room(2), room(2, 1), room(1, 2)],
+    fallbacks: [[room(2), room(2), room(1, 3)]],
   },
   "5_4": {
-    preferred: [room(2, 2), room(2, 1), room(1, 1)],
-    fallbacks: [[room(2, 1), room(1, 1), room(1, 1), room(1, 1)]],
+    preferred: [room(2), room(2, 2), room(1, 2)],
+    fallbacks: [[room(2, 2), room(2, 2), room(1)]],
   },
   "6_1": {
-    preferred: [room(2), room(2), room(2), room(1)],
-    fallbacks: [[room(1, 1), room(2), room(2), room(1)]],
+    preferred: [room(2), room(2), room(2, 1)],
+    fallbacks: [[room(2), room(2), room(1, 1), room(1)]],
   },
   "6_2": {
-    preferred: [room(2), room(2), room(1, 1), room(1, 1)],
-    fallbacks: [[room(2, 1), room(2, 1), room(1), room(1)]],
+    preferred: [room(2), room(2), room(2, 2)],
+    fallbacks: [[room(2), room(2), room(1, 1), room(1, 1)]],
   },
   "6_3": {
-    preferred: [room(2), room(2, 1), room(1, 1), room(1, 1)],
-    fallbacks: [[room(2, 1), room(2, 1), room(1, 1), room(1)]],
+    preferred: [room(2), room(2, 1), room(2, 2)],
+    fallbacks: [[room(2), room(2), room(1, 1), room(1, 2)]],
+  },
+  "7_1": {
+    preferred: [room(2), room(2), room(2), room(1, 1)],
+    fallbacks: [[room(2), room(2), room(2, 1), room(1)]],
   },
   "7_2": {
-    preferred: [room(2), room(2), room(2, 1), room(1, 1)],
-    fallbacks: [[room(2, 1), room(2, 1), room(2), room(1)]],
+    preferred: [room(2), room(2), room(2), room(1, 2)],
+    fallbacks: [[room(2), room(2), room(2, 1), room(1, 1)]],
+  },
+  "8_1": {
+    preferred: [room(2), room(2), room(2), room(2, 1)],
+    fallbacks: [[room(2), room(2), room(2), room(1, 1), room(1)]],
   },
 };
 
@@ -1895,82 +1910,254 @@ export class CancelledFlightsService {
       rateCount: hotels.reduce((sum, hotel) => sum + hotel.rates.length, 0),
     });
 
-    const groupedBookings = this.groupBookings(eligibleBookings);
-    const rankingByGroup = await this.rankHotelsByGroup(
-      groupedBookings,
-      hotels,
-      requestId,
-    );
+    // AI places every occupancy group; the code below re-verifies each hard rule.
+    const rateByKey = new Map<
+      string,
+      { hotel: AvailabilityHotel; rate: AvailabilityRoomRate }
+    >();
+    for (const hotel of hotels) {
+      for (const rate of hotel.rates) {
+        rateByKey.set(rate.rateKey, { hotel, rate });
+      }
+    }
 
-    const hotelByAiId = new Map<string, AvailabilityHotel>(
-      hotels.map((hotel) => [`hb-${hotel.hotelCode}`, hotel] as const),
-    );
+    const pgMeta = new Map<
+      string,
+      { booking: BookingEntity; shape: RoomOccupancy; roomsNeeded: number }
+    >();
+    const occupancyGroups: Array<{
+      passengerGroupId: string;
+      sameHotelGroup: string;
+      bookingReference: string;
+      travelClass: string;
+      specialNotes: string[];
+      adults: number;
+      children: number;
+      roomsNeeded: number;
+      hotels: Array<{
+        hotelId: string;
+        name: string;
+        category: string;
+        stars: number;
+        rateKey: string;
+        roomName: string;
+        boardName: string;
+        adults: number;
+        children: number;
+        allotment: number | null;
+      }>;
+    }> = [];
 
     for (const booking of eligibleBookings) {
       const splitPlan = splitPlansByBooking.get(booking.id)!;
-      const groupKey = this.toGroupKey(booking);
-      const rankedHotelIds = rankingByGroup.get(groupKey) ?? [];
 
-      let allocation: BookingRecommendationResult | null = null;
-      const splitCandidates: Array<{
-        label: "preferred" | "fallback";
-        rooms: RoomOccupancy[];
-      }> = [
-        { label: "preferred", rooms: splitPlan.preferred },
-        ...splitPlan.fallbacks.map((rooms) => ({
-          label: "fallback" as const,
-          rooms,
-        })),
-      ];
-
-      for (const splitCandidate of splitCandidates) {
-        for (const aiHotelId of rankedHotelIds) {
-          const hotel = hotelByAiId.get(aiHotelId);
-          if (!hotel) {
-            continue;
-          }
-
-          const selectedRooms = this.getBestRatesForHotelAndSplit(
-            hotel.rates,
-            splitCandidate.rooms,
-          );
-
-          if (!selectedRooms) {
-            continue;
-          }
-
-          const totalPrice = this.roundCurrency(
-            selectedRooms.reduce((sum, roomRate) => sum + roomRate.price, 0),
-          );
-          allocation = {
-            bookingId: booking.id,
-            pnr: booking.pnr,
-            class: booking.travelClass,
-            passengers: {
-              adults: booking.adults,
-              children: booking.children,
-            },
-            splitTried: splitCandidate.label,
-            hotel: {
-              hotelCode: hotel.hotelCode,
-              hotelName: hotel.hotelName,
-              category: hotel.category,
-            },
-            rooms: selectedRooms,
-            totalPrice,
-            allocationStatus: "RECOMMENDED",
-          };
-          break;
-        }
-
-        if (allocation) {
-          break;
+      const shapeCounts = new Map<
+        string,
+        { shape: RoomOccupancy; count: number }
+      >();
+      for (const room of splitPlan.preferred) {
+        const shapeKey = this.occupancyKey(room);
+        const current = shapeCounts.get(shapeKey);
+        if (current) {
+          current.count += 1;
+        } else {
+          shapeCounts.set(shapeKey, { shape: room, count: 1 });
         }
       }
 
-      if (allocation) {
-        results.push(allocation);
-      } else {
+      for (const [shapeKey, { shape, count }] of shapeCounts) {
+        const passengerGroupId = `${booking.pnr}#${shape.adults}a${shape.children}c`;
+
+        const shortlist = hotels.flatMap((hotel) =>
+          hotel.rates
+            .filter(
+              (rate) =>
+                this.occupancyKey({
+                  adults: rate.adults,
+                  children: rate.children,
+                  childrenAges: rate.childrenAges,
+                }) === shapeKey &&
+                rate.allotment !== null &&
+                rate.allotment > 0,
+            )
+            .map((rate) => ({
+              hotelId: `hb-${hotel.hotelCode}`,
+              name: hotel.hotelName,
+              category: hotel.category,
+              stars: hotel.stars,
+              rateKey: rate.rateKey,
+              roomName: rate.roomName,
+              boardName: rate.boardName,
+              adults: rate.adults,
+              children: rate.children,
+              allotment: rate.allotment,
+            })),
+        );
+
+        occupancyGroups.push({
+          passengerGroupId,
+          sameHotelGroup: booking.pnr,
+          bookingReference: booking.pnr,
+          travelClass: booking.travelClass,
+          specialNotes: booking.specialNotes ?? [],
+          adults: shape.adults,
+          children: shape.children,
+          roomsNeeded: count,
+          hotels: shortlist,
+        });
+        pgMeta.set(passengerGroupId, { booking, shape, roomsNeeded: count });
+      }
+    }
+
+    let aiAllocation: {
+      assignments: Array<{
+        passengerGroupId: string;
+        hotelId: string;
+        rateKey: string;
+        roomsAssigned: number;
+      }>;
+      unresolved: Array<{ passengerGroupId: string; reason: string }>;
+    };
+    try {
+      aiAllocation = await this.aiService.allocateHotelGroups(
+        { occupancyGroups },
+        requestId,
+      );
+    } catch (error: any) {
+      requestLogger.error(`AI hotel allocation failed: ${error.message}`, {
+        context: this.context,
+        flightId,
+      });
+      throw new BadRequestException(
+        `AI hotel allocation failed for flight '${flightId}': ${error.message}`,
+      );
+    }
+
+    const assignmentByPg = new Map<
+      string,
+      { hotelId: string; rateKey: string; roomsAssigned: number }
+    >();
+    for (const assignment of aiAllocation.assignments) {
+      if (
+        assignment &&
+        typeof assignment.passengerGroupId === "string" &&
+        typeof assignment.rateKey === "string"
+      ) {
+        assignmentByPg.set(assignment.passengerGroupId, {
+          hotelId: String(assignment.hotelId ?? ""),
+          rateKey: assignment.rateKey,
+          roomsAssigned: Math.max(1, Number(assignment.roomsAssigned ?? 1)),
+        });
+      }
+    }
+
+    const unresolvedByPg = new Map<string, string>();
+    for (const item of aiAllocation.unresolved) {
+      if (item && typeof item.passengerGroupId === "string") {
+        unresolvedByPg.set(
+          item.passengerGroupId,
+          String(item.reason ?? "Marked unresolved by allocator"),
+        );
+      }
+    }
+
+    // Hard-rule verifier: capacity, single hotel per booking, and a running
+    // allotment ledger across the whole batch (never trust the model's count).
+    const allotmentLedger = new Map<string, number>();
+    for (const { rate } of rateByKey.values()) {
+      if (rate.allotment !== null) {
+        allotmentLedger.set(rate.rateKey, rate.allotment);
+      }
+    }
+
+    for (const booking of eligibleBookings) {
+      const passengerGroupIds = Array.from(pgMeta.entries())
+        .filter(([, meta]) => meta.booking.id === booking.id)
+        .map(([id]) => id);
+
+      const bookingRooms: Array<{
+        adults: number;
+        children: number;
+        rateKey: string;
+        roomName: string;
+        boardName: string;
+        price: number;
+        currency: string;
+      }> = [];
+      let hotelRef: {
+        hotelCode: string;
+        hotelName: string;
+        category: string;
+      } | null = null;
+      let failReason: string | null = null;
+
+      for (const passengerGroupId of passengerGroupIds) {
+        const meta = pgMeta.get(passengerGroupId)!;
+
+        if (unresolvedByPg.has(passengerGroupId)) {
+          failReason = unresolvedByPg.get(passengerGroupId)!;
+          break;
+        }
+
+        const assignment = assignmentByPg.get(passengerGroupId);
+        if (!assignment) {
+          failReason = "Allocator returned no assignment for this group";
+          break;
+        }
+
+        const entry = rateByKey.get(assignment.rateKey);
+        if (!entry) {
+          failReason = `Assigned rateKey '${assignment.rateKey}' is not in the shortlist`;
+          break;
+        }
+
+        if (entry.rate.allotment === null) {
+          failReason = `Assigned rateKey '${assignment.rateKey}' has no allotment and is unavailable`;
+          break;
+        }
+
+        if (
+          entry.rate.adults !== meta.shape.adults ||
+          entry.rate.children !== meta.shape.children
+        ) {
+          failReason =
+            "Assigned room capacity does not match the group's occupancy";
+          break;
+        }
+
+        if (hotelRef && hotelRef.hotelCode !== entry.hotel.hotelCode) {
+          failReason = "Allocator split one booking across multiple hotels";
+          break;
+        }
+        hotelRef = {
+          hotelCode: entry.hotel.hotelCode,
+          hotelName: entry.hotel.hotelName,
+          category: entry.hotel.category,
+        };
+
+        if (allotmentLedger.has(assignment.rateKey)) {
+          const remaining = allotmentLedger.get(assignment.rateKey)!;
+          if (remaining < meta.roomsNeeded) {
+            failReason = `Allotment exceeded for rateKey '${assignment.rateKey}'`;
+            break;
+          }
+          allotmentLedger.set(assignment.rateKey, remaining - meta.roomsNeeded);
+        }
+
+        for (let index = 0; index < meta.roomsNeeded; index += 1) {
+          bookingRooms.push({
+            adults: meta.shape.adults,
+            children: meta.shape.children,
+            rateKey: entry.rate.rateKey,
+            roomName: entry.rate.roomName,
+            boardName: entry.rate.boardName,
+            price: this.roundCurrency(entry.rate.netPrice),
+            currency: entry.rate.currency,
+          });
+        }
+      }
+
+      if (failReason || !hotelRef || bookingRooms.length === 0) {
         results.push({
           bookingId: booking.id,
           pnr: booking.pnr,
@@ -1980,8 +2167,23 @@ export class CancelledFlightsService {
             children: booking.children,
           },
           allocationStatus: "NO_SUITABLE_HOTEL",
-          reason:
-            "No available hotel could satisfy preferred or fallback room occupancy requirements",
+          reason: failReason ?? "No hotel assignment produced by allocator",
+        });
+      } else {
+        results.push({
+          bookingId: booking.id,
+          pnr: booking.pnr,
+          class: booking.travelClass,
+          passengers: {
+            adults: booking.adults,
+            children: booking.children,
+          },
+          hotel: hotelRef,
+          rooms: bookingRooms,
+          totalPrice: this.roundCurrency(
+            bookingRooms.reduce((sum, room) => sum + room.price, 0),
+          ),
+          allocationStatus: "RECOMMENDED",
         });
       }
     }

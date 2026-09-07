@@ -29,16 +29,14 @@ You MUST respond with a valid JSON object matching the following structure:
 Ensure the recommendations are sorted by suitability score in descending order.`;
   }
 
-  private async requestHotelRecommendationsFromAi(
+  private async requestJsonFromAi(
+    systemPrompt: string,
     userPrompt: string,
     requestId: string,
   ): Promise<any> {
-    this.logger.info(
-      "Calling AI API for hotel recommendation",
-      "AiService",
-      requestId,
-      { model: this.model },
-    );
+    this.logger.info("Calling AI API", "AiService", requestId, {
+      model: this.model,
+    });
 
     const response = await fetch(this.apiUrl, {
       method: "POST",
@@ -51,7 +49,7 @@ Ensure the recommendations are sorted by suitability score in descending order.`
         messages: [
           {
             role: "system",
-            content: this.buildHotelRecommendationSystemPrompt(),
+            content: systemPrompt,
           },
           { role: "user", content: userPrompt },
         ],
@@ -84,7 +82,7 @@ Ensure the recommendations are sorted by suitability score in descending order.`
             messages: [
               {
                 role: "system",
-                content: this.buildHotelRecommendationSystemPrompt(),
+                content: systemPrompt,
               },
               { role: "user", content: userPrompt },
             ],
@@ -162,7 +160,8 @@ Candidate Hotels:
 ${JSON.stringify(hotels, null, 2)}`;
 
     try {
-      return await this.requestHotelRecommendationsFromAi(
+      return await this.requestJsonFromAi(
+        this.buildHotelRecommendationSystemPrompt(),
         userPrompt,
         requestId,
       );
@@ -219,7 +218,8 @@ Candidate Hotels:
 ${JSON.stringify(hotels, null, 2)}`;
 
     try {
-      return await this.requestHotelRecommendationsFromAi(
+      return await this.requestJsonFromAi(
+        this.buildHotelRecommendationSystemPrompt(),
         userPrompt,
         requestId,
       );
@@ -232,6 +232,114 @@ ${JSON.stringify(hotels, null, 2)}`;
       );
       throw new ServiceUnavailableException(
         `AI API recommendation failed: ${error.message}`,
+      );
+    }
+  }
+
+  private buildHotelAllocationSystemPrompt(): string {
+    return `You are a hotel allocation assistant for an airline's flight disruption (delay/cancellation) passenger care process.
+
+You will receive "occupancyGroups": passenger groups already clustered by identical room-occupancy requirement (same rooms/adults/children shape), each with a "hotels" shortlist of real, bookable offers already filtered for the right stay dates, distance from the airport, and room capacity.
+
+Assign every passenger group (by passengerGroupId) to a specific hotel and room offer, referencing offers ONLY by their rateKey. Never restate a price, distance, or capacity - just choose from what's given.
+
+HARD RULES - never break these:
+1. Capacity: the assigned room(s) must fit the group's adults/children exactly.
+2. Same hotel: every occupancyGroup that shares the same "sameHotelGroup" value must be assigned to the SAME hotelId (those rooms belong to one family/booking).
+3. Allotment: never assign more rooms of the same rateKey, summed across ALL groups in this entire input, than that rate's "allotment" value. Track a running count as you go - this is a hard cap, not a preference. If a room's "allotment" is null, that rate is unavailable - never assign it.
+4. Special needs: only treat a specialNotes code as satisfied if the hotel/room data structurally supports it (an explicit field says so). Never infer a special need from a room's name or description. If nothing in a group's shortlist structurally supports a required note, put that group in "unresolved" with a reason - do not guess.
+
+PRIORITY ORDER - apply only among rooms that already satisfy the hard rules:
+Rank travelClass as FIRST > BUSINESS > PREMIUM_ECONOMY > ECONOMY, and process groups in that order.
+- FIRST groups get first pick of the highest-category (e.g. 5-star) hotels in their shortlist.
+- BUSINESS groups pick next from what's left - still high category, but yield the single best hotel to FIRST class when allotment is tight.
+- PREMIUM_ECONOMY groups get mid-tier rooms (4-star preferred, 3-star OK).
+- ECONOMY groups get any comfortable, valid room. Don't force the cheapest option if a similarly priced better one is still available, but don't spend at FIRST-class levels either.
+- Within the same class: special-needs groups first, then groups with children/infants, then break remaining ties by bookingReference (alphabetical) for a consistent, repeatable result.
+
+GROUPING: multiple passenger groups sharing one hotel and room type is expected and preferred, as long as allotment isn't exceeded - fill the best-ranked hotel for a class tier before spilling to the next one. Don't scatter groups across hotels for variety.
+
+NEVER leave a group unassigned if any hard-rule-satisfying room exists anywhere in its shortlist, even below its ideal category. Only use "unresolved" when nothing in the shortlist can satisfy the hard rules.
+
+Return STRICT JSON only, matching the schema in the user message. No prose, no markdown, nothing outside the JSON object.`;
+  }
+
+  async allocateHotelGroups(
+    input: {
+      occupancyGroups: Array<{
+        passengerGroupId: string;
+        sameHotelGroup: string;
+        bookingReference: string;
+        travelClass: string;
+        specialNotes: string[];
+        adults: number;
+        children: number;
+        roomsNeeded: number;
+        hotels: Array<{
+          hotelId: string;
+          name: string;
+          category: string;
+          stars: number;
+          rateKey: string;
+          roomName: string;
+          boardName: string;
+          adults: number;
+          children: number;
+          allotment: number | null;
+        }>;
+      }>;
+    },
+    requestId: string,
+  ): Promise<{
+    assignments: Array<{
+      passengerGroupId: string;
+      hotelId: string;
+      rateKey: string;
+      roomsAssigned: number;
+    }>;
+    unresolved: Array<{ passengerGroupId: string; reason: string }>;
+  }> {
+    if (!this.apiKey) {
+      this.logger.warn("AI API Key is not configured.", "AiService", requestId);
+      throw new ServiceUnavailableException("AI API Key is not configured");
+    }
+
+    const responseSchema = `RESPONSE SCHEMA (return exactly this shape, nothing else):
+{
+  "assignments": [
+    { "passengerGroupId": "string", "hotelId": "string", "rateKey": "string", "roomsAssigned": number }
+  ],
+  "unresolved": [
+    { "passengerGroupId": "string", "reason": "string" }
+  ]
+}`;
+
+    const userPrompt = `${responseSchema}
+
+INPUT:
+${JSON.stringify(input, null, 2)}`;
+
+    try {
+      const result = await this.requestJsonFromAi(
+        this.buildHotelAllocationSystemPrompt(),
+        userPrompt,
+        requestId,
+      );
+      return {
+        assignments: Array.isArray(result?.assignments)
+          ? result.assignments
+          : [],
+        unresolved: Array.isArray(result?.unresolved) ? result.unresolved : [],
+      };
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to allocate hotel groups via AI API: ${error.message}`,
+        "AiService",
+        requestId,
+        { stack: error.stack },
+      );
+      throw new ServiceUnavailableException(
+        `AI API allocation failed: ${error.message}`,
       );
     }
   }
