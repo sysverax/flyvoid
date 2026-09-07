@@ -36,7 +36,7 @@ import {
   HotelPartnerService,
   RoomOccupancy,
 } from "./hotel-partner.service";
-import { GroqService } from "../common/groq/groq.service";
+import { AiService } from "../common/ai/ai.service";
 import { Logger } from "winston";
 import { AuthenticatedUser } from "../auth/interfaces/authenticated-request.interface";
 import { UserType } from "../common/constants/user.constants";
@@ -190,7 +190,7 @@ export class CancelledFlightsService {
   constructor(
     private readonly cancelledFlightsRepository: CancelledFlightsRepository,
     private readonly hotelPartnerService: HotelPartnerService,
-    private readonly groqService: GroqService,
+    private readonly aiService: AiService,
     private readonly logger: LoggerService,
   ) {}
 
@@ -397,7 +397,7 @@ export class CancelledFlightsService {
       );
 
       try {
-        const aiResult = await this.groqService.rankHotelsForPassengerGroup(
+        const aiResult = await this.aiService.rankHotelsForPassengerGroup(
           {
             travelClass: first.travelClass,
             passengerProfile: first.children > 0 ? "family" : "standard",
@@ -429,7 +429,7 @@ export class CancelledFlightsService {
         rankingByGroup.set(groupKey, mergedOrder);
       } catch (error: any) {
         this.logger.warn(
-          `Groq ranking failed for group ${groupKey}, using deterministic fallback order`,
+          `AI ranking failed for group ${groupKey}, using deterministic fallback order`,
           this.context,
           requestId,
           { error: error.message },
@@ -1250,11 +1250,11 @@ export class CancelledFlightsService {
     );
 
     this.logger.debug(
-      `Calling Groq API for AI-based scoring and recommendation matching...`,
+      `Calling AI API for AI-based scoring and recommendation matching...`,
       this.context,
       requestId,
     );
-    const groqResult = await this.groqService.getHotelRecommendations(
+    const aiResult = await this.aiService.getHotelRecommendations(
       {
         firstName: booking.firstName,
         lastName: booking.lastName,
@@ -1268,7 +1268,7 @@ export class CancelledFlightsService {
       requestId,
     );
     this.logger.debug(
-      `Received AI recommendations from Groq: ${JSON.stringify(groqResult)}`,
+      `Received AI recommendations: ${JSON.stringify(aiResult)}`,
       this.context,
       requestId,
     );
@@ -1281,7 +1281,7 @@ export class CancelledFlightsService {
     );
     const recommendedHotels = candidateHotels
       .map((hotel) => {
-        const recommendation = groqResult.recommendations?.find(
+        const recommendation = aiResult.recommendations?.find(
           (r: any) => r.hotelId === hotel.id,
         );
         return {

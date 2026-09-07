@@ -98,9 +98,13 @@ export const config = {
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? "",
     fromEmail: process.env.AWS_SES_FROM_EMAIL ?? "noreply@example.com",
   },
-  groq: {
-    apiKey: process.env.GROQ_API_KEY ?? "",
-    model: process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile",
+  ai: {
+    apiKey: process.env.AI_API_KEY ?? "",
+    model: process.env.AI_MODEL ?? "llama-3.3-70b-versatile",
+    apiUrl:
+      process.env.AI_API_URL ??
+      "https://api.groq.com/openai/v1/chat/completions",
+    temperature: parseFloat(process.env.AI_TEMPERATURE ?? "0.2"),
   },
   hotelbeds: {
     apiKey: process.env.HOTELBEDS_API_KEY ?? "",

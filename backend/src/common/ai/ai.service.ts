@@ -3,10 +3,11 @@ import { config } from "../../config/config";
 import { LoggerService } from "../logger/logger.service";
 
 @Injectable()
-export class GroqService {
-  private readonly apiKey = config.groq.apiKey;
-  private readonly model = config.groq.model;
-  private readonly apiUrl = "https://api.groq.com/openai/v1/chat/completions";
+export class AiService {
+  private readonly apiKey = config.ai.apiKey;
+  private readonly model = config.ai.model;
+  private readonly apiUrl = config.ai.apiUrl;
+  private readonly temperature = config.ai.temperature;
 
   constructor(private readonly logger: LoggerService) {}
 
@@ -28,13 +29,13 @@ You MUST respond with a valid JSON object matching the following structure:
 Ensure the recommendations are sorted by suitability score in descending order.`;
   }
 
-  private async requestHotelRecommendationsFromGroq(
+  private async requestHotelRecommendationsFromAi(
     userPrompt: string,
     requestId: string,
   ): Promise<any> {
     this.logger.info(
-      "Calling Groq API for hotel recommendation",
-      "GroqService",
+      "Calling AI API for hotel recommendation",
+      "AiService",
       requestId,
       { model: this.model },
     );
@@ -55,7 +56,7 @@ Ensure the recommendations are sorted by suitability score in descending order.`
           { role: "user", content: userPrompt },
         ],
         response_format: { type: "json_object" },
-        temperature: 0.2,
+        temperature: this.temperature,
       }),
     });
 
@@ -67,8 +68,8 @@ Ensure the recommendations are sorted by suitability score in descending order.`
         errorText.includes("json_validate_failed")
       ) {
         this.logger.warn(
-          "Groq rejected strict JSON response format, retrying without response_format",
-          "GroqService",
+          "AI provider rejected strict JSON response format, retrying without response_format",
+          "AiService",
           requestId,
         );
 
@@ -87,34 +88,34 @@ Ensure the recommendations are sorted by suitability score in descending order.`
               },
               { role: "user", content: userPrompt },
             ],
-            temperature: 0.2,
+            temperature: this.temperature,
           }),
         });
 
         if (!relaxedResponse.ok) {
           const relaxedErrorText = await relaxedResponse.text();
           throw new Error(
-            `Groq API returned status ${relaxedResponse.status}: ${relaxedErrorText}`,
+            `AI API returned status ${relaxedResponse.status}: ${relaxedErrorText}`,
           );
         }
 
         const relaxedData = await relaxedResponse.json();
         const relaxedContent = relaxedData?.choices?.[0]?.message?.content;
         if (!relaxedContent) {
-          throw new Error("Empty message content received from Groq API");
+          throw new Error("Empty message content received from AI API");
         }
         return JSON.parse(relaxedContent);
       }
 
       throw new Error(
-        `Groq API returned status ${response.status}: ${errorText}`,
+        `AI API returned status ${response.status}: ${errorText}`,
       );
     }
 
     const responseData = await response.json();
     const content = responseData?.choices?.[0]?.message?.content;
     if (!content) {
-      throw new Error("Empty message content received from Groq API");
+      throw new Error("Empty message content received from AI API");
     }
 
     return JSON.parse(content);
@@ -143,11 +144,11 @@ Ensure the recommendations are sorted by suitability score in descending order.`
   ): Promise<any> {
     if (!this.apiKey) {
       this.logger.warn(
-        "Groq API Key is not configured.",
-        "GroqService",
+        "AI API Key is not configured.",
+        "AiService",
         requestId,
       );
-      throw new ServiceUnavailableException("Groq API Key is not configured");
+      throw new ServiceUnavailableException("AI API Key is not configured");
     }
 
     const userPrompt = `Passenger details:
@@ -161,19 +162,19 @@ Candidate Hotels:
 ${JSON.stringify(hotels, null, 2)}`;
 
     try {
-      return await this.requestHotelRecommendationsFromGroq(
+      return await this.requestHotelRecommendationsFromAi(
         userPrompt,
         requestId,
       );
     } catch (error: any) {
       this.logger.error(
-        `Failed to fetch hotel recommendations from Groq API: ${error.message}`,
-        "GroqService",
+        `Failed to fetch hotel recommendations from AI API: ${error.message}`,
+        "AiService",
         requestId,
         { stack: error.stack },
       );
       throw new ServiceUnavailableException(
-        `Groq API recommendation failed: ${error.message}`,
+        `AI API recommendation failed: ${error.message}`,
       );
     }
   }
@@ -200,11 +201,11 @@ ${JSON.stringify(hotels, null, 2)}`;
   ): Promise<any> {
     if (!this.apiKey) {
       this.logger.warn(
-        "Groq API Key is not configured.",
-        "GroqService",
+        "AI API Key is not configured.",
+        "AiService",
         requestId,
       );
-      throw new ServiceUnavailableException("Groq API Key is not configured");
+      throw new ServiceUnavailableException("AI API Key is not configured");
     }
 
     const userPrompt = `Passenger group context:
@@ -218,19 +219,19 @@ Candidate Hotels:
 ${JSON.stringify(hotels, null, 2)}`;
 
     try {
-      return await this.requestHotelRecommendationsFromGroq(
+      return await this.requestHotelRecommendationsFromAi(
         userPrompt,
         requestId,
       );
     } catch (error: any) {
       this.logger.error(
-        `Failed to fetch group hotel recommendations from Groq API: ${error.message}`,
-        "GroqService",
+        `Failed to fetch group hotel recommendations from AI API: ${error.message}`,
+        "AiService",
         requestId,
         { stack: error.stack },
       );
       throw new ServiceUnavailableException(
-        `Groq API recommendation failed: ${error.message}`,
+        `AI API recommendation failed: ${error.message}`,
       );
     }
   }

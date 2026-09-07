@@ -9,7 +9,7 @@ import { HotelAllocationEntity } from "./entities/hotel-allocation.entity";
 import { CancelledFlightsController } from "./cancelled-flights.controller";
 import { CancelledFlightsService } from "./cancelled-flights.service";
 import { CancelledFlightsRepository } from "./cancelled-flights.repository";
-import { GroqService } from "../common/groq/groq.service";
+import { AiService } from "../common/ai/ai.service";
 import { HotelPartnerService } from "./hotel-partner.service";
 
 @Module({
@@ -27,9 +27,9 @@ import { HotelPartnerService } from "./hotel-partner.service";
   providers: [
     CancelledFlightsService,
     CancelledFlightsRepository,
-    GroqService,
+    AiService,
     HotelPartnerService,
   ],
-  exports: [CancelledFlightsService, GroqService, HotelPartnerService],
+  exports: [CancelledFlightsService, AiService, HotelPartnerService],
 })
 export class CancelledFlightsModule {}
