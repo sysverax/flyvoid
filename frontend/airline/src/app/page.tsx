@@ -26,6 +26,7 @@ import {
 } from "@/src/components/ui/table";
 import { StatusBadge } from "@/src/components/ui/StatusBadge";
 import { PaymentDrawer } from "@/src/components/ui/PaymentDrawer";
+import { TruncatedTooltip } from "@/src/components/ui/TruncatedTooltip";
 import {
   ResponsiveContainer,
   LineChart,
@@ -504,8 +505,20 @@ export default function DashboardPage() {
               <TableBody>
                 {sortedCancellations.map((row) => (
                   <TableRow key={row.id} className="h-16 hover:bg-gray-50/50">
-                    <TableCell className="text-gray-900">{row.flight}</TableCell>
-                    <TableCell className="text-gray-600">{row.route}</TableCell>
+                    <TableCell className="text-gray-900">
+                      <TruncatedTooltip text={row.flight} side="top">
+                        <div className="max-w-[100px] truncate cursor-default">
+                          {row.flight}
+                        </div>
+                      </TruncatedTooltip>
+                    </TableCell>
+                    <TableCell className="text-gray-600">
+                      <TruncatedTooltip text={row.route} side="top">
+                        <div className="max-w-[180px] truncate cursor-default">
+                          {row.route}
+                        </div>
+                      </TruncatedTooltip>
+                    </TableCell>
                     <TableCell className="text-gray-500 text-sm">{row.date}</TableCell>
                     <TableCell className="text-gray-700">{row.bookings}</TableCell>
                     <TableCell className="text-gray-700">{row.passengers}</TableCell>
