@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { ChevronDown, Check } from "lucide-react";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { ChevronDown, Check, Search } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 
 export interface DropdownOption {
@@ -21,6 +21,7 @@ export interface DropdownProps {
   disabled?: boolean;
   maxListHeightClass?: string;
   error?: boolean;
+  searchable?: boolean;
 }
 
 export function Dropdown({
@@ -35,8 +36,10 @@ export function Dropdown({
   disabled = false,
   maxListHeightClass,
   error = false,
+  searchable = false,
 }: DropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown on click outside
@@ -44,6 +47,7 @@ export function Dropdown({
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsOpen(false);
+        setSearchQuery("");
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -57,14 +61,32 @@ export function Dropdown({
   const handleSelect = (val: string) => {
     onChange(val);
     setIsOpen(false);
+    setSearchQuery("");
   };
+
+  const toggleDropdown = () => {
+    if (!disabled) {
+      setIsOpen(!isOpen);
+      if (isOpen) setSearchQuery("");
+    }
+  };
+
+  const filteredOptions = useMemo(() => {
+    if (!searchable || !searchQuery.trim()) return options;
+    const query = searchQuery.toLowerCase();
+    return options.filter(
+      (option) =>
+        option.value === "" ||
+        option.label.toLowerCase().includes(query)
+    );
+  }, [options, searchable, searchQuery]);
 
   return (
     <div ref={dropdownRef} className={cn("relative select-none", heightClass, triggerWidthClass)}>
       <button
         type="button"
         disabled={disabled}
-        onClick={() => !disabled && setIsOpen(!isOpen)}
+        onClick={toggleDropdown}
         className={cn(
           "w-full flex items-center justify-between rounded-[8px] border pl-4 pr-3.5 text-[#1F2937] outline-none cursor-pointer hover:bg-slate-100/80 transition-colors text-[16px]",
           error ? "border-rose-500 bg-rose-50/10 focus:border-rose-500" : "border-[#D1D5DB]",
@@ -73,7 +95,10 @@ export function Dropdown({
           disabled && "opacity-50 cursor-not-allowed hover:bg-transparent"
         )}
       >
-        <span className="truncate text-left flex-1 mr-2">{selectedOption ? selectedOption.label : value}</span>
+        <span className="truncate text-left flex-1 mr-2">
+          {labelPrefix ? `${labelPrefix}: ` : ""}
+          {selectedOption ? selectedOption.label : value}
+        </span>
         <ChevronDown
           className={cn(
             "pointer-events-none h-4 w-4 text-[#6B7280] transition-transform duration-200 shrink-0",
@@ -87,32 +112,60 @@ export function Dropdown({
         <div
           className={cn(
             "absolute left-0 mt-2 z-50 p-2 bg-white rounded-lg shadow-[0px_4px_8px_0px_rgba(0,0,0,0.12)] outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col justify-start items-start gap-0.5",
-            widthClass,
-            maxListHeightClass && `${maxListHeightClass} overflow-y-auto`
+            widthClass
           )}
         >
-          {options.map((option) => {
-            const isSelected = option.value === value;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => handleSelect(option.value)}
-                className={cn(
-                  "self-stretch p-2 rounded-md inline-flex justify-start items-center gap-2.5 text-left transition-colors cursor-pointer",
-                  isSelected ? "bg-gray-200" : "hover:bg-gray-100"
-                )}
-              >
-                {/* Standard Tick mark for the selected option */}
-                <div className="size-4 flex items-center justify-center shrink-0">
-                  {isSelected && <Check className="h-3.5 w-3.5 text-gray-800 stroke-[2.5px]" />}
-                </div>
-                <span className="justify-start text-gray-800 text-[16px] font-normal font-figtree truncate leading-[1.5]">
-                  {option.label}
-                </span>
-              </button>
-            );
-          })}
+          {searchable && (
+            <div className="w-full px-2 py-1.5 mb-1 border-b border-gray-100 flex items-center gap-2">
+              <Search className="w-4 h-4 text-gray-400 shrink-0" />
+              <input
+                type="text"
+                className="w-full bg-transparent text-[15px] outline-none text-gray-800 placeholder:text-gray-400 font-figtree"
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                autoFocus
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
+          )}
+
+          <div
+            className={cn(
+              "w-full flex flex-col gap-0.5",
+              maxListHeightClass && `${maxListHeightClass} overflow-y-auto scrollbar-thin`
+            )}
+          >
+            {filteredOptions.length === 0 ? (
+              <div className="p-2 text-sm text-gray-500 text-center font-figtree">
+                No results found.
+              </div>
+            ) : (
+              filteredOptions.map((option) => {
+                const isSelected = option.value === value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => handleSelect(option.value)}
+                    className={cn(
+                      "self-stretch p-2 rounded-md inline-flex justify-start items-center gap-2.5 text-left transition-colors cursor-pointer",
+                      isSelected ? "bg-gray-200" : "hover:bg-gray-100"
+                    )}
+                  >
+                    <div className="size-4 flex items-center justify-center shrink-0">
+                      {isSelected && (
+                        <Check className="h-3.5 w-3.5 text-gray-800 stroke-[2.5px]" />
+                      )}
+                    </div>
+                    <span className="justify-start text-gray-800 text-[16px] font-normal font-figtree truncate leading-[1.5]">
+                      {option.label}
+                    </span>
+                  </button>
+                );
+              })
+            )}
+          </div>
         </div>
       )}
     </div>

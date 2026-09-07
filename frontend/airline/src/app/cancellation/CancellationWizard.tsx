@@ -53,12 +53,19 @@ import { Dropdown } from "@/src/components/ui/Dropdown";
 import { DatePicker } from "@/src/components/ui/DatePicker";
 import { AddCardModal } from "@/src/components/ui/AddCardModal";
 import { cn } from "@/src/lib/utils";
-import {
-  cancellationService,
-  CreateBookingPayload,
-  BookingDTO,
-} from "@/src/services/cancellation.service";
-import { airportsService } from "@/src/services/airports.service";
+import { cancellationService, CreateBookingPayload, BookingDTO } from "@/src/services/cancellation.service";
+import { airportsService, AirportDTO } from "@/src/services/airports.service";
+
+const FALLBACK_AIRPORTS: AirportDTO[] = [
+  { id: 1, name: "Los Angeles International", iataCode: "LAX", icaoCode: "KLAX", countryCode: "US", city: "Los Angeles", latitude: 33.9416, longitude: -118.4085, timezone: "GMT-8", isActive: true, type: "INTERNATIONAL", address: null, postalCode: "" },
+  { id: 2, name: "John F. Kennedy International", iataCode: "JFK", icaoCode: "KJFK", countryCode: "US", city: "New York", latitude: 40.6413, longitude: -73.7781, timezone: "GMT-5", isActive: true, type: "INTERNATIONAL", address: null, postalCode: "" },
+  { id: 3, name: "London Heathrow", iataCode: "LHR", icaoCode: "EGLL", countryCode: "GB", city: "London", latitude: 51.4700, longitude: -0.4543, timezone: "GMT+0", isActive: true, type: "INTERNATIONAL", address: null, postalCode: "" },
+  { id: 4, name: "Tokyo Haneda", iataCode: "HND", icaoCode: "RJTT", countryCode: "JP", city: "Tokyo", latitude: 35.5494, longitude: 139.7798, timezone: "GMT+9", isActive: true, type: "INTERNATIONAL", address: null, postalCode: "" },
+  { id: 5, name: "Charles de Gaulle", iataCode: "CDG", icaoCode: "LFPG", countryCode: "FR", city: "Paris", latitude: 49.0097, longitude: 2.5479, timezone: "GMT+1", isActive: true, type: "INTERNATIONAL", address: null, postalCode: "" },
+  { id: 6, name: "Changi Airport", iataCode: "SIN", icaoCode: "WSSS", countryCode: "SG", city: "Singapore", latitude: 1.3644, longitude: 103.9915, timezone: "GMT+8", isActive: true, type: "INTERNATIONAL", address: null, postalCode: "" },
+  { id: 7, name: "Frankfurt Airport", iataCode: "FRA", icaoCode: "EDDF", countryCode: "DE", city: "Frankfurt", latitude: 50.0379, longitude: 8.5622, timezone: "GMT+1", isActive: true, type: "INTERNATIONAL", address: null, postalCode: "" },
+  { id: 8, name: "Dubai International Airport", iataCode: "DXB", icaoCode: "OMDB", countryCode: "AE", city: "Dubai", latitude: 25.2532, longitude: 55.3657, timezone: "Asia/Dubai", isActive: true, type: "INTERNATIONAL", address: null, postalCode: "" },
+];
 
 const NOTE_TAG_TO_ENUM: Record<string, string> = {
   "Wheelchair Assistance": "wheelchair_assistance",
@@ -90,6 +97,17 @@ const ENUM_TO_TRAVEL_CLASS: Record<string, string> = {
   business: "Business",
   premium_economy: "Premium Economy",
   economy: "Economy",
+};
+
+const AIRPORT_ID_MAP: Record<string, number> = {
+  LAX: 1,
+  JFK: 2,
+  LHR: 3,
+  HND: 4,
+  CDG: 5,
+  SIN: 6,
+  FRA: 7,
+  DXB: 8,
 };
 
 function getAirportId(
@@ -200,6 +218,17 @@ function getInitialStepFromStatus(status?: string): number {
   return 1;
 }
 
+function toIsoDate(dateStr: string): string {
+  if (!dateStr) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return dateStr;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export default function CancellationWizard({
   onClose,
   onSave,
@@ -218,25 +247,72 @@ export default function CancellationWizard({
     ? initialData.route.split(/➔|->|→/).map((s) => s.trim())
     : [];
   const [newFlight, setNewFlight] = useState(initialData?.flight || "");
-  const [newDate, setNewDate] = useState(initialData?.cancellationDate || "");
+  const [newDate, setNewDate] = useState(() =>
+    toIsoDate(initialData?.cancellationDate || ""),
+  );
   const [newDepartureAirport, setNewDepartureAirport] = useState(
     routeParts[0] || "",
   );
   const [newArrivalAirport, setNewArrivalAirport] = useState(
     routeParts[1] || "",
   );
-  const [airportOptions, setAirportOptions] = useState<
-    Array<{ value: string; label: string }>
-  >([{ value: "", label: "Select airport" }]);
-  const [airportCodeToId, setAirportCodeToId] = useState<
-    Record<string, number>
-  >({});
-  const [checkInDate, setCheckInDate] = useState(
-    initialData?.cancellationDate || "",
+  const [checkInDate, setCheckInDate] = useState(() =>
+    toIsoDate(initialData?.cancellationDate || ""),
   );
   const [checkOutDate, setCheckOutDate] = useState("");
   const [selectedReasonTag, setSelectedReasonTag] = useState("");
   const [newReason, setNewReason] = useState(initialData?.reason || "");
+
+  const [airports, setAirports] = useState<AirportDTO[]>([]);
+  const [isLoadingAirports, setIsLoadingAirports] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchAirports = async () => {
+      setIsLoadingAirports(true);
+      try {
+        const response = await airportsService.getAirports({ page: 1, limit: 100 });
+        if (isMounted && response?.airports && response.airports.length > 0) {
+          setAirports(response.airports);
+        }
+      } catch (err) {
+        if (isMounted) {
+          setAirports(FALLBACK_AIRPORTS);
+        }
+      } finally {
+        if (isMounted) setIsLoadingAirports(false);
+      }
+    };
+    fetchAirports();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const airportOptions = useMemo(() => {
+    const list = airports.length > 0 ? airports : FALLBACK_AIRPORTS;
+    return [
+      { value: "", label: isLoadingAirports ? "Loading airports..." : "Select airport" },
+      ...list.map((a) => ({
+        value: a.iataCode || String(a.id),
+        label: `${a.iataCode} - ${a.name || a.city}`,
+      })),
+    ];
+  }, [airports, isLoadingAirports]);
+
+  const resolveAirportId = (val: string): number => {
+    if (!val) return 1;
+    const list = airports.length > 0 ? airports : FALLBACK_AIRPORTS;
+    const found = list.find(
+      (a) =>
+        (a.iataCode && a.iataCode.toUpperCase() === val.toUpperCase()) ||
+        String(a.id) === val
+    );
+    if (found) return found.id;
+    const parsed = parseInt(val, 10);
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+    return AIRPORT_ID_MAP[val.toUpperCase()] || 1;
+  };
 
   // Step 1 Validation & Error State (matching admin invite modal)
   type Step1Field =
@@ -300,17 +376,12 @@ export default function CancellationWizard({
   const handleStep1Blur = (field: Step1Field) => () => {
     setStep1Touched((prev) => ({ ...prev, [field]: true }));
     const val =
-      field === "flightNumber"
-        ? newFlight
-        : field === "cancellationDate"
-          ? newDate
-          : field === "departureAirport"
-            ? newDepartureAirport
-            : field === "arrivalAirport"
-              ? newArrivalAirport
-              : field === "checkInDate"
-                ? checkInDate
-                : checkOutDate;
+      field === "flightNumber" ? newFlight :
+        field === "cancellationDate" ? newDate :
+          field === "departureAirport" ? newDepartureAirport :
+            field === "arrivalAirport" ? newArrivalAirport :
+              field === "checkInDate" ? checkInDate :
+                checkOutDate;
     const msg = validateStep1(field, val);
     setStep1Errors((prev) => ({ ...prev, [field]: msg || undefined }));
   };
@@ -390,7 +461,7 @@ export default function CancellationWizard({
         setPaymentConfirmed(true);
       }
       setNewFlight(initialData.flight || "");
-      setNewDate(initialData.cancellationDate || "");
+      setNewDate(toIsoDate(initialData.cancellationDate || ""));
       const parts = initialData.route
         ? initialData.route.split(/➔|->|→/).map((s) => s.trim())
         : [];
@@ -410,37 +481,6 @@ export default function CancellationWizard({
       }
     }
   }, [newDate]);
-
-  useEffect(() => {
-    const fetchAirportOptions = async () => {
-      const airports = await airportsService.getAirports({
-        page: 1,
-        limit: 50,
-        shorten: true,
-      });
-      if (!Array.isArray(airports) || airports.length === 0) return;
-
-      const seenCodes = new Set<string>();
-      const nextOptions: Array<{ value: string; label: string }> = [
-        { value: "", label: "Select airport" },
-      ];
-      const nextCodeToId: Record<string, number> = {};
-
-      for (const airport of airports) {
-        const code = airport.iataCode?.trim().toUpperCase();
-        if (!code || seenCodes.has(code)) continue;
-
-        seenCodes.add(code);
-        nextCodeToId[code] = airport.id;
-        nextOptions.push({ value: code, label: `${code} - ${airport.name}` });
-      }
-
-      setAirportCodeToId(nextCodeToId);
-      setAirportOptions(nextOptions);
-    };
-
-    fetchAirportOptions();
-  }, []);
 
   // Step 2 Manual booking states
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -512,19 +552,13 @@ export default function CancellationWizard({
   const handleStep2Blur = (field: Step2Field) => () => {
     setStep2Touched((prev) => ({ ...prev, [field]: true }));
     const val =
-      field === "pnr"
-        ? bookingPnr
-        : field === "firstName"
-          ? bookingFirstName
-          : field === "lastName"
-            ? bookingLastName
-            : field === "email"
-              ? bookingEmail
-              : field === "travelClass"
-                ? bookingClass
-                : field === "adults"
-                  ? bookingAdults
-                  : bookingPhone;
+      field === "pnr" ? bookingPnr :
+        field === "firstName" ? bookingFirstName :
+          field === "lastName" ? bookingLastName :
+            field === "email" ? bookingEmail :
+              field === "travelClass" ? bookingClass :
+                field === "adults" ? bookingAdults :
+                  bookingPhone;
     const msg = validateStep2(field, val);
     setStep2Errors((prev) => ({ ...prev, [field]: msg || undefined }));
   };
@@ -847,7 +881,6 @@ export default function CancellationWizard({
   };
 
   const handleAddBooking = async () => {
-    // Run all validations
     const fields: Step2Field[] = [
       "pnr",
       "firstName",
@@ -922,20 +955,20 @@ export default function CancellationWizard({
             prev.map((b) =>
               b.id === editingBookingId
                 ? {
-                    ...b,
-                    pnr: bookingPnr,
-                    firstName: bookingFirstName,
-                    lastName: bookingLastName,
-                    email: bookingEmail,
-                    phone: bookingPhone,
-                    travelClass: bookingClass,
-                    adults: Number(bookingAdults) || 1,
-                    children: Number(bookingChildren) || 0,
-                    notes: bookingNotesText,
-                    tags: selectedNoteTags,
-                  }
-                : b,
-            ),
+                  ...b,
+                  pnr: bookingPnr,
+                  firstName: bookingFirstName,
+                  lastName: bookingLastName,
+                  email: bookingEmail,
+                  phone: bookingPhone,
+                  travelClass: bookingClass,
+                  adults: Number(bookingAdults) || 1,
+                  children: Number(bookingChildren) || 0,
+                  notes: bookingNotesText,
+                  tags: selectedNoteTags,
+                }
+                : b
+            )
           );
         }
         toast.success("Booking updated successfully");
@@ -992,116 +1025,108 @@ export default function CancellationWizard({
     }
   };
 
-  const handleNextStep = async () => {
-    if (activeStep === 1) {
-      const errs: Partial<Record<Step1Field, string>> = {};
-      const flightErr = validateStep1("flightNumber", newFlight);
-      if (flightErr) errs.flightNumber = flightErr;
+  const saveFlightStep1 = async (advance = true) => {
+    const errs: Partial<Record<Step1Field, string>> = {};
+    const flightErr = validateStep1("flightNumber", newFlight);
+    if (flightErr) errs.flightNumber = flightErr;
 
-      const dateErr = validateStep1("cancellationDate", newDate);
-      if (dateErr) errs.cancellationDate = dateErr;
+    const dateErr = validateStep1("cancellationDate", newDate);
+    if (dateErr) errs.cancellationDate = dateErr;
 
-      const depErr = validateStep1("departureAirport", newDepartureAirport);
-      if (depErr) errs.departureAirport = depErr;
+    const depErr = validateStep1("departureAirport", newDepartureAirport);
+    if (depErr) errs.departureAirport = depErr;
 
-      const arrErr = validateStep1("arrivalAirport", newArrivalAirport, {
-        departureAirport: newDepartureAirport,
+    const arrErr = validateStep1("arrivalAirport", newArrivalAirport, {
+      departureAirport: newDepartureAirport,
+    });
+    if (arrErr) errs.arrivalAirport = arrErr;
+
+    const checkInErr = validateStep1("checkInDate", checkInDate);
+    if (checkInErr) errs.checkInDate = checkInErr;
+
+    const checkOutErr = validateStep1("checkOutDate", checkOutDate, {
+      checkInDate,
+    });
+    if (checkOutErr) errs.checkOutDate = checkOutErr;
+
+    if (Object.keys(errs).length > 0) {
+      setStep1Errors(errs);
+      setStep1Touched({
+        flightNumber: true,
+        cancellationDate: true,
+        departureAirport: true,
+        arrivalAirport: true,
+        checkInDate: true,
+        checkOutDate: true,
       });
-      if (arrErr) errs.arrivalAirport = arrErr;
+      setTimeout(() => {
+        const first = document.querySelector(".field-error");
+        first?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 50);
+      return;
+    }
 
-      const checkInErr = validateStep1("checkInDate", checkInDate);
-      if (checkInErr) errs.checkInDate = checkInErr;
+    const depId = resolveAirportId(newDepartureAirport);
+    const arrId = resolveAirportId(newArrivalAirport);
 
-      const checkOutErr = validateStep1("checkOutDate", checkOutDate, {
-        checkInDate,
-      });
-      if (checkOutErr) errs.checkOutDate = checkOutErr;
+    if (depId === arrId) {
+      toast.error("Departure and arrival airports must be different");
+      return;
+    }
 
-      if (Object.keys(errs).length > 0) {
-        setStep1Errors(errs);
-        setStep1Touched({
-          flightNumber: true,
-          cancellationDate: true,
-          departureAirport: true,
-          arrivalAirport: true,
-          checkInDate: true,
-          checkOutDate: true,
-        });
-        setTimeout(() => {
-          const first = document.querySelector(".field-error");
-          first?.scrollIntoView({ behavior: "smooth", block: "center" });
-        }, 50);
-        return;
-      }
+    setIsCreatingFlight(true);
+    try {
+      const formattedDate = toIsoDate(newDate);
+      const reasonEnum = mapCancellationReason(selectedReasonTag, newReason);
+      const reasonText =
+        newReason.trim() ||
+        selectedReasonTag ||
+        "Severe weather conditions at departure";
 
-      setIsCreatingFlight(true);
-      try {
-        const formattedDate = newDate.includes("T")
-          ? newDate.split("T")[0]
-          : newDate;
-
-        const depId = getAirportId(newDepartureAirport, airportCodeToId);
-        const arrId = getAirportId(newArrivalAirport, airportCodeToId);
-        const reasonEnum = mapCancellationReason(selectedReasonTag, newReason);
-        const reasonText =
-          newReason.trim() ||
-          selectedReasonTag ||
-          "Severe weather conditions at departure";
-
-        const existingFlightId =
-          createdFlightId ||
-          (initialData?.id && !isNaN(Number(initialData.id))
-            ? Number(initialData.id)
-            : null);
-
-        if (existingFlightId) {
-          const response = await cancellationService.updateCancelledFlight(
-            existingFlightId,
-            {
-              flightNumber: newFlight.trim(),
-              departureAirportId: depId,
-              arrivalAirportId: arrId,
-              cancellationDate: formattedDate,
-              cancellationReason: reasonEnum,
-              cancellationReasonText: reasonText,
-            },
-          );
-
-          toast.success(response?.message || "Cancelled flight updated");
-        } else {
-          let airlineId = 1;
-          if (typeof window !== "undefined") {
-            const userStr = sessionStorage.getItem("airline_current_user");
-            if (userStr) {
-              try {
-                const u = JSON.parse(userStr);
-                if (u.airlineId) airlineId = Number(u.airlineId);
-              } catch (e) {}
-            }
-          }
-
-          const response = await cancellationService.createCancelledFlight({
+      if (flightId) {
+        const response = await cancellationService.updateCancelledFlight(
+          flightId,
+          {
             flightNumber: newFlight.trim(),
-            airlineId: airlineId,
             departureAirportId: depId,
             arrivalAirportId: arrId,
             cancellationDate: formattedDate,
             cancellationReason: reasonEnum,
             cancellationReasonText: reasonText,
-          });
+          },
+        );
+        toast.success(
+          response?.message || "Cancelled flight updated successfully",
+        );
+      } else {
+        const response = await cancellationService.createCancelledFlight({
+          flightNumber: newFlight.trim(),
+          departureAirportId: depId,
+          arrivalAirportId: arrId,
+          cancellationDate: formattedDate,
+          cancellationReason: reasonEnum,
+          cancellationReasonText: reasonText,
+        });
 
-          if (response?.data?.id) {
-            setCreatedFlightId(response.data.id);
-          }
-          toast.success(response?.message || "Cancelled flight created");
+        if (response?.data?.id) {
+          setCreatedFlightId(response.data.id);
         }
-
-        setActiveStep(2);
-      } catch (error: any) {
-        toast.error(error.message || "Failed to save cancelled flight details");
-      } finally {
-        setIsCreatingFlight(false);
+        toast.success(response?.message || "Cancelled flight created");
       }
+
+      if (advance) {
+        setActiveStep(2);
+      }
+    } catch (error: any) {
+      toast.error(error.message || "Failed to save cancelled flight details");
+    } finally {
+      setIsCreatingFlight(false);
+    }
+  };
+
+  const handleNextStep = async () => {
+    if (activeStep === 1) {
+      await saveFlightStep1(true);
     } else if (activeStep === 2) {
       if (addedBookings.length === 0) {
         toast.error(
@@ -1127,7 +1152,7 @@ export default function CancellationWizard({
       }
     } else if (activeStep === 7) {
       const added: Cancellation = {
-        id: String(Date.now()),
+        id: String(flightId || Date.now()),
         flight: newFlight,
         route: `${newDepartureAirport} ➔ ${newArrivalAirport}`,
         cancellationDate: formatDateString(newDate),
@@ -1171,7 +1196,18 @@ export default function CancellationWizard({
             const isCompleted = activeStep > step.number;
             return (
               <Fragment key={step.number}>
-                <div className="flex flex-col items-center shrink-0 w-[140px] z-10">
+                <div
+                  onClick={() => {
+                    if (isCompleted || (step.number < activeStep && flightId)) {
+                      setActiveStep(step.number);
+                    }
+                  }}
+                  className={cn(
+                    "flex flex-col items-center shrink-0 w-[140px] z-10",
+                    (isCompleted || (step.number < activeStep && !!flightId)) &&
+                      "cursor-pointer",
+                  )}
+                >
                   {/* Circle */}
                   <div
                     className={cn(
@@ -1300,6 +1336,7 @@ export default function CancellationWizard({
                   triggerWidthClass="w-full"
                   widthClass="w-full"
                   heightClass="h-[49px]"
+                  maxListHeightClass="max-h-60"
                   bgClass="bg-white"
                   error={
                     !!(
@@ -1327,6 +1364,7 @@ export default function CancellationWizard({
                   triggerWidthClass="w-full"
                   widthClass="w-full"
                   heightClass="h-[49px]"
+                  maxListHeightClass="max-h-60"
                   bgClass="bg-white"
                   error={
                     !!(
@@ -1547,9 +1585,9 @@ export default function CancellationWizard({
                           e.stopPropagation();
                           fileInputRef.current?.click();
                         }}
-                        className="mt-3 text-xs text-[#0F2757] underline font-medium hover:text-[#1B2B6B]"
+                        className="mt-3 text-xs text-[#0F2757] underline font-medium hover:text-[#1B2B6B] cursor-pointer"
                       >
-                        Upload a different CSV
+                        Upload another file
                       </button>
                     </div>
                   ) : (
@@ -2111,9 +2149,9 @@ export default function CancellationWizard({
                   <p className="font-semibold text-gray-900 text-base">
                     {newDate
                       ? new Date(newDate).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                        })
+                        month: "short",
+                        day: "numeric",
+                      })
                       : "Aug 19"}
                   </p>
                 </div>
@@ -2191,17 +2229,17 @@ export default function CancellationWizard({
                   {(addedBookings.length > 0
                     ? addedBookings
                     : ([
-                        {
-                          id: "1",
-                          pnr: "DDJU",
-                          firstName: "New",
-                          lastName: "Admin",
-                          email: "ops@summitair.com",
-                          adults: 1,
-                          children: 0,
-                          travelClass: "Economy",
-                        },
-                      ] as typeof addedBookings)
+                      {
+                        id: "1",
+                        pnr: "DDJU",
+                        firstName: "New",
+                        lastName: "Admin",
+                        email: "ops@summitair.com",
+                        adults: 1,
+                        children: 0,
+                        travelClass: "Economy",
+                      },
+                    ] as typeof addedBookings)
                   )
                     .slice(
                       (step3CurrentPage - 1) * step3ResultsPerPage,
@@ -2562,17 +2600,17 @@ export default function CancellationWizard({
                   {(addedBookings.length > 0
                     ? addedBookings
                     : [
-                        {
-                          id: "1",
-                          pnr: "AAAAA",
-                          firstName: "New",
-                          lastName: "Admin",
-                          email: "ops@summitair.com",
-                          adults: 1,
-                          children: 0,
-                          travelClass: "Economy",
-                        },
-                      ]
+                      {
+                        id: "1",
+                        pnr: "AAAAA",
+                        firstName: "New",
+                        lastName: "Admin",
+                        email: "ops@summitair.com",
+                        adults: 1,
+                        children: 0,
+                        travelClass: "Economy",
+                      },
+                    ]
                   )
                     .slice(
                       (step5CurrentPage - 1) * step5ResultsPerPage,
@@ -2921,9 +2959,10 @@ export default function CancellationWizard({
                 type="button"
                 onClick={() => {
                   onSave({
-                    id:
-                      initialData?.id ||
-                      Math.random().toString(36).substring(7),
+                    id: flightId
+                      ? String(flightId)
+                      : initialData?.id ||
+                        Math.random().toString(36).substring(7),
                     flight: newFlight || "TRE",
                     route:
                       newDepartureAirport && newArrivalAirport
@@ -2992,52 +3031,75 @@ export default function CancellationWizard({
             )}
 
             {activeStep !== 7 && (
-              <button
-                onClick={handleNextStep}
-                disabled={
-                  isCreatingFlight ||
-                  isConfirmingBookings ||
-                  (activeStep === 6 && !paymentConfirmed)
-                }
-                className={cn(
-                  "flex items-center gap-2 font-medium py-2.5 px-5 rounded-lg transition-colors cursor-pointer text-sm",
-                  isCreatingFlight ||
+              <div className="flex items-center gap-3">
+                {activeStep === 1 && flightId && (
+                  <button
+                    type="button"
+                    onClick={() => saveFlightStep1(false)}
+                    disabled={isCreatingFlight}
+                    className="border border-[#D1D5DB] hover:bg-gray-50 text-[#1F2937] font-medium py-2.5 px-5 rounded-lg transition-colors cursor-pointer text-sm flex items-center gap-2"
+                  >
+                    {isCreatingFlight ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Saving...</span>
+                      </>
+                    ) : (
+                      <span>Save Changes</span>
+                    )}
+                  </button>
+                )}
+                <button
+                  onClick={handleNextStep}
+                  disabled={
+                    isCreatingFlight ||
                     isConfirmingBookings ||
                     (activeStep === 6 && !paymentConfirmed)
-                    ? "bg-[#9CA3AF] text-white cursor-not-allowed border-none"
-                    : "bg-[#0F2757] hover:bg-[#162259] text-white",
-                )}
-              >
-                {isCreatingFlight ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Creating...</span>
-                  </>
-                ) : isConfirmingBookings ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Confirming...</span>
-                  </>
-                ) : activeStep === 6 ? (
-                  <>
-                    <CreditCard className="h-4 w-4" />
-                    <span>
-                      Pay $
-                      {totalPayment.toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <span>
-                      {activeStep === 5 ? "Continue to Payment" : "Continue"}
-                    </span>
-                    <ArrowRight className="h-4 w-4" />
-                  </>
-                )}
-              </button>
+                  }
+                  className={cn(
+                    "flex items-center gap-2 font-medium py-2.5 px-5 rounded-lg transition-colors cursor-pointer text-sm",
+                    isCreatingFlight ||
+                      isConfirmingBookings ||
+                      (activeStep === 6 && !paymentConfirmed)
+                      ? "bg-[#9CA3AF] text-white cursor-not-allowed border-none"
+                      : "bg-[#0F2757] hover:bg-[#162259] text-white",
+                  )}
+                >
+                  {isCreatingFlight ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>{flightId ? "Updating..." : "Creating..."}</span>
+                    </>
+                  ) : isConfirmingBookings ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Confirming...</span>
+                    </>
+                  ) : activeStep === 6 ? (
+                    <>
+                      <CreditCard className="h-4 w-4" />
+                      <span>
+                        Pay $
+                        {totalPayment.toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span>
+                        {activeStep === 5
+                          ? "Continue to Payment"
+                          : activeStep === 1 && flightId
+                            ? "Update & Continue"
+                            : "Continue"}
+                      </span>
+                      <ArrowRight className="h-4 w-4" />
+                    </>
+                  )}
+                </button>
+              </div>
             )}
           </div>
         )}

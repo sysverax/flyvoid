@@ -39,12 +39,12 @@ export type CancelledFlightApiStatus =
   | "published";
 export interface CreateCancelledFlightPayload {
   flightNumber: string;
-  airlineId: number;
   departureAirportId: number;
   arrivalAirportId: number;
   cancellationDate: string;
   cancellationReason?: string;
   cancellationReasonText?: string;
+  airlineId?: number;
 }
 
 export interface UpdateCancelledFlightPayload {
@@ -129,14 +129,8 @@ export const cancellationService = {
 
   async createCancelledFlight(payload: CreateCancelledFlightPayload) {
     try {
-      const response = await apiClient.post("/cancelled-flights", {
-        flightNumber: payload.flightNumber,
-        departureAirportId: payload.departureAirportId,
-        arrivalAirportId: payload.arrivalAirportId,
-        cancellationDate: payload.cancellationDate,
-        cancellationReason: payload.cancellationReason,
-        cancellationReasonText: payload.cancellationReasonText,
-      });
+      const { airlineId, ...requestBody } = payload;
+      const response = await apiClient.post("/cancelled-flights", requestBody);
       return response.data;
     } catch (error: any) {
       throw new Error(
