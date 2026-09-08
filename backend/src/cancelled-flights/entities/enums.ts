@@ -29,6 +29,7 @@ export enum FlightStatus {
   PASSENGERS_BOOKING_CONFIRMED = "passengers_booking_confirmed",
   HOTEL_ALLOCATION_IN_PROGRESS = "hotel_allocation_in_progress",
   ALLOCATED = "allocated",
+  PAID = "paid",
   PUBLISHED = "published",
 }
 
