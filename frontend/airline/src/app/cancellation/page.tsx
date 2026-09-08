@@ -20,6 +20,7 @@ import {
   Wallet,
   Receipt,
   Star,
+  Loader2,
 } from "lucide-react";
 import { toast } from "react-toastify";
 import {
@@ -37,13 +38,24 @@ import { FiltersCard } from "@/src/components/ui/FiltersCard";
 import { Dropdown } from "@/src/components/ui/Dropdown";
 import { TruncatedTooltip } from "@/src/components/ui/TruncatedTooltip";
 import { Pagination } from "@/src/components/ui/pagination";
+import { BookingDetailsDrawer } from "@/src/components/ui/BookingDetailsDrawer";
 import CancellationWizard from "./CancellationWizard";
 import {
   cancellationService,
   CancelledFlightApiStatus,
   ListCancelledFlightsItemDTO,
   ListCancelledFlightsResponseDataDto,
+  ReviewFlightResponse,
+  HotelSummaryCancelledFlightSummaryDto,
+  HotelBookingItemDTO,
 } from "@/src/services/cancellation.service";
+
+const ENUM_TO_TRAVEL_CLASS: Record<string, string> = {
+  first_class: "First Class",
+  business: "Business",
+  premium_economy: "Premium Economy",
+  economy: "Economy",
+};
 
 interface Cancellation {
   id: string;
@@ -173,12 +185,181 @@ function PublishedDetailView({
   const [currentPage, setCurrentPage] = useState(1);
   const [resultsPerPage, setResultsPerPage] = useState(10);
 
-  const hotelCost = cancellation.bookings * 144;
-  const platformDiscount = hotelCost * 0.1;
-  const hotelTax = hotelCost * 0.08;
-  const subtotal = hotelCost - platformDiscount + hotelTax;
-  const platformFee = subtotal * 0.05;
-  const totalPayment = subtotal + platformFee;
+  // API states
+  const [reviewData, setReviewData] = useState<ReviewFlightResponse | null>(null);
+  const [isLoadingReview, setIsLoadingReview] = useState(false);
+
+  const [hotelSummary, setHotelSummary] =
+    useState<HotelSummaryCancelledFlightSummaryDto | null>(null);
+  const [isLoadingHotelSummary, setIsLoadingHotelSummary] = useState(false);
+
+  const [hotelBookings, setHotelBookings] = useState<HotelBookingItemDTO[]>([]);
+  const [totalHotelBookings, setTotalHotelBookings] = useState(0);
+  const [isLoadingHotelBookings, setIsLoadingHotelBookings] = useState(false);
+
+  // Drawer state
+  const [selectedBookingForDrawer, setSelectedBookingForDrawer] =
+    useState<any>(null);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
+  const flightId = Number(cancellation.id);
+
+  // 1. Fetch Review Flight API
+  useEffect(() => {
+    if (!flightId) return;
+    let isMounted = true;
+
+    const fetchReview = async () => {
+      setIsLoadingReview(true);
+      try {
+        const res = await cancellationService.reviewFlight(flightId);
+        const data = res?.data || res;
+        if (isMounted && data) {
+          setReviewData(data);
+        }
+      } catch (err: any) {
+        console.error("Failed to load flight review details:", err);
+      } finally {
+        if (isMounted) {
+          setIsLoadingReview(false);
+        }
+      }
+    };
+
+    fetchReview();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [flightId]);
+
+  // 2. Fetch Hotel Summary API
+  useEffect(() => {
+    if (!flightId) return;
+    let isMounted = true;
+
+    const fetchSummary = async () => {
+      setIsLoadingHotelSummary(true);
+      try {
+        const res = await cancellationService.getHotelSummary(flightId);
+        const summary =
+          res?.data?.summary || (res?.data as any) || (res as any)?.summary;
+        if (isMounted && summary) {
+          setHotelSummary(summary);
+        }
+      } catch (err: any) {
+        console.error("Failed to load hotel summary:", err);
+      } finally {
+        if (isMounted) {
+          setIsLoadingHotelSummary(false);
+        }
+      }
+    };
+
+    fetchSummary();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [flightId]);
+
+  // 3. Fetch List All Hotel Bookings API
+  useEffect(() => {
+    if (!flightId) return;
+    let isMounted = true;
+
+    const fetchBookings = async () => {
+      setIsLoadingHotelBookings(true);
+      try {
+        const res = await cancellationService.listHotelBookings(flightId, {
+          page: currentPage,
+          limit: resultsPerPage,
+        });
+        const data = res?.data || (res as any);
+        if (isMounted && data?.hotelBookings) {
+          setHotelBookings(data.hotelBookings);
+          setTotalHotelBookings(
+            data.totalHotelBookings ?? data.hotelBookings.length,
+          );
+        }
+      } catch (err: any) {
+        console.error("Failed to load hotel bookings:", err);
+      } finally {
+        if (isMounted) {
+          setIsLoadingHotelBookings(false);
+        }
+      }
+    };
+
+    fetchBookings();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [flightId, currentPage, resultsPerPage]);
+
+  // Flight summary card details
+  const flightNumber = reviewData?.flight?.flightNumber || cancellation.flight;
+  const routeDisplay =
+    reviewData?.flight?.route?.departureAirport?.code &&
+    reviewData?.flight?.route?.arrivalAirport?.code
+      ? `${reviewData.flight.route.departureAirport.code} → ${reviewData.flight.route.arrivalAirport.code}`
+      : cancellation.route.replace("➔", "→");
+
+  const cancellationDateDisplay = reviewData?.flight?.cancellationDate
+    ? formatDateString(reviewData.flight.cancellationDate)
+    : cancellation.cancellationDate;
+
+  const bookingsCount =
+    hotelSummary?.totalBookings ??
+    reviewData?.summary?.totalBookings ??
+    cancellation.bookings;
+
+  const passengersCount = hotelSummary
+    ? (hotelSummary.totalAdults || 0) + (hotelSummary.totalChildren || 0)
+    : reviewData?.summary
+      ? (reviewData.summary.totalAdults || 0) +
+        (reviewData.summary.totalChildren || 0)
+      : cancellation.passengers;
+
+  const reasonDisplay = reviewData?.flight?.cancellationReason
+    ? reviewData.flight.cancellationReason.replace(/_/g, " ")
+    : cancellation.reason && cancellation.reason !== "Not specified"
+      ? cancellation.reason
+      : "Not specified";
+
+  // Financial calculations from hotel summary (with fallbacks)
+  const totalRoomsBooked =
+    hotelSummary?.totalRooms ||
+    hotelSummary?.totalBookings ||
+    cancellation.bookings;
+
+  const totalHotelCost =
+    hotelSummary?.totalHotelCost ?? cancellation.bookings * 144;
+  const hotelCost = totalHotelCost;
+
+  const platformDiscount =
+    hotelSummary?.totalDiscount ?? hotelCost * 0.1;
+
+  const hotelTax =
+    hotelSummary?.totalHotelTax ?? hotelCost * 0.08;
+
+  const platformFee =
+    hotelSummary?.totalPlatformFee ??
+    (hotelCost - platformDiscount + hotelTax) * 0.05;
+
+  const totalPayment =
+    hotelSummary?.totalPayable ??
+    hotelCost - platformDiscount + hotelTax + platformFee;
+
+  const totalResults =
+    totalHotelBookings > 0
+      ? totalHotelBookings
+      : bookingsCount > 0
+        ? bookingsCount
+        : 1;
+
+  const totalPages = Math.ceil(totalResults / resultsPerPage) || 1;
 
   return (
     <div className="w-full space-y-6">
@@ -205,10 +386,10 @@ function PublishedDetailView({
           </div>
           <div>
             <h2 className="text-[24px] font-bold text-[#1F2937] leading-tight">
-              {cancellation.flight}
+              {flightNumber}
             </h2>
             <p className="text-[#6B7280] mt-0.5">
-              {cancellation.route.replace("➔", "→")}
+              {routeDisplay}
             </p>
           </div>
         </div>
@@ -220,7 +401,7 @@ function PublishedDetailView({
               <span className="text-[13px] font-medium">Cancellation Date</span>
             </div>
             <p className="text-[#1F2937] font-semibold">
-              {cancellation.cancellationDate}
+              {cancellationDateDisplay}
             </p>
           </div>
           <div className="bg-[#F9FAFB] rounded-xl p-4">
@@ -229,7 +410,7 @@ function PublishedDetailView({
               <span className="text-[13px] font-medium">Bookings</span>
             </div>
             <p className="text-[#1F2937] font-semibold">
-              {cancellation.bookings}
+              {bookingsCount}
             </p>
           </div>
           <div className="bg-[#F9FAFB] rounded-xl p-4">
@@ -238,7 +419,7 @@ function PublishedDetailView({
               <span className="text-[13px] font-medium">Passengers</span>
             </div>
             <p className="text-[#1F2937] font-semibold">
-              {cancellation.passengers}
+              {passengersCount}
             </p>
           </div>
           <div className="bg-[#F9FAFB] rounded-xl p-4">
@@ -247,16 +428,19 @@ function PublishedDetailView({
               <span className="text-[13px] font-medium">Total Cost</span>
             </div>
             <p className="text-[#059669] font-semibold">
-              ${cancellation.totalCost.toLocaleString()}
+              ${totalPayment.toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
             </p>
           </div>
         </div>
 
         <div className="h-px bg-gray-100 w-full mb-4"></div>
 
-        <p className="text-[#4B5563] text-[15px]">
-          <span className="font-semibold text-[#6B7280] mr-2">Reason:</span>
-          {cancellation.reason}
+        <p className="text-[#4B5563] text-[15px] capitalize">
+          <span className="font-semibold text-[#6B7280] mr-2 normal-case">Reason:</span>
+          {reasonDisplay}
         </p>
       </div>
 
@@ -291,7 +475,11 @@ function PublishedDetailView({
               </span>
             </div>
             <div className="text-[24px] font-bold text-gray-900">
-              {cancellation.bookings}
+              {isLoadingHotelSummary && !hotelSummary ? (
+                <Loader2 className="h-5 w-5 animate-spin text-gray-400 my-1" />
+              ) : (
+                totalRoomsBooked
+              )}
             </div>
             <div className="text-sm text-gray-400 mt-1">Rooms booked</div>
           </div>
@@ -304,11 +492,14 @@ function PublishedDetailView({
               </span>
             </div>
             <div className="text-[24px] font-bold text-gray-900">
-              $
-              {hotelCost.toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
+              {isLoadingHotelSummary && !hotelSummary ? (
+                <Loader2 className="h-5 w-5 animate-spin text-gray-400 my-1" />
+              ) : (
+                `$${totalHotelCost.toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}`
+              )}
             </div>
             <div className="text-sm text-gray-400 mt-1">
               Hotel charges before platform discount
@@ -323,11 +514,14 @@ function PublishedDetailView({
               </span>
             </div>
             <div className="text-[24px] font-bold text-green-600">
-              -$
-              {platformDiscount.toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
+              {isLoadingHotelSummary && !hotelSummary ? (
+                <Loader2 className="h-5 w-5 animate-spin text-gray-400 my-1" />
+              ) : (
+                `-$${platformDiscount.toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}`
+              )}
             </div>
             <div className="text-sm text-gray-400 mt-1">
               Discount provided by platform
@@ -342,11 +536,14 @@ function PublishedDetailView({
               </span>
             </div>
             <div className="text-[24px] font-bold text-gray-900">
-              $
-              {hotelTax.toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
+              {isLoadingHotelSummary && !hotelSummary ? (
+                <Loader2 className="h-5 w-5 animate-spin text-gray-400 my-1" />
+              ) : (
+                `$${hotelTax.toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}`
+              )}
             </div>
             <div className="text-sm text-gray-400 mt-1">
               Applicable hotel taxes
@@ -361,11 +558,14 @@ function PublishedDetailView({
               </span>
             </div>
             <div className="text-[24px] font-bold text-gray-900">
-              $
-              {platformFee.toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
+              {isLoadingHotelSummary && !hotelSummary ? (
+                <Loader2 className="h-5 w-5 animate-spin text-gray-400 my-1" />
+              ) : (
+                `$${platformFee.toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}`
+              )}
             </div>
             <div className="text-sm text-gray-400 mt-1">
               Platform fee on the hotel payment
@@ -380,11 +580,14 @@ function PublishedDetailView({
               </span>
             </div>
             <div className="text-[24px] font-bold text-[#0F2757]">
-              $
-              {totalPayment.toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
+              {isLoadingHotelSummary && !hotelSummary ? (
+                <Loader2 className="h-5 w-5 animate-spin text-[#0F2757] my-1" />
+              ) : (
+                `$${totalPayment.toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}`
+              )}
             </div>
             <div className="text-sm text-gray-500 mt-1">
               Total amount to be charged
@@ -421,40 +624,77 @@ function PublishedDetailView({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {Array.from({ length: cancellation.bookings })
-                .slice(
-                  (currentPage - 1) * resultsPerPage,
-                  currentPage * resultsPerPage,
-                )
-                .map((_, idx) => {
-                  const originalIdx = (currentPage - 1) * resultsPerPage + idx;
-                  const isBusiness = originalIdx === 0;
-                  const hotelName = isBusiness
-                    ? "Hyatt Regency LAX"
-                    : "Holiday Inn Express LAX";
-                  const stars = isBusiness ? 4 : 3;
-                  const rooms = 1;
-                  const bookingCost = rooms * (isBusiness ? 160 : 120);
+              {isLoadingHotelBookings && hotelBookings.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={9}
+                    className="text-center py-10 text-gray-500"
+                  >
+                    <div className="flex items-center justify-center gap-2">
+                      <Loader2 className="h-5 w-5 animate-spin text-[#0F2757]" />
+                      <span>Loading hotel bookings...</span>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : hotelBookings.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={9}
+                    className="text-center py-10 text-gray-500"
+                  >
+                    No hotel bookings found
+                  </TableCell>
+                </TableRow>
+              ) : (
+                hotelBookings.map((hb) => {
+                  const pb = hb.passengerBooking;
+                  const hotelBookingId = `HB-${String(hb.id).padStart(6, "0")}`;
+                  const pnr = pb?.pnr || "-";
+                  const contactName =
+                    `${pb?.firstName || ""} ${pb?.lastName || ""}`.trim() || "-";
+                  const email = pb?.email || "";
+                  const travelClass =
+                    ENUM_TO_TRAVEL_CLASS[pb?.travelClass] ||
+                    pb?.travelClass ||
+                    "Economy";
+                  const totalPax =
+                    (pb?.adults || 0) + (pb?.children || 0);
+                  const passengersStr =
+                    totalPax > 1
+                      ? `${totalPax} Passengers`
+                      : `${totalPax || 1} Passenger`;
+                  const hotelName = hb.hotelName || "Transit Hotel";
+                  const ratingVal = parseFloat(hb.rating) || 4;
+                  const stars = Math.min(
+                    5,
+                    Math.max(1, Math.round(ratingVal)),
+                  );
+                  const rooms = hb.totalRooms || 1;
+                  const bookingCost = Number(hb.totalCost) || 0;
 
                   return (
-                    <TableRow key={originalIdx}>
+                    <TableRow key={hb.id}>
                       <TableCell className="font-medium text-gray-900">
-                        HB-00023{originalIdx + 1}
+                        {hotelBookingId}
                       </TableCell>
                       <TableCell className="font-medium text-gray-900">
-                        A{originalIdx}B{originalIdx}C
+                        {pnr}
                       </TableCell>
                       <TableCell>
                         <div className="font-semibold text-gray-900">
-                          Jane Doe
+                          {contactName}
                         </div>
-                        <TruncatedTooltip text="jane.doe@example.com" side="top">
-                          <div className="text-xs text-gray-500 max-w-[160px] truncate cursor-default">
-                            jane.doe@example.com
-                          </div>
-                        </TruncatedTooltip>
+                        {email && (
+                          <TruncatedTooltip text={email} side="top">
+                            <div className="text-xs text-gray-500 max-w-[160px] truncate cursor-default">
+                              {email}
+                            </div>
+                          </TruncatedTooltip>
+                        )}
                       </TableCell>
-                      <TableCell className="text-center">1 Passenger</TableCell>
+                      <TableCell className="text-center">
+                        {passengersStr}
+                      </TableCell>
                       <TableCell className="font-medium">
                         <TruncatedTooltip text={hotelName} side="top">
                           <div className="max-w-[180px] truncate cursor-default">
@@ -465,7 +705,10 @@ function PublishedDetailView({
                       <TableCell>
                         <div className="flex items-center text-amber-400">
                           {[...Array(stars)].map((_, i) => (
-                            <Star key={i} className="h-3 w-3 fill-current" />
+                            <Star
+                              key={i}
+                              className="h-3 w-3 fill-current"
+                            />
                           ))}
                         </div>
                       </TableCell>
@@ -480,14 +723,43 @@ function PublishedDetailView({
                       <TableCell>
                         <button
                           type="button"
+                          onClick={() => {
+                            setSelectedBookingForDrawer({
+                              ...pb,
+                              hotelBookingId,
+                              hotelName,
+                              rating: hb.rating,
+                              totalRooms: rooms,
+                              totalCost: bookingCost,
+                              travelClass,
+                              roomName:
+                                (hb as any).rooms?.[0]?.roomName ||
+                                (hb as any).rooms?.[0]?.name ||
+                                "Standard Twin Room",
+                              roomType:
+                                (hb as any).rooms?.[0]?.roomName ||
+                                (hb as any).rooms?.[0]?.name ||
+                                "Standard Twin Room",
+                              checkInDate:
+                                (hb as any).checkInDate ||
+                                cancellationDateDisplay,
+                              checkOutDate: (hb as any).checkOutDate,
+                              hotelAddress:
+                                (hb as any).hotelAddress ||
+                                (hb as any).address,
+                            });
+                            setIsDrawerOpen(true);
+                          }}
                           className="p-1.5 text-gray-400 hover:text-[#0F2757] hover:bg-gray-100 rounded transition-colors cursor-pointer"
+                          title="View details"
                         >
                           <Eye className="h-4 w-4" />
                         </button>
                       </TableCell>
                     </TableRow>
                   );
-                })}
+                })
+              )}
             </TableBody>
           </Table>
         </div>
@@ -495,7 +767,7 @@ function PublishedDetailView({
         {/* Pagination */}
         <div className="mt-4">
           <Pagination
-            totalResults={cancellation.bookings}
+            totalResults={totalResults}
             resultsPerPage={resultsPerPage}
             currentPage={currentPage}
             setCurrentPage={setCurrentPage}
@@ -503,7 +775,7 @@ function PublishedDetailView({
               setResultsPerPage(val);
               setCurrentPage(1);
             }}
-            totalPages={Math.ceil(cancellation.bookings / resultsPerPage) || 1}
+            totalPages={totalPages}
           />
         </div>
 
@@ -514,7 +786,7 @@ function PublishedDetailView({
               All bookings confirmed
             </h4>
             <p className="text-[#64748B] text-[13px] mt-0.5">
-              {cancellation.bookings} confirmation emails sent
+              {bookingsCount} confirmation emails sent
             </p>
           </div>
           <div className="text-[22px] font-bold text-[#0F2757]">
@@ -526,6 +798,12 @@ function PublishedDetailView({
           </div>
         </div>
       </div>
+
+      <BookingDetailsDrawer
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+        booking={selectedBookingForDrawer}
+      />
     </div>
   );
 }
@@ -624,16 +902,22 @@ export default function CancellationPage() {
   ]);
 
   // Confirm Publish function (from modal)
-  const confirmPublish = (id: string) => {
-    setCancellations((prev) =>
-      prev.map((c) =>
-        c.id === id
-          ? { ...c, status: "Published", displayStatus: "Published" }
-          : c,
-      ),
-    );
-    setPublishTarget(null);
-    toast.success("Published successfully");
+  const confirmPublish = async (id: string) => {
+    try {
+      await cancellationService.publishFlight(Number(id));
+      setCancellations((prev) =>
+        prev.map((c) =>
+          c.id === id
+            ? { ...c, status: "Published", displayStatus: "Published" }
+            : c,
+        ),
+      );
+      toast.success("Published successfully");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to publish flight");
+    } finally {
+      setPublishTarget(null);
+    }
   };
 
   // Sorting Logic
@@ -660,12 +944,16 @@ export default function CancellationPage() {
 
   return (
     <div className="flex min-h-screen flex-1 flex-col pb-16 lg:w-full lg:max-w-[calc(100vw-304px)]">
-      {detailCancellation && detailCancellation.status === "Published" ? (
+      {detailCancellation &&
+      (detailCancellation.status === "Published" ||
+        detailCancellation.displayStatus === "Published") ? (
         <PublishedDetailView
           cancellation={detailCancellation}
           onClose={() => setDetailCancellation(null)}
         />
-      ) : detailCancellation && detailCancellation.status !== "Published" ? (
+      ) : detailCancellation &&
+        detailCancellation.status !== "Published" &&
+        detailCancellation.displayStatus !== "Published" ? (
         <CancellationWizard
           initialData={detailCancellation}
           onClose={() => {
