@@ -22,6 +22,39 @@ export function BookingDetailsDrawer({
     setMounted(true);
   }, []);
 
+  const hasPax =
+    (booking?.adults !== undefined && booking?.adults !== null) ||
+    (booking?.children !== undefined && booking?.children !== null);
+  const adults =
+    booking?.adults !== undefined && booking?.adults !== null
+      ? Number(booking.adults)
+      : 0;
+  const children =
+    booking?.children !== undefined && booking?.children !== null
+      ? Number(booking.children)
+      : 0;
+  const totalPax = adults + children;
+
+  const ratingVal = parseFloat(booking?.rating);
+  const starCount = !isNaN(ratingVal)
+    ? Math.min(5, Math.max(1, Math.round(ratingVal)))
+    : booking?.travelClass === "Business" ||
+        booking?.travelClass === "First Class"
+      ? 4
+      : 3;
+
+  const roomCount =
+    booking?.totalRooms && Number(booking.totalRooms) > 0
+      ? Number(booking.totalRooms)
+      : totalPax > 0
+        ? Math.ceil(totalPax / 2)
+        : 1;
+
+  const contactName =
+    booking?.firstName || booking?.lastName
+      ? `${booking?.firstName || ""} ${booking?.lastName || ""}`.trim()
+      : null;
+
   const content = (
     <>
       {/* Backdrop */}
@@ -47,7 +80,7 @@ export function BookingDetailsDrawer({
               Hotel Booking Details
             </h2>
             <p className="text-sm text-[#6B7280] font-figtree -mt-0.5">
-              HB-000234
+              {booking?.hotelBookingId || "Not Available"}
             </p>
           </div>
           <button
@@ -72,33 +105,41 @@ export function BookingDetailsDrawer({
             <div className="space-y-3">
               <div className="flex justify-between items-start gap-4">
                 <span className="text-gray-500">Hotel Booking ID</span>
-                <span className="font-medium text-gray-900 text-right">HB-000234</span>
+                <span className="font-medium text-gray-900 text-right">
+                  {booking?.hotelBookingId || "Not Available"}
+                </span>
               </div>
               <div className="flex justify-between items-start gap-4">
                 <span className="text-gray-500">PNR</span>
-                <span className="font-medium text-gray-900 uppercase text-right">{booking?.pnr || "ANIM DOLOR CUM ADIPI"}</span>
+                <span className="font-medium text-gray-900 uppercase text-right">
+                  {booking?.pnr || "Not Available"}
+                </span>
               </div>
               <div className="flex justify-between items-start gap-4">
                 <span className="text-gray-500">Contact</span>
                 <div className="text-gray-900 text-right">
-                  <div className="font-medium">{booking?.firstName || "Hedwig"} {booking?.lastName || "Preston"}</div>
-                  <div className="text-gray-500 mt-0.5">{booking?.email || "gypobyj@mailinator.com"}</div>
-                  <div className="text-gray-500 mt-0.5">{booking?.phone || "+1 (255) 751-1596"}</div>
+                  <div className="font-medium">{contactName || "Not Available"}</div>
+                  <div className="text-gray-500 mt-0.5">{booking?.email || "Not Available"}</div>
+                  <div className="text-gray-500 mt-0.5">{booking?.phone || "Not Available"}</div>
                 </div>
               </div>
               <div className="flex justify-between items-start gap-4">
                 <span className="text-gray-500">Passengers</span>
                 <span className="font-medium text-gray-900 text-right">
-                  {(booking?.adults || 0) + (booking?.children || 0) || 9} Passengers · {booking?.adults || 4} Adults, {booking?.children || 5} Children
+                  {hasPax
+                    ? `${totalPax} ${totalPax === 1 ? "Passenger" : "Passengers"} · ${adults} ${adults === 1 ? "Adult" : "Adults"}, ${children} ${children === 1 ? "Child" : "Children"}`
+                    : "Not Available"}
                 </span>
               </div>
               <div className="flex justify-between items-center gap-4">
                 <span className="text-gray-500">Class</span>
-                <span className="font-medium text-gray-900 capitalize bg-gray-100 px-2 py-0.5 rounded inline-flex w-fit">{booking?.travelClass || "economy"} class</span>
+                <span className="font-medium text-gray-900 capitalize bg-gray-100 px-2 py-0.5 rounded inline-flex w-fit">
+                  {booking?.travelClass ? `${booking.travelClass} class` : "Not Available"}
+                </span>
               </div>
               <div className="flex justify-between items-start gap-4">
                 <span className="text-gray-500">Special Notes</span>
-                <span className="text-gray-900 text-right">{booking?.notes || "Odit velit incidunt"}</span>
+                <span className="text-gray-900 text-right">{booking?.notes || "Not Available"}</span>
               </div>
             </div>
           </div>
@@ -108,19 +149,25 @@ export function BookingDetailsDrawer({
             <h3 className="font-semibold text-base text-gray-900 mb-1 pb-2">Hotel Information</h3>
             <div className="bg-[#F8FAFC] p-4 rounded-xl space-y-3 border border-gray-100">
               <div>
-                <div className="font-sem text-base text-gray-900">
-                  {booking?.travelClass === "Business" || booking?.travelClass === "First Class" ? "Hyatt Regency LAX" : "Holiday Inn Express LAX"}
+                <div className="font-semibold text-base text-gray-900">
+                  {booking?.hotelName || "Not Available"}
                 </div>
                 <div className="flex text-amber-400 mt-1">
-                  {[...Array(booking?.travelClass === "Business" || booking?.travelClass === "First Class" ? 4 : 3)].map((_, i) => (
+                  {[...Array(starCount)].map((_, i) => (
                     <Star key={i} className="h-3 w-3 fill-current" />
                   ))}
                 </div>
               </div>
-              <div className="text-gray-600">8620 Airport Blvd, Los Angeles</div>
+              <div className="text-gray-600">
+                {booking?.hotelAddress || booking?.address || "Not Available"}
+              </div>
               <div className="flex items-center gap-2 text-gray-600">
                 <Calendar className="h-4 w-4 shrink-0 text-gray-400" />
-                <span>Check-in 27 Jun 2009 · Check-out 02 Mar 2021</span>
+                <span>
+                  {booking?.checkInDate && booking?.checkOutDate
+                    ? `Check-in ${booking.checkInDate} · Check-out ${booking.checkOutDate}`
+                    : (booking?.checkInDate ? `Check-in ${booking.checkInDate}` : "Not Available")}
+                </span>
               </div>
               <div className="flex flex-wrap gap-2 pt-2">
                 <span className="bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-1 rounded text-xs font-medium">Free WiFi</span>
@@ -134,9 +181,11 @@ export function BookingDetailsDrawer({
           <div>
             <h3 className="font-semibold text-base text-gray-900 mb-1 pb-2">Room Details</h3>
             <div className="space-y-4">
-              {Array.from({ length: Math.ceil(((booking?.adults || 0) + (booking?.children || 0)) / 2) || 1 }).map((_, i) => (
+              {Array.from({ length: roomCount }).map((_, i) => (
                 <div key={i + 1} className="bg-white border border-gray-200 p-4 rounded-xl">
-                  <div className="font-semibold text-gray-900">Room {i + 1} — Standard Twin Room</div>
+                  <div className="font-semibold text-gray-900">
+                    Room {i + 1} — {booking?.roomName || booking?.roomType || "Not Available"}
+                  </div>
                   <div className="text-xs text-gray-500 mt-0.5">Up to 2 Guests</div>
                   <div className="mt-4 space-y-2 text-sm">
                     <div className="flex justify-between items-center text-gray-600">
