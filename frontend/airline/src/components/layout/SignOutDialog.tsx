@@ -1,30 +1,20 @@
 "use client";
 
-import { useState } from "react";
 import { Dialog } from "@/src/components/ui/Dialog";
 
 interface SignOutDialogProps {
   isOpen: boolean;
+  isSigningOut: boolean;
   onClose: () => void;
   onConfirm: () => void;
 }
 
 export function SignOutDialog({
   isOpen,
+  isSigningOut,
   onClose,
   onConfirm,
 }: SignOutDialogProps) {
-  const [isSigningOut, setIsSigningOut] = useState(false);
-
-  const handleConfirm = () => {
-    setIsSigningOut(true);
-    // Simulate API call for signing out before confirming
-    setTimeout(() => {
-      setIsSigningOut(false);
-      onConfirm();
-    }, 1500);
-  };
-
   return (
     <Dialog.Root isOpen={isOpen} onClose={isSigningOut ? () => {} : onClose}>
       <Dialog.Header title="Sign Out?" onClose={isSigningOut ? () => {} : onClose} />
@@ -33,7 +23,7 @@ export function SignOutDialog({
       </Dialog.Body>
       <Dialog.Footer>
         <Dialog.Cancel onClick={onClose} disabled={isSigningOut} />
-        <Dialog.Action variant="danger" onClick={handleConfirm} disabled={isSigningOut}>
+        <Dialog.Action variant="danger" onClick={onConfirm} disabled={isSigningOut}>
           {isSigningOut ? (
             <>
               <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">

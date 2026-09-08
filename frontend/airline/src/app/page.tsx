@@ -9,11 +9,9 @@ import {
   Percent,
   HandCoins,
   Plane,
-  TrendingUp,
-  Wallet,
+  Clock,
   ArrowRight,
 } from "lucide-react";
-import { toast } from "react-toastify";
 import { Header } from "@/src/components/layout/Header";
 import {
   Table,
@@ -25,7 +23,6 @@ import {
   SortHeader,
 } from "@/src/components/ui/table";
 import { StatusBadge } from "@/src/components/ui/StatusBadge";
-import { PaymentDrawer } from "@/src/components/ui/PaymentDrawer";
 import { TruncatedTooltip } from "@/src/components/ui/TruncatedTooltip";
 import {
   ResponsiveContainer,
@@ -46,15 +43,15 @@ interface KpiCardData {
 
 const DASHBOARD_CARDS: KpiCardData[] = [
   {
-    title: "Outstanding Balance",
-    value: "$6,287",
-    subtext: "Platform fees payable",
+    title: "Pending Payments",
+    value: "$2,006.00",
+    subtext: "2 bookings awaiting payment",
     icon: DollarSign,
   },
   {
-    title: "Remaining Credit",
-    value: "$18,713",
-    subtext: "of $25,000 limit",
+    title: "Remaining Pending Allowance",
+    value: "$22,994.00",
+    subtext: "of $25,000.00 allowed limit",
     icon: CreditCard,
   },
   {
@@ -64,15 +61,9 @@ const DASHBOARD_CARDS: KpiCardData[] = [
     icon: Percent,
   },
   {
-    title: "Platform Fees (Last 30 Days)",
-    value: "$4,112",
-    subtext: "Fees charged to your balance",
-    icon: DollarSign,
-  },
-  {
-    title: "Payments Made (Last 30 Days)",
-    value: "$3,500",
-    subtext: "Paid against your balance",
+    title: "Paid (Last 30 Days)",
+    value: "$766.00",
+    subtext: "Hotel booking payments completed",
     icon: HandCoins,
   },
   {
@@ -80,6 +71,37 @@ const DASHBOARD_CARDS: KpiCardData[] = [
     value: "1,847",
     subtext: "Total hotel bookings",
     icon: Plane,
+  },
+  {
+    title: "Cancelled Flights",
+    value: "156",
+    subtext: "Handled on the platform",
+    icon: "/icons/plane.svg",
+  },
+];
+
+interface PendingPreviewItem {
+  id: string;
+  pnr: string;
+  hotel: string;
+  amount: string;
+  status: string;
+}
+
+const PENDING_PAYMENTS_PREVIEW: PendingPreviewItem[] = [
+  {
+    id: "HB-000235",
+    pnr: "PNR992",
+    hotel: "Hyatt Regency LAX",
+    amount: "$1,240.00",
+    status: "Payment Pending",
+  },
+  {
+    id: "HB-000234",
+    pnr: "DDJU34",
+    hotel: "Holiday Inn Express LAX",
+    amount: "$766.00",
+    status: "Payment Pending",
   },
 ];
 
@@ -163,24 +185,22 @@ export default function DashboardPage() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
 
   // Payment state
-  const [outstandingBalance, setOutstandingBalance] = useState(6287);
-  const [isPaymentDrawerOpen, setIsPaymentDrawerOpen] = useState(false);
+  const [outstandingBalance, setOutstandingBalance] = useState(2006);
 
   const creditLimit = 25000;
   const remainingCredit = creditLimit - outstandingBalance;
-  const utilizationPercent = (outstandingBalance / creditLimit) * 100;
 
   const dashboardCards = useMemo<KpiCardData[]>(() => [
     {
-      title: "Outstanding Balance",
-      value: `$${outstandingBalance.toLocaleString()}`,
-      subtext: "Platform fees payable",
+      title: "Pending Payments",
+      value: `$${outstandingBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      subtext: "2 bookings awaiting payment",
       icon: DollarSign,
     },
     {
-      title: "Remaining Credit",
-      value: `$${remainingCredit.toLocaleString()}`,
-      subtext: `of $${creditLimit.toLocaleString()} limit`,
+      title: "Remaining Pending Allowance",
+      value: `$${remainingCredit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      subtext: `of $${creditLimit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} allowed limit`,
       icon: CreditCard,
     },
     {
@@ -190,15 +210,9 @@ export default function DashboardPage() {
       icon: Percent,
     },
     {
-      title: "Platform Fees (Last 30 Days)",
-      value: "$4,112",
-      subtext: "Fees charged to your balance",
-      icon: DollarSign,
-    },
-    {
-      title: "Payments Made (Last 30 Days)",
-      value: "$3,500",
-      subtext: "Paid against your balance",
+      title: "Paid (Last 30 Days)",
+      value: "$766.00",
+      subtext: "Hotel booking payments completed",
       icon: HandCoins,
     },
     {
@@ -207,14 +221,13 @@ export default function DashboardPage() {
       subtext: "Total hotel bookings",
       icon: Plane,
     },
+    {
+      title: "Cancelled Flights",
+      value: "156",
+      subtext: "Handled on the platform",
+      icon: "/icons/plane.svg",
+    },
   ], [outstandingBalance, remainingCredit]);
-
-  const handlePaymentComplete = (amount: number, method: "card" | "bank", title: string, description: string) => {
-    if (method === "card") {
-      setOutstandingBalance((prev) => Math.max(0, prev - amount));
-    }
-    toast.success(title);
-  };
 
   useEffect(() => {
     setMounted(true);
@@ -250,7 +263,7 @@ export default function DashboardPage() {
         {/* Header Title Section */}
         <Header
           title="Dashboard"
-          subtitle="Platform health and operational overview"
+          subtitle="Overview of your airline operations"
         />
 
         {/* 6 KPI Cards Grid */}
@@ -368,53 +381,67 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Outstanding Platform Balance Card */}
-          <div className="self-stretch p-6 bg-white rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col justify-between items-start gap-6">
-            <div className="w-full flex flex-col gap-4">
-              {/* Header with Title and Wallet Icon */}
-              <div className="w-full flex justify-between items-start">
-                <div>
-                  <h2 className="text-xl font-semibold text-gray-900 font-figtree">
-                    Outstanding Platform Balance
-                  </h2>
-                </div>
-                <div className="size-11 p-2.5 bg-gray-100 rounded-lg flex justify-center items-center shrink-0">
-                  <Wallet className="h-5.5 w-5.5 text-blue-950 stroke-[1.8]" />
-                </div>
+          {/* Pending Payments Card */}
+          <div className="self-stretch p-6 bg-white rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col justify-between items-stretch gap-6">
+            {/* Header with Title and Clock Icon */}
+            <div className="w-full flex justify-between items-start">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900 font-figtree">
+                  Pending Payments
+                </h2>
+                <p className="text-sm text-gray-500 font-figtree mt-0.5">
+                  Hotel bookings awaiting payment
+                </p>
               </div>
-
-              {/* Amount and Subtext */}
-              <div className="flex flex-col gap-1 mt-1">
-                <div className="text-4xl font-bold text-gray-900 font-figtree">
-                  ${outstandingBalance.toLocaleString()}
-                </div>
-                <div className="text-sm text-gray-500 font-figtree">
-                  of ${creditLimit.toLocaleString()} credit limit used
-                </div>
-              </div>
-
-              {/* Progress Bar & Legend */}
-              <div className="flex flex-col gap-2.5 mt-2">
-                <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
-                  <div
-                    className="bg-[#203764] h-full rounded-full transition-all duration-500"
-                    style={{ width: `${utilizationPercent}%` }}
-                  />
-                </div>
-                <div className="flex justify-between items-center text-sm font-figtree">
-                  <span className="text-gray-500">{Math.round(utilizationPercent)}% of limit</span>
-                  <span className="font-semibold text-gray-900">${remainingCredit.toLocaleString()} remaining</span>
-                </div>
+              <div className="size-11 p-2.5 bg-gray-100 rounded-lg flex justify-center items-center shrink-0">
+                <Clock className="h-5.5 w-5.5 text-blue-950 stroke-[1.8]" />
               </div>
             </div>
 
-            {/* Pay Now Button */}
-            <button
-              onClick={() => setIsPaymentDrawerOpen(true)}
-              className="w-full bg-[#203764] hover:bg-[#162747] text-white font-medium py-3 px-4 rounded-lg transition-colors flex items-center justify-center text-base cursor-pointer"
-            >
-              Pay Now
-            </button>
+            {/* List of Pending Bookings */}
+            <div className="flex flex-col gap-3">
+              {PENDING_PAYMENTS_PREVIEW.map((item) => (
+                <div
+                  key={item.id}
+                  className="w-full p-3.5 sm:p-4 bg-white rounded-xl border border-gray-200 flex justify-between items-center"
+                >
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-[15px] font-semibold text-gray-900 font-figtree">
+                      {item.id}
+                    </span>
+                    <span className="text-sm text-gray-500 font-figtree">
+                      {item.pnr} &middot; {item.hotel}
+                    </span>
+                  </div>
+                  <div className="flex flex-col items-end gap-1.5">
+                    <span className="text-[15px] font-semibold text-gray-900 font-figtree">
+                      {item.amount}
+                    </span>
+                    <span className="inline-flex items-center justify-center text-[12px] font-medium tracking-wide select-none h-[22px] rounded-full px-3 bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A]/60">
+                      {item.status}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Total Pending and Go to Payments button */}
+            <div className="w-full border-t border-gray-100 pt-4 flex justify-between items-center mt-auto">
+              <div className="flex flex-col">
+                <span className="text-[11px] font-semibold text-gray-500 tracking-wider uppercase font-figtree">
+                  TOTAL PENDING
+                </span>
+                <span className="text-2xl font-bold text-gray-900 font-figtree mt-0.5">
+                  $2,006.00
+                </span>
+              </div>
+              <Link
+                href="/payments"
+                className="inline-flex items-center justify-center bg-[#203764] hover:bg-[#162747] text-white font-medium px-5 py-2.5 rounded-lg text-sm transition-colors cursor-pointer font-figtree"
+              >
+                Go to Payments
+              </Link>
+            </div>
           </div>
         </div>
 
@@ -534,13 +561,6 @@ export default function DashboardPage() {
         </div>
 
       </div>
-
-      <PaymentDrawer
-        isOpen={isPaymentDrawerOpen}
-        onClose={() => setIsPaymentDrawerOpen(false)}
-        balance={outstandingBalance}
-        onPaymentComplete={handlePaymentComplete}
-      />
     </div>
   );
 }
