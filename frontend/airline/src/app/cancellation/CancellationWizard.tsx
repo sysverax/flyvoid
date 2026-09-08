@@ -59,6 +59,8 @@ import {
   BookingDTO,
   ReviewFlightResponse,
   HotelAllocationsResponse,
+  HotelSummaryCancelledFlightSummaryDto,
+  HotelBookingItemDTO,
 } from "@/src/services/cancellation.service";
 import { airportsService, AirportDTO } from "@/src/services/airports.service";
 
@@ -249,6 +251,9 @@ export default function CancellationWizard({
   const [isLoadingAirports, setIsLoadingAirports] = useState(false);
 
   useEffect(() => {
+    if (activeStep !== 1) return;
+    if (airports.length > 0) return;
+
     let isMounted = true;
     const fetchAirports = async () => {
       setIsLoadingAirports(true);
@@ -269,7 +274,7 @@ export default function CancellationWizard({
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [activeStep, airports.length]);
 
   const airportOptions = useMemo(() => {
     return [
@@ -702,6 +707,57 @@ export default function CancellationWizard({
     }
   };
 
+  // Step 5 Hotel Summary & Hotel Bookings state
+  const [hotelSummary, setHotelSummary] =
+    useState<HotelSummaryCancelledFlightSummaryDto | null>(null);
+  const [isLoadingHotelSummary, setIsLoadingHotelSummary] = useState(false);
+  const [hotelBookings, setHotelBookings] = useState<HotelBookingItemDTO[]>([]);
+  const [totalHotelBookings, setTotalHotelBookings] = useState(0);
+  const [isLoadingHotelBookings, setIsLoadingHotelBookings] = useState(false);
+  const [step5CurrentPage, setStep5CurrentPage] = useState(1);
+  const [step5ResultsPerPage, setStep5ResultsPerPage] = useState(10);
+
+  const isFetchingHotelSummaryRef = useRef(false);
+  const isFetchingHotelBookingsRef = useRef(false);
+
+  const fetchHotelSummary = async (fId: number) => {
+    if (isFetchingHotelSummaryRef.current) return;
+    isFetchingHotelSummaryRef.current = true;
+    setIsLoadingHotelSummary(true);
+    try {
+      const res = await cancellationService.getHotelSummary(fId);
+      const summary =
+        res?.data?.summary || (res?.data as any) || (res as any)?.summary;
+      if (summary) {
+        setHotelSummary(summary);
+      }
+    } catch (err: any) {
+      console.error("Failed to load hotel summary:", err);
+    } finally {
+      setIsLoadingHotelSummary(false);
+      isFetchingHotelSummaryRef.current = false;
+    }
+  };
+
+  const fetchHotelBookings = async (fId: number, page = 1, limit = 10) => {
+    if (isFetchingHotelBookingsRef.current) return;
+    isFetchingHotelBookingsRef.current = true;
+    setIsLoadingHotelBookings(true);
+    try {
+      const res = await cancellationService.listHotelBookings(fId, { page, limit });
+      const data = res?.data || (res as any);
+      if (data?.hotelBookings) {
+        setHotelBookings(data.hotelBookings);
+        setTotalHotelBookings(data.totalHotelBookings ?? data.hotelBookings.length);
+      }
+    } catch (err: any) {
+      console.error("Failed to load hotel bookings:", err);
+    } finally {
+      setIsLoadingHotelBookings(false);
+      isFetchingHotelBookingsRef.current = false;
+    }
+  };
+
   useEffect(() => {
     if (activeStep === 2 && flightId) {
       fetchBookings(flightId);
@@ -710,8 +766,16 @@ export default function CancellationWizard({
       if (addedBookings.length === 0) {
         fetchBookings(flightId);
       }
+    } else if ((activeStep === 5 || activeStep === 6) && flightId) {
+      fetchHotelSummary(flightId);
     }
   }, [activeStep, flightId]);
+
+  useEffect(() => {
+    if (activeStep === 5 && flightId) {
+      fetchHotelBookings(flightId, step5CurrentPage, step5ResultsPerPage);
+    }
+  }, [activeStep, flightId, step5CurrentPage, step5ResultsPerPage]);
 
   const handleAllocateHotels = async () => {
     setIsAllocating(true);
@@ -787,6 +851,7 @@ export default function CancellationWizard({
   const [paymentConfirmed, setPaymentConfirmed] = useState(
     () => initialData?.status?.toLowerCase() === "paid",
   );
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
   // Step 5 Drawer state
   const [isBookingDetailsOpen, setIsBookingDetailsOpen] = useState(false);
@@ -797,40 +862,28 @@ export default function CancellationWizard({
   const [step3CurrentPage, setStep3CurrentPage] = useState(1);
   const [step3ResultsPerPage, setStep3ResultsPerPage] = useState(10);
 
-  // Step 5 Pagination state
-  const [step5CurrentPage, setStep5CurrentPage] = useState(1);
-  const [step5ResultsPerPage, setStep5ResultsPerPage] = useState(10);
+
 
   // Step 7 Publish state
   const [notifySMS, setNotifySMS] = useState(true);
   const [notifyEmail, setNotifyEmail] = useState(true);
   const [notifyGround, setNotifyGround] = useState(true);
 
-  // Calculated state values
-  const totalBookingsCount = addedBookings.length;
-  const totalAdultsCount = addedBookings.reduce(
-    (sum, b) => sum + (b.adults || 0),
-    0,
-  );
-  const totalChildrenCount = addedBookings.reduce(
-    (sum, b) => sum + (b.children || 0),
-    0,
-  );
+  const totalBookingsCount =
+    hotelSummary?.totalBookings ?? addedBookings.length;
+  const totalAdultsCount =
+    hotelSummary?.totalAdults ??
+    addedBookings.reduce((sum, b) => sum + (b.adults || 0), 0);
+  const totalChildrenCount =
+    hotelSummary?.totalChildren ??
+    addedBookings.reduce((sum, b) => sum + (b.children || 0), 0);
   const totalPassengersCount = totalAdultsCount + totalChildrenCount;
-  const totalRoomsCount = addedBookings.reduce(
-    (sum, b) => sum + Math.ceil(((b.adults || 0) + (b.children || 0)) / 2),
-    0,
-  );
-  const hotelCost =
-    hotelAllocations?.totalSellingPrice ?? totalBookingsCount * 120;
-  const platformDiscount =
-    hotelAllocations?.totalDiscounts ?? hotelCost * 0.1;
-  const hotelTax =
-    hotelAllocations?.totalHotelTaxes ?? hotelCost * 0.08;
-  const subtotal = hotelCost - platformDiscount + hotelTax;
-  const platformFee =
-    hotelAllocations?.totalPlatformFee ?? subtotal * 0.05;
-  const totalPayment = subtotal + platformFee;
+  const totalRoomsCount = hotelSummary?.totalRooms ?? 0;
+  const hotelCost = hotelSummary?.totalHotelCost ?? 0;
+  const platformDiscount = hotelSummary?.totalDiscount ?? 0;
+  const hotelTax = hotelSummary?.totalHotelTax ?? 0;
+  const platformFee = hotelSummary?.totalPlatformFee ?? 0;
+  const totalPayment = hotelSummary?.totalPayable ?? 0;
   const currencySymbol = hotelAllocations?.currency === "EUR" ? "€" : "$";
 
   const handleTagClick = (tag: string) => {
@@ -1239,6 +1292,23 @@ export default function CancellationWizard({
         await handleAllocateHotels();
       } else {
         setActiveStep(5);
+      }
+    } else if (activeStep === 6) {
+      if (!flightId) {
+        setActiveStep(7);
+        return;
+      }
+      setIsProcessingPayment(true);
+      try {
+        const res = await cancellationService.processPayment(flightId, {
+          paymentMethod,
+        });
+        toast.success(res?.message || "Payment processed successfully");
+        setActiveStep(7);
+      } catch (error: any) {
+        toast.error(error.message || "Failed to process payment");
+      } finally {
+        setIsProcessingPayment(false);
       }
     } else if (activeStep === 7) {
       const added: Cancellation = {
@@ -2309,10 +2379,10 @@ export default function CancellationWizard({
                     ? totalRoomsCount
                     : reviewData?.summary
                       ? Math.ceil(
-                          ((reviewData.summary.totalAdults || 0) +
-                            (reviewData.summary.totalChildren || 0)) /
-                            2,
-                        )
+                        ((reviewData.summary.totalAdults || 0) +
+                          (reviewData.summary.totalChildren || 0)) /
+                        2,
+                      )
                       : 0}
                 </span>
                 <span className="text-[13px] text-[#6B7280] mt-1">
@@ -2499,23 +2569,12 @@ export default function CancellationWizard({
           </div>
         );
       case 5:
-        const roomsCount =
-          hotelAllocations?.totalRooms ??
-          (addedBookings.reduce(
-            (sum, b) => sum + Math.ceil((b.adults + b.children) / 2),
-            0,
-          ) || 11);
-        const baseCost =
-          hotelAllocations?.totalSellingPrice ??
-          (hotelCost > 0 ? hotelCost : 1320);
-        const discountAmt =
-          hotelAllocations?.totalDiscounts ?? baseCost * 0.1;
-        const taxAmt =
-          hotelAllocations?.totalHotelTaxes ?? baseCost * 0.08;
-        const feeAmt =
-          hotelAllocations?.totalPlatformFee ??
-          (baseCost - discountAmt + taxAmt) * 0.05;
-        const finalAmt = baseCost - discountAmt + taxAmt + feeAmt;
+        const roomsCount = hotelSummary?.totalRooms ?? 0;
+        const baseCost = hotelSummary?.totalHotelCost ?? 0;
+        const discountAmt = hotelSummary?.totalDiscount ?? 0;
+        const taxAmt = hotelSummary?.totalHotelTax ?? 0;
+        const feeAmt = hotelSummary?.totalPlatformFee ?? 0;
+        const finalAmt = hotelSummary?.totalPayable ?? 0;
 
         return (
           <div className="space-y-6">
@@ -2611,7 +2670,7 @@ export default function CancellationWizard({
                 <div className="flex items-center gap-2 text-gray-500 mb-3">
                   <Percent className="h-4 w-4" />
                   <span className="text-[13px] font-semibold uppercase">
-                    Platform Fee (5%)
+                    Platform Fee
                   </span>
                 </div>
                 <div className="text-[24px] font-bold text-gray-900">
@@ -2677,58 +2736,51 @@ export default function CancellationWizard({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(addedBookings.length > 0
-                    ? addedBookings
-                    : [
-                      {
-                        id: "1",
-                        pnr: "AAAAA",
-                        firstName: "New",
-                        lastName: "Admin",
-                        email: "ops@summitair.com",
-                        adults: 1,
-                        children: 0,
-                        travelClass: "Economy",
-                      },
-                    ]
-                  )
-                    .slice(
-                      (step5CurrentPage - 1) * step5ResultsPerPage,
-                      step5CurrentPage * step5ResultsPerPage,
-                    )
-                    .map((b, idx) => {
+                  {isLoadingHotelBookings && hotelBookings.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={10} className="text-center py-10 text-gray-500">
+                        <div className="flex items-center justify-center gap-2">
+                          <Loader2 className="h-5 w-5 animate-spin text-[#0F2757]" />
+                          <span>Loading hotel bookings...</span>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : hotelBookings.length > 0 ? (
+                    hotelBookings.map((hb) => {
+                      const pb = hb.passengerBooking;
+                      const hotelBookingId = `HB-${String(hb.id).padStart(6, "0")}`;
+                      const pnr = pb?.pnr || "-";
+                      const contactName = `${pb?.firstName || ""} ${pb?.lastName || ""}`.trim() || "-";
+                      const email = pb?.email || "";
+                      const travelClass =
+                        ENUM_TO_TRAVEL_CLASS[pb?.travelClass] || pb?.travelClass || "Economy";
                       const isBusiness =
-                        b.travelClass === "Business" ||
-                        b.travelClass === "First Class";
-                      const depAirportCode = newDepartureAirport || "Airport";
-                      const hotelName = isBusiness
-                        ? `Grand Regency ${depAirportCode}`
-                        : `Transit Express ${depAirportCode}`;
-                      const stars = isBusiness ? 4 : 3;
-                      const rooms = Math.ceil((b.adults + b.children) / 2);
-                      const bookingCost =
-                        hotelAllocations?.totalSellingPrice && (addedBookings.length === 1 || !addedBookings.length)
-                          ? hotelAllocations.totalSellingPrice
-                          : rooms * (isBusiness ? 160 : 120);
+                        travelClass === "Business" || travelClass === "First Class";
+                      const totalPassengers = (pb?.adults || 0) + (pb?.children || 0);
                       const passengersStr =
-                        b.adults + b.children > 1
-                          ? `${b.adults + b.children} Passengers`
-                          : `${b.adults + b.children} Passenger`;
+                        totalPassengers > 1
+                          ? `${totalPassengers} Passengers`
+                          : `${totalPassengers || 1} Passenger`;
+                      const hotelName = hb.hotelName || "Transit Hotel";
+                      const ratingVal = parseFloat(hb.rating) || 4;
+                      const stars = Math.min(5, Math.max(1, Math.round(ratingVal)));
+                      const rooms = hb.totalRooms || 1;
+                      const bookingCost = Number(hb.totalCost) || 0;
 
                       return (
-                        <TableRow key={b.id || idx}>
+                        <TableRow key={hb.id}>
                           <TableCell className="font-medium text-gray-900">
-                            HB-00023{idx + 1}
+                            {hotelBookingId}
                           </TableCell>
                           <TableCell className="font-medium text-gray-900">
-                            {b.pnr}
+                            {pnr}
                           </TableCell>
                           <TableCell>
                             <div className="font-semibold text-gray-900">
-                              {b.firstName} {b.lastName}
+                              {contactName}
                             </div>
                             <div className="text-xs text-gray-500">
-                              {b.email}
+                              {email}
                             </div>
                           </TableCell>
                           <TableCell>
@@ -2740,7 +2792,7 @@ export default function CancellationWizard({
                                   : "bg-gray-100 text-gray-700",
                               )}
                             >
-                              {b.travelClass}
+                              {travelClass}
                             </span>
                           </TableCell>
                           <TableCell className="text-center">
@@ -2771,30 +2823,151 @@ export default function CancellationWizard({
                             <button
                               type="button"
                               onClick={() => {
-                                setSelectedBookingForDrawer(b);
+                                setSelectedBookingForDrawer({
+                                  ...pb,
+                                  hotelBookingId,
+                                  hotelName,
+                                  rating: hb.rating,
+                                  totalRooms: rooms,
+                                  totalCost: bookingCost,
+                                  travelClass,
+                                });
                                 setIsBookingDetailsOpen(true);
                               }}
-                              className="p-1.5 text-gray-400 hover:text-[#0F2757] hover:bg-gray-100 rounded transition-colors"
+                              className="p-1.5 text-gray-400 hover:text-[#0F2757] hover:bg-gray-100 rounded transition-colors cursor-pointer"
                             >
                               <Eye className="h-4 w-4" />
                             </button>
                           </TableCell>
                         </TableRow>
                       );
-                    })}
+                    })
+                  ) : (
+                    (addedBookings.length > 0
+                      ? addedBookings
+                      : [
+                        {
+                          id: "1",
+                          pnr: "AAAAA",
+                          firstName: "New",
+                          lastName: "Admin",
+                          email: "ops@summitair.com",
+                          adults: 1,
+                          children: 0,
+                          travelClass: "Economy",
+                        },
+                      ]
+                    )
+                      .slice(
+                        (step5CurrentPage - 1) * step5ResultsPerPage,
+                        step5CurrentPage * step5ResultsPerPage,
+                      )
+                      .map((b, idx) => {
+                        const isBusiness =
+                          b.travelClass === "Business" ||
+                          b.travelClass === "First Class";
+                        const depAirportCode = newDepartureAirport || "Airport";
+                        const hotelName = isBusiness
+                          ? `Grand Regency ${depAirportCode}`
+                          : `Transit Express ${depAirportCode}`;
+                        const stars = isBusiness ? 4 : 3;
+                        const rooms = Math.ceil((b.adults + b.children) / 2);
+                        const bookingCost =
+                          hotelAllocations?.totalSellingPrice && (addedBookings.length === 1 || !addedBookings.length)
+                            ? hotelAllocations.totalSellingPrice
+                            : rooms * (isBusiness ? 160 : 120);
+                        const passengersStr =
+                          b.adults + b.children > 1
+                            ? `${b.adults + b.children} Passengers`
+                            : `${b.adults + b.children} Passenger`;
+
+                        return (
+                          <TableRow key={b.id || idx}>
+                            <TableCell className="font-medium text-gray-900">
+                              HB-00023{idx + 1}
+                            </TableCell>
+                            <TableCell className="font-medium text-gray-900">
+                              {b.pnr}
+                            </TableCell>
+                            <TableCell>
+                              <div className="font-semibold text-gray-900">
+                                {b.firstName} {b.lastName}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                {b.email}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <span
+                                className={cn(
+                                  "rounded px-2.5 py-1 text-xs font-semibold inline-block capitalize",
+                                  isBusiness
+                                    ? "bg-purple-100 text-purple-800"
+                                    : "bg-gray-100 text-gray-700",
+                                )}
+                              >
+                                {b.travelClass}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {passengersStr}
+                            </TableCell>
+                            <TableCell className="font-medium">
+                              {hotelName}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex justify-center items-center text-amber-400">
+                                {[...Array(stars)].map((_, i) => (
+                                  <Star
+                                    key={i}
+                                    className="h-3 w-3 fill-current"
+                                  />
+                                ))}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-center">{rooms}</TableCell>
+                            <TableCell className="text-right font-semibold text-gray-900">
+                              {currencySymbol}
+                              {bookingCost.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </TableCell>
+                            <TableCell>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedBookingForDrawer(b);
+                                  setIsBookingDetailsOpen(true);
+                                }}
+                                className="p-1.5 text-gray-400 hover:text-[#0F2757] hover:bg-gray-100 rounded transition-colors cursor-pointer"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                  )}
                 </TableBody>
               </Table>
             </div>
 
             {/* Pagination */}
             <Pagination
-              totalResults={addedBookings.length || 1}
+              totalResults={
+                hotelBookings.length > 0
+                  ? totalHotelBookings
+                  : addedBookings.length || 1
+              }
               currentPage={step5CurrentPage}
               setCurrentPage={setStep5CurrentPage}
               resultsPerPage={step5ResultsPerPage}
               setResultsPerPage={setStep5ResultsPerPage}
               totalPages={Math.ceil(
-                (addedBookings.length || 1) / step5ResultsPerPage,
+                (hotelBookings.length > 0
+                  ? totalHotelBookings
+                  : addedBookings.length || 1) / step5ResultsPerPage,
               )}
             />
           </div>
@@ -2817,54 +2990,61 @@ export default function CancellationWizard({
               </div>
             </div>
 
-            <div className="bg-gray-50/80 rounded-xl p-6 space-y-4 text-left text-sm border border-gray-100">
-              <div className="flex justify-between items-center text-gray-500">
-                <span>Hotel Cost</span>
-                <span className="font-semibold text-gray-900">
-                  {currencySymbol}
-                  {hotelCost.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                  })}
-                </span>
+            {isLoadingHotelSummary && !hotelSummary ? (
+              <div className="bg-gray-50/80 rounded-xl p-8 flex items-center justify-center gap-2 text-gray-500 border border-gray-100">
+                <Loader2 className="h-5 w-5 animate-spin text-[#0F2757]" />
+                <span>Loading payment details...</span>
               </div>
-              <div className="flex justify-between items-center text-gray-500">
-                <span>Platform Discount</span>
-                <span className="font-semibold text-[#1FAD53]">
-                  -{currencySymbol}
-                  {platformDiscount.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                  })}
-                </span>
+            ) : (
+              <div className="bg-gray-50/80 rounded-xl p-6 space-y-4 text-left text-sm border border-gray-100">
+                <div className="flex justify-between items-center text-gray-500">
+                  <span>Hotel Cost</span>
+                  <span className="font-semibold text-gray-900">
+                    {currencySymbol}
+                    {hotelCost.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                    })}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-gray-500">
+                  <span>Platform Discount</span>
+                  <span className="font-semibold text-[#1FAD53]">
+                    -{currencySymbol}
+                    {platformDiscount.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                    })}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-gray-500">
+                  <span>Hotel Tax</span>
+                  <span className="font-semibold text-gray-900">
+                    {currencySymbol}
+                    {hotelTax.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                    })}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-gray-500">
+                  <span>Platform Fee</span>
+                  <span className="font-semibold text-gray-900">
+                    {currencySymbol}
+                    {platformFee.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                    })}
+                  </span>
+                </div>
+                <div className="h-px bg-gray-200 w-full" />
+                <div className="flex justify-between items-center font-bold text-gray-900 text-base">
+                  <span>Total Payment</span>
+                  <span className="text-[20px]">
+                    {currencySymbol}
+                    {totalPayment.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                    })}
+                  </span>
+                </div>
               </div>
-              <div className="flex justify-between items-center text-gray-500">
-                <span>Hotel Tax</span>
-                <span className="font-semibold text-gray-900">
-                  {currencySymbol}
-                  {hotelTax.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                  })}
-                </span>
-              </div>
-              <div className="flex justify-between items-center text-gray-500">
-                <span>Platform Fee (5%)</span>
-                <span className="font-semibold text-gray-900">
-                  {currencySymbol}
-                  {platformFee.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                  })}
-                </span>
-              </div>
-              <div className="h-px bg-gray-200 w-full" />
-              <div className="flex justify-between items-center font-bold text-gray-900 text-base">
-                <span>Total Payment</span>
-                <span className="text-[20px]">
-                  {currencySymbol}
-                  {totalPayment.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                  })}
-                </span>
-              </div>
-            </div>
+            )}
 
             <div className="space-y-4 text-left pt-4">
               <div>
@@ -3109,7 +3289,11 @@ export default function CancellationWizard({
             {activeStep > 1 && activeStep !== 5 && (
               <button
                 onClick={handlePrevStep}
-                className="flex items-center gap-2 border border-gray-200 bg-gray-100 hover:bg-gray-300 text-gray-700 font-medium py-2.5 px-5 rounded-lg transition-colors cursor-pointer text-sm"
+                disabled={isProcessingPayment}
+                className={cn(
+                  "flex items-center gap-2 border border-gray-200 bg-gray-100 hover:bg-gray-300 text-gray-700 font-medium py-2.5 px-5 rounded-lg transition-colors cursor-pointer text-sm",
+                  isProcessingPayment && "opacity-50 cursor-not-allowed",
+                )}
               >
                 <ArrowLeft className="h-4 w-4" />
                 <span>Back</span>
@@ -3124,6 +3308,7 @@ export default function CancellationWizard({
                     isCreatingFlight ||
                     isConfirmingBookings ||
                     isAllocating ||
+                    isProcessingPayment ||
                     (activeStep === 6 && !paymentConfirmed)
                   }
                   className={cn(
@@ -3131,6 +3316,7 @@ export default function CancellationWizard({
                     isCreatingFlight ||
                       isConfirmingBookings ||
                       isAllocating ||
+                      isProcessingPayment ||
                       (activeStep === 6 && !paymentConfirmed)
                       ? "bg-[#9CA3AF] text-white cursor-not-allowed border-none"
                       : "bg-[#0F2757] hover:bg-[#162259] text-white",
@@ -3150,6 +3336,11 @@ export default function CancellationWizard({
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" />
                       <span>Allocating Hotels...</span>
+                    </>
+                  ) : isProcessingPayment ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Processing Payment...</span>
                     </>
                   ) : activeStep === 6 ? (
                     <>
