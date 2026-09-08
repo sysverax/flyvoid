@@ -13,6 +13,7 @@ import {
   Settings,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
+import { toast } from "react-toastify";
 import { SignOutDialog } from "./SignOutDialog";
 import { authService } from "@/src/services/auth.service";
 
@@ -32,10 +33,10 @@ const navItems = [
   },
   { title: "Bookings", icon: Plane, path: "/bookings", key: "bookings" },
   {
-    title: "Billing",
+    title: "Payments",
     icon: "/icons/payment.svg",
-    path: "/billing",
-    key: "billing",
+    path: "/payments",
+    key: "payments",
   },
   { title: "Settings", icon: Settings, path: "/settings", key: "settings" },
 ];
@@ -45,15 +46,23 @@ export function Sidebar() {
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [signOutOpen, setSignOutOpen] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   const handleLogout = () => {
     setSignOutOpen(true);
   };
 
-  const confirmLogout = () => {
-    setSignOutOpen(false);
-    authService.logout();
-    router.push("/auth/login");
+  const confirmLogout = async () => {
+    setIsSigningOut(true);
+    try {
+      await authService.logout();
+      setSignOutOpen(false);
+      router.push("/auth/login");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to sign out.");
+    } finally {
+      setIsSigningOut(false);
+    }
   };
 
   const renderNavContent = (mobile = false) => (
@@ -175,6 +184,7 @@ export function Sidebar() {
 
       <SignOutDialog
         isOpen={signOutOpen}
+        isSigningOut={isSigningOut}
         onClose={() => setSignOutOpen(false)}
         onConfirm={confirmLogout}
       />

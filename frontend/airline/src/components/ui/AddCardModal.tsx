@@ -1,10 +1,18 @@
 import React, { useState } from "react";
 import { X } from "lucide-react";
 
+interface CardData {
+  brand: string;
+  last4: string;
+  expiry: string;
+  holder: string;
+  isDefault: boolean;
+}
+
 interface AddCardModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave?: () => void;
+  onSave?: (cardData: CardData) => void;
 }
 
 export function AddCardModal({ isOpen, onClose, onSave }: AddCardModalProps) {
@@ -21,7 +29,17 @@ export function AddCardModal({ isOpen, onClose, onSave }: AddCardModalProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (onSave) onSave();
+    const brand = cardNumber.startsWith("4") ? "Visa" : "Mastercard";
+    const last4 = cardNumber.replace(/\s/g, "").slice(-4) || "4242";
+    if (onSave) {
+      onSave({
+        brand,
+        last4,
+        expiry: cardExpiry || "08/28",
+        holder: cardName || "Skyward Airlines Ltd",
+        isDefault: isDefaultOnAdd,
+      });
+    }
     onClose();
   };
 
@@ -45,8 +63,13 @@ export function AddCardModal({ isOpen, onClose, onSave }: AddCardModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden relative">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/40 transition-opacity duration-300"
+        onClick={onClose}
+      />
+      <div className="relative w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden z-10 animate-in fade-in zoom-in-95 duration-150">
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 p-6">
           <div className="flex items-center justify-between border-b border-gray-100 pb-4 mb-2">
             <span className="text-lg font-bold text-[#1F2937] font-figtree">Add New Card</span>
