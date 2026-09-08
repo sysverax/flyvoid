@@ -72,6 +72,7 @@ import {
   HotelAllocationsDto,
   CancelledFlightHotelBookingListResponseDto,
   CancelledFlightBookingsListResponseDto,
+  HotelSummaryCancelledFlightResponseDto,
 } from "./dto";
 import { PaginationQueryDto } from "../common/dto/pagination-query.dto";
 import { AuthenticatedRequest } from "../auth/interfaces/authenticated-request.interface";
@@ -92,6 +93,7 @@ import { GetCancelledFlightsQueryDto } from "./dto/get-cancelled-flights-query.d
   ImportBookingResponseDto,
   HotelAllocationsDto,
   CancelledFlightHotelBookingListResponseDto,
+  HotelSummaryCancelledFlightResponseDto,
 )
 export class CancelledFlightsController {
   constructor(private readonly service: CancelledFlightsService) {}
@@ -578,6 +580,48 @@ export class CancelledFlightsController {
       data,
       requestId,
       "Passenger booking details confirmed",
+    );
+  }
+
+  // ── GET /cancelled-flights/:id/hotel-summary ───────────────────────────────────
+  @Get(":id/hotel-summary")
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.VIEW],
+    },
+  })
+  @ApiOperation({
+    summary: "Get hotel summary for a cancelled flight",
+    description:
+      "Returns a summary of hotel allocations for a cancelled flight.",
+  })
+  @ApiParam({ name: "id", description: "Cancelled flight id" })
+  @ApiOkResponse({
+    schema: {
+      properties: {
+        success: { type: "boolean", example: true },
+        data: {
+          $ref: getSchemaPath(HotelSummaryCancelledFlightResponseDto),
+        },
+      },
+    },
+  })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/cancelled-flights/:id/hotel-summary",
+      "Cancelled flight not found",
+    ),
+  })
+  async getHotelSummary(
+    @Param("id", ParseIntPipe) id: number,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<HotelSummaryCancelledFlightResponseDto>> {
+    const data = await this.service.hotelSummaryByFlight(id, requestId);
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Flight review fetched successfully",
     );
   }
 

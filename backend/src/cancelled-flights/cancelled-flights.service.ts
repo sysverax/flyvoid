@@ -28,6 +28,7 @@ import {
   AllocateHotelDto,
   BookHotelRequestDto,
   CancelledFlightHotelBookingListResponseDto,
+  HotelSummaryCancelledFlightResponseDto,
 } from "./dto";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
 import { PaginationQueryDto } from "../common/dto/pagination-query.dto";
@@ -2163,6 +2164,36 @@ export class CancelledFlightsService {
       totalHotelBookings: totalHotelBookings,
       currentPage: pagination.page || 1,
       limit: pagination.limit || 10,
+    };
+  }
+
+  // ── Hotel Summary of a cancelled flight ───────────────────────────────────────────────
+  async hotelSummaryByFlight(
+    flightId: number,
+    requestId: string,
+  ): Promise<HotelSummaryCancelledFlightResponseDto> {
+    const hotelSummary =
+      await this.cancelledFlightsRepository.findHotelSummaryByFlightId(
+        flightId,
+        requestId,
+      );
+
+    if (!hotelSummary) {
+      throw new NotFoundException(`Cancelled flight '${flightId}' not found`);
+    }
+
+    return {
+      summary: {
+        totalBookings: hotelSummary.totalBookings,
+        totalAdults: hotelSummary.totalAdults,
+        totalChildren: hotelSummary.totalChildren,
+        totalRooms: hotelSummary.totalRooms,
+        totalHotelCost: hotelSummary.totalHotelCost,
+        totalDiscount: hotelSummary.totalDiscount,
+        totalHotelTax: hotelSummary.totalHotelTax,
+        totalPlatformFee: hotelSummary.totalPlatformFee,
+        totalPayable: hotelSummary.totalCost,
+      },
     };
   }
 

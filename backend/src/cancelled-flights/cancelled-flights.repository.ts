@@ -476,4 +476,42 @@ export class CancelledFlightsRepository {
 
     return { hotelBookings, totalHotelBookings };
   }
+
+  async findHotelSummaryByFlightId(
+    cancelledFlightId: number,
+    requestId: string,
+  ): Promise<{
+    totalBookings: number;
+    totalAdults: number;
+    totalChildren: number;
+    totalRooms: number;
+    totalHotelCost: number;
+    totalDiscount: number;
+    totalHotelTax: number;
+    totalPlatformFee: number;
+    totalCost: number;
+  }> {
+    this.logger.debug(
+      "Finding hotel summary by flight id",
+      "CancelledFlightsRepository",
+      requestId,
+      { cancelledFlightId },
+    );
+
+    const flight = await this.flightRepo.findOne({
+      where: { id: cancelledFlightId },
+    });
+
+    return {
+      totalBookings: Number(flight?.totalBooking ?? 0),
+      totalAdults: Number(flight?.totalAdults ?? 0),
+      totalChildren: Number(flight?.totalChildren ?? 0),
+      totalRooms: Number(flight?.totalHotelRooms ?? 0),
+      totalHotelCost: Number(flight?.totalActualPrice ?? 0),
+      totalDiscount: Number(flight?.totalDiscounts ?? 0),
+      totalHotelTax: Number(flight?.totalHotelTaxes ?? 0),
+      totalPlatformFee: Number(flight?.totalPlatformFee ?? 0),
+      totalCost: Number(flight?.totalPrice ?? 0),
+    };
+  }
 }
