@@ -1532,16 +1532,7 @@ export class CancelledFlightsService {
     });
 
     // step 2 - Save the formatted hotel bookings to the database
-    const {
-      totalActualPrice,
-      totalBuyingPrice,
-      totalSellingPrice,
-      totalDiscounts,
-      totalHotelTaxes,
-      totalPlatformFee,
-      totalPriceForAll,
-      totalEarnings,
-    } = hotelBookings
+    const rawTotals = hotelBookings
       .filter((item) => item.allocationStatus === "RECOMMENDED")
       .reduce(
         (acc, item) => {
@@ -1566,6 +1557,15 @@ export class CancelledFlightsService {
           totalEarnings: 0,
         },
       );
+
+    const totalActualPrice = this.roundCurrency(rawTotals.totalActualPrice);
+    const totalBuyingPrice = this.roundCurrency(rawTotals.totalBuyingPrice);
+    const totalSellingPrice = this.roundCurrency(rawTotals.totalSellingPrice);
+    const totalDiscounts = this.roundCurrency(rawTotals.totalDiscounts);
+    const totalHotelTaxes = this.roundCurrency(rawTotals.totalHotelTaxes);
+    const totalPlatformFee = this.roundCurrency(rawTotals.totalPlatformFee);
+    const totalPriceForAll = this.roundCurrency(rawTotals.totalPriceForAll);
+    const totalEarnings = this.roundCurrency(rawTotals.totalEarnings);
 
     await this.cancelledFlightsRepository.saveHotelAllocations(
       flightId,
