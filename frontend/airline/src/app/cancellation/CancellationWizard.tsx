@@ -729,7 +729,17 @@ export default function CancellationWizard({
       const summary =
         res?.data?.summary || (res?.data as any) || (res as any)?.summary;
       if (summary) {
-        setHotelSummary(summary);
+        setHotelSummary({
+          totalBookings: Number(summary.totalBookings ?? 0),
+          totalAdults: Number(summary.totalAdults ?? 0),
+          totalChildren: Number(summary.totalChildren ?? 0),
+          totalRooms: Number(summary.totalRooms ?? 0),
+          totalHotelCost: Number(summary.totalHotelCost ?? 0),
+          totalDiscount: Number(summary.totalDiscount ?? 0),
+          totalHotelTax: Number(summary.totalHotelTax ?? 0),
+          totalPlatformFee: Number(summary.totalPlatformFee ?? 0),
+          totalPayable: Number(summary.totalPayable ?? 0),
+        });
       }
     } catch (err: any) {
       console.error("Failed to load hotel summary:", err);
@@ -766,7 +776,7 @@ export default function CancellationWizard({
       if (addedBookings.length === 0) {
         fetchBookings(flightId);
       }
-    } else if ((activeStep === 5 || activeStep === 6) && flightId) {
+    } else if ((activeStep === 5 || activeStep === 6 || activeStep === 7) && flightId) {
       fetchHotelSummary(flightId);
     }
   }, [activeStep, flightId]);

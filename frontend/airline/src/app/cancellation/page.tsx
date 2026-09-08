@@ -245,7 +245,17 @@ function PublishedDetailView({
         const summary =
           res?.data?.summary || (res?.data as any) || (res as any)?.summary;
         if (isMounted && summary) {
-          setHotelSummary(summary);
+          setHotelSummary({
+            totalBookings: Number(summary.totalBookings ?? 0),
+            totalAdults: Number(summary.totalAdults ?? 0),
+            totalChildren: Number(summary.totalChildren ?? 0),
+            totalRooms: Number(summary.totalRooms ?? 0),
+            totalHotelCost: Number(summary.totalHotelCost ?? 0),
+            totalDiscount: Number(summary.totalDiscount ?? 0),
+            totalHotelTax: Number(summary.totalHotelTax ?? 0),
+            totalPlatformFee: Number(summary.totalPlatformFee ?? 0),
+            totalPayable: Number(summary.totalPayable ?? 0),
+          });
         }
       } catch (err: any) {
         console.error("Failed to load hotel summary:", err);
@@ -328,29 +338,13 @@ function PublishedDetailView({
       ? cancellation.reason
       : "Not specified";
 
-  // Financial calculations from hotel summary (with fallbacks)
-  const totalRoomsBooked =
-    hotelSummary?.totalRooms ||
-    hotelSummary?.totalBookings ||
-    cancellation.bookings;
-
-  const totalHotelCost =
-    hotelSummary?.totalHotelCost ?? cancellation.bookings * 144;
-  const hotelCost = totalHotelCost;
-
-  const platformDiscount =
-    hotelSummary?.totalDiscount ?? hotelCost * 0.1;
-
-  const hotelTax =
-    hotelSummary?.totalHotelTax ?? hotelCost * 0.08;
-
-  const platformFee =
-    hotelSummary?.totalPlatformFee ??
-    (hotelCost - platformDiscount + hotelTax) * 0.05;
-
-  const totalPayment =
-    hotelSummary?.totalPayable ??
-    hotelCost - platformDiscount + hotelTax + platformFee;
+  // Financial calculations from hotel summary
+  const totalRoomsBooked = hotelSummary?.totalRooms ?? 0;
+  const totalHotelCost = hotelSummary?.totalHotelCost ?? 0;
+  const platformDiscount = hotelSummary?.totalDiscount ?? 0;
+  const hotelTax = hotelSummary?.totalHotelTax ?? 0;
+  const platformFee = hotelSummary?.totalPlatformFee ?? 0;
+  const totalPayment = hotelSummary?.totalPayable ?? 0;
 
   const totalResults =
     totalHotelBookings > 0
@@ -554,7 +548,7 @@ function PublishedDetailView({
             <div className="flex items-center gap-2 text-gray-500 mb-3">
               <Percent className="h-4 w-4" />
               <span className="text-[13px] font-semibold uppercase">
-                Platform Fee (5%)
+                Platform Fee
               </span>
             </div>
             <div className="text-[24px] font-bold text-gray-900">
