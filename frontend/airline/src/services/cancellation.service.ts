@@ -419,10 +419,7 @@ export const cancellationService = {
     }
   },
 
-  async processPayment(
-    flightId: number | string,
-    payload?: { paymentMethod?: string; [key: string]: any },
-  ): Promise<{
+  async processPayment(flightId: number | string): Promise<{
     success: boolean;
     data?: any;
     message?: string;
@@ -430,7 +427,6 @@ export const cancellationService = {
     try {
       const response = await apiClient.post(
         `/cancelled-flights/${flightId}/payment`,
-        payload || {},
       );
       return response.data;
     } catch (error: any) {

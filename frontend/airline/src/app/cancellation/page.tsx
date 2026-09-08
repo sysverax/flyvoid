@@ -302,7 +302,7 @@ function PublishedDetailView({
   const flightNumber = reviewData?.flight?.flightNumber || cancellation.flight;
   const routeDisplay =
     reviewData?.flight?.route?.departureAirport?.code &&
-    reviewData?.flight?.route?.arrivalAirport?.code
+      reviewData?.flight?.route?.arrivalAirport?.code
       ? `${reviewData.flight.route.departureAirport.code} → ${reviewData.flight.route.arrivalAirport.code}`
       : cancellation.route.replace("➔", "→");
 
@@ -319,7 +319,7 @@ function PublishedDetailView({
     ? (hotelSummary.totalAdults || 0) + (hotelSummary.totalChildren || 0)
     : reviewData?.summary
       ? (reviewData.summary.totalAdults || 0) +
-        (reviewData.summary.totalChildren || 0)
+      (reviewData.summary.totalChildren || 0)
       : cancellation.passengers;
 
   const reasonDisplay = reviewData?.flight?.cancellationReason
@@ -828,6 +828,7 @@ export default function CancellationPage() {
   const [detailCancellation, setDetailCancellation] =
     useState<Cancellation | null>(null);
   const [publishTarget, setPublishTarget] = useState<Cancellation | null>(null);
+  const [isPublishingModal, setIsPublishingModal] = useState(false);
 
   // Sort function
   const handleSort = (field: keyof Cancellation) => {
@@ -903,6 +904,7 @@ export default function CancellationPage() {
 
   // Confirm Publish function (from modal)
   const confirmPublish = async (id: string) => {
+    setIsPublishingModal(true);
     try {
       await cancellationService.publishFlight(Number(id));
       setCancellations((prev) =>
@@ -912,11 +914,12 @@ export default function CancellationPage() {
             : c,
         ),
       );
-      toast.success("Published successfully");
+      toast.success("Cancelled flight published successfully");
+      setPublishTarget(null);
     } catch (err: any) {
       toast.error(err.message || "Failed to publish flight");
     } finally {
-      setPublishTarget(null);
+      setIsPublishingModal(false);
     }
   };
 
@@ -945,8 +948,8 @@ export default function CancellationPage() {
   return (
     <div className="flex min-h-screen flex-1 flex-col pb-16 lg:w-full lg:max-w-[calc(100vw-304px)]">
       {detailCancellation &&
-      (detailCancellation.status === "Published" ||
-        detailCancellation.displayStatus === "Published") ? (
+        (detailCancellation.status === "Published" ||
+          detailCancellation.displayStatus === "Published") ? (
         <PublishedDetailView
           cancellation={detailCancellation}
           onClose={() => setDetailCancellation(null)}
@@ -961,7 +964,6 @@ export default function CancellationPage() {
           }}
           onSave={() => {
             setDetailCancellation(null);
-            toast.success(`Successfully updated cancellation`);
           }}
         />
       ) : isAddingNew ? (
@@ -975,7 +977,6 @@ export default function CancellationPage() {
             setIsAddingNew(false);
             setSelectedStatus("All Status");
             setCurrentPage(1);
-            toast.success(`Successfully published cancellation`);
           }}
         />
       ) : (
@@ -1301,17 +1302,28 @@ export default function CancellationPage() {
               <button
                 type="button"
                 onClick={() => setPublishTarget(null)}
-                className="flex-1 py-3 rounded-lg border border-[#D1D5DB] text-[#1F2937] transition-colors hover:bg-[#F9FAFB] cursor-pointer font-medium"
+                disabled={isPublishingModal}
+                className="flex-1 py-3 rounded-lg border border-[#D1D5DB] text-[#1F2937] transition-colors hover:bg-[#F9FAFB] cursor-pointer font-medium disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={() => confirmPublish(publishTarget.id)}
-                className="flex-1 py-3 rounded-lg text-white bg-[#0F2757] hover:bg-[#162259] transition-colors cursor-pointer flex items-center justify-center gap-2 font-medium"
+                disabled={isPublishingModal}
+                className="flex-1 py-3 rounded-lg text-white bg-[#0F2757] hover:bg-[#162259] disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors cursor-pointer flex items-center justify-center gap-2 font-medium"
               >
-                <Send className="h-4 w-4" />
-                <span>Publish & Notify</span>
+                {isPublishingModal ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Publishing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send className="h-4 w-4" />
+                    <span>Publish & Notify</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
