@@ -805,6 +805,81 @@ export class CancelledFlightsController {
     );
   }
 
+  // ── POST /cancelled-flights/:id/pay ─────────────────────────────────────
+  @Post(":id/payment")
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.EDIT],
+    },
+  })
+  @ApiOperation({
+    summary: "Process payment for a cancelled flight",
+    description:
+      "Processes payment for a cancelled flight after hotel allocation. Flight must be in 'allocated' status.",
+  })
+  @ApiParam({ name: "id", description: "Cancelled flight id" })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/cancelled-flights/:id/payment",
+      "Cancelled flight not found",
+    ),
+  })
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema(
+      "/api/v1/cancelled-flights/:id/payment",
+    ),
+  })
+  async processPayment(
+    @Param("id", ParseIntPipe) id: number,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<CancelledFlightResponseDto>> {
+    const data = await this.service.processPayment(id, requestId);
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Payment processed successfully for cancelled flight",
+    );
+  }
+
+  // ── POST /cancelled-flights/:id/publish ─────────────────────────────────
+  @Post(":id/publish")
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.EDIT],
+    },
+  })
+  @ApiOperation({
+    summary: "Publish a cancelled flight",
+    description:
+      "Publishes a cancelled flight after payment. Flight must be in 'paid' status. Sends a notification email to all passengers.",
+  })
+  @ApiParam({ name: "id", description: "Cancelled flight id" })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/cancelled-flights/:id/publish",
+      "Cancelled flight not found",
+    ),
+  })
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema(
+      "/api/v1/cancelled-flights/:id/publish",
+    ),
+  })
+  async publishFlight(
+    @Param("id", ParseIntPipe) id: number,
+    @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
+  ): Promise<BaseResponseDto<CancelledFlightResponseDto>> {
+    const data = await this.service.publishFlight(id, requestId, requestLogger);
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Cancelled flight published successfully",
+    );
+  }
+
   // // ── POST /cancelled-flights/:id/bookings/:bookingId/allocate-hotel ───────
   // @Post(":id/bookings/:bookingId/allocate-hotel")
   // @RequireAccessControl({
