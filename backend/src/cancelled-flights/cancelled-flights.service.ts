@@ -1163,7 +1163,7 @@ export class CancelledFlightsService {
           totalAdults: bookingStats.totalAdults,
           totalChildren: bookingStats.totalChildren,
         },
-        HotelBookingStats: null, // No hotel booking stats at this point
+        hotelBookingStats: null, // No hotel booking stats at this point
         requestId,
       });
 
@@ -1584,6 +1584,23 @@ export class CancelledFlightsService {
       requestLogger,
     );
 
+    await this.cancelledFlightsRepository.updateFlightStatus({
+      cancelledFlightEntity: flight,
+      status: FlightStatus.ALLOCATED,
+      passengerBookingStats: null,
+      hotelBookingStats: {
+        totalHotelRooms: totalRooms ?? null,
+        totalPrice: totalPriceForAll ?? null,
+        totalBuyingPrice: totalBuyingPrice ?? null,
+        totalSellingPrice: totalSellingPrice ?? null,
+        totalDiscounts: totalDiscounts ?? null,
+        totalHotelTaxes: totalHotelTaxes ?? null,
+        totalPlatformFee: totalPlatformFee ?? null,
+        totalEarnings: totalEarnings ?? null,
+      },
+      requestId,
+    });
+
     return {
       cancelledFlightId: flight.id,
       status: FlightStatus.ALLOCATED,
@@ -1698,7 +1715,7 @@ export class CancelledFlightsService {
           totalAdults: null,
           totalChildren: null,
         },
-        HotelBookingStats: null,
+        hotelBookingStats: null,
         requestId,
       });
 
@@ -1729,7 +1746,7 @@ export class CancelledFlightsService {
           totalAdults: null,
           totalChildren: null,
         },
-        HotelBookingStats: null,
+        hotelBookingStats: null,
         requestId,
       });
 
