@@ -31,6 +31,7 @@ import {
   ApiConflictResponse,
   ApiUnauthorizedResponse,
   ApiExtraModels,
+  getSchemaPath,
 } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RbacGuard } from "../auth/guards/rbac.guard";
@@ -68,13 +69,15 @@ import {
   AllocateHotelDto,
   CheckRateRequestDto,
   BookHotelRequestDto,
+  HotelAllocationsDto,
+  CancelledFlightHotelBookingListResponseDto,
+  CancelledFlightBookingsListResponseDto,
 } from "./dto";
 import { PaginationQueryDto } from "../common/dto/pagination-query.dto";
 import { AuthenticatedRequest } from "../auth/interfaces/authenticated-request.interface";
 import { RequestLogger } from "../common/decorators/request-logger.decorator";
 import { Logger } from "winston";
 import { GetCancelledFlightsQueryDto } from "./dto/get-cancelled-flights-query.dto";
-import { HotelAllocationsDto } from "./dto/hotel-allocations.dto";
 
 @ApiTags("Cancelled Flights")
 @ApiBearerAuth("access-token")
@@ -84,15 +87,16 @@ import { HotelAllocationsDto } from "./dto/hotel-allocations.dto";
 @ApiExtraModels(
   CancelledFlightResponseDto,
   BookingResponseDto,
+  CancelledFlightBookingsListResponseDto,
   CancelledFlightListResponseDto,
   ImportBookingResponseDto,
   HotelAllocationsDto,
+  CancelledFlightHotelBookingListResponseDto,
 )
 export class CancelledFlightsController {
   constructor(private readonly service: CancelledFlightsService) {}
 
   // ── GET /cancelled-flights ───────────────────────────────────────────────
-
   @Get("/")
   @RequireUserTypes(UserType.PLATFORM, UserType.AIRLINE)
   @RequireAccessControl({
@@ -157,7 +161,6 @@ export class CancelledFlightsController {
   }
 
   // ── POST /cancelled-flights ──────────────────────────────────────────────
-
   @Post("/")
   @RequireAccessControl({
     airline: {
@@ -217,7 +220,6 @@ export class CancelledFlightsController {
   }
 
   // ── PATCH /cancelled-flights/:id ─────────────────────────────────────────
-
   @Patch(":id")
   @RequireAccessControl({
     airline: {
@@ -264,7 +266,6 @@ export class CancelledFlightsController {
   }
 
   // ── POST /cancelled-flights/:id/bookings ────────────────────────────────
-
   @Post(":id/bookings")
   @RequireAccessControl({
     airline: {
@@ -416,7 +417,6 @@ export class CancelledFlightsController {
   }
 
   // ── DELETE /cancelled-flights/:id/bookings/:bookingId ───────────────────
-
   @Delete(":id/bookings/:bookingId")
   @RequireAccessControl({
     airline: {
@@ -462,7 +462,6 @@ export class CancelledFlightsController {
   }
 
   // ── GET /cancelled-flights/:id/bookings ──────────────────────────────────
-
   @Get(":id/bookings")
   @RequireAccessControl({
     airline: {
@@ -476,6 +475,16 @@ export class CancelledFlightsController {
       "Returns summary counts and the full booking list for a flight.",
   })
   @ApiParam({ name: "id", description: "Cancelled flight id" })
+  @ApiOkResponse({
+    schema: {
+      properties: {
+        success: { type: "boolean", example: true },
+        data: {
+          $ref: getSchemaPath(CancelledFlightBookingsListResponseDto),
+        },
+      },
+    },
+  })
   @ApiNotFoundResponse({
     schema: createNotFoundErrorSchema(
       "/api/v1/cancelled-flights/:id/bookings",
@@ -486,7 +495,7 @@ export class CancelledFlightsController {
     @Param("id", ParseIntPipe) id: number,
     @Query() pagination: PaginationQueryDto,
     @RequestId() requestId: string,
-  ): Promise<BaseResponseDto<object>> {
+  ): Promise<BaseResponseDto<CancelledFlightBookingsListResponseDto>> {
     const data = await this.service.listBookings(id, pagination, requestId);
     return BaseResponseDto.success(
       data,
@@ -496,7 +505,6 @@ export class CancelledFlightsController {
   }
 
   // ── GET /cancelled-flights/:id/review ───────────────────────────────────
-
   @Get(":id/review")
   @RequireAccessControl({
     airline: {
@@ -509,6 +517,16 @@ export class CancelledFlightsController {
     description: "Returns full flight details with route, and summary counts.",
   })
   @ApiParam({ name: "id", description: "Cancelled flight id" })
+  @ApiOkResponse({
+    schema: {
+      properties: {
+        success: { type: "boolean", example: true },
+        data: {
+          $ref: getSchemaPath(ReviewCancelledFlightResponseDto),
+        },
+      },
+    },
+  })
   @ApiNotFoundResponse({
     schema: createNotFoundErrorSchema(
       "/api/v1/cancelled-flights/:id/review",
@@ -563,8 +581,57 @@ export class CancelledFlightsController {
     );
   }
 
-  // ── POST /cancelled-flights/:id/hotel-recommendations ───────────────────
+  // ── GET /cancelled-flights/:id/hotel-bookings ──────────────────────────────────
+  @Get(":id/hotel-bookings")
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.VIEW],
+    },
+  })
+  @ApiOperation({
+    summary: "List all hotel bookings for a cancelled flight",
+    description:
+      "Returns summary counts and the full hotel booking list for a cancelled flight.",
+  })
+  @ApiParam({ name: "id", description: "Cancelled flight id" })
+  @ApiOkResponse({
+    schema: {
+      properties: {
+        success: { type: "boolean", example: true },
+        data: {
+          $ref: getSchemaPath(CancelledFlightHotelBookingListResponseDto),
+        },
+      },
+    },
+  })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/cancelled-flights/:id/hotel-bookings",
+      "Cancelled flight not found",
+    ),
+  })
+  async listHotelBookings(
+    @Param("id", ParseIntPipe) id: number,
+    @Query() pagination: PaginationQueryDto,
+    @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
+  ): Promise<BaseResponseDto<CancelledFlightHotelBookingListResponseDto>> {
+    requestLogger.info(`Listing hotel bookings for cancelled flight ${id}`);
+    const data = await this.service.listHotelBookings(
+      id,
+      pagination,
+      requestId,
+      requestLogger,
+    );
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Hotel bookings fetched successfully",
+    );
+  }
 
+  // ── POST /cancelled-flights/:id/hotel-recommendations ───────────────────
   @Post(":id/hotel-recommendations")
   @RequireAccessControl({
     airline: {
@@ -610,8 +677,7 @@ export class CancelledFlightsController {
     );
   }
 
-  // ── POST /cancelled-flights/:id/hotel-recommendations ───────────────────
-
+  // ── POST /cancelled-flights/:id/hotel-allocations ───────────────────
   @Post(":id/hotel-allocations")
   @RequireAccessControl({
     airline: {
@@ -651,12 +717,13 @@ export class CancelledFlightsController {
     return BaseResponseDto.success(
       data,
       requestId,
-      "Hotel allocation generated successfully",
+      "Hotel allocations generated successfully",
     );
   }
 
-  // ── GET /cancelled-flights/:id/bookings/:bookingId/hotel-recommendations ──
+  // ── POST /cancelled-flights/:id/hotel-bookings ───────────────────
 
+  // ── GET /cancelled-flights/:id/bookings/:bookingId/hotel-recommendations ──
   @Get(":id/bookings/:bookingId/hotel-recommendations")
   @RequireAccessControl({
     airline: {
@@ -695,7 +762,6 @@ export class CancelledFlightsController {
   }
 
   // // ── POST /cancelled-flights/:id/bookings/:bookingId/allocate-hotel ───────
-
   // @Post(":id/bookings/:bookingId/allocate-hotel")
   // @RequireAccessControl({
   //   airline: {

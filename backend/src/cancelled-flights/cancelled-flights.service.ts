@@ -27,6 +27,7 @@ import {
   ReviewCancelledFlightResponseDto,
   AllocateHotelDto,
   BookHotelRequestDto,
+  CancelledFlightHotelBookingListResponseDto,
 } from "./dto";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
 import { PaginationQueryDto } from "../common/dto/pagination-query.dto";
@@ -44,6 +45,8 @@ import { GetCancelledFlightsQueryDto } from "./dto/get-cancelled-flights-query.d
 import { HotelAllocationsDto } from "./dto/hotel-allocations.dto";
 import { request } from "http";
 import { config } from "../config/config";
+import { CancelledFlightBookingsListResponseDto } from "./dto/cancelled-flight-bookings-list-response.dto";
+import { first } from "rxjs";
 
 type AllocationStatus =
   | "RECOMMENDED"
@@ -1011,9 +1014,9 @@ export class CancelledFlightsService {
     flightId: number,
     pagination: PaginationQueryDto,
     requestId: string,
-  ) {
+  ): Promise<CancelledFlightBookingsListResponseDto> {
     await this.requireFlight(flightId, requestId);
-    const bookings =
+    const { bookings, totalBookings } =
       await this.cancelledFlightsRepository.findBookingsByFlightIdWithPagination(
         flightId,
         pagination.page || 1,
@@ -1021,7 +1024,12 @@ export class CancelledFlightsService {
         requestId,
       );
 
-    return bookings.map((b) => this.toBookingResponse(b));
+    return {
+      bookings: bookings.map((b) => this.toBookingResponse(b)),
+      totalBookings,
+      currentPage: pagination.page || 1,
+      limit: pagination.limit || 10,
+    };
   }
 
   // ── Review ───────────────────────────────────────────────────────────────
@@ -2040,7 +2048,7 @@ export class CancelledFlightsService {
         totalRooms: item.rooms?.length ?? 0,
         allocationStatus: item.allocationStatus,
         currency: "USD",
-        bookingReference: `temp-${item.bookingId}-${index}`
+        bookingReference: `temp-${item.bookingId}-${index}`,
       };
     });
 
@@ -2110,6 +2118,51 @@ export class CancelledFlightsService {
       totalHotelTaxes,
       totalPlatformFee,
       currency,
+    };
+  }
+
+  // ── List bookings ────────────────────────────────────────────────────────
+  async listHotelBookings(
+    flightId: number,
+    pagination: PaginationQueryDto,
+    requestId: string,
+    requestLogger: Logger,
+  ): Promise<CancelledFlightHotelBookingListResponseDto> {
+    await this.requireFlight(flightId, requestId);
+    const { hotelBookings, totalHotelBookings } =
+      await this.cancelledFlightsRepository.findHotelBookingsByFlightIdWithPagination(
+        flightId,
+        pagination.page || 1,
+        pagination.limit || 10,
+        requestId,
+      );
+
+    return {
+      hotelBookings: hotelBookings.map((h) => ({
+        id: h.id,
+        passengerBooking: {
+          id: h.booking.id,
+          pnr: h.booking.pnr,
+          cancelledFlightId: h.booking.cancelledFlightId,
+          firstName: h.booking.firstName,
+          lastName: h.booking.lastName,
+          email: h.booking.email,
+          phone: h.booking.phone,
+          travelClass: h.booking.travelClass,
+          adults: h.booking.adults,
+          children: h.booking.children,
+        },
+        cancelledFlightId: h.cancelledFlightId,
+        hotelName: h.hotelName,
+        rating: h.category,
+        totalRooms: h.totalRooms,
+        totalCost: h.totalPrice,
+        createdAt: h.createdAt.toISOString(),
+        updatedAt: h.updatedAt?.toISOString() ?? null,
+      })),
+      totalHotelBookings: totalHotelBookings,
+      currentPage: pagination.page || 1,
+      limit: pagination.limit || 10,
     };
   }
 

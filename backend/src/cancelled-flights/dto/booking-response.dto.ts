@@ -1,7 +1,7 @@
 import { ApiProperty } from "@nestjs/swagger";
 import { SpecialNote, TravelClass } from "../entities/enums";
 
-export class BookingResponseDto {
+export class ParentBookingResponseDto {
   @ApiProperty({ example: 1 })
   id!: number;
 
@@ -31,7 +31,9 @@ export class BookingResponseDto {
 
   @ApiProperty({ example: 1 })
   children!: number;
+}
 
+export class BookingResponseDto extends ParentBookingResponseDto {
   @ApiProperty({
     example: ["Vegetarian meal", "Extra legroom"],
     nullable: true,

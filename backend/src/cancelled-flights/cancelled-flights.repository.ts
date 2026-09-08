@@ -326,7 +326,7 @@ export class CancelledFlightsRepository {
     page: number,
     limit: number,
     requestId: string,
-  ): Promise<BookingEntity[]> {
+  ): Promise<{ bookings: BookingEntity[]; totalBookings: number }> {
     this.logger.debug(
       "Finding all bookings by flight id with pagination",
       "CancelledFlightsRepository",
@@ -336,16 +336,16 @@ export class CancelledFlightsRepository {
 
     const skip = (page - 1) * limit;
 
-    const bookings = await this.bookingRepo
+    const [bookings, totalBookings] = await this.bookingRepo
       .createQueryBuilder("booking")
       .where("booking.cancelled_flight_id = :cancelledFlightId", {
         cancelledFlightId,
       })
       .skip(skip)
       .take(limit)
-      .getMany();
+      .getManyAndCount();
 
-    return bookings;
+    return { bookings, totalBookings };
   }
 
   async findBookingStatsByFlightId(
@@ -381,7 +381,6 @@ export class CancelledFlightsRepository {
   }
 
   // ── HotelAllocation ──────────────────────────────────────────────────────
-
   async saveHotelAllocation(
     payload: Partial<HotelAllocationEntity>,
     requestId: string,
@@ -445,5 +444,36 @@ export class CancelledFlightsRepository {
         );
       },
     );
+  }
+
+  async findHotelBookingsByFlightIdWithPagination(
+    cancelledFlightId: number,
+    page: number,
+    limit: number,
+    requestId: string,
+  ): Promise<{
+    hotelBookings: HotelAllocationEntity[];
+    totalHotelBookings: number;
+  }> {
+    this.logger.debug(
+      "Finding all hotel bookings by flight id with pagination",
+      "CancelledFlightsRepository",
+      requestId,
+      { cancelledFlightId },
+    );
+
+    const skip = (page - 1) * limit;
+
+    const [hotelBookings, totalHotelBookings] = await this.allocationRepo
+      .createQueryBuilder("hotelBooking")
+      .leftJoinAndSelect("hotelBooking.booking", "booking")
+      .where("hotelBooking.cancelled_flight_id = :cancelledFlightId", {
+        cancelledFlightId,
+      })
+      .skip(skip)
+      .take(limit)
+      .getManyAndCount();
+
+    return { hotelBookings, totalHotelBookings };
   }
 }
