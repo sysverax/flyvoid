@@ -31,9 +31,11 @@ import {
   TableCell,
   SortHeader,
 } from "@/src/components/ui/table";
+import { TableEmptyState } from "@/src/components/ui/EmptyState";
 import { StatusBadge } from "@/src/components/ui/StatusBadge";
 import { FiltersCard } from "@/src/components/ui/FiltersCard";
 import { Dropdown } from "@/src/components/ui/Dropdown";
+import { TruncatedTooltip } from "@/src/components/ui/TruncatedTooltip";
 import { Pagination } from "@/src/components/ui/pagination";
 import CancellationWizard from "./CancellationWizard";
 import {
@@ -129,10 +131,19 @@ function mapApiCancelledFlight(
     displayStatus: "Draft",
   };
 
+  const depCode =
+    item.departureAirport?.code ||
+    (item as any).departureAirport?.iataCode ||
+    "";
+  const arrCode =
+    item.arrivalAirport?.code ||
+    (item as any).arrivalAirport?.iataCode ||
+    "";
+
   return {
     id: String(item.id),
     flight: item.flightNumber,
-    route: `${item.departureAirport.code} ➔ ${item.arrivalAirport.code}`,
+    route: `${depCode} ➔ ${arrCode}`,
     cancellationDate: formatDateString(item.cancellationDate),
     bookings: Number(item.totalBookings || 0),
     passengers: Number(item.totalPassengers || 0),
@@ -437,12 +448,20 @@ function PublishedDetailView({
                         <div className="font-semibold text-gray-900">
                           Jane Doe
                         </div>
-                        <div className="text-xs text-gray-500">
-                          jane.doe@example.com
-                        </div>
+                        <TruncatedTooltip text="jane.doe@example.com" side="top">
+                          <div className="text-xs text-gray-500 max-w-[160px] truncate cursor-default">
+                            jane.doe@example.com
+                          </div>
+                        </TruncatedTooltip>
                       </TableCell>
                       <TableCell className="text-center">1 Passenger</TableCell>
-                      <TableCell className="font-medium">{hotelName}</TableCell>
+                      <TableCell className="font-medium">
+                        <TruncatedTooltip text={hotelName} side="top">
+                          <div className="max-w-[180px] truncate cursor-default">
+                            {hotelName}
+                          </div>
+                        </TruncatedTooltip>
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center text-amber-400">
                           {[...Array(stars)].map((_, i) => (
@@ -515,7 +534,7 @@ export default function CancellationPage() {
   const [cancellations, setCancellations] = useState<Cancellation[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("All Status");
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [totalCount, setTotalCount] = useState(0);
 
   // Sorting
@@ -553,32 +572,56 @@ export default function CancellationPage() {
   };
 
   useEffect(() => {
-    const fetchCancelledFlights = async () => {
+    if (isAddingNew || detailCancellation) return;
+
+    let isMounted = true;
+
+    const loadData = async () => {
       setIsLoading(true);
       try {
         const response = await cancellationService.listCancelledFlights({
           page: currentPage,
           limit: resultsPerPage,
           status: UI_STATUS_TO_API_STATUS[selectedStatus],
-          search: searchQuery || undefined,
+          search: searchQuery.trim() || undefined,
         });
 
-        const data: ListCancelledFlightsResponseDataDto | undefined =
-          response?.data;
-        const items = data?.cancelledFlights || [];
-        setCancellations(items.map(mapApiCancelledFlight));
-        setTotalCount(data?.pagination?.totalCount || 0);
+        if (isMounted) {
+          const data: ListCancelledFlightsResponseDataDto | undefined =
+            response?.data;
+          const items = data?.cancelledFlights || [];
+          setCancellations(items.map(mapApiCancelledFlight));
+          setTotalCount(data?.pagination?.totalCount || 0);
+        }
       } catch (error: any) {
-        toast.error(error?.message || "Failed to load cancelled flights");
-        setCancellations([]);
-        setTotalCount(0);
+        if (isMounted) {
+          toast.error(error?.message || "Failed to load cancelled flights");
+          setCancellations([]);
+          setTotalCount(0);
+        }
       } finally {
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
 
-    fetchCancelledFlights();
-  }, [currentPage, resultsPerPage, selectedStatus, searchQuery]);
+    const timeoutId = setTimeout(() => {
+      loadData();
+    }, 300);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, [
+    searchQuery,
+    selectedStatus,
+    currentPage,
+    resultsPerPage,
+    isAddingNew,
+    detailCancellation,
+  ]);
 
   // Confirm Publish function (from modal)
   const confirmPublish = (id: string) => {
@@ -625,26 +668,25 @@ export default function CancellationPage() {
       ) : detailCancellation && detailCancellation.status !== "Published" ? (
         <CancellationWizard
           initialData={detailCancellation}
-          onClose={() => setDetailCancellation(null)}
-          onSave={(updatedOrAdded) => {
-            const normalized = withDisplayStatus(updatedOrAdded);
-            setCancellations((prev) =>
-              prev.some((item) => item.id === normalized.id)
-                ? prev.map((item) =>
-                    item.id === normalized.id ? normalized : item,
-                  )
-                : [normalized, ...prev],
-            );
+          onClose={() => {
+            setDetailCancellation(null);
+          }}
+          onSave={() => {
             setDetailCancellation(null);
             toast.success(`Successfully updated cancellation`);
           }}
         />
       ) : isAddingNew ? (
         <CancellationWizard
-          onClose={() => setIsAddingNew(false)}
-          onSave={(added) => {
-            setCancellations((prev) => [withDisplayStatus(added), ...prev]);
+          onClose={() => {
             setIsAddingNew(false);
+            setSelectedStatus("All Status");
+            setCurrentPage(1);
+          }}
+          onSave={() => {
+            setIsAddingNew(false);
+            setSelectedStatus("All Status");
+            setCurrentPage(1);
             toast.success(`Successfully published cancellation`);
           }}
         />
@@ -661,7 +703,12 @@ export default function CancellationPage() {
               </p>
             </div>
             <button
-              onClick={() => setIsAddingNew(true)}
+              onClick={() => {
+                setSelectedStatus("All Status");
+                setSearchQuery("");
+                setCurrentPage(1);
+                setIsAddingNew(true);
+              }}
               className="h-[50px] rounded-[10px] bg-[#0F2757] hover:bg-[#162259] px-4.5 py-[9px] text-[16px] font-medium font-figtree transition-colors duration-200 cursor-pointer text-white flex items-center justify-center gap-1.5 -translate-y-0.5"
             >
               <Plus className="h-4 w-4" />
@@ -770,33 +817,60 @@ export default function CancellationPage() {
                       colSpan={8}
                       className="px-6 py-12 text-center text-gray-500 font-figtree"
                     >
-                      Loading cancelled flights...
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <svg
+                          className="animate-spin h-8 w-8 text-[#0F2757]"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                        >
+                          <circle
+                            className="opacity-25"
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                          />
+                          <path
+                            className="opacity-75"
+                            fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                          />
+                        </svg>
+                        <span>Loading cancellations...</span>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ) : sortedCancellations.length === 0 ? (
-                  <TableRow>
-                    <TableCell
-                      colSpan={8}
-                      className="px-6 py-12 text-center text-gray-500 font-figtree"
-                    >
-                      No flight cancellations found.
-                    </TableCell>
-                  </TableRow>
+                  <TableEmptyState
+                    colSpan={8}
+                    icon={Search}
+                    title="No flights found"
+                    message="Try adjusting your filters or search query."
+                  />
                 ) : (
                   sortedCancellations.map((c) => (
                     <TableRow key={c.id}>
                       <TableCell className="text-[#1F2937]">
-                        {c.flight}
+                        <TruncatedTooltip text={c.flight} side="top">
+                          <div className="max-w-[120px] truncate cursor-default">
+                            {c.flight}
+                          </div>
+                        </TruncatedTooltip>
                       </TableCell>
                       <TableCell className="text-[#6B7280]">
-                        {c.route.split("➔").map((part, i, arr) => (
-                          <span key={i}>
-                            {part}
-                            {i < arr.length - 1 && (
-                              <span className="font-bold text-gray-900">→</span>
-                            )}
-                          </span>
-                        ))}
+                        <TruncatedTooltip text={c.route.replace("➔", "→")} side="top">
+                          <div className="max-w-[200px] truncate cursor-default">
+                            {c.route.split("➔").map((part, i, arr) => (
+                              <span key={i}>
+                                {part}
+                                {i < arr.length - 1 && (
+                                  <span className="font-bold text-gray-900">→</span>
+                                )}
+                              </span>
+                            ))}
+                          </div>
+                        </TruncatedTooltip>
                       </TableCell>
                       <TableCell className="text-[#6B7280]">
                         {c.cancellationDate}
@@ -815,7 +889,7 @@ export default function CancellationPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center justify-start gap-1 -translate-x-1">
-                          {c.status === "Allocated" && (
+                          {(c.status === "Paid" || c.displayStatus === "Paid") && (
                             <button
                               onClick={() => setPublishTarget(c)}
                               className="p-1 text-[#6B7280] hover:text-emerald-600 transition-colors cursor-pointer"

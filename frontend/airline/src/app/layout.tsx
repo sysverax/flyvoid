@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Figtree } from "next/font/google";
 import "./globals.css";
 import { MainLayout } from "@/src/components/layout/MainLayout";
+import { TooltipProvider } from "@radix-ui/react-tooltip";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
@@ -27,7 +28,9 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className={`${figtree.className} font-figtree min-h-screen flex flex-col antialiased`}>
-        <MainLayout>{children}</MainLayout>
+        <TooltipProvider>
+          <MainLayout>{children}</MainLayout>
+        </TooltipProvider>
         <ToastContainer position="top-right" autoClose={3000} />
       </body>
     </html>

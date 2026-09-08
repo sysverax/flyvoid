@@ -326,7 +326,7 @@ export class CancelledFlightsRepository {
     page: number,
     limit: number,
     requestId: string,
-  ): Promise<BookingEntity[]> {
+  ): Promise<{ bookings: BookingEntity[]; totalBookings: number }> {
     this.logger.debug(
       "Finding all bookings by flight id with pagination",
       "CancelledFlightsRepository",
@@ -336,16 +336,16 @@ export class CancelledFlightsRepository {
 
     const skip = (page - 1) * limit;
 
-    const bookings = await this.bookingRepo
+    const [bookings, totalBookings] = await this.bookingRepo
       .createQueryBuilder("booking")
       .where("booking.cancelled_flight_id = :cancelledFlightId", {
         cancelledFlightId,
       })
       .skip(skip)
       .take(limit)
-      .getMany();
+      .getManyAndCount();
 
-    return bookings;
+    return { bookings, totalBookings };
   }
 
   async findBookingStatsByFlightId(
@@ -381,7 +381,6 @@ export class CancelledFlightsRepository {
   }
 
   // ── HotelAllocation ──────────────────────────────────────────────────────
-
   async saveHotelAllocation(
     payload: Partial<HotelAllocationEntity>,
     requestId: string,
@@ -445,5 +444,74 @@ export class CancelledFlightsRepository {
         );
       },
     );
+  }
+
+  async findHotelBookingsByFlightIdWithPagination(
+    cancelledFlightId: number,
+    page: number,
+    limit: number,
+    requestId: string,
+  ): Promise<{
+    hotelBookings: HotelAllocationEntity[];
+    totalHotelBookings: number;
+  }> {
+    this.logger.debug(
+      "Finding all hotel bookings by flight id with pagination",
+      "CancelledFlightsRepository",
+      requestId,
+      { cancelledFlightId },
+    );
+
+    const skip = (page - 1) * limit;
+
+    const [hotelBookings, totalHotelBookings] = await this.allocationRepo
+      .createQueryBuilder("hotelBooking")
+      .leftJoinAndSelect("hotelBooking.booking", "booking")
+      .where("hotelBooking.cancelled_flight_id = :cancelledFlightId", {
+        cancelledFlightId,
+      })
+      .skip(skip)
+      .take(limit)
+      .getManyAndCount();
+
+    return { hotelBookings, totalHotelBookings };
+  }
+
+  async findHotelSummaryByFlightId(
+    cancelledFlightId: number,
+    requestId: string,
+  ): Promise<{
+    totalBookings: number;
+    totalAdults: number;
+    totalChildren: number;
+    totalRooms: number;
+    totalHotelCost: number;
+    totalDiscount: number;
+    totalHotelTax: number;
+    totalPlatformFee: number;
+    totalCost: number;
+  }> {
+    this.logger.debug(
+      "Finding hotel summary by flight id",
+      "CancelledFlightsRepository",
+      requestId,
+      { cancelledFlightId },
+    );
+
+    const flight = await this.flightRepo.findOne({
+      where: { id: cancelledFlightId },
+    });
+
+    return {
+      totalBookings: Number(flight?.totalBooking ?? 0),
+      totalAdults: Number(flight?.totalAdults ?? 0),
+      totalChildren: Number(flight?.totalChildren ?? 0),
+      totalRooms: Number(flight?.totalHotelRooms ?? 0),
+      totalHotelCost: Number(flight?.totalActualPrice ?? 0),
+      totalDiscount: Number(flight?.totalDiscounts ?? 0),
+      totalHotelTax: Number(flight?.totalHotelTaxes ?? 0),
+      totalPlatformFee: Number(flight?.totalPlatformFee ?? 0),
+      totalCost: Number(flight?.totalPrice ?? 0),
+    };
   }
 }

@@ -205,8 +205,8 @@ export function DatePicker({ value, onChange, placeholder, align = "left", class
                   onClick={() => selectDate(day)}
                   className={cn(
                     "text-sm py-1.5 rounded-lg transition-colors cursor-pointer outline-none font-medium",
-                    selected && "bg-blue-955 text-white font-semibold hover:bg-blue-900",
-                    !selected && today && "border border-blue-955 text-blue-955",
+                    selected && "bg-[#0F2757] text-white font-semibold hover:bg-[#162259]",
+                    !selected && today && "border border-[#0F2757] text-[#0F2757] font-semibold",
                     !selected && !today && "text-gray-700 hover:bg-gray-100",
                   )}
                 >
