@@ -1,4 +1,4 @@
-import { apiClient, extractErrorMessage, setCookie, eraseCookie } from "@/src/lib/api-client";
+import { apiClient, extractErrorMessage, setCookie, getCookie, eraseCookie } from "@/src/lib/api-client";
 
 export const authService = {
   async onboard(invitationToken: string, password: string) {
@@ -60,11 +60,18 @@ export const authService = {
     }
   },
 
-  logout() {
-    if (typeof window !== "undefined") {
-      sessionStorage.removeItem("airline_access_token");
-      sessionStorage.removeItem("airline_current_user");
-      eraseCookie("airline_refresh_token");
+  async logout(): Promise<void> {
+    if (typeof window === "undefined") return;
+    const refreshToken = getCookie("airline_refresh_token");
+    if (refreshToken) {
+      try {
+        await apiClient.post("/auth/airline/signout", { refreshToken });
+      } catch (err) {
+        console.error("Backend signout failed", err);
+      }
     }
+    sessionStorage.removeItem("airline_access_token");
+    sessionStorage.removeItem("airline_current_user");
+    eraseCookie("airline_refresh_token");
   },
 };
