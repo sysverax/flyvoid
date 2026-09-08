@@ -1584,23 +1584,6 @@ export class CancelledFlightsService {
       requestLogger,
     );
 
-    await this.cancelledFlightsRepository.updateFlightStatus({
-      cancelledFlightEntity: flight,
-      status: FlightStatus.ALLOCATED,
-      passengerBookingStats: null,
-      hotelBookingStats: {
-        totalHotelRooms: totalRooms ?? null,
-        totalPrice: totalPriceForAll ?? null,
-        totalBuyingPrice: totalBuyingPrice ?? null,
-        totalSellingPrice: totalSellingPrice ?? null,
-        totalDiscounts: totalDiscounts ?? null,
-        totalHotelTaxes: totalHotelTaxes ?? null,
-        totalPlatformFee: totalPlatformFee ?? null,
-        totalEarnings: totalEarnings ?? null,
-      },
-      requestId,
-    });
-
     return {
       cancelledFlightId: flight.id,
       status: FlightStatus.ALLOCATED,
