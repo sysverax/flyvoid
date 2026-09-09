@@ -1,7 +1,7 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { HotelAllocationStatus } from "../entities/enums";
-import { BookingResponseDto } from "./booking-response.dto";
-import { ReviewCancelledFlightDto } from "./review-cancelled-flight-response.dto";
+import { HotelAllocationStatus } from "../../cancelled-flights/entities/enums";
+import { BookingResponseDto } from "../../cancelled-flights/dto/booking-response.dto";
+import { ReviewCancelledFlightDto } from "../../cancelled-flights/dto/review-cancelled-flight-response.dto";
 
 export class HotelBookingRoomDto {
   @ApiProperty({ example: 2 })
