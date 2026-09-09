@@ -30,6 +30,7 @@ import {
   BookHotelRequestDto,
   CancelledFlightHotelBookingListResponseDto,
   HotelSummaryCancelledFlightResponseDto,
+  HotelBookingDetailResponseDto,
 } from "./dto";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
 import { PaginationQueryDto } from "../common/dto/pagination-query.dto";
@@ -1642,6 +1643,92 @@ export class CancelledFlightsService {
       totalHotelBookings: totalHotelBookings,
       currentPage: pagination.page || 1,
       limit: pagination.limit || 10,
+    };
+  }
+
+  // ── Get single hotel booking detail ─────────────────────────────────────
+  async getHotelBookingDetail(
+    flightId: number,
+    hotelBookingId: number,
+    user: AuthenticatedUser,
+    requestId: string,
+  ): Promise<HotelBookingDetailResponseDto> {
+    const hotelBooking =
+      await this.cancelledFlightsRepository.findHotelBookingById(
+        hotelBookingId,
+        requestId,
+      );
+
+    if (!hotelBooking || hotelBooking.cancelledFlightId !== flightId) {
+      throw new NotFoundException(
+        `Hotel booking '${hotelBookingId}' not found for flight '${flightId}'`,
+      );
+    }
+
+    if (
+      user.userType === UserType.AIRLINE &&
+      hotelBooking.cancelledFlight.airlineId !== user.airlineId
+    ) {
+      throw new NotFoundException(
+        `Hotel booking '${hotelBookingId}' not found for flight '${flightId}'`,
+      );
+    }
+
+    const flight = hotelBooking.cancelledFlight;
+    const includeMarginFields = user.userType !== UserType.AIRLINE;
+
+    return {
+      id: hotelBooking.id,
+      flight: {
+        id: flight.id,
+        flightNumber: flight.flightNumber,
+        airlineId: flight.airlineId,
+        departureAirportId: flight.departureAirportId,
+        arrivalAirportId: flight.arrivalAirportId,
+        cancellationDate: flight.cancellationDate,
+        cancellationReason: flight.cancellationReason ?? null,
+        status: flight.status,
+        createdAt: flight.createdAt.toISOString(),
+        updatedAt: flight.updatedAt?.toISOString() ?? null,
+        route: {
+          departureAirport: {
+            id: flight.departureAirport.id,
+            code: flight.departureAirport.iataCode,
+            name: flight.departureAirport.name,
+          },
+          arrivalAirport: {
+            id: flight.arrivalAirport.id,
+            code: flight.arrivalAirport.iataCode,
+            name: flight.arrivalAirport.name,
+          },
+        },
+      },
+      booking: this.toBookingResponse(hotelBooking.booking),
+      hotel: {
+        hotelCode: hotelBooking.hotelCode,
+        hotelName: hotelBooking.hotelName,
+        category: hotelBooking.category,
+        checkInDate: hotelBooking.checkInDate,
+        checkOutDate: hotelBooking.checkOutDate,
+        rooms: hotelBooking.rooms ?? [],
+        totalRooms: hotelBooking.totalRooms,
+        actualPrice: Number(hotelBooking.actualPrice),
+        ...(includeMarginFields && {
+          buyingPrice: Number(hotelBooking.buyingPrice),
+        }),
+        sellingPrice: Number(hotelBooking.sellingPrice),
+        tax: Number(hotelBooking.tax),
+        platformFee: Number(hotelBooking.platformFee),
+        discount: Number(hotelBooking.discount),
+        totalPrice: Number(hotelBooking.totalPrice),
+        ...(includeMarginFields && {
+          earnings: Number(hotelBooking.earnings),
+        }),
+        status: hotelBooking.status,
+        bookingReference: hotelBooking.bookingReference,
+        createdAt: hotelBooking.createdAt.toISOString(),
+        updatedAt: hotelBooking.updatedAt?.toISOString() ?? null,
+      },
     };
   }
 
