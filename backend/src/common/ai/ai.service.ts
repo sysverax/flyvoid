@@ -29,6 +29,25 @@ You MUST respond with a valid JSON object matching the following structure:
 Ensure the recommendations are sorted by suitability score in descending order.`;
   }
 
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private parseJsonContent(content: string): any {
+    const fenced = content.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    const candidate = (fenced ? fenced[1] : content).trim();
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      const start = candidate.indexOf("{");
+      const end = candidate.lastIndexOf("}");
+      if (start !== -1 && end > start) {
+        return JSON.parse(candidate.slice(start, end + 1));
+      }
+      throw new Error("AI response was not valid JSON");
+    }
+  }
+
   private async requestJsonFromAi(
     systemPrompt: string,
     userPrompt: string,
@@ -38,85 +57,77 @@ Ensure the recommendations are sorted by suitability score in descending order.`
       model: this.model,
     });
 
-    const response = await fetch(this.apiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: this.model,
-        messages: [
-          {
-            role: "system",
-            content: systemPrompt,
-          },
-          { role: "user", content: userPrompt },
-        ],
-        response_format: { type: "json_object" },
-        temperature: this.temperature,
-      }),
+    // No response_format (reasoning models reject it). reasoning_effort low +
+    // a completion cap stop gpt-oss burning its budget on thinking and
+    // returning empty content.
+    const body = JSON.stringify({
+      model: this.model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: this.temperature,
+      reasoning_effort: "low",
+      max_completion_tokens: 4000,
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
+    let responseData: any;
+    for (let attempt = 1; ; attempt += 1) {
+      const response = await fetch(this.apiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body,
+      });
 
-      if (
-        response.status === 400 &&
-        errorText.includes("json_validate_failed")
-      ) {
-        this.logger.warn(
-          "AI provider rejected strict JSON response format, retrying without response_format",
-          "AiService",
-          requestId,
-        );
-
-        const relaxedResponse = await fetch(this.apiUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${this.apiKey}`,
-          },
-          body: JSON.stringify({
-            model: this.model,
-            messages: [
-              {
-                role: "system",
-                content: systemPrompt,
-              },
-              { role: "user", content: userPrompt },
-            ],
-            temperature: this.temperature,
-          }),
-        });
-
-        if (!relaxedResponse.ok) {
-          const relaxedErrorText = await relaxedResponse.text();
-          throw new Error(
-            `AI API returned status ${relaxedResponse.status}: ${relaxedErrorText}`,
-          );
-        }
-
-        const relaxedData = await relaxedResponse.json();
-        const relaxedContent = relaxedData?.choices?.[0]?.message?.content;
-        if (!relaxedContent) {
-          throw new Error("Empty message content received from AI API");
-        }
-        return JSON.parse(relaxedContent);
+      if (response.ok) {
+        responseData = await response.json();
+        break;
       }
 
-      throw new Error(
-        `AI API returned status ${response.status}: ${errorText}`,
-      );
+      const errorText = await response.text();
+
+      // Per-minute token limit hit (request fits, window is full): wait and retry.
+      const retryMs = this.parseRetryDelayMs(response, errorText);
+      if (response.status === 429 && retryMs !== null && attempt <= 2) {
+        this.logger.warn(
+          `AI API rate limited, retrying in ${retryMs}ms`,
+          "AiService",
+          requestId,
+          { attempt },
+        );
+        await this.sleep(retryMs);
+        continue;
+      }
+
+      throw new Error(`AI API returned status ${response.status}: ${errorText}`);
     }
 
-    const responseData = await response.json();
-    const content = responseData?.choices?.[0]?.message?.content;
-    if (!content) {
+    const message = responseData?.choices?.[0]?.message ?? {};
+    const raw = message.content || message.reasoning;
+    if (!raw) {
       throw new Error("Empty message content received from AI API");
     }
 
-    return JSON.parse(content);
+    return this.parseJsonContent(raw);
+  }
+
+  /** Retry delay for a 429, from Retry-After or the body's "try again in Xs". */
+  private parseRetryDelayMs(
+    response: Awaited<ReturnType<typeof fetch>>,
+    errorText: string,
+  ): number | null {
+    const header = Number(response.headers.get("retry-after"));
+    if (Number.isFinite(header) && header > 0) {
+      return Math.min(header * 1000, 30_000) + 250;
+    }
+    const match = errorText.match(/try again in ([\d.]+)\s*s/i);
+    if (match) {
+      return Math.min(parseFloat(match[1]) * 1000, 30_000) + 250;
+    }
+    return null;
   }
 
   async getHotelRecommendations(
@@ -237,59 +248,49 @@ ${JSON.stringify(hotels, null, 2)}`;
   }
 
   private buildHotelAllocationSystemPrompt(): string {
-    return `You are a hotel allocation assistant for an airline's flight disruption (delay/cancellation) passenger care process.
+    return `You allocate hotels for an airline's flight-disruption passenger care.
 
-You will receive "occupancyGroups": passenger groups already clustered by identical room-occupancy requirement (same rooms/adults/children shape), each with a "hotels" shortlist of real, bookable offers already filtered for the right stay dates, distance from the airport, and room capacity.
+INPUT: "roomOptions" maps a shapeKey to a shortlist of bookable offers (already filtered for dates, distance, and room capacity). "groups" are passenger groups clustered by occupancy; a group's candidates are roomOptions[group.shapeKey].
 
-Assign every passenger group (by passengerGroupId) to a specific hotel and room offer, referencing offers ONLY by their rateKey. Never restate a price, distance, or capacity - just choose from what's given.
+Every group's candidate list is non-empty. You MUST return an assignment for every group and keep "unresolved" empty - assign each group (by passengerGroupId) to one hotel + rateKey from its candidates, referencing offers ONLY by rateKey.
 
-HARD RULES - never break these:
-1. Capacity: the assigned room(s) must fit the group's adults/children exactly.
-2. Same hotel: every occupancyGroup that shares the same "sameHotelGroup" value must be assigned to the SAME hotelId (those rooms belong to one family/booking).
-3. Allotment: never assign more rooms of the same rateKey, summed across ALL groups in this entire input, than that rate's "allotment" value. Track a running count as you go - this is a hard cap, not a preference. If a room's "allotment" is null, that rate is unavailable - never assign it.
+HARD RULES:
+1. Capacity: the room must fit the group's adults/children exactly.
+2. Same hotel: groups sharing a "sameHotelGroup" value must get the SAME hotelId.
+3. Allotment: across ALL groups, never assign a rateKey more times than its "allotment"; keep a running total. allotment null = unavailable, never assign.
 
-SPECIAL NEEDS are advisory only. The hotel/room data has NO accessibility, medical, or dietary fields, so a specialNotes code can never be structurally verified - do NOT mark a group "unresolved" because of a special need, and never infer one from a room's name. Allocate the group normally by the priority order below; in its "reason", state which specialNotes codes were recorded and that they could not be confirmed from provider data and must be verified with the hotel directly.
+specialNotes are advisory - never mark a group "unresolved" for a special need, never infer one from a room name.
 
-PRIORITY ORDER - apply only among rooms that already satisfy the hard rules:
-Rank travelClass as FIRST > BUSINESS > PREMIUM_ECONOMY > ECONOMY, and process groups in that order.
-- FIRST groups get first pick of the highest-category (e.g. 5-star) hotels in their shortlist.
-- BUSINESS groups pick next from what's left - still high category, but yield the single best hotel to FIRST class when allotment is tight.
-- PREMIUM_ECONOMY groups get mid-tier rooms (4-star preferred, 3-star OK).
-- ECONOMY groups get any comfortable, valid room. Don't force the cheapest option if a similarly priced better one is still available, but don't spend at FIRST-class levels either.
-- Within the same class: special-needs groups first (give them the best-ranked hotel for their class tier), then groups with children/infants, then break remaining ties by bookingReference (alphabetical) for a consistent, repeatable result.
+PRIORITY (only among rule-satisfying rooms): process FIRST > BUSINESS > PREMIUM_ECONOMY > ECONOMY. Higher classes get higher-category hotels; fill the best hotel for a tier before spilling to the next. Within a class: special-needs groups first, then groups with children, then by passengerGroupId. Prefer many groups sharing one hotel over scattering for variety.
 
-GROUPING: multiple passenger groups sharing one hotel and room type is expected and preferred, as long as allotment isn't exceeded - fill the best-ranked hotel for a class tier before spilling to the next one. Don't scatter groups across hotels for variety.
+Only put a group in "unresolved" if its allotment is genuinely exhausted by higher-priority groups - never otherwise.
 
-NEVER leave a group unassigned if any room satisfying hard rules 1-3 exists anywhere in its shortlist, even below its ideal category. Only use "unresolved" when nothing in the shortlist can satisfy hard rules 1-3.
-
-Every assignment MUST include a one-sentence "reason" saying why this hotel and room is the best allocation for that group: name the class tier and how the hotel category fits it, note when it is a fallback below the group's ideal category, and add the special-needs caveat above when the group has any specialNotes.
-
-Return STRICT JSON only, matching the schema in the user message. No prose, no markdown, nothing outside the JSON object.`;
+Return STRICT JSON only matching the user-message schema. No prose, no markdown.`;
   }
 
   async allocateHotelGroups(
     input: {
-      occupancyGroups: Array<{
+      roomOptions: Record<
+        string,
+        Array<{
+          hotelId: string;
+          category: string;
+          stars: number;
+          rateKey: string;
+          adults: number;
+          children: number;
+          allotment: number | null;
+        }>
+      >;
+      groups: Array<{
         passengerGroupId: string;
         sameHotelGroup: string;
-        bookingReference: string;
         travelClass: string;
         specialNotes: string[];
         adults: number;
         children: number;
         roomsNeeded: number;
-        hotels: Array<{
-          hotelId: string;
-          name: string;
-          category: string;
-          stars: number;
-          rateKey: string;
-          roomName: string;
-          boardName: string;
-          adults: number;
-          children: number;
-          allotment: number | null;
-        }>;
+        shapeKey: string;
       }>;
     },
     requestId: string,
@@ -299,7 +300,6 @@ Return STRICT JSON only, matching the schema in the user message. No prose, no m
       hotelId: string;
       rateKey: string;
       roomsAssigned: number;
-      reason: string;
     }>;
     unresolved: Array<{ passengerGroupId: string; reason: string }>;
   }> {
@@ -311,7 +311,7 @@ Return STRICT JSON only, matching the schema in the user message. No prose, no m
     const responseSchema = `RESPONSE SCHEMA (return exactly this shape, nothing else):
 {
   "assignments": [
-    { "passengerGroupId": "string", "hotelId": "string", "rateKey": "string", "roomsAssigned": number, "reason": "string" }
+    { "passengerGroupId": "string", "hotelId": "string", "rateKey": "string", "roomsAssigned": number }
   ],
   "unresolved": [
     { "passengerGroupId": "string", "reason": "string" }
@@ -321,7 +321,7 @@ Return STRICT JSON only, matching the schema in the user message. No prose, no m
     const userPrompt = `${responseSchema}
 
 INPUT:
-${JSON.stringify(input, null, 2)}`;
+${JSON.stringify(input)}`;
 
     try {
       const result = await this.requestJsonFromAi(
