@@ -1545,6 +1545,7 @@ export class CancelledFlightsService {
           acc.totalPlatformFee += item.platformFee ?? 0;
           acc.totalPriceForAll += item.totalPrice ?? 0;
           acc.totalEarnings += item.earnings ?? 0;
+          acc.totalHotelRooms += item.totalRooms ?? 0;
           return acc;
         },
         {
@@ -1555,6 +1556,7 @@ export class CancelledFlightsService {
           totalHotelTaxes: 0,
           totalPlatformFee: 0,
           totalPriceForAll: 0,
+          totalHotelRooms: 0,
           totalEarnings: 0,
         },
       );
@@ -1567,6 +1569,7 @@ export class CancelledFlightsService {
     const totalPlatformFee = this.roundCurrency(rawTotals.totalPlatformFee);
     const totalPriceForAll = this.roundCurrency(rawTotals.totalPriceForAll);
     const totalEarnings = this.roundCurrency(rawTotals.totalEarnings);
+    const totalHotelRooms = this.roundCurrency(rawTotals.totalHotelRooms);
 
     await this.cancelledFlightsRepository.saveHotelAllocations(
       flightId,
@@ -1579,6 +1582,7 @@ export class CancelledFlightsService {
         totalHotelTaxes,
         totalPlatformFee,
         totalPrice: totalPriceForAll,
+        totalHotelRooms,
         totalEarnings,
       },
       requestId,
@@ -1591,7 +1595,7 @@ export class CancelledFlightsService {
       totalBookings: bookings.length,
       allocatedBookings: allocated.length,
       failedBookings: failed,
-      totalRooms,
+      totalRooms: totalHotelRooms,
       totalActualPrice,
       totalSellingPrice,
       totalDiscounts,
