@@ -63,11 +63,149 @@ export class HotelPartnerService {
   private readonly secret = config.hotelbeds.secret;
   private readonly useSandbox = config.hotelbeds.useSandbox;
 
+  // Availability fans out one request per unique occupancy; throttle + retry so
+  // Hotelbeds rate limits (429) don't fail the whole batch.
+  private readonly availabilityMaxConcurrency = 3;
+  private readonly availabilityMaxAttempts = 3; // 1 initial try + 2 retries
+  private readonly availabilityRetryBaseMs = 1000;
+  private readonly availabilityRequestTimeoutMs = 15000;
+  private static readonly RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+
   constructor(private readonly logger: LoggerService) {}
 
   private occupancyKey(occupancy: RoomOccupancy): string {
     const ages = (occupancy.childrenAges ?? []).join("-");
     return `${occupancy.adults}_${occupancy.children}_${ages}`;
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /** Fresh signature per request — a retried batch can outlive the timestamp. */
+  private buildSignature(): string {
+    const timestamp = Math.floor(Date.now() / 1000);
+    return crypto
+      .createHash("sha256")
+      .update(this.apiKey + this.secret + timestamp)
+      .digest("hex");
+  }
+
+  private availabilityBackoffMs(attempt: number): number {
+    return (
+      this.availabilityRetryBaseMs * 2 ** (attempt - 1) +
+      Math.floor(Math.random() * 250)
+    );
+  }
+
+  /** Runs `worker` over `items`, at most `limit` at once; first rejection wins. */
+  private async mapWithConcurrency<T, R>(
+    items: T[],
+    limit: number,
+    worker: (item: T, index: number) => Promise<R>,
+  ): Promise<R[]> {
+    const results = new Array<R>(items.length);
+    let next = 0;
+    let aborted = false;
+    const runnerCount = Math.max(1, Math.min(limit, items.length));
+    const runners = Array.from({ length: runnerCount }, async () => {
+      while (!aborted && next < items.length) {
+        const index = next++;
+        try {
+          results[index] = await worker(items[index], index);
+        } catch (error) {
+          aborted = true;
+          throw error;
+        }
+      }
+    });
+    await Promise.all(runners);
+    return results;
+  }
+
+  /** Availability for one occupancy; retries 429/5xx/network, throws the real
+   * Hotelbeds status and body on final failure. */
+  private async fetchOccupancyAvailability(
+    endpoint: string,
+    group: { occupancy: RoomOccupancy; payload: unknown },
+    requestLogger: Logger,
+  ): Promise<{ occupancy: RoomOccupancy; rawHotels: any[] }> {
+    const { occupancy, payload } = group;
+    const label = `${occupancy.adults}A ${occupancy.children}C`;
+    let lastError: Error | null = null;
+    let attemptsMade = 0;
+
+    for (let attempt = 1; attempt <= this.availabilityMaxAttempts; attempt += 1) {
+      attemptsMade = attempt;
+      let response: Awaited<ReturnType<typeof fetch>>;
+      try {
+        response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Api-key": this.apiKey,
+            "X-Signature": this.buildSignature(),
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(this.availabilityRequestTimeoutMs),
+        });
+      } catch (networkError: any) {
+        // connection error or the timeout above — both transient, so retry
+        lastError = new Error(
+          `Hotelbeds request error for ${label}: ${networkError?.message ?? networkError}`,
+        );
+        if (attempt < this.availabilityMaxAttempts) {
+          await this.sleep(this.availabilityBackoffMs(attempt));
+          continue;
+        }
+        break;
+      }
+
+      if (response.ok) {
+        const responseData = await response.json();
+        return {
+          occupancy,
+          rawHotels: responseData?.hotels?.hotels || [],
+        };
+      }
+
+      const errorText = await response.text();
+      lastError = new Error(
+        `Hotelbeds API returned status ${response.status} for ${label}: ${errorText}`,
+      );
+
+      const retryable = HotelPartnerService.RETRYABLE_STATUS.has(
+        response.status,
+      );
+      if (retryable && attempt < this.availabilityMaxAttempts) {
+        const retryAfter = Number(response.headers.get("retry-after"));
+        const waitMs =
+          Number.isFinite(retryAfter) && retryAfter > 0
+            ? retryAfter * 1000
+            : this.availabilityBackoffMs(attempt);
+        requestLogger.warn(
+          "Hotelbeds availability request failed, retrying occupancy",
+          {
+            context: "HotelPartnerService",
+            occupancy: label,
+            status: response.status,
+            attempt,
+            nextAttemptInMs: waitMs,
+          },
+        );
+        await this.sleep(waitMs);
+        continue;
+      }
+
+      break; // non-retryable status (403/400/...) or attempts exhausted
+    }
+
+    throw new Error(
+      `Hotelbeds availability for ${label} failed after ${attemptsMade} attempt(s): ${
+        lastError?.message ?? "unknown error"
+      }`,
+    );
   }
 
   private parseOccupancyFromRateOrRoom(room: any, rate: any): RoomOccupancy {
@@ -315,14 +453,6 @@ export class HotelPartnerService {
       ? "https://api.test.hotelbeds.com/hotel-api/1.0/hotels"
       : "https://api.hotelbeds.com/hotel-api/1.0/hotels";
 
-    const timestamp = Math.floor(Date.now() / 1000);
-    const dataToHash = this.apiKey + this.secret + timestamp;
-
-    const signature = crypto
-      .createHash("sha256")
-      .update(dataToHash)
-      .digest("hex");
-
     if (!occupancies.length) {
       requestLogger.warn(
         "No occupancies provided for hotel availability search.",
@@ -395,32 +525,11 @@ export class HotelPartnerService {
     });
 
     try {
-      const responses = await Promise.all(
-        payloads.map(async ({ occupancy, payload }) => {
-          const response = await fetch(endpoint, {
-            method: "POST",
-            headers: {
-              "Api-key": this.apiKey,
-              "X-Signature": signature,
-              Accept: "application/json",
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(payload),
-          });
-
-          if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(
-              `Hotelbeds API returned status ${response.status} for ${occupancy.adults}A ${occupancy.children}C: ${errorText}`,
-            );
-          }
-
-          const responseData = await response.json();
-          return {
-            occupancy,
-            rawHotels: responseData?.hotels?.hotels || [],
-          };
-        }),
+      const responses = await this.mapWithConcurrency(
+        payloads,
+        this.availabilityMaxConcurrency,
+        (group) =>
+          this.fetchOccupancyAvailability(endpoint, group, requestLogger),
       );
 
       const mergedByHotelCode = new Map<string, any>();
@@ -482,9 +591,8 @@ export class HotelPartnerService {
         throw error;
       }
 
-      throw new ServiceUnavailableException(
-        `Hotelbeds API query failed: ${error.message}`,
-      );
+      // pass through the real Hotelbeds status/body from fetchOccupancyAvailability
+      throw new ServiceUnavailableException(error.message);
     }
   }
 

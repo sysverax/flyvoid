@@ -140,4 +140,7 @@ export class HotelAllocationEntity {
 
   @Column({ name: "booking_reference", type: "varchar", length: 255 })
   bookingReference!: string;
+
+  @Column({ name: "reason", type: "text", nullable: true })
+  reason?: string | null;
 }

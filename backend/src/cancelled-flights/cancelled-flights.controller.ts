@@ -835,7 +835,7 @@ export class CancelledFlightsController {
   @ApiOperation({
     summary: "Get AI-recommended hotels for a passenger on a cancelled flight",
     description:
-      "Fetches a list of local candidate hotels and scores them dynamically using Groq's Llama model based on the passenger's class and special needs.",
+      "Fetches a list of local candidate hotels and scores them dynamically using the configured AI model based on the passenger's class and special needs.",
   })
   @ApiParam({ name: "id", description: "Cancelled flight UUID" })
   @ApiParam({ name: "bookingId", description: "Booking UUID" })

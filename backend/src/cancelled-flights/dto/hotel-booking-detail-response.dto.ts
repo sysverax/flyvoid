@@ -85,6 +85,8 @@ export class HotelBookingHotelDetailDto {
 
   @ApiProperty({ example: "2024-01-15T10:00:00Z", nullable: true })
   updatedAt!: string | null;
+
+  reason?: string | null;
 }
 
 export class HotelBookingDetailResponseDto {

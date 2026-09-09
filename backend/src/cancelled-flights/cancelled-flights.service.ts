@@ -1,8 +1,10 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from "@nestjs/common";
 import { Readable } from "stream";
 import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
@@ -40,7 +42,7 @@ import {
   HotelPartnerService,
   RoomOccupancy,
 } from "./hotel-partner.service";
-import { GroqService } from "../common/groq/groq.service";
+import { AiService } from "../common/ai/ai.service";
 import { Logger } from "winston";
 import { AuthenticatedUser } from "../auth/interfaces/authenticated-request.interface";
 import { UserType } from "../common/constants/user.constants";
@@ -49,7 +51,6 @@ import { HotelAllocationsDto } from "./dto/hotel-allocations.dto";
 import { request } from "http";
 import { config } from "../config/config";
 import { CancelledFlightBookingsListResponseDto } from "./dto/cancelled-flight-bookings-list-response.dto";
-import { first } from "rxjs";
 
 type AllocationStatus =
   | "RECOMMENDED"
@@ -95,6 +96,7 @@ const room = (adults: number, children = 0): RoomOccupancy => ({
   children,
 });
 
+
 const ROOM_SPLIT_RULES: Record<string, RoomSplitPlan> = {
   "1_0": { preferred: [room(1)], fallbacks: [] },
   "2_0": { preferred: [room(2)], fallbacks: [] },
@@ -104,12 +106,18 @@ const ROOM_SPLIT_RULES: Record<string, RoomSplitPlan> = {
     preferred: [room(2), room(2), room(1)],
     fallbacks: [[room(3), room(2)]],
   },
-  "6_0": { preferred: [room(2), room(2), room(2)], fallbacks: [] },
+  "6_0": {
+    preferred: [room(2), room(2), room(2)],
+    fallbacks: [[room(3), room(2), room(1)]],
+  },
   "7_0": {
     preferred: [room(2), room(2), room(2), room(1)],
     fallbacks: [[room(3), room(2), room(2)]],
   },
-  "8_0": { preferred: [room(2), room(2), room(2), room(2)], fallbacks: [] },
+  "8_0": {
+    preferred: [room(2), room(2), room(2), room(2)],
+    fallbacks: [[room(3), room(2), room(2), room(1)]],
+  },
   "9_0": {
     preferred: [room(2), room(2), room(2), room(2), room(1)],
     fallbacks: [[room(3), room(2), room(2), room(2)]],
@@ -120,72 +128,80 @@ const ROOM_SPLIT_RULES: Record<string, RoomSplitPlan> = {
   "1_4": { preferred: [room(1, 4)], fallbacks: [] },
   "2_1": { preferred: [room(2, 1)], fallbacks: [[room(1, 1), room(1)]] },
   "2_2": { preferred: [room(2, 2)], fallbacks: [[room(1, 1), room(1, 1)]] },
-  "2_3": { preferred: [room(2, 3)], fallbacks: [[room(1, 2), room(1, 1)]] },
-  "2_4": { preferred: [room(2, 4)], fallbacks: [[room(1, 2), room(1, 2)]] },
+  "2_3": { preferred: [room(1, 2), room(1, 1)], fallbacks: [[room(2, 3)]] },
+  "2_4": { preferred: [room(1, 2), room(1, 2)], fallbacks: [[room(2, 4)]] },
+
   "3_1": {
     preferred: [room(2), room(1, 1)],
     fallbacks: [[room(2, 1), room(1)]],
   },
   "3_2": {
-    preferred: [room(2, 1), room(1, 1)],
-    fallbacks: [[room(2), room(1, 1), room(1)]],
+    preferred: [room(2), room(1, 2)],
+    fallbacks: [[room(2, 1), room(1, 1)]],
   },
   "3_3": {
-    preferred: [room(2, 2), room(1, 1)],
-    fallbacks: [[room(2, 1), room(1, 1), room(1, 1)]],
+    preferred: [room(2), room(1, 3)],
+    fallbacks: [[room(2, 2), room(1, 1)]],
   },
   "3_4": {
-    preferred: [room(2, 2), room(1, 2)],
-    fallbacks: [[room(2, 1), room(1, 1), room(1, 2)]],
+    preferred: [room(2, 1), room(1, 3)],
+    fallbacks: [[room(2, 2), room(1, 2)]],
   },
   "4_1": {
     preferred: [room(2), room(2, 1)],
-    fallbacks: [[room(2, 1), room(1, 1), room(1)]],
+    fallbacks: [[room(2, 1), room(1), room(1)]],
   },
   "4_2": {
-    preferred: [room(2), room(1, 1), room(1, 1)],
-    fallbacks: [[room(2, 1), room(1, 1), room(1)]],
+    preferred: [room(2), room(2, 2)],
+    fallbacks: [[room(2, 1), room(2, 1)]],
   },
   "4_3": {
-    preferred: [room(2, 1), room(1, 1), room(1, 1)],
-    fallbacks: [[room(2), room(1, 1), room(1, 1), room(1)]],
+    preferred: [room(2, 1), room(2, 2)],
+    fallbacks: [[room(2), room(1, 3), room(1)]],
   },
   "4_4": {
-    preferred: [room(2, 2), room(2, 1)],
-    fallbacks: [[room(2, 1), room(1, 1), room(1, 1), room(1)]],
+    preferred: [room(2, 2), room(2, 2)],
+    fallbacks: [[room(2), room(1, 3), room(1, 1)]],
   },
   "5_1": {
     preferred: [room(2), room(2), room(1, 1)],
-    fallbacks: [[room(2, 1), room(1, 1), room(1, 1), room(1)]],
+    fallbacks: [[room(2), room(2, 1), room(1)]],
   },
   "5_2": {
-    preferred: [room(2), room(2, 1), room(1, 1)],
-    fallbacks: [[room(2, 1), room(1, 1), room(1, 1), room(1)]],
+    preferred: [room(2), room(2), room(1, 2)],
+    fallbacks: [[room(2), room(2, 1), room(1, 1)]],
   },
-  // Fixed based on explicit business validation: preserve exact 5 adults + 3 children.
   "5_3": {
-    preferred: [room(2, 1), room(2, 1), room(1, 1)],
-    fallbacks: [[room(2, 1), room(1, 1), room(1, 1), room(1)]],
+    preferred: [room(2), room(2, 1), room(1, 2)],
+    fallbacks: [[room(2), room(2), room(1, 3)]],
   },
   "5_4": {
-    preferred: [room(2, 2), room(2, 1), room(1, 1)],
-    fallbacks: [[room(2, 1), room(1, 1), room(1, 1), room(1, 1)]],
+    preferred: [room(2), room(2, 2), room(1, 2)],
+    fallbacks: [[room(2, 2), room(2, 2), room(1)]],
   },
   "6_1": {
-    preferred: [room(2), room(2), room(2), room(1)],
-    fallbacks: [[room(1, 1), room(2), room(2), room(1)]],
+    preferred: [room(2), room(2), room(2, 1)],
+    fallbacks: [[room(2), room(2), room(1, 1), room(1)]],
   },
   "6_2": {
-    preferred: [room(2), room(2), room(1, 1), room(1, 1)],
-    fallbacks: [[room(2, 1), room(2, 1), room(1), room(1)]],
+    preferred: [room(2), room(2), room(2, 2)],
+    fallbacks: [[room(2), room(2), room(1, 1), room(1, 1)]],
   },
   "6_3": {
-    preferred: [room(2), room(2, 1), room(1, 1), room(1, 1)],
-    fallbacks: [[room(2, 1), room(2, 1), room(1, 1), room(1)]],
+    preferred: [room(2), room(2, 1), room(2, 2)],
+    fallbacks: [[room(2), room(2), room(1, 1), room(1, 2)]],
+  },
+  "7_1": {
+    preferred: [room(2), room(2), room(2), room(1, 1)],
+    fallbacks: [[room(2), room(2), room(2, 1), room(1)]],
   },
   "7_2": {
-    preferred: [room(2), room(2), room(2, 1), room(1, 1)],
-    fallbacks: [[room(2, 1), room(2, 1), room(2), room(1)]],
+    preferred: [room(2), room(2), room(2), room(1, 2)],
+    fallbacks: [[room(2), room(2), room(2, 1), room(1, 1)]],
+  },
+  "8_1": {
+    preferred: [room(2), room(2), room(2), room(2, 1)],
+    fallbacks: [[room(2), room(2), room(2), room(1, 1), room(1)]],
   },
 };
 
@@ -203,7 +219,7 @@ export class CancelledFlightsService {
   constructor(
     private readonly cancelledFlightsRepository: CancelledFlightsRepository,
     private readonly hotelPartnerService: HotelPartnerService,
-    private readonly groqService: GroqService,
+    private readonly aiService: AiService,
     private readonly logger: LoggerService,
   ) {}
 
@@ -410,7 +426,7 @@ export class CancelledFlightsService {
       );
 
       try {
-        const aiResult = await this.groqService.rankHotelsForPassengerGroup(
+        const aiResult = await this.aiService.rankHotelsForPassengerGroup(
           {
             travelClass: first.travelClass,
             passengerProfile: first.children > 0 ? "family" : "standard",
@@ -442,7 +458,7 @@ export class CancelledFlightsService {
         rankingByGroup.set(groupKey, mergedOrder);
       } catch (error: any) {
         this.logger.warn(
-          `Groq ranking failed for group ${groupKey}, using deterministic fallback order`,
+          `AI ranking failed for group ${groupKey}, using deterministic fallback order`,
           this.context,
           requestId,
           { error: error.message },
@@ -1171,716 +1187,6 @@ export class CancelledFlightsService {
     return this.toCancelledFlightResponse(updatedFlight);
   }
 
-  async hotelAllocationsForFlight(
-    flightId: number,
-    requestId: string,
-    requestLogger: Logger,
-  ): Promise<HotelAllocationsDto> {
-    requestLogger.info("Starting flight-level hotel allocation process", {
-      context: this.context,
-      flightId,
-    });
-
-    const flight =
-      await this.cancelledFlightsRepository.findFlightWithRelations(
-        flightId,
-        requestId,
-      );
-    if (!flight) {
-      requestLogger.error(`Cancelled flight '${flightId}' not found`, {
-        context: this.context,
-        flightId,
-      });
-      throw new NotFoundException(`Cancelled flight '${flightId}' not found`);
-    }
-
-    if (flight.status !== FlightStatus.PASSENGERS_BOOKING_CONFIRMED) {
-      requestLogger.error(
-        `Flight '${flightId}' is not eligible for hotel allocation in status '${flight.status}'`,
-        {
-          context: this.context,
-          flightId,
-          status: flight.status,
-        },
-      );
-      throw new BadRequestException(
-        `Flight '${flightId}' is not eligible for hotel allocation in status '${flight.status}'`,
-      );
-    }
-
-    const checkIn = flight.cancellationDate;
-    if (!checkIn) {
-      requestLogger.error(
-        `Cancellation date not found for flight '${flightId}'`,
-        {
-          context: this.context,
-          flightId,
-        },
-      );
-      throw new BadRequestException(
-        `Cancellation date not found for flight '${flightId}'`,
-      );
-    }
-
-    const checkInDateObj = new Date(checkIn);
-    if (Number.isNaN(checkInDateObj.getTime())) {
-      requestLogger.error(
-        `Invalid cancellation date '${checkIn}' for flight '${flightId}'`,
-        {
-          context: this.context,
-          flightId,
-        },
-      );
-      throw new BadRequestException(
-        `Invalid cancellation date '${checkIn}' for flight '${flightId}'`,
-      );
-    }
-
-    const checkOutDateObj = new Date(checkInDateObj);
-    checkOutDateObj.setDate(checkOutDateObj.getDate() + 1);
-    const checkOut = checkOutDateObj.toISOString().split("T")[0];
-    requestLogger.info(
-      `Calculated check-in date ${checkIn} and check-out date ${checkOut} for flight '${flightId}'`,
-      {
-        context: this.context,
-        flightId,
-      },
-    );
-
-    const departureAirport = flight.departureAirport;
-    if (!departureAirport) {
-      requestLogger.error(
-        `Departure airport not found for flight '${flightId}'`,
-        {
-          context: this.context,
-          flightId,
-        },
-      );
-      throw new NotFoundException(
-        `Departure airport not found for flight '${flightId}'`,
-      );
-    }
-
-    const bookings =
-      await this.cancelledFlightsRepository.findBookingsByFlightId(
-        flightId,
-        requestId,
-      );
-    if (bookings.length === 0) {
-      requestLogger.error(
-        `No eligible bookings found for flight '${flightId}'`,
-        {
-          context: this.context,
-          flightId,
-        },
-      );
-      throw new BadRequestException(
-        `No eligible bookings found for flight '${flightId}'`,
-      );
-    }
-
-    requestLogger.info(
-      `Loaded bookings for hotel allocation for flight '${flightId}'`,
-      {
-        context: this.context,
-        flightId,
-        bookingCount: bookings.length,
-        totalPassengers: bookings.reduce(
-          (sum, item) => sum + item.adults + item.children,
-          0,
-        ),
-      },
-    );
-
-    const splitPlansByBooking = new Map<number, RoomSplitPlan>();
-    const results: BookingRecommendationResult[] = [];
-
-    for (const booking of bookings) {
-      const split = this.resolveRoomSplitPlan(booking, requestLogger);
-      if (!split.plan) {
-        results.push({
-          bookingId: booking.id,
-          pnr: booking.pnr,
-          class: booking.travelClass,
-          passengers: {
-            adults: booking.adults,
-            children: booking.children,
-          },
-          allocationStatus: "INVALID_PASSENGER_DATA",
-          reason: split.reason,
-        });
-        continue;
-      }
-      splitPlansByBooking.set(booking.id, split.plan);
-    }
-
-    const eligibleBookings = bookings.filter((booking) =>
-      splitPlansByBooking.has(booking.id),
-    );
-
-    if (eligibleBookings.length === 0) {
-      requestLogger.error(
-        `No eligible bookings with valid room split plans found for flight '${flightId}'`,
-        {
-          context: this.context,
-          flightId,
-        },
-      );
-      throw new BadRequestException(
-        `No eligible bookings with valid room split plans found for flight '${flightId}'`,
-      );
-    }
-
-    const uniqueOccupancies = Array.from(
-      new Map(
-        eligibleBookings.flatMap((booking) => {
-          const split = splitPlansByBooking.get(booking.id)!;
-          const allRooms = [split.preferred, ...split.fallbacks].flat();
-          return allRooms.map(
-            (occupancy) => [this.occupancyKey(occupancy), occupancy] as const,
-          );
-        }),
-      ).values(),
-    );
-
-    requestLogger.info("Calculated deduplicated occupancy requirements", {
-      context: this.context,
-      flightId,
-      occupancyCount: uniqueOccupancies.length,
-    });
-
-    let hotels: AvailabilityHotel[] = [];
-    try {
-      hotels = await this.hotelPartnerService.searchNearbyHotelsWithOccupancies(
-        {
-          iataCode: departureAirport.iataCode,
-          latitude: Number(departureAirport.latitude),
-          longitude: Number(departureAirport.longitude),
-        },
-        checkIn,
-        checkOut,
-        uniqueOccupancies,
-        requestId,
-        requestLogger,
-      );
-    } catch (error: any) {
-      this.logger.error(
-        "Hotel availability search failed",
-        this.context,
-        requestId,
-        { error: error.message },
-      );
-
-      throw new BadRequestException(
-        `Hotel availability search failed for flight '${flightId}': ${error.message}`,
-      );
-    }
-
-    requestLogger.info("Hotel availability loaded", {
-      context: this.context,
-      flightId,
-      hotelCount: hotels.length,
-      rateCount: hotels.reduce((sum, hotel) => sum + hotel.rates.length, 0),
-    });
-
-    const groupedBookings = this.groupBookings(eligibleBookings);
-    const rankingByGroup = await this.rankHotelsByGroup(
-      groupedBookings,
-      hotels,
-      requestId,
-    );
-
-    const hotelByAiId = new Map<string, AvailabilityHotel>(
-      hotels.map((hotel) => [`hb-${hotel.hotelCode}`, hotel] as const),
-    );
-
-    for (const booking of eligibleBookings) {
-      const splitPlan = splitPlansByBooking.get(booking.id)!;
-      const groupKey = this.toGroupKey(booking);
-      const rankedHotelIds = rankingByGroup.get(groupKey) ?? [];
-
-      let allocation: BookingRecommendationResult | null = null;
-      const splitCandidates: Array<{
-        label: "preferred" | "fallback";
-        rooms: RoomOccupancy[];
-      }> = [
-        { label: "preferred", rooms: splitPlan.preferred },
-        ...splitPlan.fallbacks.map((rooms) => ({
-          label: "fallback" as const,
-          rooms,
-        })),
-      ];
-
-      for (const splitCandidate of splitCandidates) {
-        for (const aiHotelId of rankedHotelIds) {
-          const hotel = hotelByAiId.get(aiHotelId);
-          if (!hotel) {
-            continue;
-          }
-
-          const selectedRooms = this.getBestRatesForHotelAndSplit(
-            hotel.rates,
-            splitCandidate.rooms,
-          );
-
-          if (!selectedRooms) {
-            continue;
-          }
-
-          const totalPrice = this.roundCurrency(
-            selectedRooms.reduce((sum, roomRate) => sum + roomRate.price, 0),
-          );
-          allocation = {
-            bookingId: booking.id,
-            pnr: booking.pnr,
-            class: booking.travelClass,
-            passengers: {
-              adults: booking.adults,
-              children: booking.children,
-            },
-            splitTried: splitCandidate.label,
-            hotel: {
-              hotelCode: hotel.hotelCode,
-              hotelName: hotel.hotelName,
-              category: hotel.category,
-            },
-            rooms: selectedRooms,
-            totalPrice,
-            allocationStatus: "RECOMMENDED",
-          };
-          break;
-        }
-
-        if (allocation) {
-          break;
-        }
-      }
-
-      if (allocation) {
-        results.push(allocation);
-      } else {
-        results.push({
-          bookingId: booking.id,
-          pnr: booking.pnr,
-          class: booking.travelClass,
-          passengers: {
-            adults: booking.adults,
-            children: booking.children,
-          },
-          allocationStatus: "NO_SUITABLE_HOTEL",
-          reason:
-            "No available hotel could satisfy preferred or fallback room occupancy requirements",
-        });
-      }
-    }
-
-    const allocated = results.filter(
-      (item) => item.allocationStatus === "RECOMMENDED",
-    );
-    const failed = results.length - allocated.length;
-    const totalRooms = allocated.reduce(
-      (sum, item) => sum + (item.rooms?.length ?? 0),
-      0,
-    );
-    const currency =
-      allocated.find((item) => item.rooms?.[0]?.currency)?.rooms?.[0]
-        ?.currency ?? "EUR";
-
-    requestLogger.info("Completed flight-level hotel recommendation process", {
-      context: this.context,
-      requestId,
-      flightId,
-      allocatedBookings: allocated.length,
-      failedBookings: failed,
-    });
-
-    // Booked the hotel recommendations using the allocated results and hotel partner APIs
-    // For now avoid the booking step and only provide recommendations(consider as booked)
-
-    // create hotel bookings in db
-    // step 1 - Format the data for hotel bookings in the database
-    const hotelBookings = results.map((item, index) => {
-      const price = item?.totalPrice || 0;
-      const pricing = this.calculatePricing(price, price, 0, 0);
-      return {
-        cancelledFlightId: flightId,
-        bookingId: item.bookingId,
-        checkInDate: checkInDateObj.toISOString(),
-        checkOutDate: checkOutDateObj.toISOString(),
-        actualPrice: pricing.actualPrice,
-        buyingPrice: pricing.buyingPrice,
-        sellingPrice: pricing.sellingPrice,
-        tax: pricing.tax,
-        platformFee: pricing.platformFee,
-        totalPrice: pricing.totalPrice,
-        earnings: pricing.earnings,
-        discount: pricing.discount,
-        hotelCode: item.hotel?.hotelCode || "temp",
-        hotelName: item.hotel?.hotelName || "temp",
-        category: item.hotel?.category || "temp",
-        rooms: item.rooms?.map((room) => ({
-          adults: room.adults,
-          children: room.children,
-          roomName: room.roomName,
-          boardName: room.boardName,
-          price: room.price,
-        })),
-        totalRooms: item.rooms?.length ?? 0,
-        allocationStatus: item.allocationStatus,
-        currency: "USD",
-        bookingReference: `temp-${item.bookingId}-${index}`,
-      };
-    });
-
-    // step 2 - Save the formatted hotel bookings to the database
-    const rawTotals = hotelBookings
-      .filter((item) => item.allocationStatus === "RECOMMENDED")
-      .reduce(
-        (acc, item) => {
-          acc.totalActualPrice += item.actualPrice ?? 0;
-          acc.totalBuyingPrice += item.buyingPrice ?? 0;
-          acc.totalSellingPrice += item.sellingPrice ?? 0;
-          acc.totalDiscounts += item.discount ?? 0;
-          acc.totalHotelTaxes += item.tax ?? 0;
-          acc.totalPlatformFee += item.platformFee ?? 0;
-          acc.totalPriceForAll += item.totalPrice ?? 0;
-          acc.totalEarnings += item.earnings ?? 0;
-          return acc;
-        },
-        {
-          totalActualPrice: 0,
-          totalBuyingPrice: 0,
-          totalSellingPrice: 0,
-          totalDiscounts: 0,
-          totalHotelTaxes: 0,
-          totalPlatformFee: 0,
-          totalPriceForAll: 0,
-          totalEarnings: 0,
-        },
-      );
-
-    const totalActualPrice = this.roundCurrency(rawTotals.totalActualPrice);
-    const totalBuyingPrice = this.roundCurrency(rawTotals.totalBuyingPrice);
-    const totalSellingPrice = this.roundCurrency(rawTotals.totalSellingPrice);
-    const totalDiscounts = this.roundCurrency(rawTotals.totalDiscounts);
-    const totalHotelTaxes = this.roundCurrency(rawTotals.totalHotelTaxes);
-    const totalPlatformFee = this.roundCurrency(rawTotals.totalPlatformFee);
-    const totalPriceForAll = this.roundCurrency(rawTotals.totalPriceForAll);
-    const totalEarnings = this.roundCurrency(rawTotals.totalEarnings);
-
-    await this.cancelledFlightsRepository.saveHotelAllocations(
-      flightId,
-      {
-        hotelBookings,
-        totalActualPrice,
-        totalBuyingPrice,
-        totalSellingPrice,
-        totalDiscounts,
-        totalHotelTaxes,
-        totalPlatformFee,
-        totalPrice: totalPriceForAll,
-        totalEarnings,
-      },
-      requestId,
-      requestLogger,
-    );
-
-    return {
-      cancelledFlightId: flight.id,
-      status: FlightStatus.ALLOCATED,
-      totalBookings: bookings.length,
-      allocatedBookings: allocated.length,
-      failedBookings: failed,
-      totalRooms,
-      totalActualPrice,
-      totalSellingPrice,
-      totalDiscounts,
-      totalHotelTaxes,
-      totalPlatformFee,
-      currency,
-    };
-  }
-
-  // ── List bookings ────────────────────────────────────────────────────────
-  async listHotelBookings(
-    flightId: number,
-    pagination: PaginationQueryDto,
-    requestId: string,
-    requestLogger: Logger,
-  ): Promise<CancelledFlightHotelBookingListResponseDto> {
-    await this.requireFlight(flightId, requestId);
-    const { hotelBookings, totalHotelBookings } =
-      await this.cancelledFlightsRepository.findHotelBookingsByFlightIdWithPagination(
-        flightId,
-        pagination.page || 1,
-        pagination.limit || 10,
-        requestId,
-      );
-
-    return {
-      hotelBookings: hotelBookings.map((h) => ({
-        id: h.id,
-        passengerBooking: {
-          id: h.booking.id,
-          pnr: h.booking.pnr,
-          cancelledFlightId: h.booking.cancelledFlightId,
-          firstName: h.booking.firstName,
-          lastName: h.booking.lastName,
-          email: h.booking.email,
-          phone: h.booking.phone,
-          travelClass: h.booking.travelClass,
-          adults: h.booking.adults,
-          children: h.booking.children,
-        },
-        cancelledFlightId: h.cancelledFlightId,
-        hotelName: h.hotelName,
-        rating: h.category,
-        totalRooms: h.totalRooms,
-        totalCost: h.totalPrice,
-        createdAt: h.createdAt.toISOString(),
-        updatedAt: h.updatedAt?.toISOString() ?? null,
-      })),
-      totalHotelBookings: totalHotelBookings,
-      currentPage: pagination.page || 1,
-      limit: pagination.limit || 10,
-    };
-  }
-
-  // ── Get single hotel booking detail ─────────────────────────────────────
-  async getHotelBookingDetail(
-    flightId: number,
-    hotelBookingId: number,
-    user: AuthenticatedUser,
-    requestId: string,
-  ): Promise<HotelBookingDetailResponseDto> {
-    const hotelBooking =
-      await this.cancelledFlightsRepository.findHotelBookingById(
-        hotelBookingId,
-        requestId,
-      );
-
-    if (!hotelBooking || hotelBooking.cancelledFlightId !== flightId) {
-      throw new NotFoundException(
-        `Hotel booking '${hotelBookingId}' not found for flight '${flightId}'`,
-      );
-    }
-
-    if (
-      user.userType === UserType.AIRLINE &&
-      hotelBooking.cancelledFlight.airlineId !== user.airlineId
-    ) {
-      throw new NotFoundException(
-        `Hotel booking '${hotelBookingId}' not found for flight '${flightId}'`,
-      );
-    }
-
-    const flight = hotelBooking.cancelledFlight;
-    const includeMarginFields = user.userType !== UserType.AIRLINE;
-
-    return {
-      id: hotelBooking.id,
-      flight: {
-        id: flight.id,
-        flightNumber: flight.flightNumber,
-        airlineId: flight.airlineId,
-        departureAirportId: flight.departureAirportId,
-        arrivalAirportId: flight.arrivalAirportId,
-        cancellationDate: flight.cancellationDate,
-        cancellationReason: flight.cancellationReason ?? null,
-        status: flight.status,
-        createdAt: flight.createdAt.toISOString(),
-        updatedAt: flight.updatedAt?.toISOString() ?? null,
-        route: {
-          departureAirport: {
-            id: flight.departureAirport.id,
-            code: flight.departureAirport.iataCode,
-            name: flight.departureAirport.name,
-          },
-          arrivalAirport: {
-            id: flight.arrivalAirport.id,
-            code: flight.arrivalAirport.iataCode,
-            name: flight.arrivalAirport.name,
-          },
-        },
-      },
-      booking: this.toBookingResponse(hotelBooking.booking),
-      hotel: {
-        hotelCode: hotelBooking.hotelCode,
-        hotelName: hotelBooking.hotelName,
-        category: hotelBooking.category,
-        checkInDate: hotelBooking.checkInDate,
-        checkOutDate: hotelBooking.checkOutDate,
-        rooms: hotelBooking.rooms ?? [],
-        totalRooms: hotelBooking.totalRooms,
-        actualPrice: Number(hotelBooking.actualPrice),
-        ...(includeMarginFields && {
-          buyingPrice: Number(hotelBooking.buyingPrice),
-        }),
-        sellingPrice: Number(hotelBooking.sellingPrice),
-        tax: Number(hotelBooking.tax),
-        platformFee: Number(hotelBooking.platformFee),
-        discount: Number(hotelBooking.discount),
-        totalPrice: Number(hotelBooking.totalPrice),
-        ...(includeMarginFields && {
-          earnings: Number(hotelBooking.earnings),
-        }),
-        status: hotelBooking.status,
-        bookingReference: hotelBooking.bookingReference,
-        createdAt: hotelBooking.createdAt.toISOString(),
-        updatedAt: hotelBooking.updatedAt?.toISOString() ?? null,
-      },
-    };
-  }
-
-  // ── Hotel Summary of a cancelled flight ───────────────────────────────────────────────
-  async hotelSummaryByFlight(
-    flightId: number,
-    requestId: string,
-  ): Promise<HotelSummaryCancelledFlightResponseDto> {
-    const hotelSummary =
-      await this.cancelledFlightsRepository.findHotelSummaryByFlightId(
-        flightId,
-        requestId,
-      );
-
-    if (!hotelSummary) {
-      throw new NotFoundException(`Cancelled flight '${flightId}' not found`);
-    }
-
-    return {
-      summary: {
-        totalBookings: hotelSummary.totalBookings,
-        totalAdults: hotelSummary.totalAdults,
-        totalChildren: hotelSummary.totalChildren,
-        totalRooms: hotelSummary.totalRooms,
-        totalHotelCost: hotelSummary.totalHotelCost,
-        totalDiscount: hotelSummary.totalDiscount,
-        totalHotelTax: hotelSummary.totalHotelTax,
-        totalPlatformFee: hotelSummary.totalPlatformFee,
-        totalPayable: hotelSummary.totalCost,
-      },
-    };
-  }
-
-  // ── Mark as paid ─────────────────────────────────────────────────────────
-
-  async processPayment(
-    flightId: number,
-    requestId: string,
-  ): Promise<CancelledFlightResponseDto> {
-    const flight = await this.requireFlight(flightId, requestId);
-
-    if (flight.status !== FlightStatus.ALLOCATED) {
-      throw new BadRequestException(
-        `Cannot process payment for flight '${flightId}' from status '${flight.status}'. Flight must be in 'allocated' status.`,
-      );
-    }
-
-    const updatedFlight =
-      await this.cancelledFlightsRepository.updateFlightStatus({
-        cancelledFlightEntity: flight,
-        status: FlightStatus.PAID,
-        passengerBookingStats: {
-          totalBookings: null,
-          totalAdults: null,
-          totalChildren: null,
-        },
-        hotelBookingStats: null,
-        requestId,
-      });
-
-    return this.toCancelledFlightResponse(updatedFlight);
-  }
-
-  // ── Publish ──────────────────────────────────────────────────────────────
-
-  async publishFlight(
-    flightId: number,
-    requestId: string,
-    requestLogger: Logger,
-  ): Promise<CancelledFlightResponseDto> {
-    const flight = await this.requireFlight(flightId, requestId);
-
-    if (flight.status !== FlightStatus.PAID) {
-      throw new BadRequestException(
-        `Cannot publish flight '${flightId}' from status '${flight.status}'. Flight must be in 'paid' status.`,
-      );
-    }
-
-    const updatedFlight =
-      await this.cancelledFlightsRepository.updateFlightStatus({
-        cancelledFlightEntity: flight,
-        status: FlightStatus.PUBLISHED,
-        passengerBookingStats: {
-          totalBookings: null,
-          totalAdults: null,
-          totalChildren: null,
-        },
-        hotelBookingStats: null,
-        requestId,
-      });
-
-    // const bookings =
-    //   await this.cancelledFlightsRepository.findBookingsByFlightId(
-    //     flightId,
-    //     requestId,
-    //   );
-
-    // await Promise.all(
-    //   bookings.map((booking) =>
-    //     this.sendFlightPublishedEmail(
-    //       booking.email,
-    //       `${booking.firstName} ${booking.lastName}`,
-    //       updatedFlight.flightNumber,
-    //       requestId,
-    //       requestLogger,
-    //     ),
-    //   ),
-    // );
-
-    return this.toCancelledFlightResponse(updatedFlight);
-  }
-
-  // private async sendFlightPublishedEmail(
-  //   recipientEmail: string,
-  //   passengerName: string,
-  //   flightNumber: string,
-  //   requestId: string,
-  //   requestLogger: Logger,
-  // ): Promise<void> {
-  //   try {
-  //     await this.sesClient.send(
-  //       new SendEmailCommand({
-  //         Source: config.ses.fromEmail,
-  //         Destination: {
-  //           ToAddresses: [recipientEmail],
-  //         },
-  //         Message: {
-  //           Subject: {
-  //             Data: `Hotel arrangements confirmed for cancelled flight ${flightNumber}`,
-  //           },
-  //           Body: {
-  //             Text: {
-  //               Data: `Dear ${passengerName}, your hotel arrangements for cancelled flight ${flightNumber} have been confirmed. Please check your email for further details.`,
-  //             },
-  //           },
-  //         },
-  //       }),
-  //     );
-  //   } catch (error: any) {
-  //     requestLogger.error(
-  //       `Failed to send flight published email to '${recipientEmail}'`,
-  //       {
-  //         context: this.context,
-  //         requestId,
-  //         recipientEmail,
-  //         flightNumber,
-  //         error: error?.message,
-  //       },
-  //     );
-  //   }
-  // }
-
   // ── AI Hotel Recommendations & Allocation ───────────────────────────────
 
   async getHotelRecommendations(
@@ -1978,11 +1284,11 @@ export class CancelledFlightsService {
     );
 
     this.logger.debug(
-      `Calling Groq API for AI-based scoring and recommendation matching...`,
+      `Calling AI API for AI-based scoring and recommendation matching...`,
       this.context,
       requestId,
     );
-    const groqResult = await this.groqService.getHotelRecommendations(
+    const aiResult = await this.aiService.getHotelRecommendations(
       {
         firstName: booking.firstName,
         lastName: booking.lastName,
@@ -1996,7 +1302,7 @@ export class CancelledFlightsService {
       requestId,
     );
     this.logger.debug(
-      `Received AI recommendations from Groq: ${JSON.stringify(groqResult)}`,
+      `Received AI recommendations: ${JSON.stringify(aiResult)}`,
       this.context,
       requestId,
     );
@@ -2009,7 +1315,7 @@ export class CancelledFlightsService {
     );
     const recommendedHotels = candidateHotels
       .map((hotel) => {
-        const recommendation = groqResult.recommendations?.find(
+        const recommendation = aiResult.recommendations?.find(
           (r: any) => r.hotelId === hotel.id,
         );
         return {
@@ -2246,31 +1552,13 @@ export class CancelledFlightsService {
         { error: error.message },
       );
 
-      const noAvailability = eligibleBookings.map((booking) => ({
-        bookingId: booking.id,
-        pnr: booking.pnr,
-        class: booking.travelClass,
-        passengers: {
-          adults: booking.adults,
-          children: booking.children,
-        },
-        allocationStatus: "NO_AVAILABILITY" as AllocationStatus,
-        reason: "Failed to retrieve hotel availability",
-      }));
-
-      return {
-        cancelledFlightId: flight.id,
-        status: "RECOMMENDATIONS_READY",
-        summary: {
-          totalBookings: bookings.length,
-          allocatedBookings: 0,
-          failedBookings: noAvailability.length + results.length,
-          totalRooms: 0,
-          totalBuyingPrice: 0,
-          currency: "EUR",
-        },
-        allocations: [...results, ...noAvailability],
-      };
+      // fail with the real error rather than masking it as "no availability"
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new ServiceUnavailableException(
+        `Hotel availability search failed for flight '${flightId}': ${error.message}`,
+      );
     }
 
     this.logger.info("Hotel availability loaded", this.context, requestId, {
@@ -2410,6 +1698,941 @@ export class CancelledFlightsService {
       allocations: results,
     };
   }
+
+  async hotelAllocationsForFlight(
+    flightId: number,
+    requestId: string,
+    requestLogger: Logger,
+  ): Promise<HotelAllocationsDto> {
+    requestLogger.info("Starting flight-level hotel allocation process", {
+      context: this.context,
+      flightId,
+    });
+
+    const flight =
+      await this.cancelledFlightsRepository.findFlightWithRelations(
+        flightId,
+        requestId,
+      );
+    if (!flight) {
+      requestLogger.error(`Cancelled flight '${flightId}' not found`, {
+        context: this.context,
+        flightId,
+      });
+      throw new NotFoundException(`Cancelled flight '${flightId}' not found`);
+    }
+
+    if (flight.status !== FlightStatus.PASSENGERS_BOOKING_CONFIRMED) {
+      requestLogger.error(
+        `Flight '${flightId}' is not eligible for hotel allocation in status '${flight.status}'`,
+        {
+          context: this.context,
+          flightId,
+          status: flight.status,
+        },
+      );
+      throw new BadRequestException(
+        `Flight '${flightId}' is not eligible for hotel allocation in status '${flight.status}'`,
+      );
+    }
+
+    const checkIn = flight.cancellationDate;
+    if (!checkIn) {
+      requestLogger.error(
+        `Cancellation date not found for flight '${flightId}'`,
+        {
+          context: this.context,
+          flightId,
+        },
+      );
+      throw new BadRequestException(
+        `Cancellation date not found for flight '${flightId}'`,
+      );
+    }
+
+    const checkInDateObj = new Date(checkIn);
+    if (Number.isNaN(checkInDateObj.getTime())) {
+      requestLogger.error(
+        `Invalid cancellation date '${checkIn}' for flight '${flightId}'`,
+        {
+          context: this.context,
+          flightId,
+        },
+      );
+      throw new BadRequestException(
+        `Invalid cancellation date '${checkIn}' for flight '${flightId}'`,
+      );
+    }
+
+    const checkOutDateObj = new Date(checkInDateObj);
+    checkOutDateObj.setDate(checkOutDateObj.getDate() + 1);
+    const checkOut = checkOutDateObj.toISOString().split("T")[0];
+    requestLogger.info(
+      `Calculated check-in date ${checkIn} and check-out date ${checkOut} for flight '${flightId}'`,
+      {
+        context: this.context,
+        flightId,
+      },
+    );
+
+    const departureAirport = flight.departureAirport;
+    if (!departureAirport) {
+      requestLogger.error(
+        `Departure airport not found for flight '${flightId}'`,
+        {
+          context: this.context,
+          flightId,
+        },
+      );
+      throw new NotFoundException(
+        `Departure airport not found for flight '${flightId}'`,
+      );
+    }
+
+    const bookings =
+      await this.cancelledFlightsRepository.findBookingsByFlightId(
+        flightId,
+        requestId,
+      );
+    if (bookings.length === 0) {
+      requestLogger.error(
+        `No eligible bookings found for flight '${flightId}'`,
+        {
+          context: this.context,
+          flightId,
+        },
+      );
+      throw new BadRequestException(
+        `No eligible bookings found for flight '${flightId}'`,
+      );
+    }
+
+    requestLogger.info(
+      `Loaded bookings for hotel allocation for flight '${flightId}'`,
+      {
+        context: this.context,
+        flightId,
+        bookingCount: bookings.length,
+        totalPassengers: bookings.reduce(
+          (sum, item) => sum + item.adults + item.children,
+          0,
+        ),
+      },
+    );
+
+    const splitPlansByBooking = new Map<number, RoomSplitPlan>();
+    const results: BookingRecommendationResult[] = [];
+
+    for (const booking of bookings) {
+      const split = this.resolveRoomSplitPlan(booking, requestLogger);
+      if (!split.plan) {
+        results.push({
+          bookingId: booking.id,
+          pnr: booking.pnr,
+          class: booking.travelClass,
+          passengers: {
+            adults: booking.adults,
+            children: booking.children,
+          },
+          allocationStatus: "INVALID_PASSENGER_DATA",
+          reason: split.reason,
+        });
+        continue;
+      }
+      splitPlansByBooking.set(booking.id, split.plan);
+    }
+
+    const eligibleBookings = bookings.filter((booking) =>
+      splitPlansByBooking.has(booking.id),
+    );
+
+    if (eligibleBookings.length === 0) {
+      requestLogger.error(
+        `No eligible bookings with valid room split plans found for flight '${flightId}'`,
+        {
+          context: this.context,
+          flightId,
+        },
+      );
+      throw new BadRequestException(
+        `No eligible bookings with valid room split plans found for flight '${flightId}'`,
+      );
+    }
+
+    const uniqueOccupancies = Array.from(
+      new Map(
+        eligibleBookings.flatMap((booking) => {
+          const split = splitPlansByBooking.get(booking.id)!;
+          const allRooms = [split.preferred, ...split.fallbacks].flat();
+          return allRooms.map(
+            (occupancy) => [this.occupancyKey(occupancy), occupancy] as const,
+          );
+        }),
+      ).values(),
+    );
+
+    requestLogger.info("Calculated deduplicated occupancy requirements", {
+      context: this.context,
+      flightId,
+      occupancyCount: uniqueOccupancies.length,
+    });
+
+    let hotels: AvailabilityHotel[] = [];
+    try {
+      hotels = await this.hotelPartnerService.searchNearbyHotelsWithOccupancies(
+        {
+          iataCode: departureAirport.iataCode,
+          latitude: Number(departureAirport.latitude),
+          longitude: Number(departureAirport.longitude),
+        },
+        checkIn,
+        checkOut,
+        uniqueOccupancies,
+        requestId,
+        requestLogger,
+      );
+    } catch (error: any) {
+      this.logger.error(
+        "Hotel availability search failed",
+        this.context,
+        requestId,
+        { error: error.message },
+      );
+
+      // surface the real error rather than masking it
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new ServiceUnavailableException(
+        `Hotel availability search failed for flight '${flightId}': ${error.message}`,
+      );
+    }
+
+    requestLogger.info("Hotel availability loaded", {
+      context: this.context,
+      flightId,
+      hotelCount: hotels.length,
+      rateCount: hotels.reduce((sum, hotel) => sum + hotel.rates.length, 0),
+    });
+
+    // AI places every occupancy group; the code below re-verifies each hard rule.
+    const rateByKey = new Map<
+      string,
+      { hotel: AvailabilityHotel; rate: AvailabilityRoomRate }
+    >();
+    for (const hotel of hotels) {
+      for (const rate of hotel.rates) {
+        rateByKey.set(rate.rateKey, { hotel, rate });
+      }
+    }
+
+    const pgMeta = new Map<
+      string,
+      { booking: BookingEntity; shape: RoomOccupancy; roomsNeeded: number }
+    >();
+    const occupancyGroups: Array<{
+      passengerGroupId: string;
+      sameHotelGroup: string;
+      bookingReference: string;
+      travelClass: string;
+      specialNotes: string[];
+      adults: number;
+      children: number;
+      roomsNeeded: number;
+      hotels: Array<{
+        hotelId: string;
+        name: string;
+        category: string;
+        stars: number;
+        rateKey: string;
+        roomName: string;
+        boardName: string;
+        adults: number;
+        children: number;
+        allotment: number | null;
+      }>;
+    }> = [];
+
+    for (const booking of eligibleBookings) {
+      const splitPlan = splitPlansByBooking.get(booking.id)!;
+
+      const shapeCounts = new Map<
+        string,
+        { shape: RoomOccupancy; count: number }
+      >();
+      for (const room of splitPlan.preferred) {
+        const shapeKey = this.occupancyKey(room);
+        const current = shapeCounts.get(shapeKey);
+        if (current) {
+          current.count += 1;
+        } else {
+          shapeCounts.set(shapeKey, { shape: room, count: 1 });
+        }
+      }
+
+      for (const [shapeKey, { shape, count }] of shapeCounts) {
+        const passengerGroupId = `${booking.pnr}#${shape.adults}a${shape.children}c`;
+
+        const shortlist = hotels.flatMap((hotel) =>
+          hotel.rates
+            .filter(
+              (rate) =>
+                this.occupancyKey({
+                  adults: rate.adults,
+                  children: rate.children,
+                  childrenAges: rate.childrenAges,
+                }) === shapeKey &&
+                rate.allotment !== null &&
+                rate.allotment > 0,
+            )
+            .map((rate) => ({
+              hotelId: `hb-${hotel.hotelCode}`,
+              name: hotel.hotelName,
+              category: hotel.category,
+              stars: hotel.stars,
+              rateKey: rate.rateKey,
+              roomName: rate.roomName,
+              boardName: rate.boardName,
+              adults: rate.adults,
+              children: rate.children,
+              allotment: rate.allotment,
+            })),
+        );
+
+        occupancyGroups.push({
+          passengerGroupId,
+          sameHotelGroup: booking.pnr,
+          bookingReference: booking.pnr,
+          travelClass: booking.travelClass,
+          specialNotes: booking.specialNotes ?? [],
+          adults: shape.adults,
+          children: shape.children,
+          roomsNeeded: count,
+          hotels: shortlist,
+        });
+        pgMeta.set(passengerGroupId, { booking, shape, roomsNeeded: count });
+      }
+    }
+
+    let aiAllocation: {
+      assignments: Array<{
+        passengerGroupId: string;
+        hotelId: string;
+        rateKey: string;
+        roomsAssigned: number;
+        reason: string;
+      }>;
+      unresolved: Array<{ passengerGroupId: string; reason: string }>;
+    };
+    try {
+      aiAllocation = await this.aiService.allocateHotelGroups(
+        { occupancyGroups },
+        requestId,
+      );
+    } catch (error: any) {
+      requestLogger.error(`AI hotel allocation failed: ${error.message}`, {
+        context: this.context,
+        flightId,
+      });
+      throw new BadRequestException(
+        `AI hotel allocation failed for flight '${flightId}': ${error.message}`,
+      );
+    }
+
+    const assignmentByPg = new Map<
+      string,
+      {
+        hotelId: string;
+        rateKey: string;
+        roomsAssigned: number;
+        reason: string;
+      }
+    >();
+    for (const assignment of aiAllocation.assignments) {
+      if (
+        assignment &&
+        typeof assignment.passengerGroupId === "string" &&
+        typeof assignment.rateKey === "string"
+      ) {
+        assignmentByPg.set(assignment.passengerGroupId, {
+          hotelId: String(assignment.hotelId ?? ""),
+          rateKey: assignment.rateKey,
+          roomsAssigned: Math.max(1, Number(assignment.roomsAssigned ?? 1)),
+          reason:
+            typeof assignment.reason === "string"
+              ? assignment.reason.trim()
+              : "",
+        });
+      }
+    }
+
+    const unresolvedByPg = new Map<string, string>();
+    for (const item of aiAllocation.unresolved) {
+      if (item && typeof item.passengerGroupId === "string") {
+        unresolvedByPg.set(
+          item.passengerGroupId,
+          String(item.reason ?? "Marked unresolved by allocator"),
+        );
+      }
+    }
+
+    // Hard-rule verifier: capacity, single hotel per booking, and a running
+    // allotment ledger across the whole batch (never trust the model's count).
+    const allotmentLedger = new Map<string, number>();
+    for (const { rate } of rateByKey.values()) {
+      if (rate.allotment !== null) {
+        allotmentLedger.set(rate.rateKey, rate.allotment);
+      }
+    }
+
+    for (const booking of eligibleBookings) {
+      const passengerGroupIds = Array.from(pgMeta.entries())
+        .filter(([, meta]) => meta.booking.id === booking.id)
+        .map(([id]) => id);
+
+      const bookingRooms: Array<{
+        adults: number;
+        children: number;
+        rateKey: string;
+        roomName: string;
+        boardName: string;
+        price: number;
+        currency: string;
+      }> = [];
+      let hotelRef: {
+        hotelCode: string;
+        hotelName: string;
+        category: string;
+      } | null = null;
+      let failReason: string | null = null;
+      let allocationReason = "";
+
+      for (const passengerGroupId of passengerGroupIds) {
+        const meta = pgMeta.get(passengerGroupId)!;
+
+        if (unresolvedByPg.has(passengerGroupId)) {
+          failReason = unresolvedByPg.get(passengerGroupId)!;
+          break;
+        }
+
+        const assignment = assignmentByPg.get(passengerGroupId);
+        if (!assignment) {
+          failReason = "Allocator returned no assignment for this group";
+          break;
+        }
+        if (!allocationReason && assignment.reason) {
+          allocationReason = assignment.reason;
+        }
+
+        const entry = rateByKey.get(assignment.rateKey);
+        if (!entry) {
+          failReason = `Assigned rateKey '${assignment.rateKey}' is not in the shortlist`;
+          break;
+        }
+
+        if (entry.rate.allotment === null) {
+          failReason = `Assigned rateKey '${assignment.rateKey}' has no allotment and is unavailable`;
+          break;
+        }
+
+        if (
+          entry.rate.adults !== meta.shape.adults ||
+          entry.rate.children !== meta.shape.children
+        ) {
+          failReason =
+            "Assigned room capacity does not match the group's occupancy";
+          break;
+        }
+
+        if (hotelRef && hotelRef.hotelCode !== entry.hotel.hotelCode) {
+          failReason = "Allocator split one booking across multiple hotels";
+          break;
+        }
+        hotelRef = {
+          hotelCode: entry.hotel.hotelCode,
+          hotelName: entry.hotel.hotelName,
+          category: entry.hotel.category,
+        };
+
+        if (allotmentLedger.has(assignment.rateKey)) {
+          const remaining = allotmentLedger.get(assignment.rateKey)!;
+          if (remaining < meta.roomsNeeded) {
+            failReason = `Allotment exceeded for rateKey '${assignment.rateKey}'`;
+            break;
+          }
+          allotmentLedger.set(assignment.rateKey, remaining - meta.roomsNeeded);
+        }
+
+        for (let index = 0; index < meta.roomsNeeded; index += 1) {
+          bookingRooms.push({
+            adults: meta.shape.adults,
+            children: meta.shape.children,
+            rateKey: entry.rate.rateKey,
+            roomName: entry.rate.roomName,
+            boardName: entry.rate.boardName,
+            price: this.roundCurrency(entry.rate.netPrice),
+            currency: entry.rate.currency,
+          });
+        }
+      }
+
+      if (failReason || !hotelRef || bookingRooms.length === 0) {
+        results.push({
+          bookingId: booking.id,
+          pnr: booking.pnr,
+          class: booking.travelClass,
+          passengers: {
+            adults: booking.adults,
+            children: booking.children,
+          },
+          allocationStatus: "NO_SUITABLE_HOTEL",
+          reason: failReason ?? "No hotel assignment produced by allocator",
+        });
+      } else {
+        const specialNotes = booking.specialNotes ?? [];
+        const reason =
+          allocationReason ||
+          `Best available ${hotelRef.category} option for ${booking.travelClass} class` +
+            (specialNotes.length
+              ? `; special request (${specialNotes.join(
+                  ", ",
+                )}) recorded but not verifiable from hotel data - confirm with the hotel directly.`
+              : ".");
+
+        results.push({
+          bookingId: booking.id,
+          pnr: booking.pnr,
+          class: booking.travelClass,
+          passengers: {
+            adults: booking.adults,
+            children: booking.children,
+          },
+          hotel: hotelRef,
+          rooms: bookingRooms,
+          totalPrice: this.roundCurrency(
+            bookingRooms.reduce((sum, room) => sum + room.price, 0),
+          ),
+          allocationStatus: "RECOMMENDED",
+          reason,
+        });
+      }
+    }
+
+    const allocated = results.filter(
+      (item) => item.allocationStatus === "RECOMMENDED",
+    );
+    const failed = results.length - allocated.length;
+    const totalRooms = allocated.reduce(
+      (sum, item) => sum + (item.rooms?.length ?? 0),
+      0,
+    );
+    const currency =
+      allocated.find((item) => item.rooms?.[0]?.currency)?.rooms?.[0]
+        ?.currency ?? "EUR";
+
+    requestLogger.info("Completed flight-level hotel recommendation process", {
+      context: this.context,
+      requestId,
+      flightId,
+      allocatedBookings: allocated.length,
+      failedBookings: failed,
+    });
+
+    // Booked the hotel recommendations using the allocated results and hotel partner APIs
+    // For now avoid the booking step and only provide recommendations(consider as booked)
+
+    // create hotel bookings in db
+    // step 1 - Format the data for hotel bookings in the database
+    const hotelBookings = results.map((item, index) => {
+      const price = item?.totalPrice || 0;
+      const pricing = this.calculatePricing(price, price, 0, 0);
+      return {
+        cancelledFlightId: flightId,
+        bookingId: item.bookingId,
+        checkInDate: checkInDateObj.toISOString(),
+        checkOutDate: checkOutDateObj.toISOString(),
+        actualPrice: pricing.actualPrice,
+        buyingPrice: pricing.buyingPrice,
+        sellingPrice: pricing.sellingPrice,
+        tax: pricing.tax,
+        platformFee: pricing.platformFee,
+        totalPrice: pricing.totalPrice,
+        earnings: pricing.earnings,
+        discount: pricing.discount,
+        hotelCode: item.hotel?.hotelCode || "temp",
+        hotelName: item.hotel?.hotelName || "temp",
+        category: item.hotel?.category || "temp",
+        rooms: item.rooms?.map((room) => ({
+          adults: room.adults,
+          children: room.children,
+          roomName: room.roomName,
+          boardName: room.boardName,
+          price: room.price,
+        })),
+        totalRooms: item.rooms?.length ?? 0,
+        allocationStatus: item.allocationStatus,
+        currency: "USD",
+        bookingReference: `temp-${item.bookingId}-${index}`,
+        reason: item.reason ?? null,
+      };
+    });
+
+    // step 2 - Save the formatted hotel bookings to the database
+    const rawTotals = hotelBookings
+      .filter((item) => item.allocationStatus === "RECOMMENDED")
+      .reduce(
+        (acc, item) => {
+          acc.totalActualPrice += item.actualPrice ?? 0;
+          acc.totalBuyingPrice += item.buyingPrice ?? 0;
+          acc.totalSellingPrice += item.sellingPrice ?? 0;
+          acc.totalDiscounts += item.discount ?? 0;
+          acc.totalHotelTaxes += item.tax ?? 0;
+          acc.totalPlatformFee += item.platformFee ?? 0;
+          acc.totalPriceForAll += item.totalPrice ?? 0;
+          acc.totalEarnings += item.earnings ?? 0;
+          acc.totalHotelRooms += item.totalRooms ?? 0;
+          return acc;
+        },
+        {
+          totalActualPrice: 0,
+          totalBuyingPrice: 0,
+          totalSellingPrice: 0,
+          totalDiscounts: 0,
+          totalHotelTaxes: 0,
+          totalPlatformFee: 0,
+          totalPriceForAll: 0,
+          totalHotelRooms: 0,
+          totalEarnings: 0,
+        },
+      );
+
+    const totalActualPrice = this.roundCurrency(rawTotals.totalActualPrice);
+    const totalBuyingPrice = this.roundCurrency(rawTotals.totalBuyingPrice);
+    const totalSellingPrice = this.roundCurrency(rawTotals.totalSellingPrice);
+    const totalDiscounts = this.roundCurrency(rawTotals.totalDiscounts);
+    const totalHotelTaxes = this.roundCurrency(rawTotals.totalHotelTaxes);
+    const totalPlatformFee = this.roundCurrency(rawTotals.totalPlatformFee);
+    const totalPriceForAll = this.roundCurrency(rawTotals.totalPriceForAll);
+    const totalEarnings = this.roundCurrency(rawTotals.totalEarnings);
+    const totalHotelRooms = this.roundCurrency(rawTotals.totalHotelRooms);
+
+    await this.cancelledFlightsRepository.saveHotelAllocations(
+      flightId,
+      {
+        hotelBookings,
+        totalActualPrice,
+        totalBuyingPrice,
+        totalSellingPrice,
+        totalDiscounts,
+        totalHotelTaxes,
+        totalPlatformFee,
+        totalPrice: totalPriceForAll,
+        totalHotelRooms,
+        totalEarnings,
+      },
+      requestId,
+      requestLogger,
+    );
+
+    return {
+      cancelledFlightId: flight.id,
+      status: FlightStatus.ALLOCATED,
+      totalBookings: bookings.length,
+      allocatedBookings: allocated.length,
+      failedBookings: failed,
+      totalRooms: totalHotelRooms,
+      totalActualPrice,
+      totalSellingPrice,
+      totalDiscounts,
+      totalHotelTaxes,
+      totalPlatformFee,
+      currency,
+    };
+  }
+
+  // ── List bookings ────────────────────────────────────────────────────────
+  async listHotelBookings(
+    flightId: number,
+    pagination: PaginationQueryDto,
+    requestId: string,
+    requestLogger: Logger,
+  ): Promise<CancelledFlightHotelBookingListResponseDto> {
+    await this.requireFlight(flightId, requestId);
+    const { hotelBookings, totalHotelBookings } =
+      await this.cancelledFlightsRepository.findHotelBookingsByFlightIdWithPagination(
+        flightId,
+        pagination.page || 1,
+        pagination.limit || 10,
+        requestId,
+      );
+
+    return {
+      hotelBookings: hotelBookings.map((h) => ({
+        id: h.id,
+        passengerBooking: {
+          id: h.booking.id,
+          pnr: h.booking.pnr,
+          cancelledFlightId: h.booking.cancelledFlightId,
+          firstName: h.booking.firstName,
+          lastName: h.booking.lastName,
+          email: h.booking.email,
+          phone: h.booking.phone,
+          travelClass: h.booking.travelClass,
+          adults: h.booking.adults,
+          children: h.booking.children,
+        },
+        cancelledFlightId: h.cancelledFlightId,
+        hotelName: h.hotelName,
+        rating: h.category,
+        totalRooms: h.totalRooms,
+        totalCost: h.totalPrice,
+        reason: h.reason ?? null,
+        createdAt: h.createdAt.toISOString(),
+        updatedAt: h.updatedAt?.toISOString() ?? null,
+      })),
+      totalHotelBookings: totalHotelBookings,
+      currentPage: pagination.page || 1,
+      limit: pagination.limit || 10,
+    };
+  }
+
+  // ── Get single hotel booking detail ─────────────────────────────────────
+  async getHotelBookingDetail(
+    flightId: number,
+    hotelBookingId: number,
+    user: AuthenticatedUser,
+    requestId: string,
+  ): Promise<HotelBookingDetailResponseDto> {
+    const hotelBooking =
+      await this.cancelledFlightsRepository.findHotelBookingById(
+        hotelBookingId,
+        requestId,
+      );
+
+    if (!hotelBooking || hotelBooking.cancelledFlightId !== flightId) {
+      throw new NotFoundException(
+        `Hotel booking '${hotelBookingId}' not found for flight '${flightId}'`,
+      );
+    }
+
+    if (
+      user.userType === UserType.AIRLINE &&
+      hotelBooking.cancelledFlight.airlineId !== user.airlineId
+    ) {
+      throw new NotFoundException(
+        `Hotel booking '${hotelBookingId}' not found for flight '${flightId}'`,
+      );
+    }
+
+    const flight = hotelBooking.cancelledFlight;
+    const includeMarginFields = user.userType !== UserType.AIRLINE;
+
+    return {
+      id: hotelBooking.id,
+      flight: {
+        id: flight.id,
+        flightNumber: flight.flightNumber,
+        airlineId: flight.airlineId,
+        departureAirportId: flight.departureAirportId,
+        arrivalAirportId: flight.arrivalAirportId,
+        cancellationDate: flight.cancellationDate,
+        cancellationReason: flight.cancellationReason ?? null,
+        status: flight.status,
+        createdAt: flight.createdAt.toISOString(),
+        updatedAt: flight.updatedAt?.toISOString() ?? null,
+        route: {
+          departureAirport: {
+            id: flight.departureAirport.id,
+            code: flight.departureAirport.iataCode,
+            name: flight.departureAirport.name,
+          },
+          arrivalAirport: {
+            id: flight.arrivalAirport.id,
+            code: flight.arrivalAirport.iataCode,
+            name: flight.arrivalAirport.name,
+          },
+        },
+      },
+      booking: this.toBookingResponse(hotelBooking.booking),
+      hotel: {
+        hotelCode: hotelBooking.hotelCode,
+        hotelName: hotelBooking.hotelName,
+        category: hotelBooking.category,
+        checkInDate: hotelBooking.checkInDate,
+        checkOutDate: hotelBooking.checkOutDate,
+        rooms: hotelBooking.rooms ?? [],
+        totalRooms: hotelBooking.totalRooms,
+        actualPrice: Number(hotelBooking.actualPrice),
+        ...(includeMarginFields && {
+          buyingPrice: Number(hotelBooking.buyingPrice),
+        }),
+        sellingPrice: Number(hotelBooking.sellingPrice),
+        tax: Number(hotelBooking.tax),
+        platformFee: Number(hotelBooking.platformFee),
+        discount: Number(hotelBooking.discount),
+        totalPrice: Number(hotelBooking.totalPrice),
+        ...(includeMarginFields && {
+          earnings: Number(hotelBooking.earnings),
+        }),
+        status: hotelBooking.status,
+        bookingReference: hotelBooking.bookingReference,
+        createdAt: hotelBooking.createdAt.toISOString(),
+        updatedAt: hotelBooking.updatedAt?.toISOString() ?? null,
+        reason: hotelBooking.reason ?? null,
+      },
+    };
+  }
+
+  // ── Hotel Summary of a cancelled flight ───────────────────────────────────────────────
+  async hotelSummaryByFlight(
+    flightId: number,
+    requestId: string,
+  ): Promise<HotelSummaryCancelledFlightResponseDto> {
+    const hotelSummary =
+      await this.cancelledFlightsRepository.findHotelSummaryByFlightId(
+        flightId,
+        requestId,
+      );
+
+    if (!hotelSummary) {
+      throw new NotFoundException(`Cancelled flight '${flightId}' not found`);
+    }
+
+    return {
+      summary: {
+        totalBookings: hotelSummary.totalBookings,
+        totalAdults: hotelSummary.totalAdults,
+        totalChildren: hotelSummary.totalChildren,
+        totalRooms: hotelSummary.totalRooms,
+        totalHotelCost: hotelSummary.totalHotelCost,
+        totalDiscount: hotelSummary.totalDiscount,
+        totalHotelTax: hotelSummary.totalHotelTax,
+        totalPlatformFee: hotelSummary.totalPlatformFee,
+        totalPayable: hotelSummary.totalCost,
+      },
+    };
+  }
+
+  // ── Mark as paid ─────────────────────────────────────────────────────────
+
+  async processPayment(
+    flightId: number,
+    requestId: string,
+  ): Promise<CancelledFlightResponseDto> {
+    const flight = await this.requireFlight(flightId, requestId);
+
+    if (flight.status !== FlightStatus.ALLOCATED) {
+      throw new BadRequestException(
+        `Cannot process payment for flight '${flightId}' from status '${flight.status}'. Flight must be in 'allocated' status.`,
+      );
+    }
+
+    const updatedFlight =
+      await this.cancelledFlightsRepository.updateFlightStatus({
+        cancelledFlightEntity: flight,
+        status: FlightStatus.PAID,
+        passengerBookingStats: {
+          totalBookings: null,
+          totalAdults: null,
+          totalChildren: null,
+        },
+        hotelBookingStats: null,
+        requestId,
+      });
+
+    return this.toCancelledFlightResponse(updatedFlight);
+  }
+
+  // ── Publish ──────────────────────────────────────────────────────────────
+
+  async publishFlight(
+    flightId: number,
+    requestId: string,
+    requestLogger: Logger,
+  ): Promise<CancelledFlightResponseDto> {
+    const flight = await this.requireFlight(flightId, requestId);
+
+    if (flight.status !== FlightStatus.PAID) {
+      throw new BadRequestException(
+        `Cannot publish flight '${flightId}' from status '${flight.status}'. Flight must be in 'paid' status.`,
+      );
+    }
+
+    const updatedFlight =
+      await this.cancelledFlightsRepository.updateFlightStatus({
+        cancelledFlightEntity: flight,
+        status: FlightStatus.PUBLISHED,
+        passengerBookingStats: {
+          totalBookings: null,
+          totalAdults: null,
+          totalChildren: null,
+        },
+        hotelBookingStats: null,
+        requestId,
+      });
+
+    // const bookings =
+    //   await this.cancelledFlightsRepository.findBookingsByFlightId(
+    //     flightId,
+    //     requestId,
+    //   );
+
+    // await Promise.all(
+    //   bookings.map((booking) =>
+    //     this.sendFlightPublishedEmail(
+    //       booking.email,
+    //       `${booking.firstName} ${booking.lastName}`,
+    //       updatedFlight.flightNumber,
+    //       requestId,
+    //       requestLogger,
+    //     ),
+    //   ),
+    // );
+
+    return this.toCancelledFlightResponse(updatedFlight);
+  }
+
+  // private async sendFlightPublishedEmail(
+  //   recipientEmail: string,
+  //   passengerName: string,
+  //   flightNumber: string,
+  //   requestId: string,
+  //   requestLogger: Logger,
+  // ): Promise<void> {
+  //   try {
+  //     await this.sesClient.send(
+  //       new SendEmailCommand({
+  //         Source: config.ses.fromEmail,
+  //         Destination: {
+  //           ToAddresses: [recipientEmail],
+  //         },
+  //         Message: {
+  //           Subject: {
+  //             Data: `Hotel arrangements confirmed for cancelled flight ${flightNumber}`,
+  //           },
+  //           Body: {
+  //             Text: {
+  //               Data: `Dear ${passengerName}, your hotel arrangements for cancelled flight ${flightNumber} have been confirmed. Please check your email for further details.`,
+  //             },
+  //           },
+  //         },
+  //       }),
+  //     );
+  //   } catch (error: any) {
+  //     requestLogger.error(
+  //       `Failed to send flight published email to '${recipientEmail}'`,
+  //       {
+  //         context: this.context,
+  //         requestId,
+  //         recipientEmail,
+  //         flightNumber,
+  //         error: error?.message,
+  //       },
+  //     );
+  //   }
+  // }
+
+
 
   // async allocateHotel(
   //   flightId: number,
