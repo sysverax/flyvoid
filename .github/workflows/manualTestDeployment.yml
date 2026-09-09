@@ -1,0 +1,155 @@
+name: Manual Dev Deployment
+
+on:
+    workflow_dispatch:
+        inputs:
+            deploy_backend:
+                description: "Deploy Backend"
+                type: boolean
+                required: true
+                default: false
+
+            # deploy_admin:
+            #   description: "Deploy Admin Frontend"
+            #   type: boolean
+            #   required: true
+            #   default: false
+
+            # deploy_wholesaler:
+            #   description: "Deploy Wholesaler Frontend"
+            #   type: boolean
+            #   required: true
+            #   default: false
+
+concurrency:
+    group: manual-dev-deploy
+    cancel-in-progress: true
+
+env:
+    # Backend paths
+    BACKEND_PATH: "backend"
+    BACKEND_APP_NAME: "backend"
+    REMOTE_BACKEND_PATH: "/home/ubuntu/flyvoid/backend"
+
+    # Admin web paths
+    ADMIN_WEB_APP_PATH: "frontend/admin"
+    ADMIN_WEB_APP_NAME: "admin-web"
+    ADMIN_WEB_REMOTE_APP_PATH: "/home/ubuntu/flyvoid/frontend/admin"
+
+    # Airline web paths
+    AIRLINE_WEB_APP_PATH: "frontend/airline"
+    AIRLINE_WEB_APP_NAME: "airline-web"
+    AIRLINE_WEB_REMOTE_APP_PATH: "/home/ubuntu/flyvoid/frontend/airline"
+
+jobs:
+    validate_inputs:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Ensure at least one service is selected
+              run: |
+                  if [ "${{ github.event.inputs.deploy_backend }}" != "true" ] && [ "${{ github.event.inputs.deploy_admin }}" != "true" ] && [ "${{ github.event.inputs.deploy_wholesaler }}" != "true" ] && [ "${{ github.event.inputs.deploy_api_document }}" != "true" ] && [ "${{ github.event.inputs.deploy_product_sync_scheduler }}" != "true" ] && [ "${{ github.event.inputs.deploy_trendy_order_reconciliation_scheduler }}" != "true" ]; then
+                    echo "[ERROR] Select at least one deployment option: deploy_backend, deploy_admin, deploy_wholesaler, deploy_api_document, deploy_product_sync_scheduler, or deploy_trendy_order_reconciliation_scheduler."
+                    exit 1
+                  fi
+
+    backend_deployment:
+        needs: [build_backend]
+        runs-on: ubuntu-latest
+        env:
+            AWS_SSH_KEY: ${{ secrets.AWS_EC2_SSH_KEY }}
+            EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+            EC2_INSTANCE_IP: ${{ secrets.TEST_EC2_IP }}
+            BACKEND_ENV: ${{ secrets.TEST_BACKEND_ENV }}
+
+        steps:
+            - name: Start Backend Deployment
+              run: |
+                  echo "[INFO] ======================================"
+                  echo "[INFO] Starting Backend Deployment"
+                  echo "[INFO] Commit: $GITHUB_SHA"
+                  echo "[INFO] ======================================"
+
+            - name: Checkout repository
+              uses: actions/checkout@v3
+              with:
+                  fetch-depth: 2
+
+            - name: Write SSH Key
+              run: |
+                  echo "[INFO] Writing SSH key..."
+                  echo "${{env.AWS_SSH_KEY}}" > ~/ec2_key.pem
+                  chmod 600 ~/ec2_key.pem
+
+            - name: Add EC2 Host to known_hosts
+              run: |
+                  echo "[INFO] Adding EC2 host to known_hosts"
+                  mkdir -p ~/.ssh
+                  ssh-keyscan -H ${{env.EC2_INSTANCE_IP}} >> ~/.ssh/known_hosts
+
+            - name: Ensure remote backend folder exists
+              run: |
+                  ssh -i ~/ec2_key.pem -o StrictHostKeyChecking=no ${{env.EC2_USERNAME}}@${{env.EC2_INSTANCE_IP}} \
+                    "mkdir -p ${{env.REMOTE_BACKEND_PATH}}"
+
+            - name: Rsync backend files to EC2
+              run: |
+                  echo "[INFO] Transferring backend files..."
+                  rsync -avz --delete \
+                    --exclude='node_modules' \
+                    --exclude='logs' \
+                    --exclude='package-lock.json' \
+                    --exclude='dbMigrationScripts' \
+                    -e "ssh -i ~/ec2_key.pem -o StrictHostKeyChecking=no" \
+                    ${{env.BACKEND_PATH}}/ ${{env.EC2_USERNAME}}@${{env.EC2_INSTANCE_IP}}:${{env.REMOTE_BACKEND_PATH}}
+                  echo "[INFO] Transfer complete."
+
+            - name: Deploy backend on EC2
+              run: |
+                  echo "[INFO] Deploying backend on EC2..."
+                  ssh -i ~/ec2_key.pem -o StrictHostKeyChecking=no ${{env.EC2_USERNAME}}@${{env.EC2_INSTANCE_IP}} << EOF
+                  set -e
+                  cd "${{env.REMOTE_BACKEND_PATH}}"
+                  echo "[INFO] Creating environment file..."
+                  cat > .env.test <<EOL
+                  ${{env.BACKEND_ENV}}
+                  EOL
+
+                  echo "[INFO] Installing dependencies..."
+                  # npm ci --prefer-offline
+                  npm install
+
+                  echo "[INFO] Restarting PM2 process..."
+                  pm2 stop "${{env.BACKEND_APP_NAME}}" || true
+                  pm2 delete "${{env.BACKEND_APP_NAME}}" || true
+                  pm2 start npm --name "${{env.BACKEND_APP_NAME}}" -- run start:test
+                  pm2 save
+                  EOF
+
+            - name: Backend Deployment Complete
+              run: |
+                  echo "[INFO] ======================================"
+                  echo "[INFO] Backend deployment completed successfully"
+                  echo "[INFO] ======================================"
+
+    build_backend:
+        needs: [validate_inputs]
+        if: ${{ github.event.inputs.deploy_backend == 'true' }}
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v3
+              with:
+                  fetch-depth: 2
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v3
+              with:
+                  node-version: 20
+
+            - name: Install dependencies (Backend)
+              working-directory: ${{ env.BACKEND_PATH }}
+              run: npm i
+
+            - name: Build Backend
+              working-directory: ${{ env.BACKEND_PATH }}
+              run: npm run build
