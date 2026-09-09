@@ -32,8 +32,8 @@ import {
   BookHotelRequestDto,
   CancelledFlightHotelBookingListResponseDto,
   HotelSummaryCancelledFlightResponseDto,
-  HotelBookingDetailResponseDto,
 } from "./dto";
+import { HotelBookingDetailResponseDto } from "../hotel-bookings/dto";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
 import { PaginationQueryDto } from "../common/dto/pagination-query.dto";
 import {
