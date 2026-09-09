@@ -1,4 +1,4 @@
-name: Manual Dev Deployment
+name: Manual Test Deployment
 
 on:
     workflow_dispatch:
@@ -47,10 +47,17 @@ jobs:
         steps:
             - name: Ensure at least one service is selected
               run: |
-                  if [ "${{ github.event.inputs.deploy_backend }}" != "true" ] && [ "${{ github.event.inputs.deploy_admin }}" != "true" ] && [ "${{ github.event.inputs.deploy_wholesaler }}" != "true" ] && [ "${{ github.event.inputs.deploy_api_document }}" != "true" ] && [ "${{ github.event.inputs.deploy_product_sync_scheduler }}" != "true" ] && [ "${{ github.event.inputs.deploy_trendy_order_reconciliation_scheduler }}" != "true" ]; then
-                    echo "[ERROR] Select at least one deployment option: deploy_backend, deploy_admin, deploy_wholesaler, deploy_api_document, deploy_product_sync_scheduler, or deploy_trendy_order_reconciliation_scheduler."
+                  if [ "${{ github.event.inputs.deploy_backend }}" != "true" ]; then
+                    echo "[ERROR] Select at least one deployment option: deploy_backend"
                     exit 1
                   fi
+
+            # - name: Ensure at least one service is selected
+            #   run: |
+            #       if [ "${{ github.event.inputs.deploy_backend }}" != "true" ] && [ "${{ github.event.inputs.deploy_admin }}" != "true" ] && [ "${{ github.event.inputs.deploy_wholesaler }}" != "true" ] && [ "${{ github.event.inputs.deploy_api_document }}" != "true" ] && [ "${{ github.event.inputs.deploy_product_sync_scheduler }}" != "true" ] && [ "${{ github.event.inputs.deploy_trendy_order_reconciliation_scheduler }}" != "true" ]; then
+            #         echo "[ERROR] Select at least one deployment option: deploy_backend, deploy_admin, deploy_wholesaler, deploy_api_document, deploy_product_sync_scheduler, or deploy_trendy_order_reconciliation_scheduler."
+            #         exit 1
+            #       fi
 
     backend_deployment:
         needs: [build_backend]
