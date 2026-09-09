@@ -22,7 +22,7 @@ on:
             #   default: false
 
 concurrency:
-    group: manual-dev-deploy
+    group: manual-test-deploy
     cancel-in-progress: true
 
 env:
