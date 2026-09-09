@@ -1,8 +1,10 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from "@nestjs/common";
 import { Readable } from "stream";
 import { LoggerService } from "../common/logger/logger.service";
@@ -1541,31 +1543,13 @@ export class CancelledFlightsService {
         { error: error.message },
       );
 
-      const noAvailability = eligibleBookings.map((booking) => ({
-        bookingId: booking.id,
-        pnr: booking.pnr,
-        class: booking.travelClass,
-        passengers: {
-          adults: booking.adults,
-          children: booking.children,
-        },
-        allocationStatus: "NO_AVAILABILITY" as AllocationStatus,
-        reason: "Failed to retrieve hotel availability",
-      }));
-
-      return {
-        cancelledFlightId: flight.id,
-        status: "RECOMMENDATIONS_READY",
-        summary: {
-          totalBookings: bookings.length,
-          allocatedBookings: 0,
-          failedBookings: noAvailability.length + results.length,
-          totalRooms: 0,
-          totalBuyingPrice: 0,
-          currency: "EUR",
-        },
-        allocations: [...results, ...noAvailability],
-      };
+      // fail with the real error rather than masking it as "no availability"
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new ServiceUnavailableException(
+        `Hotel availability search failed for flight '${flightId}': ${error.message}`,
+      );
     }
 
     this.logger.info("Hotel availability loaded", this.context, requestId, {
@@ -1906,7 +1890,11 @@ export class CancelledFlightsService {
         { error: error.message },
       );
 
-      throw new BadRequestException(
+      // surface the real error rather than masking it
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new ServiceUnavailableException(
         `Hotel availability search failed for flight '${flightId}': ${error.message}`,
       );
     }
