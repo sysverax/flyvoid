@@ -5,6 +5,8 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import * as crypto from "node:crypto";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
 import { config } from "../config/config";
 import { LoggerService } from "../common/logger/logger.service";
 import { HotelAllocationStatus } from "./entities/enums";
@@ -71,6 +73,14 @@ export class HotelPartnerService {
   private readonly availabilityRequestTimeoutMs = 15000;
   private static readonly RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
 
+  // Dev-only: reads the raw Hotelbeds responses dumped to disk (see
+  // hotelbeds-cache/<requestId>/<occupancyKey>.json) instead of calling the
+  // rate-limited API.
+  private readonly occupancyCacheDir = path.join(
+    process.cwd(),
+    "hotelbeds-cache",
+  );
+
   constructor(private readonly logger: LoggerService) {}
 
   private occupancyKey(occupancy: RoomOccupancy): string {
@@ -96,6 +106,62 @@ export class HotelPartnerService {
       this.availabilityRetryBaseMs * 2 ** (attempt - 1) +
       Math.floor(Math.random() * 250)
     );
+  }
+
+  /** Loads a cached raw Hotelbeds response for one occupancy from disk.
+   * Searches every `hotelbeds-cache/<runId>/` folder (newest first) for
+   * `<occupancyKey>.json` and returns its `hotels.hotels` array, or `[]`
+   * if no cached file exists for that occupancy. */
+  private async loadCachedOccupancyResponse(
+    occupancy: RoomOccupancy,
+    requestLogger: Logger,
+  ): Promise<any[]> {
+    const fileName = `${this.occupancyKey(occupancy)}.json`;
+
+    let runDirNames: string[];
+    try {
+      runDirNames = await fs.readdir(this.occupancyCacheDir);
+    } catch (error: any) {
+      requestLogger.warn("Hotelbeds cache directory not found", {
+        context: "HotelPartnerService",
+        cacheDir: this.occupancyCacheDir,
+        error: error?.message,
+      });
+      return [];
+    }
+
+    const runDirs = await Promise.all(
+      runDirNames.map(async (name) => {
+        const dirPath = path.join(this.occupancyCacheDir, name);
+        try {
+          const stats = await fs.stat(dirPath);
+          return stats.isDirectory() ? { dirPath, mtimeMs: stats.mtimeMs } : null;
+        } catch {
+          return null;
+        }
+      }),
+    );
+
+    const sortedRunDirs = runDirs
+      .filter((entry): entry is { dirPath: string; mtimeMs: number } => !!entry)
+      .sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+    for (const { dirPath } of sortedRunDirs) {
+      const filePath = path.join(dirPath, fileName);
+      try {
+        const raw = await fs.readFile(filePath, "utf-8");
+        const responseData = JSON.parse(raw);
+        return responseData?.hotels?.hotels || [];
+      } catch {
+        continue; // not in this run folder, try the next
+      }
+    }
+
+    requestLogger.warn("No cached Hotelbeds response found for occupancy", {
+      context: "HotelPartnerService",
+      occupancyFile: fileName,
+    });
+    return [];
   }
 
   /** Runs `worker` over `items`, at most `limit` at once; first rejection wins. */
@@ -427,6 +493,179 @@ export class HotelPartnerService {
   //   }
   // }
 
+
+  // Actual hotebeds API call with concurrency and retry logic for each occupancy
+  // async searchNearbyHotelsWithOccupancies(
+  //   airport: {
+  //     iataCode: string;
+  //     latitude: number;
+  //     longitude: number;
+  //   },
+  //   checkInDate: string,
+  //   checkOutDate: string,
+  //   occupancies: RoomOccupancy[],
+  //   requestId: string,
+  //   requestLogger: Logger,
+  // ): Promise<AvailabilityHotel[]> {
+  //   if (!this.apiKey || !this.secret) {
+  //     requestLogger.warn("Hotelbeds credentials not configured.", {
+  //       context: "HotelPartnerService",
+  //     });
+
+  //     throw new ServiceUnavailableException(
+  //       "Hotelbeds API credentials not configured",
+  //     );
+  //   }
+
+  //   const endpoint = this.useSandbox
+  //     ? "https://api.test.hotelbeds.com/hotel-api/1.0/hotels"
+  //     : "https://api.hotelbeds.com/hotel-api/1.0/hotels";
+
+  //   if (!occupancies.length) {
+  //     requestLogger.warn(
+  //       "No occupancies provided for hotel availability search.",
+  //       {
+  //         context: "HotelPartnerService",
+  //       },
+  //     );
+  //     throw new BadRequestException(
+  //       "At least one occupancy is required for hotel availability search",
+  //     );
+  //   }
+
+  //   const dedupedOccupancies = Array.from(
+  //     new Map(
+  //       occupancies.map((occupancy) => [
+  //         this.occupancyKey(occupancy),
+  //         occupancy,
+  //       ]),
+  //     ).values(),
+  //   );
+
+  //   const payloads = dedupedOccupancies.map((occupancy) => {
+  //     const childrenCount = Number(occupancy.children ?? 0);
+  //     const normalizedAges = (occupancy.childrenAges ?? []).filter(
+  //       (age) => Number.isFinite(age) && age > 0,
+  //     );
+  //     const agesToSend =
+  //       childrenCount > 0
+  //         ? Array.from(
+  //             { length: childrenCount },
+  //             (_, index) => normalizedAges[index] ?? 6,
+  //           )
+  //         : [];
+
+  //     const paxes =
+  //       agesToSend.length > 0
+  //         ? agesToSend.map((age) => ({ type: "CH", age }))
+  //         : undefined;
+
+  //     return {
+  //       occupancy,
+  //       payload: {
+  //         stay: {
+  //           checkIn: checkInDate,
+  //           checkOut: checkOutDate,
+  //         },
+  //         occupancies: [
+  //           {
+  //             rooms: 1,
+  //             adults: Number(occupancy.adults),
+  //             children: childrenCount,
+  //             ...(paxes ? { paxes } : {}),
+  //           },
+  //         ],
+  //         geolocation: {
+  //           latitude: Number(airport.latitude),
+  //           longitude: Number(airport.longitude),
+  //           radius: 20,
+  //           unit: "km",
+  //         },
+  //       },
+  //     };
+  //   });
+
+  //   requestLogger.info("Fetching hotel availability from Hotelbeds API", {
+  //     context: "HotelPartnerService",
+  //     airportCode: airport.iataCode,
+  //     occupancyCount: dedupedOccupancies.length,
+  //     useSandbox: this.useSandbox,
+  //   });
+
+  //   try {
+  //     const responses = await this.mapWithConcurrency(
+  //       payloads,
+  //       this.availabilityMaxConcurrency,
+  //       (group) =>
+  //         this.fetchOccupancyAvailability(endpoint, group, requestLogger),
+  //     );
+
+  //     const mergedByHotelCode = new Map<string, any>();
+  //     for (const { rawHotels } of responses) {
+  //       for (const hotel of rawHotels) {
+  //         const key = String(hotel?.code ?? "");
+  //         if (!key) {
+  //           continue;
+  //         }
+
+  //         const existing = mergedByHotelCode.get(key);
+  //         if (!existing) {
+  //           mergedByHotelCode.set(key, {
+  //             ...hotel,
+  //             rooms: Array.isArray(hotel.rooms) ? [...hotel.rooms] : [],
+  //           });
+  //           continue;
+  //         }
+
+  //         if (Array.isArray(hotel.rooms) && hotel.rooms.length > 0) {
+  //           existing.rooms = [...(existing.rooms ?? []), ...hotel.rooms];
+  //         }
+  //       }
+  //     }
+
+  //     const mergedRawHotels = Array.from(mergedByHotelCode.values());
+
+  //     requestLogger.info(
+  //       `Successfully received ${mergedRawHotels.length} merged hotels from Hotelbeds API`,
+  //       {
+  //         context: "HotelPartnerService",
+  //       },
+  //     );
+
+  //     if (mergedRawHotels.length === 0) {
+  //       throw new NotFoundException(
+  //         `No hotels found near airport ${airport.iataCode} for the requested occupancies`,
+  //       );
+  //     }
+  //     requestLogger.info(`Merged raw hotels: ${mergedRawHotels.length}`, {
+  //       context: "HotelPartnerService",
+  //       mergedRawHotels,
+  //     });
+
+  //     return this.normalizeAvailabilityHotels(mergedRawHotels);
+  //   } catch (error: any) {
+  //     this.logger.error(
+  //       `Error querying Hotelbeds API: ${error.message}`,
+  //       "HotelPartnerService",
+  //       requestId,
+  //       { stack: error.stack },
+  //     );
+
+  //     if (
+  //       error instanceof NotFoundException ||
+  //       error instanceof ServiceUnavailableException ||
+  //       error instanceof BadRequestException
+  //     ) {
+  //       throw error;
+  //     }
+
+  //     // pass through the real Hotelbeds status/body from fetchOccupancyAvailability
+  //     throw new ServiceUnavailableException(error.message);
+  //   }
+  // }
+
+  // Response from json file — reads cached Hotelbeds responses from disk
+  // (hotelbeds-cache/<runId>/<occupancyKey>.json) instead of calling the API.
   async searchNearbyHotelsWithOccupancies(
     airport: {
       iataCode: string;
@@ -439,20 +678,6 @@ export class HotelPartnerService {
     requestId: string,
     requestLogger: Logger,
   ): Promise<AvailabilityHotel[]> {
-    if (!this.apiKey || !this.secret) {
-      requestLogger.warn("Hotelbeds credentials not configured.", {
-        context: "HotelPartnerService",
-      });
-
-      throw new ServiceUnavailableException(
-        "Hotelbeds API credentials not configured",
-      );
-    }
-
-    const endpoint = this.useSandbox
-      ? "https://api.test.hotelbeds.com/hotel-api/1.0/hotels"
-      : "https://api.hotelbeds.com/hotel-api/1.0/hotels";
-
     if (!occupancies.length) {
       requestLogger.warn(
         "No occupancies provided for hotel availability search.",
@@ -474,126 +699,65 @@ export class HotelPartnerService {
       ).values(),
     );
 
-    const payloads = dedupedOccupancies.map((occupancy) => {
-      const childrenCount = Number(occupancy.children ?? 0);
-      const normalizedAges = (occupancy.childrenAges ?? []).filter(
-        (age) => Number.isFinite(age) && age > 0,
-      );
-      const agesToSend =
-        childrenCount > 0
-          ? Array.from(
-              { length: childrenCount },
-              (_, index) => normalizedAges[index] ?? 6,
-            )
-          : [];
+    requestLogger.info(
+      "Loading hotel availability from cached Hotelbeds responses",
+      {
+        context: "HotelPartnerService",
+        airportCode: airport.iataCode,
+        occupancyCount: dedupedOccupancies.length,
+        cacheDir: this.occupancyCacheDir,
+      },
+    );
 
-      const paxes =
-        agesToSend.length > 0
-          ? agesToSend.map((age) => ({ type: "CH", age }))
-          : undefined;
-
-      return {
+    const responses = await Promise.all(
+      dedupedOccupancies.map(async (occupancy) => ({
         occupancy,
-        payload: {
-          stay: {
-            checkIn: checkInDate,
-            checkOut: checkOutDate,
-          },
-          occupancies: [
-            {
-              rooms: 1,
-              adults: Number(occupancy.adults),
-              children: childrenCount,
-              ...(paxes ? { paxes } : {}),
-            },
-          ],
-          geolocation: {
-            latitude: Number(airport.latitude),
-            longitude: Number(airport.longitude),
-            radius: 20,
-            unit: "km",
-          },
-        },
-      };
-    });
+        rawHotels: await this.loadCachedOccupancyResponse(
+          occupancy,
+          requestLogger,
+        ),
+      })),
+    );
 
-    requestLogger.info("Fetching hotel availability from Hotelbeds API", {
-      context: "HotelPartnerService",
-      airportCode: airport.iataCode,
-      occupancyCount: dedupedOccupancies.length,
-      useSandbox: this.useSandbox,
-    });
+    const mergedByHotelCode = new Map<string, any>();
+    for (const { rawHotels } of responses) {
+      for (const hotel of rawHotels) {
+        const key = String(hotel?.code ?? "");
+        if (!key) {
+          continue;
+        }
 
-    try {
-      const responses = await this.mapWithConcurrency(
-        payloads,
-        this.availabilityMaxConcurrency,
-        (group) =>
-          this.fetchOccupancyAvailability(endpoint, group, requestLogger),
-      );
+        const existing = mergedByHotelCode.get(key);
+        if (!existing) {
+          mergedByHotelCode.set(key, {
+            ...hotel,
+            rooms: Array.isArray(hotel.rooms) ? [...hotel.rooms] : [],
+          });
+          continue;
+        }
 
-      const mergedByHotelCode = new Map<string, any>();
-      for (const { rawHotels } of responses) {
-        for (const hotel of rawHotels) {
-          const key = String(hotel?.code ?? "");
-          if (!key) {
-            continue;
-          }
-
-          const existing = mergedByHotelCode.get(key);
-          if (!existing) {
-            mergedByHotelCode.set(key, {
-              ...hotel,
-              rooms: Array.isArray(hotel.rooms) ? [...hotel.rooms] : [],
-            });
-            continue;
-          }
-
-          if (Array.isArray(hotel.rooms) && hotel.rooms.length > 0) {
-            existing.rooms = [...(existing.rooms ?? []), ...hotel.rooms];
-          }
+        if (Array.isArray(hotel.rooms) && hotel.rooms.length > 0) {
+          existing.rooms = [...(existing.rooms ?? []), ...hotel.rooms];
         }
       }
-
-      const mergedRawHotels = Array.from(mergedByHotelCode.values());
-
-      requestLogger.info(
-        `Successfully received ${mergedRawHotels.length} merged hotels from Hotelbeds API`,
-        {
-          context: "HotelPartnerService",
-        },
-      );
-
-      if (mergedRawHotels.length === 0) {
-        throw new NotFoundException(
-          `No hotels found near airport ${airport.iataCode} for the requested occupancies`,
-        );
-      }
-      requestLogger.info(`Merged raw hotels: ${mergedRawHotels.length}`, {
-        context: "HotelPartnerService",
-        mergedRawHotels,
-      });
-
-      return this.normalizeAvailabilityHotels(mergedRawHotels);
-    } catch (error: any) {
-      this.logger.error(
-        `Error querying Hotelbeds API: ${error.message}`,
-        "HotelPartnerService",
-        requestId,
-        { stack: error.stack },
-      );
-
-      if (
-        error instanceof NotFoundException ||
-        error instanceof ServiceUnavailableException ||
-        error instanceof BadRequestException
-      ) {
-        throw error;
-      }
-
-      // pass through the real Hotelbeds status/body from fetchOccupancyAvailability
-      throw new ServiceUnavailableException(error.message);
     }
+
+    const mergedRawHotels = Array.from(mergedByHotelCode.values());
+
+    requestLogger.info(
+      `Loaded ${mergedRawHotels.length} merged hotels from cached Hotelbeds responses`,
+      {
+        context: "HotelPartnerService",
+      },
+    );
+
+    if (mergedRawHotels.length === 0) {
+      throw new NotFoundException(
+        `No cached hotel data found near airport ${airport.iataCode} for the requested occupancies`,
+      );
+    }
+
+    return this.normalizeAvailabilityHotels(mergedRawHotels);
   }
 
   async searchNearbyHotels(
