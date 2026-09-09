@@ -729,7 +729,17 @@ export default function CancellationWizard({
       const summary =
         res?.data?.summary || (res?.data as any) || (res as any)?.summary;
       if (summary) {
-        setHotelSummary(summary);
+        setHotelSummary({
+          totalBookings: Number(summary.totalBookings ?? 0),
+          totalAdults: Number(summary.totalAdults ?? 0),
+          totalChildren: Number(summary.totalChildren ?? 0),
+          totalRooms: Number(summary.totalRooms ?? 0),
+          totalHotelCost: Number(summary.totalHotelCost ?? 0),
+          totalDiscount: Number(summary.totalDiscount ?? 0),
+          totalHotelTax: Number(summary.totalHotelTax ?? 0),
+          totalPlatformFee: Number(summary.totalPlatformFee ?? 0),
+          totalPayable: Number(summary.totalPayable ?? 0),
+        });
       }
     } catch (err: any) {
       console.error("Failed to load hotel summary:", err);
@@ -766,7 +776,7 @@ export default function CancellationWizard({
       if (addedBookings.length === 0) {
         fetchBookings(flightId);
       }
-    } else if ((activeStep === 5 || activeStep === 6) && flightId) {
+    } else if ((activeStep === 5 || activeStep === 6 || activeStep === 7) && flightId) {
       fetchHotelSummary(flightId);
     }
   }, [activeStep, flightId]);
@@ -780,8 +790,20 @@ export default function CancellationWizard({
   const handleAllocateHotels = async () => {
     setIsAllocating(true);
     setAllocationError(null);
+    setAllocationProgress(1);
+
+    // Loop through the 4 loading sections during allocation
+    const progressTimer = setInterval(() => {
+      setAllocationProgress((prev) => (prev < 4 ? prev + 1 : 1));
+    }, 1200);
 
     if (!flightId) {
+      setTimeout(() => {
+        clearInterval(progressTimer);
+        setIsAllocating(false);
+        setAllocationProgress(0);
+        setActiveStep(5);
+      }, 1500);
       return;
     }
 
@@ -791,6 +813,7 @@ export default function CancellationWizard({
       setHotelAllocations(allocData);
       setAllocationProgress(4);
       setTimeout(() => {
+        clearInterval(progressTimer);
         setIsAllocating(false);
         setAllocationProgress(0);
         setActiveStep(5);
@@ -799,51 +822,12 @@ export default function CancellationWizard({
         );
       }, 800);
     } catch (error: any) {
+      clearInterval(progressTimer);
       setIsAllocating(false);
       setAllocationError(error.message || "Failed to allocate hotels");
       toast.error(error.message || "Failed to allocate hotels");
     }
   };
-
-  useEffect(() => {
-    if (activeStep === 4) {
-      setIsAllocating(true);
-      setAllocationError(null);
-
-      // Loop through the 4 loading sections continuously
-      const progressTimer = setInterval(() => {
-        setAllocationProgress((prev) => (prev < 4 ? prev + 1 : 0));
-      }, 1200);
-
-      // Auto-trigger backend allocation if flightId exists and not already allocated
-      if (flightId && !hotelAllocations) {
-        cancellationService
-          .allocateHotels(flightId)
-          .then((allocRes) => {
-            const allocData = allocRes?.data || allocRes;
-            setHotelAllocations(allocData);
-            setAllocationProgress(4);
-            setTimeout(() => {
-              setIsAllocating(false);
-              setAllocationProgress(0);
-              setActiveStep(5);
-              toast.success(
-                allocRes?.message || "Hotels allocated successfully",
-              );
-            }, 800);
-          })
-          .catch((error: any) => {
-            setIsAllocating(false);
-            setAllocationError(error.message || "Failed to allocate hotels");
-            toast.error(error.message || "Failed to allocate hotels");
-          });
-      }
-
-      return () => {
-        clearInterval(progressTimer);
-      };
-    }
-  }, [activeStep, flightId]);
 
   // Step 6 Payment state
   const [paymentMethod, setPaymentMethod] = useState("visa");
@@ -868,6 +852,7 @@ export default function CancellationWizard({
   const [notifySMS, setNotifySMS] = useState(true);
   const [notifyEmail, setNotifyEmail] = useState(true);
   const [notifyGround, setNotifyGround] = useState(true);
+  const [isPublishingFlight, setIsPublishingFlight] = useState(false);
 
   const totalBookingsCount =
     hotelSummary?.totalBookings ?? addedBookings.length;
@@ -1263,6 +1248,57 @@ export default function CancellationWizard({
     }
   };
 
+  const handlePublishFlight = async () => {
+    if (!flightId) {
+      const added: Cancellation = {
+        id: String(initialData?.id || Date.now()),
+        flight: newFlight,
+        route:
+          newDepartureAirport && newArrivalAirport
+            ? `${newDepartureAirport} ➔ ${newArrivalAirport}`
+            : "",
+        cancellationDate: newDate
+          ? new Date(newDate).toISOString()
+          : new Date().toISOString(),
+        bookings: totalBookingsCount,
+        passengers: totalPassengersCount,
+        totalCost: totalPayment,
+        status: "Published",
+        reason: newReason || selectedReasonTag || "Weather disruption",
+      };
+      toast.success("Cancelled flight published successfully");
+      onSave(added);
+      return;
+    }
+
+    setIsPublishingFlight(true);
+    try {
+      const res = await cancellationService.publishFlight(flightId);
+      toast.success(res?.message || "Cancelled flight published successfully");
+      const added: Cancellation = {
+        id: String(flightId),
+        flight: newFlight,
+        route:
+          newDepartureAirport && newArrivalAirport
+            ? `${newDepartureAirport} ➔ ${newArrivalAirport}`
+            : "",
+        cancellationDate: newDate
+          ? new Date(newDate).toISOString()
+          : new Date().toISOString(),
+        bookings: totalBookingsCount,
+        passengers: totalPassengersCount,
+        totalCost: totalPayment,
+        status: "Published",
+        reason: newReason || selectedReasonTag || "Weather disruption",
+      };
+      onSave(added);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to publish cancelled flight");
+    } finally {
+      setIsPublishingFlight(false);
+    }
+  };
+
   const handleNextStep = async () => {
     if (activeStep === 1) {
       await saveFlightStep1(true);
@@ -1300,9 +1336,7 @@ export default function CancellationWizard({
       }
       setIsProcessingPayment(true);
       try {
-        const res = await cancellationService.processPayment(flightId, {
-          paymentMethod,
-        });
+        const res = await cancellationService.processPayment(flightId);
         toast.success(res?.message || "Payment processed successfully");
         setActiveStep(7);
       } catch (error: any) {
@@ -1311,19 +1345,7 @@ export default function CancellationWizard({
         setIsProcessingPayment(false);
       }
     } else if (activeStep === 7) {
-      const added: Cancellation = {
-        id: String(flightId || Date.now()),
-        flight: newFlight,
-        route: `${newDepartureAirport} ➔ ${newArrivalAirport}`,
-        cancellationDate: formatDateString(newDate),
-        bookings: totalBookingsCount,
-        passengers: totalPassengersCount,
-        totalCost: totalPayment,
-        status: "Published",
-        reason: newReason || "Not specified",
-      };
-
-      onSave(added);
+      await handlePublishFlight();
     } else {
       setActiveStep((prev) => prev + 1);
     }
@@ -2489,83 +2511,162 @@ export default function CancellationWizard({
           </div>
         );
       case 4:
+        if (isAllocating) {
+          return (
+            <div className="flex flex-col items-center justify-center py-6 space-y-6 animate-in fade-in zoom-in duration-300">
+              <div className="flex flex-col items-center gap-4">
+                <Loader2 className="h-10 w-10 text-[#0F2757] animate-spin" />
+                <div className="text-center">
+                  <h3 className="text-xl font-semibold text-gray-900 font-figtree">
+                    Allocating Hotels...
+                  </h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Finding the best hotels for your passengers...
+                  </p>
+                </div>
+              </div>
+
+              <div className="w-full max-w-md bg-white border border-gray-100 shadow-sm rounded-xl p-5 space-y-4">
+                {[
+                  { step: 1, label: "Analyzing booking requirements" },
+                  { step: 2, label: "Checking hotel availability" },
+                  { step: 3, label: "Optimizing room assignments" },
+                  { step: 4, label: "Calculating costs" },
+                ].map((item) => {
+                  const isCompleted = allocationProgress >= item.step;
+                  const isCurrent = allocationProgress === item.step - 1;
+
+                  return (
+                    <div
+                      key={item.step}
+                      className="flex items-center gap-3 text-sm font-medium transition-all duration-200"
+                    >
+                      {isCompleted ? (
+                        <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
+                      ) : isCurrent ? (
+                        <Loader2 className="h-5 w-5 text-[#0F2757] animate-spin shrink-0" />
+                      ) : (
+                        <Circle className="h-5 w-5 text-gray-300 shrink-0" />
+                      )}
+                      <span
+                        className={
+                          isCompleted
+                            ? "text-gray-900 font-medium"
+                            : isCurrent
+                              ? "text-gray-900 font-semibold"
+                              : "text-gray-400"
+                        }
+                      >
+                        {item.label}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="w-full max-w-md bg-gray-50 rounded-xl p-4 flex items-start gap-3 border border-gray-200">
+                <Info className="h-5 w-5 text-gray-500 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">
+                    You can safely navigate away
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    This process continues in the background. We'll notify you
+                    when allocation is complete.
+                  </p>
+                </div>
+              </div>
+
+              {allocationError && (
+                <div className="flex flex-col items-center gap-2 pt-2">
+                  <p className="text-sm text-red-600 font-medium">
+                    {allocationError}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleAllocateHotels}
+                    className="px-4 py-2 bg-[#0F2757] hover:bg-[#162259] text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                  >
+                    Retry Allocation
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        }
+
         return (
-          <div className="flex flex-col items-center justify-center py-6 space-y-6 animate-in fade-in zoom-in duration-300">
-            <div className="flex flex-col items-center gap-4">
-              <Loader2 className="h-10 w-10 text-[#0F2757] animate-spin" />
-              <div className="text-center">
-                <h3 className="text-xl font-semibold text-gray-900 font-figtree">
-                  Allocating Hotels...
+          <div className="space-y-6 animate-in fade-in duration-300">
+            <div className="flex items-center gap-3 pb-4">
+              <div className="size-10 bg-[#0F2757]/10 text-[#0F2757] rounded-lg flex justify-center items-center shrink-0 border border-[#0F2757]/20">
+                <Building2 className="h-5 w-5" />
+              </div>
+              <div className="text-left">
+                <h3 className="text-lg font-semibold text-gray-900 font-figtree">
+                  Hotel Allocation
                 </h3>
-                <p className="text-sm text-gray-500 mt-1">
-                  Finding the best hotels for your passengers...
+                <p className="text-sm text-gray-500 mt-0.5">
+                  Our AI-powered system will automatically assign hotels based
+                  on:
                 </p>
               </div>
             </div>
 
-            <div className="w-full max-w-md bg-white border border-gray-100 shadow-sm rounded-xl p-5 space-y-4">
-              {[
-                { step: 1, label: "Analyzing booking requirements" },
-                { step: 2, label: "Checking hotel availability" },
-                { step: 3, label: "Optimizing room assignments" },
-                { step: 4, label: "Calculating costs" },
-              ].map((item) => {
-                const isCompleted = allocationProgress >= item.step;
-                const isCurrent = allocationProgress === item.step - 1;
-
-                return (
-                  <div
-                    key={item.step}
-                    className="flex items-center gap-3 text-sm font-medium transition-all duration-200"
-                  >
-                    {isCompleted ? (
-                      <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
-                    ) : isCurrent ? (
-                      <Loader2 className="h-5 w-5 text-[#0F2757] animate-spin shrink-0" />
-                    ) : (
-                      <Circle className="h-5 w-5 text-gray-300 shrink-0" />
-                    )}
-                    <span
-                      className={
-                        isCompleted
-                          ? "text-gray-900 font-medium"
-                          : isCurrent
-                            ? "text-gray-900 font-semibold"
-                            : "text-gray-400"
-                      }
-                    >
-                      {item.label}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="w-full max-w-md bg-gray-50 rounded-xl p-4 flex items-start gap-3 border border-gray-200">
-              <Info className="h-5 w-5 text-gray-500 shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-semibold text-gray-900">
-                  You can safely navigate away
+            <div className="grid grid-cols-3 gap-6 w-full">
+              <div className="bg-white border border-gray-100 shadow-sm rounded-xl p-5 flex flex-col items-center text-center">
+                <Plane className="h-6 w-6 text-blue-500 mb-3" />
+                <h4 className="font-semibold text-gray-900 text-sm">
+                  Travel Class
+                </h4>
+                <p className="text-xs text-gray-500 mt-1">
+                  Business / Economy preferences
                 </p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  This process continues in the background. We'll notify you
-                  when allocation is complete.
+              </div>
+              <div className="bg-white border border-gray-100 shadow-sm rounded-xl p-5 flex flex-col items-center text-center">
+                <Building2 className="h-6 w-6 text-rose-500 mb-3" />
+                <h4 className="font-semibold text-gray-900 text-sm">
+                  Availability
+                </h4>
+                <p className="text-xs text-gray-500 mt-1">
+                  Real-time hotel inventory
+                </p>
+              </div>
+              <div className="bg-white border border-gray-100 shadow-sm rounded-xl p-5 flex flex-col items-center text-center">
+                <Settings className="h-6 w-6 text-purple-500 mb-3" />
+                <h4 className="font-semibold text-gray-900 text-sm">
+                  Preferences
+                </h4>
+                <p className="text-xs text-gray-500 mt-1">
+                  Your airline's settings
                 </p>
               </div>
             </div>
 
             {allocationError && (
-              <div className="flex flex-col items-center gap-2 pt-2">
-                <p className="text-sm text-red-600 font-medium">{allocationError}</p>
-                <button
-                  type="button"
-                  onClick={handleAllocateHotels}
-                  className="px-4 py-2 bg-[#0F2757] hover:bg-[#162259] text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer"
-                >
-                  Retry Allocation
-                </button>
+              <div className="w-full bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl text-sm text-left">
+                {allocationError}
               </div>
             )}
+
+            <div className="flex items-center justify-between pt-2">
+              <button
+                type="button"
+                onClick={handlePrevStep}
+                className="flex items-center gap-2 border border-gray-200 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2.5 px-5 rounded-lg transition-colors cursor-pointer text-sm"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                <span>Back</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleAllocateHotels}
+                disabled={isAllocating}
+                className="bg-[#2B3B67] hover:bg-[#1E2B4D] disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-medium py-2.5 px-6 rounded-lg transition-colors cursor-pointer text-sm inline-flex items-center gap-2"
+              >
+                <Building2 className="h-5 w-5" />
+                <span>Allocate Hotel Reservations</span>
+              </button>
+            </div>
           </div>
         );
       case 5:
@@ -3221,32 +3322,21 @@ export default function CancellationWizard({
             <div className="flex justify-end pt-2">
               <button
                 type="button"
-                onClick={() => {
-                  onSave({
-                    id: flightId
-                      ? String(flightId)
-                      : initialData?.id ||
-                      Math.random().toString(36).substring(7),
-                    flight: newFlight || "TRE",
-                    route:
-                      newDepartureAirport && newArrivalAirport
-                        ? `${newDepartureAirport} ➔ ${newArrivalAirport}`
-                        : "",
-                    cancellationDate: newDate
-                      ? new Date(newDate).toISOString()
-                      : new Date().toISOString(),
-                    bookings: totalBookingsCount || 1,
-                    passengers: totalPassengersCount || 1,
-                    totalCost: totalPayment || 120,
-                    status: "Published",
-                    reason:
-                      newReason || selectedReasonTag || "Weather disruption",
-                  });
-                }}
-                className="bg-[#2B3B67] hover:bg-[#1E2B4D] text-white font-medium py-2.5 px-6 rounded-lg transition-colors cursor-pointer text-sm inline-flex items-center gap-2"
+                onClick={handlePublishFlight}
+                disabled={isPublishingFlight}
+                className="bg-[#2B3B67] hover:bg-[#1E2B4D] disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-medium py-2.5 px-6 rounded-lg transition-colors cursor-pointer text-sm inline-flex items-center gap-2"
               >
-                <Send className="h-4 w-4" />
-                <span>Send Confirmations & Publish</span>
+                {isPublishingFlight ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Publishing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send className="h-4 w-4" />
+                    <span>Send Confirmations & Publish</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

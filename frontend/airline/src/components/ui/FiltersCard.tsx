@@ -1,4 +1,6 @@
-import { X } from "lucide-react";
+"use client";
+
+import { Search, X } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 
 interface FiltersCardProps {
@@ -13,13 +15,38 @@ interface FiltersCardProps {
 }
 
 export function FiltersCard({
+  searchQuery,
+  setSearchQuery,
+  searchPlaceholder = "Search...",
   onClearFilters,
   filterDescriptionText,
   children,
+  showSearch = true,
   className,
 }: FiltersCardProps) {
   return (
-    <div className={cn("rounded-[12px] border border-[#E5E7EB] bg-white p-[17px]", className)}>
+    <div
+      className={cn(
+        "space-y-[14px] rounded-[12px] border border-[#E5E7EB] bg-white p-[17px]",
+        className,
+      )}
+    >
+      {/* Search */}
+      {showSearch && setSearchQuery && (
+        <div className="relative">
+          <span className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+            <Search className="h-5 w-5 text-[#6B7280]" />
+          </span>
+          <input
+            type="text"
+            placeholder={searchPlaceholder}
+            value={searchQuery ?? ""}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="block h-11 w-full rounded-[8px] border border-[#D1D5DB] bg-[#F3F4F6] py-[14px] pl-11 pr-4 text-[16px] text-slate-950 placeholder-[#6B7280] transition-all hover:bg-slate-100/50 focus:border-[#0F2757] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0F2757]/20"
+          />
+        </div>
+      )}
+
       {/* Filter row */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-[12px]">{children}</div>
@@ -36,7 +63,9 @@ export function FiltersCard({
 
       {/* Summary text */}
       {filterDescriptionText && (
-        <div className="text-[#6B7280] text-[14px] h-[17px] -mt-1">{filterDescriptionText}</div>
+        <div className="text-[#6B7280] text-[14px] h-[17px] -mt-1">
+          {filterDescriptionText}
+        </div>
       )}
     </div>
   );
