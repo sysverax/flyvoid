@@ -21,4 +21,3 @@ export * from "./hotel-booking-response.dto";
 export * from "./hotel-summary-cancelled-flight.dto";
 export * from "./hotel-allocations.dto";
 export * from "./cancel-flight-hotel-booking-list-response.dto";
-export * from "./hotel-booking-detail-response.dto";
