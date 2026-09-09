@@ -61,6 +61,7 @@ import {
   HotelAllocationsResponse,
   HotelSummaryCancelledFlightSummaryDto,
   HotelBookingItemDTO,
+  HotelBookingDetailDataDto,
 } from "@/src/services/cancellation.service";
 import { airportsService, AirportDTO } from "@/src/services/airports.service";
 
@@ -841,6 +842,62 @@ export default function CancellationWizard({
   const [isBookingDetailsOpen, setIsBookingDetailsOpen] = useState(false);
   const [selectedBookingForDrawer, setSelectedBookingForDrawer] =
     useState<any>(null);
+  const [selectedDrawerFlightId, setSelectedDrawerFlightId] = useState<
+    number | string | null
+  >(null);
+  const [selectedDrawerHotelBookingId, setSelectedDrawerHotelBookingId] =
+    useState<number | string | null>(null);
+  const [selectedDrawerDetailData, setSelectedDrawerDetailData] =
+    useState<HotelBookingDetailDataDto | null>(null);
+  const [loadingEyeBookingId, setLoadingEyeBookingId] = useState<
+    number | string | null
+  >(null);
+
+  const handleOpenBookingDetails = async (
+    hb: HotelBookingItemDTO,
+    pb: any,
+    hotelBookingId: string,
+    hotelName: string,
+    rating: string,
+    rooms: number,
+    bookingCost: number,
+    travelClass: string,
+  ) => {
+    const fId = hb.cancelledFlightId || flightId;
+    setSelectedBookingForDrawer({
+      ...pb,
+      hotelBookingId,
+      hotelName,
+      rating,
+      totalRooms: rooms,
+      totalCost: bookingCost,
+      travelClass,
+    });
+    setSelectedDrawerFlightId(fId);
+    setSelectedDrawerHotelBookingId(hb.id);
+
+    if (!fId || !hb.id) {
+      setSelectedDrawerDetailData(null);
+      setIsBookingDetailsOpen(true);
+      return;
+    }
+
+    setLoadingEyeBookingId(hb.id);
+    try {
+      const res = await cancellationService.getHotelBookingDetail(fId, hb.id);
+      if (res?.data) {
+        setSelectedDrawerDetailData(res.data);
+      } else {
+        setSelectedDrawerDetailData(null);
+      }
+    } catch (err: any) {
+      console.error("Failed to fetch hotel booking details:", err);
+      setSelectedDrawerDetailData(null);
+    } finally {
+      setLoadingEyeBookingId(null);
+      setIsBookingDetailsOpen(true);
+    }
+  };
 
   // Step 3 Pagination state
   const [step3CurrentPage, setStep3CurrentPage] = useState(1);
@@ -2923,21 +2980,26 @@ export default function CancellationWizard({
                           <TableCell>
                             <button
                               type="button"
-                              onClick={() => {
-                                setSelectedBookingForDrawer({
-                                  ...pb,
+                              disabled={loadingEyeBookingId === hb.id}
+                              onClick={() =>
+                                handleOpenBookingDetails(
+                                  hb,
+                                  pb,
                                   hotelBookingId,
                                   hotelName,
-                                  rating: hb.rating,
-                                  totalRooms: rooms,
-                                  totalCost: bookingCost,
+                                  hb.rating,
+                                  rooms,
+                                  bookingCost,
                                   travelClass,
-                                });
-                                setIsBookingDetailsOpen(true);
-                              }}
-                              className="p-1.5 text-gray-400 hover:text-[#0F2757] hover:bg-gray-100 rounded transition-colors cursor-pointer"
+                                )
+                              }
+                              className="p-1.5 text-gray-400 hover:text-[#0F2757] hover:bg-gray-100 rounded transition-colors cursor-pointer disabled:opacity-80"
                             >
-                              <Eye className="h-4 w-4" />
+                              {loadingEyeBookingId === hb.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin text-[#0F2757]" />
+                              ) : (
+                                <Eye className="h-4 w-4" />
+                              )}
                             </button>
                           </TableCell>
                         </TableRow>
@@ -3039,6 +3101,9 @@ export default function CancellationWizard({
                                 type="button"
                                 onClick={() => {
                                   setSelectedBookingForDrawer(b);
+                                  setSelectedDrawerFlightId(flightId);
+                                  setSelectedDrawerHotelBookingId(null);
+                                  setSelectedDrawerDetailData(null);
                                   setIsBookingDetailsOpen(true);
                                 }}
                                 className="p-1.5 text-gray-400 hover:text-[#0F2757] hover:bg-gray-100 rounded transition-colors cursor-pointer"
@@ -3462,8 +3527,15 @@ export default function CancellationWizard({
 
       <BookingDetailsDrawer
         isOpen={isBookingDetailsOpen}
-        onClose={() => setIsBookingDetailsOpen(false)}
+        onClose={() => {
+          setIsBookingDetailsOpen(false);
+          setSelectedDrawerHotelBookingId(null);
+          setSelectedDrawerDetailData(null);
+        }}
         booking={selectedBookingForDrawer}
+        flightId={selectedDrawerFlightId}
+        hotelBookingId={selectedDrawerHotelBookingId}
+        detailData={selectedDrawerDetailData}
       />
     </div>
   );
