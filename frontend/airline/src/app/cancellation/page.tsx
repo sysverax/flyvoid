@@ -48,6 +48,7 @@ import {
   ReviewFlightResponse,
   HotelSummaryCancelledFlightSummaryDto,
   HotelBookingItemDTO,
+  HotelBookingDetailDataDto,
 } from "@/src/services/cancellation.service";
 
 const ENUM_TO_TRAVEL_CLASS: Record<string, string> = {
@@ -200,6 +201,13 @@ function PublishedDetailView({
   // Drawer state
   const [selectedBookingForDrawer, setSelectedBookingForDrawer] =
     useState<any>(null);
+  const [selectedDrawerHotelBookingId, setSelectedDrawerHotelBookingId] =
+    useState<number | string | null>(null);
+  const [selectedDrawerDetailData, setSelectedDrawerDetailData] =
+    useState<HotelBookingDetailDataDto | null>(null);
+  const [loadingEyeBookingId, setLoadingEyeBookingId] = useState<
+    number | string | null
+  >(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   const flightId = Number(cancellation.id);
@@ -715,40 +723,69 @@ function PublishedDetailView({
                         })}
                       </TableCell>
                       <TableCell>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedBookingForDrawer({
-                              ...pb,
-                              hotelBookingId,
-                              hotelName,
-                              rating: hb.rating,
-                              totalRooms: rooms,
-                              totalCost: bookingCost,
-                              travelClass,
-                              roomName:
-                                (hb as any).rooms?.[0]?.roomName ||
-                                (hb as any).rooms?.[0]?.name ||
-                                "Standard Twin Room",
-                              roomType:
-                                (hb as any).rooms?.[0]?.roomName ||
-                                (hb as any).rooms?.[0]?.name ||
-                                "Standard Twin Room",
-                              checkInDate:
-                                (hb as any).checkInDate ||
-                                cancellationDateDisplay,
-                              checkOutDate: (hb as any).checkOutDate,
-                              hotelAddress:
-                                (hb as any).hotelAddress ||
-                                (hb as any).address,
-                            });
-                            setIsDrawerOpen(true);
-                          }}
-                          className="p-1.5 text-gray-400 hover:text-[#0F2757] hover:bg-gray-100 rounded transition-colors cursor-pointer"
-                          title="View details"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </button>
+                            <button
+                              type="button"
+                              disabled={loadingEyeBookingId === hb.id}
+                              onClick={async () => {
+                                const pb = hb.passengerBooking;
+                                const hotelBookingIdStr = `HB-${String(hb.id).padStart(6, "0")}`;
+                                setSelectedBookingForDrawer({
+                                  ...pb,
+                                  hotelBookingId: hotelBookingIdStr,
+                                  hotelName,
+                                  rating: hb.rating,
+                                  totalRooms: rooms,
+                                  totalCost: bookingCost,
+                                  travelClass,
+                                  roomName:
+                                    (hb as any).rooms?.[0]?.roomName ||
+                                    (hb as any).rooms?.[0]?.name ||
+                                    "Standard Twin Room",
+                                  roomType:
+                                    (hb as any).rooms?.[0]?.roomName ||
+                                    (hb as any).rooms?.[0]?.name ||
+                                    "Standard Twin Room",
+                                  checkInDate:
+                                    (hb as any).checkInDate ||
+                                    cancellationDateDisplay,
+                                  checkOutDate: (hb as any).checkOutDate,
+                                  hotelAddress:
+                                    (hb as any).hotelAddress ||
+                                    (hb as any).address,
+                                });
+                                setSelectedDrawerHotelBookingId(hb.id);
+
+                                if (!flightId || !hb.id) {
+                                  setSelectedDrawerDetailData(null);
+                                  setIsDrawerOpen(true);
+                                  return;
+                                }
+
+                                setLoadingEyeBookingId(hb.id);
+                                try {
+                                  const res = await cancellationService.getHotelBookingDetail(flightId, hb.id);
+                                  if (res?.data) {
+                                    setSelectedDrawerDetailData(res.data);
+                                  } else {
+                                    setSelectedDrawerDetailData(null);
+                                  }
+                                } catch (err: any) {
+                                  console.error("Failed to fetch hotel booking details:", err);
+                                  setSelectedDrawerDetailData(null);
+                                } finally {
+                                  setLoadingEyeBookingId(null);
+                                  setIsDrawerOpen(true);
+                                }
+                              }}
+                              className="p-1.5 text-gray-400 hover:text-[#0F2757] hover:bg-gray-100 rounded transition-colors cursor-pointer disabled:opacity-80"
+                              title="View details"
+                            >
+                              {loadingEyeBookingId === hb.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin text-[#0F2757]" />
+                              ) : (
+                                <Eye className="h-4 w-4" />
+                              )}
+                            </button>
                       </TableCell>
                     </TableRow>
                   );
@@ -795,8 +832,15 @@ function PublishedDetailView({
 
       <BookingDetailsDrawer
         isOpen={isDrawerOpen}
-        onClose={() => setIsDrawerOpen(false)}
+        onClose={() => {
+          setIsDrawerOpen(false);
+          setSelectedDrawerHotelBookingId(null);
+          setSelectedDrawerDetailData(null);
+        }}
         booking={selectedBookingForDrawer}
+        flightId={flightId}
+        hotelBookingId={selectedDrawerHotelBookingId}
+        detailData={selectedDrawerDetailData}
       />
     </div>
   );
