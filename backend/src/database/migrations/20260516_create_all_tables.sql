@@ -717,6 +717,7 @@ CREATE TABLE public.hotel_allocations (
   updated_at timestamp without time zone NOT NULL DEFAULT now(),
 
   status varchar(50) NOT NULL DEFAULT 'draft',
+  reason text,
 
   CONSTRAINT fk_hotel_allocations_flight
     FOREIGN KEY (cancelled_flight_id)

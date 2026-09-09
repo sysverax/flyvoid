@@ -419,6 +419,7 @@ export class CancelledFlightsRepository {
       totalPlatformFee: number;
       totalPrice: number;
       totalEarnings: number;
+      totalHotelRooms: number;
     },
     requestId: string,
     requestLogger: Logger,
@@ -446,6 +447,7 @@ export class CancelledFlightsRepository {
             totalHotelTaxes: payload.totalHotelTaxes,
             totalPlatformFee: payload.totalPlatformFee,
             totalPrice: payload.totalPrice,
+            totalHotelRooms: payload.totalHotelRooms,
             totalEarnings: payload.totalEarnings,
             status: FlightStatus.ALLOCATED,
           },
@@ -483,6 +485,28 @@ export class CancelledFlightsRepository {
       .getManyAndCount();
 
     return { hotelBookings, totalHotelBookings };
+  }
+
+  async findHotelBookingById(
+    id: number,
+    requestId: string,
+  ): Promise<HotelAllocationEntity | null> {
+    this.logger.debug(
+      "Finding hotel booking by id",
+      "CancelledFlightsRepository",
+      requestId,
+      { id },
+    );
+
+    return this.allocationRepo.findOne({
+      where: { id },
+      relations: [
+        "booking",
+        "cancelledFlight",
+        "cancelledFlight.departureAirport",
+        "cancelledFlight.arrivalAirport",
+      ],
+    });
   }
 
   async findHotelSummaryByFlightId(

@@ -73,6 +73,7 @@ import {
   CancelledFlightHotelBookingListResponseDto,
   CancelledFlightBookingsListResponseDto,
   HotelSummaryCancelledFlightResponseDto,
+  HotelBookingDetailResponseDto,
 } from "./dto";
 import { PaginationQueryDto } from "../common/dto/pagination-query.dto";
 import { AuthenticatedRequest } from "../auth/interfaces/authenticated-request.interface";
@@ -94,6 +95,7 @@ import { GetCancelledFlightsQueryDto } from "./dto/get-cancelled-flights-query.d
   HotelAllocationsDto,
   CancelledFlightHotelBookingListResponseDto,
   HotelSummaryCancelledFlightResponseDto,
+  HotelBookingDetailResponseDto,
 )
 export class CancelledFlightsController {
   constructor(private readonly service: CancelledFlightsService) {}
@@ -672,6 +674,61 @@ export class CancelledFlightsController {
       data,
       requestId,
       "Hotel bookings fetched successfully",
+    );
+  }
+
+  // ── GET /cancelled-flights/:id/hotel-bookings/:hotelBookingId ───────────
+  @Get(":id/hotel-bookings/:hotelBookingId")
+  @RequireUserTypes(UserType.PLATFORM, UserType.AIRLINE)
+  @RequireAccessControl({
+    platform: {
+      asset: PlatformAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.VIEW],
+    },
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.VIEW],
+    },
+  })
+  @ApiOperation({
+    summary: "Get details of a specific hotel booking",
+    description:
+      "Returns the flight, passenger booking, and hotel details for a single hotel booking.",
+  })
+  @ApiParam({ name: "id", description: "Cancelled flight id" })
+  @ApiParam({ name: "hotelBookingId", description: "Hotel booking id" })
+  @ApiOkResponse({
+    schema: {
+      properties: {
+        success: { type: "boolean", example: true },
+        data: {
+          $ref: getSchemaPath(HotelBookingDetailResponseDto),
+        },
+      },
+    },
+  })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/cancelled-flights/:id/hotel-bookings/:hotelBookingId",
+      "Hotel booking not found",
+    ),
+  })
+  async getHotelBookingDetail(
+    @Param("id", ParseIntPipe) id: number,
+    @Param("hotelBookingId", ParseIntPipe) hotelBookingId: number,
+    @Req() req: AuthenticatedRequest,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<HotelBookingDetailResponseDto>> {
+    const data = await this.service.getHotelBookingDetail(
+      id,
+      hotelBookingId,
+      req.user,
+      requestId,
+    );
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Hotel booking details fetched successfully",
     );
   }
 

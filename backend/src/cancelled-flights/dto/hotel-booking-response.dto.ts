@@ -52,7 +52,7 @@ export class HotelBookingResponseDto {
     example:
       "Best available 4-star option for business class; special request (wheelchair_assistance) recorded but not verifiable from hotel data - confirm with the hotel directly.",
   })
-  reason!: string | null;
+  reason?: string | null;
 
   @ApiProperty({
     description: "Timestamp when the hotel booking was created",

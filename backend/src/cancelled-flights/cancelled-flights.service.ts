@@ -7,6 +7,7 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { Readable } from "stream";
+import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
 import { LoggerService } from "../common/logger/logger.service";
 import { CancelledFlightsRepository } from "./cancelled-flights.repository";
 import { BookingEntity } from "./entities/booking.entity";
@@ -31,6 +32,7 @@ import {
   BookHotelRequestDto,
   CancelledFlightHotelBookingListResponseDto,
   HotelSummaryCancelledFlightResponseDto,
+  HotelBookingDetailResponseDto,
 } from "./dto";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
 import { PaginationQueryDto } from "../common/dto/pagination-query.dto";
@@ -206,6 +208,13 @@ const ROOM_SPLIT_RULES: Record<string, RoomSplitPlan> = {
 @Injectable()
 export class CancelledFlightsService {
   private readonly context = "CancelledFlightsService";
+  private readonly sesClient = new SESClient({
+    region: config.ses.region,
+    credentials: {
+      accessKeyId: config.ses.accessKeyId,
+      secretAccessKey: config.ses.secretAccessKey,
+    },
+  });
 
   constructor(
     private readonly cancelledFlightsRepository: CancelledFlightsRepository,
@@ -1171,7 +1180,7 @@ export class CancelledFlightsService {
           totalAdults: bookingStats.totalAdults,
           totalChildren: bookingStats.totalChildren,
         },
-        hotelBookingStats: null,
+        hotelBookingStats: null, // No hotel booking stats at this point
         requestId,
       });
 
@@ -2281,6 +2290,7 @@ export class CancelledFlightsService {
           acc.totalPlatformFee += item.platformFee ?? 0;
           acc.totalPriceForAll += item.totalPrice ?? 0;
           acc.totalEarnings += item.earnings ?? 0;
+          acc.totalHotelRooms += item.totalRooms ?? 0;
           return acc;
         },
         {
@@ -2291,6 +2301,7 @@ export class CancelledFlightsService {
           totalHotelTaxes: 0,
           totalPlatformFee: 0,
           totalPriceForAll: 0,
+          totalHotelRooms: 0,
           totalEarnings: 0,
         },
       );
@@ -2303,6 +2314,7 @@ export class CancelledFlightsService {
     const totalPlatformFee = this.roundCurrency(rawTotals.totalPlatformFee);
     const totalPriceForAll = this.roundCurrency(rawTotals.totalPriceForAll);
     const totalEarnings = this.roundCurrency(rawTotals.totalEarnings);
+    const totalHotelRooms = this.roundCurrency(rawTotals.totalHotelRooms);
 
     await this.cancelledFlightsRepository.saveHotelAllocations(
       flightId,
@@ -2315,6 +2327,7 @@ export class CancelledFlightsService {
         totalHotelTaxes,
         totalPlatformFee,
         totalPrice: totalPriceForAll,
+        totalHotelRooms,
         totalEarnings,
       },
       requestId,
@@ -2327,7 +2340,7 @@ export class CancelledFlightsService {
       totalBookings: bookings.length,
       allocatedBookings: allocated.length,
       failedBookings: failed,
-      totalRooms,
+      totalRooms: totalHotelRooms,
       totalActualPrice,
       totalSellingPrice,
       totalDiscounts,
@@ -2337,6 +2350,7 @@ export class CancelledFlightsService {
     };
   }
 
+  // ── List bookings ────────────────────────────────────────────────────────
   async listHotelBookings(
     flightId: number,
     pagination: PaginationQueryDto,
@@ -2382,6 +2396,94 @@ export class CancelledFlightsService {
     };
   }
 
+  // ── Get single hotel booking detail ─────────────────────────────────────
+  async getHotelBookingDetail(
+    flightId: number,
+    hotelBookingId: number,
+    user: AuthenticatedUser,
+    requestId: string,
+  ): Promise<HotelBookingDetailResponseDto> {
+    const hotelBooking =
+      await this.cancelledFlightsRepository.findHotelBookingById(
+        hotelBookingId,
+        requestId,
+      );
+
+    if (!hotelBooking || hotelBooking.cancelledFlightId !== flightId) {
+      throw new NotFoundException(
+        `Hotel booking '${hotelBookingId}' not found for flight '${flightId}'`,
+      );
+    }
+
+    if (
+      user.userType === UserType.AIRLINE &&
+      hotelBooking.cancelledFlight.airlineId !== user.airlineId
+    ) {
+      throw new NotFoundException(
+        `Hotel booking '${hotelBookingId}' not found for flight '${flightId}'`,
+      );
+    }
+
+    const flight = hotelBooking.cancelledFlight;
+    const includeMarginFields = user.userType !== UserType.AIRLINE;
+
+    return {
+      id: hotelBooking.id,
+      flight: {
+        id: flight.id,
+        flightNumber: flight.flightNumber,
+        airlineId: flight.airlineId,
+        departureAirportId: flight.departureAirportId,
+        arrivalAirportId: flight.arrivalAirportId,
+        cancellationDate: flight.cancellationDate,
+        cancellationReason: flight.cancellationReason ?? null,
+        status: flight.status,
+        createdAt: flight.createdAt.toISOString(),
+        updatedAt: flight.updatedAt?.toISOString() ?? null,
+        route: {
+          departureAirport: {
+            id: flight.departureAirport.id,
+            code: flight.departureAirport.iataCode,
+            name: flight.departureAirport.name,
+          },
+          arrivalAirport: {
+            id: flight.arrivalAirport.id,
+            code: flight.arrivalAirport.iataCode,
+            name: flight.arrivalAirport.name,
+          },
+        },
+      },
+      booking: this.toBookingResponse(hotelBooking.booking),
+      hotel: {
+        hotelCode: hotelBooking.hotelCode,
+        hotelName: hotelBooking.hotelName,
+        category: hotelBooking.category,
+        checkInDate: hotelBooking.checkInDate,
+        checkOutDate: hotelBooking.checkOutDate,
+        rooms: hotelBooking.rooms ?? [],
+        totalRooms: hotelBooking.totalRooms,
+        actualPrice: Number(hotelBooking.actualPrice),
+        ...(includeMarginFields && {
+          buyingPrice: Number(hotelBooking.buyingPrice),
+        }),
+        sellingPrice: Number(hotelBooking.sellingPrice),
+        tax: Number(hotelBooking.tax),
+        platformFee: Number(hotelBooking.platformFee),
+        discount: Number(hotelBooking.discount),
+        totalPrice: Number(hotelBooking.totalPrice),
+        ...(includeMarginFields && {
+          earnings: Number(hotelBooking.earnings),
+        }),
+        status: hotelBooking.status,
+        bookingReference: hotelBooking.bookingReference,
+        createdAt: hotelBooking.createdAt.toISOString(),
+        updatedAt: hotelBooking.updatedAt?.toISOString() ?? null,
+        reason: hotelBooking.reason ?? null,
+      },
+    };
+  }
+
+  // ── Hotel Summary of a cancelled flight ───────────────────────────────────────────────
   async hotelSummaryByFlight(
     flightId: number,
     requestId: string,
@@ -2411,6 +2513,8 @@ export class CancelledFlightsService {
     };
   }
 
+  // ── Mark as paid ─────────────────────────────────────────────────────────
+
   async processPayment(
     flightId: number,
     requestId: string,
@@ -2439,6 +2543,8 @@ export class CancelledFlightsService {
     return this.toCancelledFlightResponse(updatedFlight);
   }
 
+  // ── Publish ──────────────────────────────────────────────────────────────
+
   async publishFlight(
     flightId: number,
     requestId: string,
@@ -2465,8 +2571,68 @@ export class CancelledFlightsService {
         requestId,
       });
 
+    // const bookings =
+    //   await this.cancelledFlightsRepository.findBookingsByFlightId(
+    //     flightId,
+    //     requestId,
+    //   );
+
+    // await Promise.all(
+    //   bookings.map((booking) =>
+    //     this.sendFlightPublishedEmail(
+    //       booking.email,
+    //       `${booking.firstName} ${booking.lastName}`,
+    //       updatedFlight.flightNumber,
+    //       requestId,
+    //       requestLogger,
+    //     ),
+    //   ),
+    // );
+
     return this.toCancelledFlightResponse(updatedFlight);
   }
+
+  // private async sendFlightPublishedEmail(
+  //   recipientEmail: string,
+  //   passengerName: string,
+  //   flightNumber: string,
+  //   requestId: string,
+  //   requestLogger: Logger,
+  // ): Promise<void> {
+  //   try {
+  //     await this.sesClient.send(
+  //       new SendEmailCommand({
+  //         Source: config.ses.fromEmail,
+  //         Destination: {
+  //           ToAddresses: [recipientEmail],
+  //         },
+  //         Message: {
+  //           Subject: {
+  //             Data: `Hotel arrangements confirmed for cancelled flight ${flightNumber}`,
+  //           },
+  //           Body: {
+  //             Text: {
+  //               Data: `Dear ${passengerName}, your hotel arrangements for cancelled flight ${flightNumber} have been confirmed. Please check your email for further details.`,
+  //             },
+  //           },
+  //         },
+  //       }),
+  //     );
+  //   } catch (error: any) {
+  //     requestLogger.error(
+  //       `Failed to send flight published email to '${recipientEmail}'`,
+  //       {
+  //         context: this.context,
+  //         requestId,
+  //         recipientEmail,
+  //         flightNumber,
+  //         error: error?.message,
+  //       },
+  //     );
+  //   }
+  // }
+
+
 
   // async allocateHotel(
   //   flightId: number,
