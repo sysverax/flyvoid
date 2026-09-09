@@ -27,6 +27,8 @@ import {
   ReviewCancelledFlightResponseDto,
   AllocateHotelDto,
   BookHotelRequestDto,
+  CancelledFlightHotelBookingListResponseDto,
+  HotelSummaryCancelledFlightResponseDto,
 } from "./dto";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
 import { PaginationQueryDto } from "../common/dto/pagination-query.dto";
@@ -44,6 +46,7 @@ import { GetCancelledFlightsQueryDto } from "./dto/get-cancelled-flights-query.d
 import { HotelAllocationsDto } from "./dto/hotel-allocations.dto";
 import { request } from "http";
 import { config } from "../config/config";
+import { CancelledFlightBookingsListResponseDto } from "./dto/cancelled-flight-bookings-list-response.dto";
 
 type AllocationStatus =
   | "RECOMMENDED"
@@ -1026,9 +1029,9 @@ export class CancelledFlightsService {
     flightId: number,
     pagination: PaginationQueryDto,
     requestId: string,
-  ) {
+  ): Promise<CancelledFlightBookingsListResponseDto> {
     await this.requireFlight(flightId, requestId);
-    const bookings =
+    const { bookings, totalBookings } =
       await this.cancelledFlightsRepository.findBookingsByFlightIdWithPagination(
         flightId,
         pagination.page || 1,
@@ -1036,7 +1039,12 @@ export class CancelledFlightsService {
         requestId,
       );
 
-    return bookings.map((b) => this.toBookingResponse(b));
+    return {
+      bookings: bookings.map((b) => this.toBookingResponse(b)),
+      totalBookings,
+      currentPage: pagination.page || 1,
+      limit: pagination.limit || 10,
+    };
   }
 
   // ── Review ───────────────────────────────────────────────────────────────
@@ -1161,7 +1169,7 @@ export class CancelledFlightsService {
           totalAdults: bookingStats.totalAdults,
           totalChildren: bookingStats.totalChildren,
         },
-        HotelBookingStats: null, // No hotel booking stats at this point
+        hotelBookingStats: null,
         requestId,
       });
 
@@ -2247,16 +2255,7 @@ export class CancelledFlightsService {
     });
 
     // step 2 - Save the formatted hotel bookings to the database
-    const {
-      totalActualPrice,
-      totalBuyingPrice,
-      totalSellingPrice,
-      totalDiscounts,
-      totalHotelTaxes,
-      totalPlatformFee,
-      totalPriceForAll,
-      totalEarnings,
-    } = hotelBookings
+    const rawTotals = hotelBookings
       .filter((item) => item.allocationStatus === "RECOMMENDED")
       .reduce(
         (acc, item) => {
@@ -2281,6 +2280,15 @@ export class CancelledFlightsService {
           totalEarnings: 0,
         },
       );
+
+    const totalActualPrice = this.roundCurrency(rawTotals.totalActualPrice);
+    const totalBuyingPrice = this.roundCurrency(rawTotals.totalBuyingPrice);
+    const totalSellingPrice = this.roundCurrency(rawTotals.totalSellingPrice);
+    const totalDiscounts = this.roundCurrency(rawTotals.totalDiscounts);
+    const totalHotelTaxes = this.roundCurrency(rawTotals.totalHotelTaxes);
+    const totalPlatformFee = this.roundCurrency(rawTotals.totalPlatformFee);
+    const totalPriceForAll = this.roundCurrency(rawTotals.totalPriceForAll);
+    const totalEarnings = this.roundCurrency(rawTotals.totalEarnings);
 
     await this.cancelledFlightsRepository.saveHotelAllocations(
       flightId,
@@ -2313,6 +2321,136 @@ export class CancelledFlightsService {
       totalPlatformFee,
       currency,
     };
+  }
+
+  async listHotelBookings(
+    flightId: number,
+    pagination: PaginationQueryDto,
+    requestId: string,
+    requestLogger: Logger,
+  ): Promise<CancelledFlightHotelBookingListResponseDto> {
+    await this.requireFlight(flightId, requestId);
+    const { hotelBookings, totalHotelBookings } =
+      await this.cancelledFlightsRepository.findHotelBookingsByFlightIdWithPagination(
+        flightId,
+        pagination.page || 1,
+        pagination.limit || 10,
+        requestId,
+      );
+
+    return {
+      hotelBookings: hotelBookings.map((h) => ({
+        id: h.id,
+        passengerBooking: {
+          id: h.booking.id,
+          pnr: h.booking.pnr,
+          cancelledFlightId: h.booking.cancelledFlightId,
+          firstName: h.booking.firstName,
+          lastName: h.booking.lastName,
+          email: h.booking.email,
+          phone: h.booking.phone,
+          travelClass: h.booking.travelClass,
+          adults: h.booking.adults,
+          children: h.booking.children,
+        },
+        cancelledFlightId: h.cancelledFlightId,
+        hotelName: h.hotelName,
+        rating: h.category,
+        totalRooms: h.totalRooms,
+        totalCost: h.totalPrice,
+        createdAt: h.createdAt.toISOString(),
+        updatedAt: h.updatedAt?.toISOString() ?? null,
+      })),
+      totalHotelBookings: totalHotelBookings,
+      currentPage: pagination.page || 1,
+      limit: pagination.limit || 10,
+    };
+  }
+
+  async hotelSummaryByFlight(
+    flightId: number,
+    requestId: string,
+  ): Promise<HotelSummaryCancelledFlightResponseDto> {
+    const hotelSummary =
+      await this.cancelledFlightsRepository.findHotelSummaryByFlightId(
+        flightId,
+        requestId,
+      );
+
+    if (!hotelSummary) {
+      throw new NotFoundException(`Cancelled flight '${flightId}' not found`);
+    }
+
+    return {
+      summary: {
+        totalBookings: hotelSummary.totalBookings,
+        totalAdults: hotelSummary.totalAdults,
+        totalChildren: hotelSummary.totalChildren,
+        totalRooms: hotelSummary.totalRooms,
+        totalHotelCost: hotelSummary.totalHotelCost,
+        totalDiscount: hotelSummary.totalDiscount,
+        totalHotelTax: hotelSummary.totalHotelTax,
+        totalPlatformFee: hotelSummary.totalPlatformFee,
+        totalPayable: hotelSummary.totalCost,
+      },
+    };
+  }
+
+  async processPayment(
+    flightId: number,
+    requestId: string,
+  ): Promise<CancelledFlightResponseDto> {
+    const flight = await this.requireFlight(flightId, requestId);
+
+    if (flight.status !== FlightStatus.ALLOCATED) {
+      throw new BadRequestException(
+        `Cannot process payment for flight '${flightId}' from status '${flight.status}'. Flight must be in 'allocated' status.`,
+      );
+    }
+
+    const updatedFlight =
+      await this.cancelledFlightsRepository.updateFlightStatus({
+        cancelledFlightEntity: flight,
+        status: FlightStatus.PAID,
+        passengerBookingStats: {
+          totalBookings: null,
+          totalAdults: null,
+          totalChildren: null,
+        },
+        hotelBookingStats: null,
+        requestId,
+      });
+
+    return this.toCancelledFlightResponse(updatedFlight);
+  }
+
+  async publishFlight(
+    flightId: number,
+    requestId: string,
+    requestLogger: Logger,
+  ): Promise<CancelledFlightResponseDto> {
+    const flight = await this.requireFlight(flightId, requestId);
+
+    if (flight.status !== FlightStatus.PAID) {
+      throw new BadRequestException(
+        `Cannot publish flight '${flightId}' from status '${flight.status}'. Flight must be in 'paid' status.`,
+      );
+    }
+
+    const updatedFlight =
+      await this.cancelledFlightsRepository.updateFlightStatus({
+        cancelledFlightEntity: flight,
+        status: FlightStatus.PUBLISHED,
+        passengerBookingStats: {
+          totalBookings: null,
+          totalAdults: null,
+          totalChildren: null,
+        },
+        hotelBookingStats: null,
+        requestId,
+      });
+
+    return this.toCancelledFlightResponse(updatedFlight);
   }
 
   // async allocateHotel(

@@ -62,6 +62,14 @@ const statusStyles: Record<string, { bg: string; text: string }> = {
     bg: "bg-[#FEF3C7]",
     text: "text-[#92400E]",
   },
+  "Payment Pending": {
+    bg: "bg-[#FEF3C7]",
+    text: "text-[#92400E]",
+  },
+  "Payment Failed": {
+    bg: "bg-[#FEE2E2]",
+    text: "text-[#991B1B]",
+  },
   "Pending Approval": {
     bg: "bg-[#FEF3C7]",
     text: "text-[#92400E]",
@@ -89,6 +97,14 @@ const statusStyles: Record<string, { bg: string; text: string }> = {
   success: {
     bg: "bg-[#D1FAE5]",
     text: "text-[#065F46]",
+  },
+  Refunded: {
+    bg: "bg-[#DBEAFE]",
+    text: "text-[#1E40AF]",
+  },
+  refunded: {
+    bg: "bg-[#DBEAFE]",
+    text: "text-[#1E40AF]",
   },
   Failed: {
     bg: "bg-[#FEE2E2]",

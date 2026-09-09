@@ -145,7 +145,7 @@ export class CancelledFlightsRepository {
     cancelledFlightEntity,
     status,
     passengerBookingStats,
-    HotelBookingStats,
+    hotelBookingStats,
     requestId,
   }: {
     cancelledFlightEntity: CancelledFlightEntity;
@@ -154,12 +154,14 @@ export class CancelledFlightsRepository {
       totalBookings: number | null;
       totalAdults: number | null;
       totalChildren: number | null;
-    };
-    HotelBookingStats: {
+    } | null;
+    hotelBookingStats: {
       totalHotelRooms: number | null;
       totalPrice: number | null;
       totalBuyingPrice: number | null;
       totalSellingPrice: number | null;
+      totalDiscounts: number | null;
+      totalHotelTaxes: number | null;
       totalPlatformFee: number | null;
       totalEarnings: number | null;
     } | null;
@@ -173,35 +175,41 @@ export class CancelledFlightsRepository {
     );
 
     cancelledFlightEntity.status = status;
-    if (passengerBookingStats.totalBookings !== null) {
+    if (passengerBookingStats && passengerBookingStats.totalBookings !== null) {
       cancelledFlightEntity.totalBooking = passengerBookingStats.totalBookings;
     }
-    if (passengerBookingStats.totalAdults !== null) {
+    if (passengerBookingStats && passengerBookingStats.totalAdults !== null) {
       cancelledFlightEntity.totalAdults = passengerBookingStats.totalAdults;
     }
-    if (passengerBookingStats.totalChildren !== null) {
+    if (passengerBookingStats && passengerBookingStats.totalChildren !== null) {
       cancelledFlightEntity.totalChildren = passengerBookingStats.totalChildren;
     }
-    if (HotelBookingStats && HotelBookingStats.totalHotelRooms !== null) {
-      cancelledFlightEntity.totalHotelRooms = HotelBookingStats.totalHotelRooms;
+    if (hotelBookingStats && hotelBookingStats.totalHotelRooms !== null) {
+      cancelledFlightEntity.totalHotelRooms = hotelBookingStats.totalHotelRooms;
     }
-    if (HotelBookingStats && HotelBookingStats.totalPrice !== null) {
-      cancelledFlightEntity.totalPrice = HotelBookingStats.totalPrice;
+    if (hotelBookingStats && hotelBookingStats.totalPrice !== null) {
+      cancelledFlightEntity.totalPrice = hotelBookingStats.totalPrice;
     }
-    if (HotelBookingStats && HotelBookingStats.totalBuyingPrice !== null) {
+    if (hotelBookingStats && hotelBookingStats.totalBuyingPrice !== null) {
       cancelledFlightEntity.totalBuyingPrice =
-        HotelBookingStats.totalBuyingPrice;
+        hotelBookingStats.totalBuyingPrice;
     }
-    if (HotelBookingStats && HotelBookingStats.totalSellingPrice !== null) {
+    if (hotelBookingStats && hotelBookingStats.totalSellingPrice !== null) {
       cancelledFlightEntity.totalSellingPrice =
-        HotelBookingStats.totalSellingPrice;
+        hotelBookingStats.totalSellingPrice;
     }
-    if (HotelBookingStats && HotelBookingStats.totalPlatformFee !== null) {
+    if (hotelBookingStats && hotelBookingStats.totalDiscounts !== null) {
+      cancelledFlightEntity.totalDiscounts = hotelBookingStats.totalDiscounts;
+    }
+    if (hotelBookingStats && hotelBookingStats.totalHotelTaxes !== null) {
+      cancelledFlightEntity.totalHotelTaxes = hotelBookingStats.totalHotelTaxes;
+    }
+    if (hotelBookingStats && hotelBookingStats.totalPlatformFee !== null) {
       cancelledFlightEntity.totalPlatformFee =
-        HotelBookingStats.totalPlatformFee;
+        hotelBookingStats.totalPlatformFee;
     }
-    if (HotelBookingStats && HotelBookingStats.totalEarnings !== null) {
-      cancelledFlightEntity.totalEarnings = HotelBookingStats.totalEarnings;
+    if (hotelBookingStats && hotelBookingStats.totalEarnings !== null) {
+      cancelledFlightEntity.totalEarnings = hotelBookingStats.totalEarnings;
     }
     return this.flightRepo.save(cancelledFlightEntity);
   }
@@ -326,7 +334,7 @@ export class CancelledFlightsRepository {
     page: number,
     limit: number,
     requestId: string,
-  ): Promise<BookingEntity[]> {
+  ): Promise<{ bookings: BookingEntity[]; totalBookings: number }> {
     this.logger.debug(
       "Finding all bookings by flight id with pagination",
       "CancelledFlightsRepository",
@@ -336,16 +344,16 @@ export class CancelledFlightsRepository {
 
     const skip = (page - 1) * limit;
 
-    const bookings = await this.bookingRepo
+    const [bookings, totalBookings] = await this.bookingRepo
       .createQueryBuilder("booking")
       .where("booking.cancelled_flight_id = :cancelledFlightId", {
         cancelledFlightId,
       })
       .skip(skip)
       .take(limit)
-      .getMany();
+      .getManyAndCount();
 
-    return bookings;
+    return { bookings, totalBookings };
   }
 
   async findBookingStatsByFlightId(
@@ -381,7 +389,6 @@ export class CancelledFlightsRepository {
   }
 
   // ── HotelAllocation ──────────────────────────────────────────────────────
-
   async saveHotelAllocation(
     payload: Partial<HotelAllocationEntity>,
     requestId: string,
@@ -445,5 +452,74 @@ export class CancelledFlightsRepository {
         );
       },
     );
+  }
+
+  async findHotelBookingsByFlightIdWithPagination(
+    cancelledFlightId: number,
+    page: number,
+    limit: number,
+    requestId: string,
+  ): Promise<{
+    hotelBookings: HotelAllocationEntity[];
+    totalHotelBookings: number;
+  }> {
+    this.logger.debug(
+      "Finding all hotel bookings by flight id with pagination",
+      "CancelledFlightsRepository",
+      requestId,
+      { cancelledFlightId },
+    );
+
+    const skip = (page - 1) * limit;
+
+    const [hotelBookings, totalHotelBookings] = await this.allocationRepo
+      .createQueryBuilder("hotelBooking")
+      .leftJoinAndSelect("hotelBooking.booking", "booking")
+      .where("hotelBooking.cancelled_flight_id = :cancelledFlightId", {
+        cancelledFlightId,
+      })
+      .skip(skip)
+      .take(limit)
+      .getManyAndCount();
+
+    return { hotelBookings, totalHotelBookings };
+  }
+
+  async findHotelSummaryByFlightId(
+    cancelledFlightId: number,
+    requestId: string,
+  ): Promise<{
+    totalBookings: number;
+    totalAdults: number;
+    totalChildren: number;
+    totalRooms: number;
+    totalHotelCost: number;
+    totalDiscount: number;
+    totalHotelTax: number;
+    totalPlatformFee: number;
+    totalCost: number;
+  }> {
+    this.logger.debug(
+      "Finding hotel summary by flight id",
+      "CancelledFlightsRepository",
+      requestId,
+      { cancelledFlightId },
+    );
+
+    const flight = await this.flightRepo.findOne({
+      where: { id: cancelledFlightId },
+    });
+
+    return {
+      totalBookings: Number(flight?.totalBooking ?? 0),
+      totalAdults: Number(flight?.totalAdults ?? 0),
+      totalChildren: Number(flight?.totalChildren ?? 0),
+      totalRooms: Number(flight?.totalHotelRooms ?? 0),
+      totalHotelCost: Number(flight?.totalActualPrice ?? 0),
+      totalDiscount: Number(flight?.totalDiscounts ?? 0),
+      totalHotelTax: Number(flight?.totalHotelTaxes ?? 0),
+      totalPlatformFee: Number(flight?.totalPlatformFee ?? 0),
+      totalCost: Number(flight?.totalPrice ?? 0),
+    };
   }
 }

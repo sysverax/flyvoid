@@ -39,12 +39,12 @@ export type CancelledFlightApiStatus =
   | "published";
 export interface CreateCancelledFlightPayload {
   flightNumber: string;
-  airlineId: number;
   departureAirportId: number;
   arrivalAirportId: number;
   cancellationDate: string;
   cancellationReason?: string;
   cancellationReasonText?: string;
+  airlineId?: number;
 }
 
 export interface UpdateCancelledFlightPayload {
@@ -99,6 +99,103 @@ export interface ImportBookingResponse {
   }>;
 }
 
+export interface ReviewCancelledFlightData {
+  flight: {
+    id: number;
+    flightNumber: string;
+    airlineId: number;
+    departureAirportId: number;
+    arrivalAirportId: number;
+    route: {
+      departureAirport: {
+        id: number;
+        code: string;
+        name: string;
+      };
+      arrivalAirport: {
+        id: number;
+        code: string;
+        name: string;
+      };
+    };
+    cancellationDate: string;
+    cancellationReason: string | null;
+    status: string;
+    createdAt?: string;
+    updatedAt?: string | null;
+  };
+  summary: {
+    totalBookings: number;
+    totalAdults: number;
+    totalChildren: number;
+  };
+}
+
+export type ReviewFlightResponse = ReviewCancelledFlightData;
+
+export interface HotelAllocationsResponse {
+  cancelledFlightId: number;
+  status: string;
+  totalBookings: number;
+  allocatedBookings: number;
+  failedBookings: number;
+  totalRooms: number;
+  totalActualPrice: number;
+  totalSellingPrice: number;
+  totalDiscounts: number;
+  totalHotelTaxes: number;
+  totalPlatformFee: number;
+  currency: string;
+}
+
+export interface HotelSummaryCancelledFlightSummaryDto {
+  totalBookings: number;
+  totalAdults: number;
+  totalChildren: number;
+  totalRooms: number;
+  totalHotelCost: number;
+  totalDiscount: number;
+  totalHotelTax: number;
+  totalPlatformFee: number;
+  totalPayable: number;
+}
+
+export interface HotelSummaryResponse {
+  summary: HotelSummaryCancelledFlightSummaryDto;
+}
+
+export interface HotelBookingPassengerDto {
+  id: number;
+  cancelledFlightId: number;
+  pnr: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  travelClass: string;
+  adults: number;
+  children: number;
+}
+
+export interface HotelBookingItemDTO {
+  id: number;
+  passengerBooking: HotelBookingPassengerDto;
+  cancelledFlightId: number;
+  hotelName: string;
+  rating: string;
+  totalRooms: number;
+  totalCost: number | string;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
+export interface CancelledFlightHotelBookingListResponseDto {
+  hotelBookings: HotelBookingItemDTO[];
+  totalHotelBookings: number;
+  currentPage: number;
+  limit: number;
+}
+
 export const cancellationService = {
   async listCancelledFlights(params?: {
     page?: number;
@@ -127,16 +224,23 @@ export const cancellationService = {
     }
   },
 
+  async reviewFlight(flightId: number | string) {
+    try {
+      const response = await apiClient.get(
+        `/cancelled-flights/${flightId}/review`,
+      );
+      return response.data;
+    } catch (error: any) {
+      throw new Error(
+        extractErrorMessage(error, "Failed to fetch flight review details"),
+      );
+    }
+  },
+
   async createCancelledFlight(payload: CreateCancelledFlightPayload) {
     try {
-      const response = await apiClient.post("/cancelled-flights", {
-        flightNumber: payload.flightNumber,
-        departureAirportId: payload.departureAirportId,
-        arrivalAirportId: payload.arrivalAirportId,
-        cancellationDate: payload.cancellationDate,
-        cancellationReason: payload.cancellationReason,
-        cancellationReasonText: payload.cancellationReasonText,
-      });
+      const { airlineId, ...requestBody } = payload;
+      const response = await apiClient.post("/cancelled-flights", requestBody);
       return response.data;
     } catch (error: any) {
       throw new Error(
@@ -258,4 +362,100 @@ export const cancellationService = {
       throw new Error(extractErrorMessage(error, "Failed to confirm bookings"));
     }
   },
+
+  async allocateHotels(flightId: number | string) {
+    try {
+      const response = await apiClient.post(
+        `/cancelled-flights/${flightId}/hotel-allocations`,
+      );
+      return response.data;
+    } catch (error: any) {
+      throw new Error(
+        extractErrorMessage(error, "Failed to allocate hotels"),
+      );
+    }
+  },
+
+  async getHotelSummary(flightId: number | string): Promise<{
+    success: boolean;
+    data: HotelSummaryResponse;
+    message?: string;
+  }> {
+    try {
+      const response = await apiClient.get(
+        `/cancelled-flights/${flightId}/hotel-summary`,
+      );
+      return response.data;
+    } catch (error: any) {
+      throw new Error(
+        extractErrorMessage(error, "Failed to fetch hotel summary"),
+      );
+    }
+  },
+
+  async listHotelBookings(
+    flightId: number | string,
+    params?: { page?: number; limit?: number },
+  ): Promise<{
+    success: boolean;
+    data: CancelledFlightHotelBookingListResponseDto;
+    message?: string;
+  }> {
+    try {
+      const response = await apiClient.get(
+        `/cancelled-flights/${flightId}/hotel-bookings`,
+        {
+          params: {
+            page: params?.page || 1,
+            limit: params?.limit || 10,
+          },
+        },
+      );
+      return response.data;
+    } catch (error: any) {
+      throw new Error(
+        extractErrorMessage(error, "Failed to fetch hotel bookings"),
+      );
+    }
+  },
+
+  async processPayment(
+    flightId: number | string,
+    payload?: { paymentMethod?: string; [key: string]: any },
+  ): Promise<{
+    success: boolean;
+    data?: any;
+    message?: string;
+  }> {
+    try {
+      const response = await apiClient.post(
+        `/cancelled-flights/${flightId}/payment`,
+        payload || {},
+      );
+      return response.data;
+    } catch (error: any) {
+      throw new Error(
+        extractErrorMessage(error, "Failed to process payment"),
+      );
+    }
+  },
+
+  async publishFlight(flightId: number | string): Promise<{
+    success: boolean;
+    data?: any;
+    message?: string;
+  }> {
+    try {
+      const response = await apiClient.post(
+        `/cancelled-flights/${flightId}/publish`,
+      );
+      return response.data;
+    } catch (error: any) {
+      throw new Error(
+        extractErrorMessage(error, "Failed to publish cancelled flight"),
+      );
+    }
+  },
 };
+
+

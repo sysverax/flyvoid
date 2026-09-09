@@ -14,6 +14,7 @@ import {
 } from "@/src/components/ui/table";
 import { FiltersCard } from "@/src/components/ui/FiltersCard";
 import { Dropdown } from "@/src/components/ui/Dropdown";
+import { TruncatedTooltip } from "@/src/components/ui/TruncatedTooltip";
 import { Pagination } from "@/src/components/ui/pagination";
 import BookingDetail from "./BookingDetail";
 
@@ -428,10 +429,14 @@ export default function BookingsPage() {
                       {b.departure}
                     </TableCell>
                     <TableCell className="text-left">
-                      {b.hotel}
+                      <TruncatedTooltip text={b.hotel} side="top">
+                        <div className="max-w-[160px] truncate cursor-default">{b.hotel}</div>
+                      </TruncatedTooltip>
                     </TableCell>
                     <TableCell>
-                      {b.contactEmail}
+                      <TruncatedTooltip text={b.contactEmail} side="top">
+                        <div className="max-w-[160px] truncate cursor-default">{b.contactEmail}</div>
+                      </TruncatedTooltip>
                     </TableCell>
                     <TableCell>
                       {b.passengers}

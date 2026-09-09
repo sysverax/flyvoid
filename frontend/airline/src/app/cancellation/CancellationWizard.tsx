@@ -57,8 +57,13 @@ import {
   cancellationService,
   CreateBookingPayload,
   BookingDTO,
+  ReviewFlightResponse,
+  HotelAllocationsResponse,
+  HotelSummaryCancelledFlightSummaryDto,
+  HotelBookingItemDTO,
 } from "@/src/services/cancellation.service";
-import { airportsService } from "@/src/services/airports.service";
+import { airportsService, AirportDTO } from "@/src/services/airports.service";
+
 
 const NOTE_TAG_TO_ENUM: Record<string, string> = {
   "Wheelchair Assistance": "wheelchair_assistance",
@@ -92,15 +97,6 @@ const ENUM_TO_TRAVEL_CLASS: Record<string, string> = {
   economy: "Economy",
 };
 
-function getAirportId(
-  val: string,
-  airportCodeToId: Record<string, number>,
-): number {
-  if (!val) return 1;
-  const parsed = parseInt(val, 10);
-  if (!isNaN(parsed) && parsed > 0) return parsed;
-  return airportCodeToId[val.toUpperCase()] || 1;
-}
 
 function mapCancellationReason(tag: string, text: string): string {
   const combined = (tag + " " + text).toLowerCase();
@@ -194,10 +190,27 @@ function getInitialStepFromStatus(status?: string): number {
   if (!status) return 1;
   const s = status.toLowerCase();
   if (s === "draft") return 1;
-  if (s === "verified") return 4;
-  if (s === "allocated") return 5;
-  if (s === "paid") return 7;
+  if (s === "in_progress" || s === "in progress") return 2;
+  if (
+    s === "verified" ||
+    s === "confirmed" ||
+    s === "passengers_booking_confirmed"
+  )
+    return 4;
+  if (s === "allocated" || s === "hotel_allocation_in_progress") return 5;
+  if (s === "paid" || s === "published") return 7;
   return 1;
+}
+
+function toIsoDate(dateStr: string): string {
+  if (!dateStr) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return dateStr;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 export default function CancellationWizard({
@@ -218,25 +231,73 @@ export default function CancellationWizard({
     ? initialData.route.split(/➔|->|→/).map((s) => s.trim())
     : [];
   const [newFlight, setNewFlight] = useState(initialData?.flight || "");
-  const [newDate, setNewDate] = useState(initialData?.cancellationDate || "");
+  const [newDate, setNewDate] = useState(() =>
+    toIsoDate(initialData?.cancellationDate || ""),
+  );
   const [newDepartureAirport, setNewDepartureAirport] = useState(
     routeParts[0] || "",
   );
   const [newArrivalAirport, setNewArrivalAirport] = useState(
     routeParts[1] || "",
   );
-  const [airportOptions, setAirportOptions] = useState<
-    Array<{ value: string; label: string }>
-  >([{ value: "", label: "Select airport" }]);
-  const [airportCodeToId, setAirportCodeToId] = useState<
-    Record<string, number>
-  >({});
-  const [checkInDate, setCheckInDate] = useState(
-    initialData?.cancellationDate || "",
+  const [checkInDate, setCheckInDate] = useState(() =>
+    toIsoDate(initialData?.cancellationDate || ""),
   );
   const [checkOutDate, setCheckOutDate] = useState("");
   const [selectedReasonTag, setSelectedReasonTag] = useState("");
   const [newReason, setNewReason] = useState(initialData?.reason || "");
+
+  const [airports, setAirports] = useState<AirportDTO[]>([]);
+  const [isLoadingAirports, setIsLoadingAirports] = useState(false);
+
+  useEffect(() => {
+    if (activeStep !== 1) return;
+    if (airports.length > 0) return;
+
+    let isMounted = true;
+    const fetchAirports = async () => {
+      setIsLoadingAirports(true);
+      try {
+        const response = await airportsService.getAirports({ page: 1, limit: 100 });
+        if (isMounted && response?.airports && response.airports.length > 0) {
+          setAirports(response.airports);
+        }
+      } catch (err) {
+        if (isMounted) {
+          setAirports([]);
+        }
+      } finally {
+        if (isMounted) setIsLoadingAirports(false);
+      }
+    };
+    fetchAirports();
+    return () => {
+      isMounted = false;
+    };
+  }, [activeStep, airports.length]);
+
+  const airportOptions = useMemo(() => {
+    return [
+      { value: "", label: isLoadingAirports ? "Loading airports..." : "Select airport" },
+      ...airports.map((a) => ({
+        value: a.iataCode || String(a.id),
+        label: `${a.iataCode} - ${a.name || a.city}`,
+      })),
+    ];
+  }, [airports, isLoadingAirports]);
+
+  const resolveAirportId = (val: string): number => {
+    if (!val) return 0;
+    const found = airports.find(
+      (a) =>
+        (a.iataCode && a.iataCode.toUpperCase() === val.toUpperCase()) ||
+        String(a.id) === val
+    );
+    if (found) return found.id;
+    const parsed = parseInt(val, 10);
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+    return 0;
+  };
 
   // Step 1 Validation & Error State (matching admin invite modal)
   type Step1Field =
@@ -300,17 +361,12 @@ export default function CancellationWizard({
   const handleStep1Blur = (field: Step1Field) => () => {
     setStep1Touched((prev) => ({ ...prev, [field]: true }));
     const val =
-      field === "flightNumber"
-        ? newFlight
-        : field === "cancellationDate"
-          ? newDate
-          : field === "departureAirport"
-            ? newDepartureAirport
-            : field === "arrivalAirport"
-              ? newArrivalAirport
-              : field === "checkInDate"
-                ? checkInDate
-                : checkOutDate;
+      field === "flightNumber" ? newFlight :
+        field === "cancellationDate" ? newDate :
+          field === "departureAirport" ? newDepartureAirport :
+            field === "arrivalAirport" ? newArrivalAirport :
+              field === "checkInDate" ? checkInDate :
+                checkOutDate;
     const msg = validateStep1(field, val);
     setStep1Errors((prev) => ({ ...prev, [field]: msg || undefined }));
   };
@@ -390,7 +446,7 @@ export default function CancellationWizard({
         setPaymentConfirmed(true);
       }
       setNewFlight(initialData.flight || "");
-      setNewDate(initialData.cancellationDate || "");
+      setNewDate(toIsoDate(initialData.cancellationDate || ""));
       const parts = initialData.route
         ? initialData.route.split(/➔|->|→/).map((s) => s.trim())
         : [];
@@ -411,42 +467,11 @@ export default function CancellationWizard({
     }
   }, [newDate]);
 
-  useEffect(() => {
-    const fetchAirportOptions = async () => {
-      const airports = await airportsService.getAirports({
-        page: 1,
-        limit: 50,
-        shorten: true,
-      });
-      if (!Array.isArray(airports) || airports.length === 0) return;
-
-      const seenCodes = new Set<string>();
-      const nextOptions: Array<{ value: string; label: string }> = [
-        { value: "", label: "Select airport" },
-      ];
-      const nextCodeToId: Record<string, number> = {};
-
-      for (const airport of airports) {
-        const code = airport.iataCode?.trim().toUpperCase();
-        if (!code || seenCodes.has(code)) continue;
-
-        seenCodes.add(code);
-        nextCodeToId[code] = airport.id;
-        nextOptions.push({ value: code, label: `${code} - ${airport.name}` });
-      }
-
-      setAirportCodeToId(nextCodeToId);
-      setAirportOptions(nextOptions);
-    };
-
-    fetchAirportOptions();
-  }, []);
-
   // Step 2 Manual booking states
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [bookingTab, setBookingTab] = useState<"upload" | "manual">("manual");
   const [currentPage, setCurrentPage] = useState(1);
-  const [resultsPerPage, setResultsPerPage] = useState(5);
+  const [resultsPerPage, setResultsPerPage] = useState(10);
   const [bookingPnr, setBookingPnr] = useState("");
   const [bookingFirstName, setBookingFirstName] = useState("");
   const [bookingLastName, setBookingLastName] = useState("");
@@ -512,19 +537,13 @@ export default function CancellationWizard({
   const handleStep2Blur = (field: Step2Field) => () => {
     setStep2Touched((prev) => ({ ...prev, [field]: true }));
     const val =
-      field === "pnr"
-        ? bookingPnr
-        : field === "firstName"
-          ? bookingFirstName
-          : field === "lastName"
-            ? bookingLastName
-            : field === "email"
-              ? bookingEmail
-              : field === "travelClass"
-                ? bookingClass
-                : field === "adults"
-                  ? bookingAdults
-                  : bookingPhone;
+      field === "pnr" ? bookingPnr :
+        field === "firstName" ? bookingFirstName :
+          field === "lastName" ? bookingLastName :
+            field === "email" ? bookingEmail :
+              field === "travelClass" ? bookingClass :
+                field === "adults" ? bookingAdults :
+                  bookingPhone;
     const msg = validateStep2(field, val);
     setStep2Errors((prev) => ({ ...prev, [field]: msg || undefined }));
   };
@@ -647,35 +666,184 @@ export default function CancellationWizard({
     }
   };
 
-  useEffect(() => {
-    if (activeStep === 2 && flightId) {
-      fetchBookings(flightId);
-    }
-  }, [activeStep, flightId]);
+  // Step 3 Review state
+  const [reviewData, setReviewData] = useState<ReviewFlightResponse | null>(null);
+  const [isLoadingReview, setIsLoadingReview] = useState(false);
 
   // Step 4 Allocation state
   const [selectedHotels, setSelectedHotels] = useState<string[]>([]);
   const [isAutoAllocate, setIsAutoAllocate] = useState(true);
   const [isAllocating, setIsAllocating] = useState(false);
   const [allocationProgress, setAllocationProgress] = useState(0);
+  const [hotelAllocations, setHotelAllocations] =
+    useState<HotelAllocationsResponse | null>(null);
+  const [allocationError, setAllocationError] = useState<string | null>(null);
+
+  const fetchReviewData = async (fId: number) => {
+    setIsLoadingReview(true);
+    try {
+      const res = await cancellationService.reviewFlight(fId);
+      const data = res?.data || res;
+      setReviewData(data);
+      if (data?.flight) {
+        if (data.flight.flightNumber) setNewFlight(data.flight.flightNumber);
+        if (data.flight.cancellationDate)
+          setNewDate(toIsoDate(data.flight.cancellationDate));
+        if (data.flight.route?.departureAirport?.code) {
+          setNewDepartureAirport(data.flight.route.departureAirport.code);
+        }
+        if (data.flight.route?.arrivalAirport?.code) {
+          setNewArrivalAirport(data.flight.route.arrivalAirport.code);
+        }
+        if (data.flight.cancellationReason) {
+          setNewReason(data.flight.cancellationReason);
+        }
+      }
+    } catch (err: any) {
+      console.error("Failed to load flight review:", err);
+      toast.error(err.message || "Failed to load flight review details");
+    } finally {
+      setIsLoadingReview(false);
+    }
+  };
+
+  // Step 5 Hotel Summary & Hotel Bookings state
+  const [hotelSummary, setHotelSummary] =
+    useState<HotelSummaryCancelledFlightSummaryDto | null>(null);
+  const [isLoadingHotelSummary, setIsLoadingHotelSummary] = useState(false);
+  const [hotelBookings, setHotelBookings] = useState<HotelBookingItemDTO[]>([]);
+  const [totalHotelBookings, setTotalHotelBookings] = useState(0);
+  const [isLoadingHotelBookings, setIsLoadingHotelBookings] = useState(false);
+  const [step5CurrentPage, setStep5CurrentPage] = useState(1);
+  const [step5ResultsPerPage, setStep5ResultsPerPage] = useState(10);
+
+  const isFetchingHotelSummaryRef = useRef(false);
+  const isFetchingHotelBookingsRef = useRef(false);
+
+  const fetchHotelSummary = async (fId: number) => {
+    if (isFetchingHotelSummaryRef.current) return;
+    isFetchingHotelSummaryRef.current = true;
+    setIsLoadingHotelSummary(true);
+    try {
+      const res = await cancellationService.getHotelSummary(fId);
+      const summary =
+        res?.data?.summary || (res?.data as any) || (res as any)?.summary;
+      if (summary) {
+        setHotelSummary(summary);
+      }
+    } catch (err: any) {
+      console.error("Failed to load hotel summary:", err);
+    } finally {
+      setIsLoadingHotelSummary(false);
+      isFetchingHotelSummaryRef.current = false;
+    }
+  };
+
+  const fetchHotelBookings = async (fId: number, page = 1, limit = 10) => {
+    if (isFetchingHotelBookingsRef.current) return;
+    isFetchingHotelBookingsRef.current = true;
+    setIsLoadingHotelBookings(true);
+    try {
+      const res = await cancellationService.listHotelBookings(fId, { page, limit });
+      const data = res?.data || (res as any);
+      if (data?.hotelBookings) {
+        setHotelBookings(data.hotelBookings);
+        setTotalHotelBookings(data.totalHotelBookings ?? data.hotelBookings.length);
+      }
+    } catch (err: any) {
+      console.error("Failed to load hotel bookings:", err);
+    } finally {
+      setIsLoadingHotelBookings(false);
+      isFetchingHotelBookingsRef.current = false;
+    }
+  };
 
   useEffect(() => {
-    if (isAllocating) {
-      if (allocationProgress < 4) {
-        const timer = setTimeout(() => {
-          setAllocationProgress((prev) => prev + 1);
-        }, 1500);
-        return () => clearTimeout(timer);
-      } else {
-        const timer = setTimeout(() => {
-          setIsAllocating(false);
-          setAllocationProgress(0);
-          setActiveStep(5);
-        }, 1000);
-        return () => clearTimeout(timer);
+    if (activeStep === 2 && flightId) {
+      fetchBookings(flightId);
+    } else if (activeStep === 3 && flightId) {
+      fetchReviewData(flightId);
+      if (addedBookings.length === 0) {
+        fetchBookings(flightId);
       }
+    } else if ((activeStep === 5 || activeStep === 6) && flightId) {
+      fetchHotelSummary(flightId);
     }
-  }, [isAllocating, allocationProgress]);
+  }, [activeStep, flightId]);
+
+  useEffect(() => {
+    if (activeStep === 5 && flightId) {
+      fetchHotelBookings(flightId, step5CurrentPage, step5ResultsPerPage);
+    }
+  }, [activeStep, flightId, step5CurrentPage, step5ResultsPerPage]);
+
+  const handleAllocateHotels = async () => {
+    setIsAllocating(true);
+    setAllocationError(null);
+
+    if (!flightId) {
+      return;
+    }
+
+    try {
+      const allocRes = await cancellationService.allocateHotels(flightId);
+      const allocData = allocRes?.data || allocRes;
+      setHotelAllocations(allocData);
+      setAllocationProgress(4);
+      setTimeout(() => {
+        setIsAllocating(false);
+        setAllocationProgress(0);
+        setActiveStep(5);
+        toast.success(
+          allocRes?.message || "Hotels allocated successfully",
+        );
+      }, 800);
+    } catch (error: any) {
+      setIsAllocating(false);
+      setAllocationError(error.message || "Failed to allocate hotels");
+      toast.error(error.message || "Failed to allocate hotels");
+    }
+  };
+
+  useEffect(() => {
+    if (activeStep === 4) {
+      setIsAllocating(true);
+      setAllocationError(null);
+
+      // Loop through the 4 loading sections continuously
+      const progressTimer = setInterval(() => {
+        setAllocationProgress((prev) => (prev < 4 ? prev + 1 : 0));
+      }, 1200);
+
+      // Auto-trigger backend allocation if flightId exists and not already allocated
+      if (flightId && !hotelAllocations) {
+        cancellationService
+          .allocateHotels(flightId)
+          .then((allocRes) => {
+            const allocData = allocRes?.data || allocRes;
+            setHotelAllocations(allocData);
+            setAllocationProgress(4);
+            setTimeout(() => {
+              setIsAllocating(false);
+              setAllocationProgress(0);
+              setActiveStep(5);
+              toast.success(
+                allocRes?.message || "Hotels allocated successfully",
+              );
+            }, 800);
+          })
+          .catch((error: any) => {
+            setIsAllocating(false);
+            setAllocationError(error.message || "Failed to allocate hotels");
+            toast.error(error.message || "Failed to allocate hotels");
+          });
+      }
+
+      return () => {
+        clearInterval(progressTimer);
+      };
+    }
+  }, [activeStep, flightId]);
 
   // Step 6 Payment state
   const [paymentMethod, setPaymentMethod] = useState("visa");
@@ -683,6 +851,7 @@ export default function CancellationWizard({
   const [paymentConfirmed, setPaymentConfirmed] = useState(
     () => initialData?.status?.toLowerCase() === "paid",
   );
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
   // Step 5 Drawer state
   const [isBookingDetailsOpen, setIsBookingDetailsOpen] = useState(false);
@@ -691,29 +860,31 @@ export default function CancellationWizard({
 
   // Step 3 Pagination state
   const [step3CurrentPage, setStep3CurrentPage] = useState(1);
-  const [step3ResultsPerPage, setStep3ResultsPerPage] = useState(5);
+  const [step3ResultsPerPage, setStep3ResultsPerPage] = useState(10);
 
-  // Step 5 Pagination state
-  const [step5CurrentPage, setStep5CurrentPage] = useState(1);
-  const [step5ResultsPerPage, setStep5ResultsPerPage] = useState(5);
+
 
   // Step 7 Publish state
   const [notifySMS, setNotifySMS] = useState(true);
   const [notifyEmail, setNotifyEmail] = useState(true);
   const [notifyGround, setNotifyGround] = useState(true);
 
-  // Calculated state values
-  const totalBookingsCount = addedBookings.length;
-  const totalPassengersCount = addedBookings.reduce(
-    (sum, b) => sum + b.adults + b.children,
-    0,
-  );
-  const hotelCost = totalBookingsCount * 120;
-  const platformDiscount = hotelCost * 0.1;
-  const hotelTax = hotelCost * 0.08;
-  const subtotal = hotelCost - platformDiscount + hotelTax;
-  const platformFee = subtotal * 0.05;
-  const totalPayment = subtotal + platformFee;
+  const totalBookingsCount =
+    hotelSummary?.totalBookings ?? addedBookings.length;
+  const totalAdultsCount =
+    hotelSummary?.totalAdults ??
+    addedBookings.reduce((sum, b) => sum + (b.adults || 0), 0);
+  const totalChildrenCount =
+    hotelSummary?.totalChildren ??
+    addedBookings.reduce((sum, b) => sum + (b.children || 0), 0);
+  const totalPassengersCount = totalAdultsCount + totalChildrenCount;
+  const totalRoomsCount = hotelSummary?.totalRooms ?? 0;
+  const hotelCost = hotelSummary?.totalHotelCost ?? 0;
+  const platformDiscount = hotelSummary?.totalDiscount ?? 0;
+  const hotelTax = hotelSummary?.totalHotelTax ?? 0;
+  const platformFee = hotelSummary?.totalPlatformFee ?? 0;
+  const totalPayment = hotelSummary?.totalPayable ?? 0;
+  const currencySymbol = hotelAllocations?.currency === "EUR" ? "€" : "$";
 
   const handleTagClick = (tag: string) => {
     setSelectedReasonTag(tag);
@@ -847,7 +1018,6 @@ export default function CancellationWizard({
   };
 
   const handleAddBooking = async () => {
-    // Run all validations
     const fields: Step2Field[] = [
       "pnr",
       "firstName",
@@ -922,20 +1092,20 @@ export default function CancellationWizard({
             prev.map((b) =>
               b.id === editingBookingId
                 ? {
-                    ...b,
-                    pnr: bookingPnr,
-                    firstName: bookingFirstName,
-                    lastName: bookingLastName,
-                    email: bookingEmail,
-                    phone: bookingPhone,
-                    travelClass: bookingClass,
-                    adults: Number(bookingAdults) || 1,
-                    children: Number(bookingChildren) || 0,
-                    notes: bookingNotesText,
-                    tags: selectedNoteTags,
-                  }
-                : b,
-            ),
+                  ...b,
+                  pnr: bookingPnr,
+                  firstName: bookingFirstName,
+                  lastName: bookingLastName,
+                  email: bookingEmail,
+                  phone: bookingPhone,
+                  travelClass: bookingClass,
+                  adults: Number(bookingAdults) || 1,
+                  children: Number(bookingChildren) || 0,
+                  notes: bookingNotesText,
+                  tags: selectedNoteTags,
+                }
+                : b
+            )
           );
         }
         toast.success("Booking updated successfully");
@@ -985,128 +1155,120 @@ export default function CancellationWizard({
   };
 
   const handlePrevStep = () => {
-    if (activeStep === 1) {
-      onClose();
-    } else {
+    if (activeStep > 1) {
       setActiveStep((prev) => prev - 1);
     }
   };
 
-  const handleNextStep = async () => {
-    if (activeStep === 1) {
-      const errs: Partial<Record<Step1Field, string>> = {};
-      const flightErr = validateStep1("flightNumber", newFlight);
-      if (flightErr) errs.flightNumber = flightErr;
+  const handleBackToCancelledFlights = () => {
+    onClose();
+  };
 
-      const dateErr = validateStep1("cancellationDate", newDate);
-      if (dateErr) errs.cancellationDate = dateErr;
+  const saveFlightStep1 = async (advance = true) => {
+    const errs: Partial<Record<Step1Field, string>> = {};
+    const flightErr = validateStep1("flightNumber", newFlight);
+    if (flightErr) errs.flightNumber = flightErr;
 
-      const depErr = validateStep1("departureAirport", newDepartureAirport);
-      if (depErr) errs.departureAirport = depErr;
+    const dateErr = validateStep1("cancellationDate", newDate);
+    if (dateErr) errs.cancellationDate = dateErr;
 
-      const arrErr = validateStep1("arrivalAirport", newArrivalAirport, {
-        departureAirport: newDepartureAirport,
+    const depErr = validateStep1("departureAirport", newDepartureAirport);
+    if (depErr) errs.departureAirport = depErr;
+
+    const arrErr = validateStep1("arrivalAirport", newArrivalAirport, {
+      departureAirport: newDepartureAirport,
+    });
+    if (arrErr) errs.arrivalAirport = arrErr;
+
+    const checkInErr = validateStep1("checkInDate", checkInDate);
+    if (checkInErr) errs.checkInDate = checkInErr;
+
+    const checkOutErr = validateStep1("checkOutDate", checkOutDate, {
+      checkInDate,
+    });
+    if (checkOutErr) errs.checkOutDate = checkOutErr;
+
+    if (Object.keys(errs).length > 0) {
+      setStep1Errors(errs);
+      setStep1Touched({
+        flightNumber: true,
+        cancellationDate: true,
+        departureAirport: true,
+        arrivalAirport: true,
+        checkInDate: true,
+        checkOutDate: true,
       });
-      if (arrErr) errs.arrivalAirport = arrErr;
+      setTimeout(() => {
+        const first = document.querySelector(".field-error");
+        first?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 50);
+      return;
+    }
 
-      const checkInErr = validateStep1("checkInDate", checkInDate);
-      if (checkInErr) errs.checkInDate = checkInErr;
+    const depId = resolveAirportId(newDepartureAirport);
+    const arrId = resolveAirportId(newArrivalAirport);
 
-      const checkOutErr = validateStep1("checkOutDate", checkOutDate, {
-        checkInDate,
-      });
-      if (checkOutErr) errs.checkOutDate = checkOutErr;
+    if (depId === arrId) {
+      toast.error("Departure and arrival airports must be different");
+      return;
+    }
 
-      if (Object.keys(errs).length > 0) {
-        setStep1Errors(errs);
-        setStep1Touched({
-          flightNumber: true,
-          cancellationDate: true,
-          departureAirport: true,
-          arrivalAirport: true,
-          checkInDate: true,
-          checkOutDate: true,
-        });
-        setTimeout(() => {
-          const first = document.querySelector(".field-error");
-          first?.scrollIntoView({ behavior: "smooth", block: "center" });
-        }, 50);
-        return;
-      }
+    setIsCreatingFlight(true);
+    try {
+      const formattedDate = toIsoDate(newDate);
+      const reasonEnum = mapCancellationReason(selectedReasonTag, newReason);
+      const reasonText =
+        newReason.trim() ||
+        selectedReasonTag ||
+        "Severe weather conditions at departure";
 
-      setIsCreatingFlight(true);
-      try {
-        const formattedDate = newDate.includes("T")
-          ? newDate.split("T")[0]
-          : newDate;
-
-        const depId = getAirportId(newDepartureAirport, airportCodeToId);
-        const arrId = getAirportId(newArrivalAirport, airportCodeToId);
-        const reasonEnum = mapCancellationReason(selectedReasonTag, newReason);
-        const reasonText =
-          newReason.trim() ||
-          selectedReasonTag ||
-          "Severe weather conditions at departure";
-
-        const existingFlightId =
-          createdFlightId ||
-          (initialData?.id && !isNaN(Number(initialData.id))
-            ? Number(initialData.id)
-            : null);
-
-        if (existingFlightId) {
-          const response = await cancellationService.updateCancelledFlight(
-            existingFlightId,
-            {
-              flightNumber: newFlight.trim(),
-              departureAirportId: depId,
-              arrivalAirportId: arrId,
-              cancellationDate: formattedDate,
-              cancellationReason: reasonEnum,
-              cancellationReasonText: reasonText,
-            },
-          );
-
-          toast.success(response?.message || "Cancelled flight updated");
-        } else {
-          let airlineId = 1;
-          if (typeof window !== "undefined") {
-            const userStr = sessionStorage.getItem("airline_current_user");
-            if (userStr) {
-              try {
-                const u = JSON.parse(userStr);
-                if (u.airlineId) airlineId = Number(u.airlineId);
-              } catch (e) {}
-            }
-          }
-
-          const response = await cancellationService.createCancelledFlight({
+      if (flightId) {
+        const response = await cancellationService.updateCancelledFlight(
+          flightId,
+          {
             flightNumber: newFlight.trim(),
-            airlineId: airlineId,
             departureAirportId: depId,
             arrivalAirportId: arrId,
             cancellationDate: formattedDate,
             cancellationReason: reasonEnum,
             cancellationReasonText: reasonText,
-          });
+          },
+        );
+        toast.success(
+          response?.message || "Cancelled flight updated successfully",
+        );
+      } else {
+        const response = await cancellationService.createCancelledFlight({
+          flightNumber: newFlight.trim(),
+          departureAirportId: depId,
+          arrivalAirportId: arrId,
+          cancellationDate: formattedDate,
+          cancellationReason: reasonEnum,
+          cancellationReasonText: reasonText,
+        });
 
-          if (response?.data?.id) {
-            setCreatedFlightId(response.data.id);
-          }
-          toast.success(response?.message || "Cancelled flight created");
+        if (response?.data?.id) {
+          setCreatedFlightId(response.data.id);
         }
-
-        setActiveStep(2);
-      } catch (error: any) {
-        toast.error(error.message || "Failed to save cancelled flight details");
-      } finally {
-        setIsCreatingFlight(false);
+        toast.success(response?.message || "Cancelled flight created");
       }
+
+      if (advance) {
+        setActiveStep(2);
+      }
+    } catch (error: any) {
+      toast.error(error.message || "Failed to save cancelled flight details");
+    } finally {
+      setIsCreatingFlight(false);
+    }
+  };
+
+  const handleNextStep = async () => {
+    if (activeStep === 1) {
+      await saveFlightStep1(true);
     } else if (activeStep === 2) {
       if (addedBookings.length === 0) {
-        toast.error(
-          "Please add at least one booking (either manually or by uploading an Excel file).",
-        );
+        toast.error("At least one booking is required.");
         return;
       }
       setActiveStep(3);
@@ -1118,16 +1280,39 @@ export default function CancellationWizard({
       setIsConfirmingBookings(true);
       try {
         const res = await cancellationService.confirmBookings(flightId);
-        toast.success(res?.message || "Bookings confirmed successfully");
+        toast.success(res?.message || "Passenger booking details confirmed");
         setActiveStep(4);
       } catch (error: any) {
-        toast.error(error.message || "Failed to confirm bookings");
+        toast.error(error.message || "Failed to confirm passenger details");
       } finally {
         setIsConfirmingBookings(false);
       }
+    } else if (activeStep === 4) {
+      if (flightId && !hotelAllocations && !isAllocating) {
+        await handleAllocateHotels();
+      } else {
+        setActiveStep(5);
+      }
+    } else if (activeStep === 6) {
+      if (!flightId) {
+        setActiveStep(7);
+        return;
+      }
+      setIsProcessingPayment(true);
+      try {
+        const res = await cancellationService.processPayment(flightId, {
+          paymentMethod,
+        });
+        toast.success(res?.message || "Payment processed successfully");
+        setActiveStep(7);
+      } catch (error: any) {
+        toast.error(error.message || "Failed to process payment");
+      } finally {
+        setIsProcessingPayment(false);
+      }
     } else if (activeStep === 7) {
       const added: Cancellation = {
-        id: String(Date.now()),
+        id: String(flightId || Date.now()),
         flight: newFlight,
         route: `${newDepartureAirport} ➔ ${newArrivalAirport}`,
         cancellationDate: formatDateString(newDate),
@@ -1165,13 +1350,24 @@ export default function CancellationWizard({
 
     return (
       <div className="w-full bg-white border border-[#E5E7EB] rounded-2xl p-6 overflow-x-auto">
-        <div className="flex items-start w-full min-w-[800px]">
+        <div className="flex items-start w-full min-w-[920px]">
           {steps.map((step, idx) => {
             const isActive = activeStep === step.number;
             const isCompleted = activeStep > step.number;
             return (
               <Fragment key={step.number}>
-                <div className="flex flex-col items-center shrink-0 w-[140px] z-10">
+                <div
+                  onClick={() => {
+                    if (isCompleted || (step.number < activeStep && flightId)) {
+                      setActiveStep(step.number);
+                    }
+                  }}
+                  className={cn(
+                    "flex flex-col items-center shrink-0 w-[140px] z-10",
+                    (isCompleted || (step.number < activeStep && !!flightId)) &&
+                    "cursor-pointer",
+                  )}
+                >
                   {/* Circle */}
                   <div
                     className={cn(
@@ -1187,7 +1383,7 @@ export default function CancellationWizard({
                   </div>
 
                   {/* Text Content */}
-                  <div className="flex flex-col items-center text-center mt-2 px-1 w-full">
+                  <div className="flex flex-col items-center text-center mt-2 px-1 max-w-[115px]">
                     <span
                       className={cn(
                         "text-[14px] font-semibold transition-colors whitespace-nowrap",
@@ -1208,7 +1404,7 @@ export default function CancellationWizard({
                 {idx < steps.length - 1 && (
                   <div
                     className={cn(
-                      "flex-1 h-0.5 mt-[19px] -mx-[36px] transition-all duration-300 z-0",
+                      "flex-1 h-0.5 mt-[19px] -mx-[28px] transition-all duration-300 z-0",
                       isCompleted ? "bg-[#1FAD53]" : "bg-gray-200",
                     )}
                   />
@@ -1300,6 +1496,7 @@ export default function CancellationWizard({
                   triggerWidthClass="w-full"
                   widthClass="w-full"
                   heightClass="h-[49px]"
+                  maxListHeightClass="max-h-60"
                   bgClass="bg-white"
                   error={
                     !!(
@@ -1327,6 +1524,7 @@ export default function CancellationWizard({
                   triggerWidthClass="w-full"
                   widthClass="w-full"
                   heightClass="h-[49px]"
+                  maxListHeightClass="max-h-60"
                   bgClass="bg-white"
                   error={
                     !!(
@@ -1547,9 +1745,9 @@ export default function CancellationWizard({
                           e.stopPropagation();
                           fileInputRef.current?.click();
                         }}
-                        className="mt-3 text-xs text-[#0F2757] underline font-medium hover:text-[#1B2B6B]"
+                        className="mt-3 text-xs text-[#0F2757] underline font-medium hover:text-[#1B2B6B] cursor-pointer"
                       >
-                        Upload a different CSV
+                        Upload another file
                       </button>
                     </div>
                   ) : (
@@ -2067,6 +2265,22 @@ export default function CancellationWizard({
           </div>
         );
       case 3:
+        if (isLoadingReview && !reviewData) {
+          return (
+            <div className="flex flex-col items-center justify-center py-20 space-y-4">
+              <Loader2 className="h-10 w-10 text-[#0F2757] animate-spin" />
+              <div className="text-center">
+                <h3 className="text-lg font-semibold text-gray-900 font-figtree">
+                  Loading Flight Review...
+                </h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  Fetching full flight route details and passenger summary
+                </p>
+              </div>
+            </div>
+          );
+        }
+
         return (
           <div className="space-y-6">
             <div className="flex items-center gap-3 pb-4">
@@ -2089,7 +2303,7 @@ export default function CancellationWizard({
                 <div>
                   <p className="text-xs text-gray-500">Flight</p>
                   <p className="font-semibold text-gray-900 text-base">
-                    {newFlight || "TRE"}
+                    {reviewData?.flight?.flightNumber || newFlight || "—"}
                   </p>
                 </div>
               </div>
@@ -2098,10 +2312,20 @@ export default function CancellationWizard({
                 <div>
                   <p className="text-xs text-gray-500">Route</p>
                   <p className="font-semibold text-gray-900 text-base">
-                    {newDepartureAirport && newArrivalAirport
-                      ? `${newDepartureAirport} ➔ ${newArrivalAirport}`
-                      : "LAX ➔ ORD"}
+                    {reviewData?.flight?.route?.departureAirport &&
+                      reviewData?.flight?.route?.arrivalAirport
+                      ? `${reviewData.flight.route.departureAirport.code} ➔ ${reviewData.flight.route.arrivalAirport.code}`
+                      : newDepartureAirport && newArrivalAirport
+                        ? `${newDepartureAirport} ➔ ${newArrivalAirport}`
+                        : "—"}
                   </p>
+                  {reviewData?.flight?.route?.departureAirport &&
+                    reviewData?.flight?.route?.arrivalAirport && (
+                      <p className="text-xs text-gray-500">
+                        {reviewData.flight.route.departureAirport.name} to{" "}
+                        {reviewData.flight.route.arrivalAirport.name}
+                      </p>
+                    )}
                 </div>
               </div>
               <div className="flex items-start gap-3">
@@ -2109,12 +2333,11 @@ export default function CancellationWizard({
                 <div>
                   <p className="text-xs text-gray-500">Date</p>
                   <p className="font-semibold text-gray-900 text-base">
-                    {newDate
-                      ? new Date(newDate).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                        })
-                      : "Aug 19"}
+                    {reviewData?.flight?.cancellationDate
+                      ? formatDateString(reviewData.flight.cancellationDate)
+                      : newDate
+                        ? formatDateString(newDate)
+                        : "—"}
                   </p>
                 </div>
               </div>
@@ -2122,7 +2345,9 @@ export default function CancellationWizard({
                 <div>
                   <p className="text-xs text-gray-500">Reason</p>
                   <p className="font-semibold text-gray-900 text-base">
-                    {newReason || selectedReasonTag || "Weather disruption"}
+                    {reviewData?.flight?.cancellationReason
+                      ? reviewData.flight.cancellationReason.replace(/_/g, " ")
+                      : newReason || selectedReasonTag || "Weather disruption"}
                   </p>
                 </div>
               </div>
@@ -2131,7 +2356,7 @@ export default function CancellationWizard({
             <div className="grid grid-cols-4 gap-4">
               <div className="bg-[#F6F7F8] rounded-xl py-5 flex flex-col items-center justify-center text-center">
                 <span className="text-[22px] leading-tight font-bold text-[#111827]">
-                  {addedBookings.length}
+                  {reviewData?.summary?.totalBookings ?? addedBookings.length}
                 </span>
                 <span className="text-[13px] text-[#6B7280] mt-1">
                   Total Bookings
@@ -2139,7 +2364,10 @@ export default function CancellationWizard({
               </div>
               <div className="bg-[#F6F7F8] rounded-xl py-5 flex flex-col items-center justify-center text-center">
                 <span className="text-[22px] leading-tight font-bold text-[#111827]">
-                  {totalPassengersCount}
+                  {reviewData?.summary
+                    ? reviewData.summary.totalAdults +
+                    reviewData.summary.totalChildren
+                    : totalPassengersCount}
                 </span>
                 <span className="text-[13px] text-[#6B7280] mt-1">
                   Total Passengers
@@ -2147,10 +2375,15 @@ export default function CancellationWizard({
               </div>
               <div className="bg-[#F6F7F8] rounded-xl py-5 flex flex-col items-center justify-center text-center">
                 <span className="text-[22px] leading-tight font-bold text-[#111827]">
-                  {addedBookings.reduce(
-                    (sum, b) => sum + Math.ceil((b.adults + b.children) / 2),
-                    0,
-                  )}
+                  {totalRoomsCount > 0
+                    ? totalRoomsCount
+                    : reviewData?.summary
+                      ? Math.ceil(
+                        ((reviewData.summary.totalAdults || 0) +
+                          (reviewData.summary.totalChildren || 0)) /
+                        2,
+                      )
+                      : 0}
                 </span>
                 <span className="text-[13px] text-[#6B7280] mt-1">
                   Est. Rooms Required
@@ -2191,17 +2424,17 @@ export default function CancellationWizard({
                   {(addedBookings.length > 0
                     ? addedBookings
                     : ([
-                        {
-                          id: "1",
-                          pnr: "DDJU",
-                          firstName: "New",
-                          lastName: "Admin",
-                          email: "ops@summitair.com",
-                          adults: 1,
-                          children: 0,
-                          travelClass: "Economy",
-                        },
-                      ] as typeof addedBookings)
+                      {
+                        id: "1",
+                        pnr: "DDJU",
+                        firstName: "New",
+                        lastName: "Admin",
+                        email: "ops@summitair.com",
+                        adults: 1,
+                        children: 0,
+                        travelClass: "Economy",
+                      },
+                    ] as typeof addedBookings)
                   )
                     .slice(
                       (step3CurrentPage - 1) * step3ResultsPerPage,
@@ -2256,148 +2489,92 @@ export default function CancellationWizard({
           </div>
         );
       case 4:
-        if (isAllocating) {
-          return (
-            <div className="flex flex-col items-center justify-center py-6 space-y-6 animate-in fade-in zoom-in duration-300">
-              <div className="flex flex-col items-center gap-4">
-                <Loader2 className="h-10 w-10 text-[#0F2757] animate-spin" />
-                <div className="text-center">
-                  <h3 className="text-xl font-semibold text-gray-900 font-figtree">
-                    Allocating Hotels...
-                  </h3>
-                  <p className="text-sm text-gray-500 mt-1">
-                    Finding the best hotels for your passengers...
-                  </p>
-                </div>
-              </div>
-
-              <div className="w-full max-w-md bg-white border border-gray-100 shadow-sm rounded-xl p-5 space-y-4">
-                {[
-                  { step: 1, label: "Analyzing booking requirements" },
-                  { step: 2, label: "Checking hotel availability" },
-                  { step: 3, label: "Optimizing room assignments" },
-                  { step: 4, label: "Calculating costs" },
-                ].map((item) => {
-                  const isCompleted = allocationProgress >= item.step;
-                  const isCurrent = allocationProgress === item.step - 1;
-
-                  return (
-                    <div
-                      key={item.step}
-                      className="flex items-center gap-3 text-sm font-medium"
-                    >
-                      {isCompleted ? (
-                        <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
-                      ) : isCurrent ? (
-                        <Loader2 className="h-5 w-5 text-[#0F2757] animate-spin shrink-0" />
-                      ) : (
-                        <Circle className="h-5 w-5 text-gray-300 shrink-0" />
-                      )}
-                      <span
-                        className={
-                          isCompleted
-                            ? "text-gray-900"
-                            : isCurrent
-                              ? "text-gray-900"
-                              : "text-gray-400"
-                        }
-                      >
-                        {item.label}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="w-full max-w-md bg-gray-50 rounded-xl p-4 flex items-start gap-3 border border-gray-200">
-                <Info className="h-5 w-5 text-gray-500 shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm font-semibold text-gray-900">
-                    You can safely navigate away
-                  </p>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    This process continues in the background. We'll notify you
-                    when allocation is complete.
-                  </p>
-                </div>
-              </div>
-            </div>
-          );
-        }
-
         return (
-          <div className="space-y-6 animate-in fade-in duration-300">
-            <div className="flex items-center gap-3 pb-4">
-              <div className="size-10 bg-[#0F2757]/10 text-[#0F2757] rounded-lg flex justify-center items-center shrink-0 border border-[#0F2757]/20">
-                <Building2 className="h-5 w-5" />
-              </div>
-              <div className="text-left">
-                <h3 className="text-lg font-semibold text-gray-900 font-figtree">
-                  Hotel Allocation
+          <div className="flex flex-col items-center justify-center py-6 space-y-6 animate-in fade-in zoom-in duration-300">
+            <div className="flex flex-col items-center gap-4">
+              <Loader2 className="h-10 w-10 text-[#0F2757] animate-spin" />
+              <div className="text-center">
+                <h3 className="text-xl font-semibold text-gray-900 font-figtree">
+                  Allocating Hotels...
                 </h3>
-                <p className="text-sm text-gray-500 mt-0.5">
-                  Our AI-powered system will automatically assign hotels based
-                  on:
+                <p className="text-sm text-gray-500 mt-1">
+                  Finding the best hotels for your passengers...
                 </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-6 w-full">
-              <div className="bg-white border border-gray-100 shadow-sm rounded-xl p-5 flex flex-col items-center text-center">
-                <Plane className="h-6 w-6 text-blue-500 mb-3" />
-                <h4 className="font-semibold text-gray-900 text-sm">
-                  Travel Class
-                </h4>
-                <p className="text-xs text-gray-500 mt-1">
-                  Business / Economy preferences
+            <div className="w-full max-w-md bg-white border border-gray-100 shadow-sm rounded-xl p-5 space-y-4">
+              {[
+                { step: 1, label: "Analyzing booking requirements" },
+                { step: 2, label: "Checking hotel availability" },
+                { step: 3, label: "Optimizing room assignments" },
+                { step: 4, label: "Calculating costs" },
+              ].map((item) => {
+                const isCompleted = allocationProgress >= item.step;
+                const isCurrent = allocationProgress === item.step - 1;
+
+                return (
+                  <div
+                    key={item.step}
+                    className="flex items-center gap-3 text-sm font-medium transition-all duration-200"
+                  >
+                    {isCompleted ? (
+                      <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
+                    ) : isCurrent ? (
+                      <Loader2 className="h-5 w-5 text-[#0F2757] animate-spin shrink-0" />
+                    ) : (
+                      <Circle className="h-5 w-5 text-gray-300 shrink-0" />
+                    )}
+                    <span
+                      className={
+                        isCompleted
+                          ? "text-gray-900 font-medium"
+                          : isCurrent
+                            ? "text-gray-900 font-semibold"
+                            : "text-gray-400"
+                      }
+                    >
+                      {item.label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="w-full max-w-md bg-gray-50 rounded-xl p-4 flex items-start gap-3 border border-gray-200">
+              <Info className="h-5 w-5 text-gray-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-gray-900">
+                  You can safely navigate away
                 </p>
-              </div>
-              <div className="bg-white border border-gray-100 shadow-sm rounded-xl p-5 flex flex-col items-center text-center">
-                <Building2 className="h-6 w-6 text-rose-500 mb-3" />
-                <h4 className="font-semibold text-gray-900 text-sm">
-                  Availability
-                </h4>
-                <p className="text-xs text-gray-500 mt-1">
-                  Real-time hotel inventory
-                </p>
-              </div>
-              <div className="bg-white border border-gray-100 shadow-sm rounded-xl p-5 flex flex-col items-center text-center">
-                <Settings className="h-6 w-6 text-purple-500 mb-3" />
-                <h4 className="font-semibold text-gray-900 text-sm">
-                  Preferences
-                </h4>
-                <p className="text-xs text-gray-500 mt-1">
-                  Your airline's settings
+                <p className="text-xs text-gray-500 mt-0.5">
+                  This process continues in the background. We'll notify you
+                  when allocation is complete.
                 </p>
               </div>
             </div>
 
-            <div className="flex justify-end pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsAllocating(true);
-                  setAllocationProgress(0);
-                }}
-                className="bg-[#2B3B67] hover:bg-[#1E2B4D] text-white font-medium py-2.5 px-6 rounded-lg transition-colors cursor-pointer text-sm inline-flex items-center gap-2"
-              >
-                <Building2 className="h-5 w-5" />
-                <span>Allocate Hotel Reservations</span>
-              </button>
-            </div>
+            {allocationError && (
+              <div className="flex flex-col items-center gap-2 pt-2">
+                <p className="text-sm text-red-600 font-medium">{allocationError}</p>
+                <button
+                  type="button"
+                  onClick={handleAllocateHotels}
+                  className="px-4 py-2 bg-[#0F2757] hover:bg-[#162259] text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                >
+                  Retry Allocation
+                </button>
+              </div>
+            )}
           </div>
         );
       case 5:
-        const roomsCount =
-          addedBookings.reduce(
-            (sum, b) => sum + Math.ceil((b.adults + b.children) / 2),
-            0,
-          ) || 11;
-        const baseCost = hotelCost > 0 ? hotelCost : 1320;
-        const discountAmt = baseCost * 0.1;
-        const taxAmt = baseCost * 0.08;
-        const feeAmt = (baseCost - discountAmt + taxAmt) * 0.05;
-        const finalAmt = baseCost - discountAmt + taxAmt + feeAmt;
+        const roomsCount = hotelSummary?.totalRooms ?? 0;
+        const baseCost = hotelSummary?.totalHotelCost ?? 0;
+        const discountAmt = hotelSummary?.totalDiscount ?? 0;
+        const taxAmt = hotelSummary?.totalHotelTax ?? 0;
+        const feeAmt = hotelSummary?.totalPlatformFee ?? 0;
+        const finalAmt = hotelSummary?.totalPayable ?? 0;
 
         return (
           <div className="space-y-6">
@@ -2440,7 +2617,7 @@ export default function CancellationWizard({
                   </span>
                 </div>
                 <div className="text-[24px] font-bold text-gray-900">
-                  $
+                  {currencySymbol}
                   {baseCost.toLocaleString(undefined, {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
@@ -2459,7 +2636,7 @@ export default function CancellationWizard({
                   </span>
                 </div>
                 <div className="text-[24px] font-bold text-green-600">
-                  -$
+                  -{currencySymbol}
                   {discountAmt.toLocaleString(undefined, {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
@@ -2478,7 +2655,7 @@ export default function CancellationWizard({
                   </span>
                 </div>
                 <div className="text-[24px] font-bold text-gray-900">
-                  $
+                  {currencySymbol}
                   {taxAmt.toLocaleString(undefined, {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
@@ -2493,11 +2670,11 @@ export default function CancellationWizard({
                 <div className="flex items-center gap-2 text-gray-500 mb-3">
                   <Percent className="h-4 w-4" />
                   <span className="text-[13px] font-semibold uppercase">
-                    Platform Fee (5%)
+                    Platform Fee
                   </span>
                 </div>
                 <div className="text-[24px] font-bold text-gray-900">
-                  $
+                  {currencySymbol}
                   {feeAmt.toLocaleString(undefined, {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
@@ -2516,7 +2693,7 @@ export default function CancellationWizard({
                   </span>
                 </div>
                 <div className="text-[24px] font-bold text-[#0F2757]">
-                  $
+                  {currencySymbol}
                   {finalAmt.toLocaleString(undefined, {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
@@ -2559,54 +2736,51 @@ export default function CancellationWizard({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(addedBookings.length > 0
-                    ? addedBookings
-                    : [
-                        {
-                          id: "1",
-                          pnr: "AAAAA",
-                          firstName: "New",
-                          lastName: "Admin",
-                          email: "ops@summitair.com",
-                          adults: 1,
-                          children: 0,
-                          travelClass: "Economy",
-                        },
-                      ]
-                  )
-                    .slice(
-                      (step5CurrentPage - 1) * step5ResultsPerPage,
-                      step5CurrentPage * step5ResultsPerPage,
-                    )
-                    .map((b, idx) => {
+                  {isLoadingHotelBookings && hotelBookings.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={10} className="text-center py-10 text-gray-500">
+                        <div className="flex items-center justify-center gap-2">
+                          <Loader2 className="h-5 w-5 animate-spin text-[#0F2757]" />
+                          <span>Loading hotel bookings...</span>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : hotelBookings.length > 0 ? (
+                    hotelBookings.map((hb) => {
+                      const pb = hb.passengerBooking;
+                      const hotelBookingId = `HB-${String(hb.id).padStart(6, "0")}`;
+                      const pnr = pb?.pnr || "-";
+                      const contactName = `${pb?.firstName || ""} ${pb?.lastName || ""}`.trim() || "-";
+                      const email = pb?.email || "";
+                      const travelClass =
+                        ENUM_TO_TRAVEL_CLASS[pb?.travelClass] || pb?.travelClass || "Economy";
                       const isBusiness =
-                        b.travelClass === "Business" ||
-                        b.travelClass === "First Class";
-                      const hotelName = isBusiness
-                        ? "Hyatt Regency LAX"
-                        : "Holiday Inn Express LAX";
-                      const stars = isBusiness ? 4 : 3;
-                      const rooms = Math.ceil((b.adults + b.children) / 2);
-                      const bookingCost = rooms * (isBusiness ? 160 : 120);
+                        travelClass === "Business" || travelClass === "First Class";
+                      const totalPassengers = (pb?.adults || 0) + (pb?.children || 0);
                       const passengersStr =
-                        b.adults + b.children > 1
-                          ? `${b.adults + b.children} Passengers`
-                          : `${b.adults + b.children} Passenger`;
+                        totalPassengers > 1
+                          ? `${totalPassengers} Passengers`
+                          : `${totalPassengers || 1} Passenger`;
+                      const hotelName = hb.hotelName || "Transit Hotel";
+                      const ratingVal = parseFloat(hb.rating) || 4;
+                      const stars = Math.min(5, Math.max(1, Math.round(ratingVal)));
+                      const rooms = hb.totalRooms || 1;
+                      const bookingCost = Number(hb.totalCost) || 0;
 
                       return (
-                        <TableRow key={b.id || idx}>
+                        <TableRow key={hb.id}>
                           <TableCell className="font-medium text-gray-900">
-                            HB-00023{idx + 1}
+                            {hotelBookingId}
                           </TableCell>
                           <TableCell className="font-medium text-gray-900">
-                            {b.pnr}
+                            {pnr}
                           </TableCell>
                           <TableCell>
                             <div className="font-semibold text-gray-900">
-                              {b.firstName} {b.lastName}
+                              {contactName}
                             </div>
                             <div className="text-xs text-gray-500">
-                              {b.email}
+                              {email}
                             </div>
                           </TableCell>
                           <TableCell>
@@ -2618,7 +2792,7 @@ export default function CancellationWizard({
                                   : "bg-gray-100 text-gray-700",
                               )}
                             >
-                              {b.travelClass}
+                              {travelClass}
                             </span>
                           </TableCell>
                           <TableCell className="text-center">
@@ -2639,7 +2813,7 @@ export default function CancellationWizard({
                           </TableCell>
                           <TableCell className="text-center">{rooms}</TableCell>
                           <TableCell className="text-right font-semibold text-gray-900">
-                            $
+                            {currencySymbol}
                             {bookingCost.toLocaleString(undefined, {
                               minimumFractionDigits: 2,
                               maximumFractionDigits: 2,
@@ -2649,30 +2823,151 @@ export default function CancellationWizard({
                             <button
                               type="button"
                               onClick={() => {
-                                setSelectedBookingForDrawer(b);
+                                setSelectedBookingForDrawer({
+                                  ...pb,
+                                  hotelBookingId,
+                                  hotelName,
+                                  rating: hb.rating,
+                                  totalRooms: rooms,
+                                  totalCost: bookingCost,
+                                  travelClass,
+                                });
                                 setIsBookingDetailsOpen(true);
                               }}
-                              className="p-1.5 text-gray-400 hover:text-[#0F2757] hover:bg-gray-100 rounded transition-colors"
+                              className="p-1.5 text-gray-400 hover:text-[#0F2757] hover:bg-gray-100 rounded transition-colors cursor-pointer"
                             >
                               <Eye className="h-4 w-4" />
                             </button>
                           </TableCell>
                         </TableRow>
                       );
-                    })}
+                    })
+                  ) : (
+                    (addedBookings.length > 0
+                      ? addedBookings
+                      : [
+                        {
+                          id: "1",
+                          pnr: "AAAAA",
+                          firstName: "New",
+                          lastName: "Admin",
+                          email: "ops@summitair.com",
+                          adults: 1,
+                          children: 0,
+                          travelClass: "Economy",
+                        },
+                      ]
+                    )
+                      .slice(
+                        (step5CurrentPage - 1) * step5ResultsPerPage,
+                        step5CurrentPage * step5ResultsPerPage,
+                      )
+                      .map((b, idx) => {
+                        const isBusiness =
+                          b.travelClass === "Business" ||
+                          b.travelClass === "First Class";
+                        const depAirportCode = newDepartureAirport || "Airport";
+                        const hotelName = isBusiness
+                          ? `Grand Regency ${depAirportCode}`
+                          : `Transit Express ${depAirportCode}`;
+                        const stars = isBusiness ? 4 : 3;
+                        const rooms = Math.ceil((b.adults + b.children) / 2);
+                        const bookingCost =
+                          hotelAllocations?.totalSellingPrice && (addedBookings.length === 1 || !addedBookings.length)
+                            ? hotelAllocations.totalSellingPrice
+                            : rooms * (isBusiness ? 160 : 120);
+                        const passengersStr =
+                          b.adults + b.children > 1
+                            ? `${b.adults + b.children} Passengers`
+                            : `${b.adults + b.children} Passenger`;
+
+                        return (
+                          <TableRow key={b.id || idx}>
+                            <TableCell className="font-medium text-gray-900">
+                              HB-00023{idx + 1}
+                            </TableCell>
+                            <TableCell className="font-medium text-gray-900">
+                              {b.pnr}
+                            </TableCell>
+                            <TableCell>
+                              <div className="font-semibold text-gray-900">
+                                {b.firstName} {b.lastName}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                {b.email}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <span
+                                className={cn(
+                                  "rounded px-2.5 py-1 text-xs font-semibold inline-block capitalize",
+                                  isBusiness
+                                    ? "bg-purple-100 text-purple-800"
+                                    : "bg-gray-100 text-gray-700",
+                                )}
+                              >
+                                {b.travelClass}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {passengersStr}
+                            </TableCell>
+                            <TableCell className="font-medium">
+                              {hotelName}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex justify-center items-center text-amber-400">
+                                {[...Array(stars)].map((_, i) => (
+                                  <Star
+                                    key={i}
+                                    className="h-3 w-3 fill-current"
+                                  />
+                                ))}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-center">{rooms}</TableCell>
+                            <TableCell className="text-right font-semibold text-gray-900">
+                              {currencySymbol}
+                              {bookingCost.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </TableCell>
+                            <TableCell>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedBookingForDrawer(b);
+                                  setIsBookingDetailsOpen(true);
+                                }}
+                                className="p-1.5 text-gray-400 hover:text-[#0F2757] hover:bg-gray-100 rounded transition-colors cursor-pointer"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                  )}
                 </TableBody>
               </Table>
             </div>
 
             {/* Pagination */}
             <Pagination
-              totalResults={addedBookings.length || 1}
+              totalResults={
+                hotelBookings.length > 0
+                  ? totalHotelBookings
+                  : addedBookings.length || 1
+              }
               currentPage={step5CurrentPage}
               setCurrentPage={setStep5CurrentPage}
               resultsPerPage={step5ResultsPerPage}
               setResultsPerPage={setStep5ResultsPerPage}
               totalPages={Math.ceil(
-                (addedBookings.length || 1) / step5ResultsPerPage,
+                (hotelBookings.length > 0
+                  ? totalHotelBookings
+                  : addedBookings.length || 1) / step5ResultsPerPage,
               )}
             />
           </div>
@@ -2695,54 +2990,61 @@ export default function CancellationWizard({
               </div>
             </div>
 
-            <div className="bg-gray-50/80 rounded-xl p-6 space-y-4 text-left text-sm border border-gray-100">
-              <div className="flex justify-between items-center text-gray-500">
-                <span>Hotel Cost</span>
-                <span className="font-semibold text-gray-900">
-                  $
-                  {hotelCost.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                  })}
-                </span>
+            {isLoadingHotelSummary && !hotelSummary ? (
+              <div className="bg-gray-50/80 rounded-xl p-8 flex items-center justify-center gap-2 text-gray-500 border border-gray-100">
+                <Loader2 className="h-5 w-5 animate-spin text-[#0F2757]" />
+                <span>Loading payment details...</span>
               </div>
-              <div className="flex justify-between items-center text-gray-500">
-                <span>Platform Discount</span>
-                <span className="font-semibold text-[#1FAD53]">
-                  -$
-                  {platformDiscount.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                  })}
-                </span>
+            ) : (
+              <div className="bg-gray-50/80 rounded-xl p-6 space-y-4 text-left text-sm border border-gray-100">
+                <div className="flex justify-between items-center text-gray-500">
+                  <span>Hotel Cost</span>
+                  <span className="font-semibold text-gray-900">
+                    {currencySymbol}
+                    {hotelCost.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                    })}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-gray-500">
+                  <span>Platform Discount</span>
+                  <span className="font-semibold text-[#1FAD53]">
+                    -{currencySymbol}
+                    {platformDiscount.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                    })}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-gray-500">
+                  <span>Hotel Tax</span>
+                  <span className="font-semibold text-gray-900">
+                    {currencySymbol}
+                    {hotelTax.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                    })}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-gray-500">
+                  <span>Platform Fee</span>
+                  <span className="font-semibold text-gray-900">
+                    {currencySymbol}
+                    {platformFee.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                    })}
+                  </span>
+                </div>
+                <div className="h-px bg-gray-200 w-full" />
+                <div className="flex justify-between items-center font-bold text-gray-900 text-base">
+                  <span>Total Payment</span>
+                  <span className="text-[20px]">
+                    {currencySymbol}
+                    {totalPayment.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                    })}
+                  </span>
+                </div>
               </div>
-              <div className="flex justify-between items-center text-gray-500">
-                <span>Hotel Tax</span>
-                <span className="font-semibold text-gray-900">
-                  $
-                  {hotelTax.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                  })}
-                </span>
-              </div>
-              <div className="flex justify-between items-center text-gray-500">
-                <span>Platform Fee (5%)</span>
-                <span className="font-semibold text-gray-900">
-                  $
-                  {platformFee.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                  })}
-                </span>
-              </div>
-              <div className="h-px bg-gray-200 w-full" />
-              <div className="flex justify-between items-center font-bold text-gray-900 text-base">
-                <span>Total Payment</span>
-                <span className="text-[20px]">
-                  $
-                  {totalPayment.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                  })}
-                </span>
-              </div>
-            </div>
+            )}
 
             <div className="space-y-4 text-left pt-4">
               <div>
@@ -2856,7 +3158,7 @@ export default function CancellationWizard({
                     </div>
                   </div>
                   <span className="text-sm text-gray-700">
-                    I confirm that I want to charge $
+                    I confirm that I want to charge {currencySymbol}
                     {totalPayment.toLocaleString(undefined, {
                       minimumFractionDigits: 2,
                     })}{" "}
@@ -2921,14 +3223,15 @@ export default function CancellationWizard({
                 type="button"
                 onClick={() => {
                   onSave({
-                    id:
-                      initialData?.id ||
+                    id: flightId
+                      ? String(flightId)
+                      : initialData?.id ||
                       Math.random().toString(36).substring(7),
                     flight: newFlight || "TRE",
                     route:
                       newDepartureAirport && newArrivalAirport
                         ? `${newDepartureAirport} ➔ ${newArrivalAirport}`
-                        : "LAX ➔ ORD",
+                        : "",
                     cancellationDate: newDate
                       ? new Date(newDate).toISOString()
                       : new Date().toISOString(),
@@ -2958,7 +3261,7 @@ export default function CancellationWizard({
       {/* Back Link */}
       <div className="flex items-center">
         <button
-          onClick={onClose}
+          onClick={handleBackToCancelledFlights}
           className="relative -top-1 flex items-center gap-1.5 text-[16px] text-[#6B7280] hover:text-[#1F2937] transition-colors duration-150 font-medium group cursor-pointer"
         >
           <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" />
@@ -2978,13 +3281,19 @@ export default function CancellationWizard({
           <div
             className={cn(
               "mt-8 pt-6 flex items-center",
-              activeStep === 5 ? "justify-end" : "justify-between",
+              activeStep === 1 || activeStep === 5
+                ? "justify-end"
+                : "justify-between",
             )}
           >
-            {activeStep !== 5 && (
+            {activeStep > 1 && activeStep !== 5 && (
               <button
                 onClick={handlePrevStep}
-                className="flex items-center gap-2 border border-gray-200 bg-gray-100 hover:bg-gray-300 text-gray-700 font-medium py-2.5 px-5 rounded-lg transition-colors cursor-pointer text-sm"
+                disabled={isProcessingPayment}
+                className={cn(
+                  "flex items-center gap-2 border border-gray-200 bg-gray-100 hover:bg-gray-300 text-gray-700 font-medium py-2.5 px-5 rounded-lg transition-colors cursor-pointer text-sm",
+                  isProcessingPayment && "opacity-50 cursor-not-allowed",
+                )}
               >
                 <ArrowLeft className="h-4 w-4" />
                 <span>Back</span>
@@ -2992,52 +3301,70 @@ export default function CancellationWizard({
             )}
 
             {activeStep !== 7 && (
-              <button
-                onClick={handleNextStep}
-                disabled={
-                  isCreatingFlight ||
-                  isConfirmingBookings ||
-                  (activeStep === 6 && !paymentConfirmed)
-                }
-                className={cn(
-                  "flex items-center gap-2 font-medium py-2.5 px-5 rounded-lg transition-colors cursor-pointer text-sm",
-                  isCreatingFlight ||
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleNextStep}
+                  disabled={
+                    isCreatingFlight ||
                     isConfirmingBookings ||
+                    isAllocating ||
+                    isProcessingPayment ||
                     (activeStep === 6 && !paymentConfirmed)
-                    ? "bg-[#9CA3AF] text-white cursor-not-allowed border-none"
-                    : "bg-[#0F2757] hover:bg-[#162259] text-white",
-                )}
-              >
-                {isCreatingFlight ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Creating...</span>
-                  </>
-                ) : isConfirmingBookings ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Confirming...</span>
-                  </>
-                ) : activeStep === 6 ? (
-                  <>
-                    <CreditCard className="h-4 w-4" />
-                    <span>
-                      Pay $
-                      {totalPayment.toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <span>
-                      {activeStep === 5 ? "Continue to Payment" : "Continue"}
-                    </span>
-                    <ArrowRight className="h-4 w-4" />
-                  </>
-                )}
-              </button>
+                  }
+                  className={cn(
+                    "flex items-center gap-2 font-medium py-2.5 px-5 rounded-lg transition-colors cursor-pointer text-sm",
+                    isCreatingFlight ||
+                      isConfirmingBookings ||
+                      isAllocating ||
+                      isProcessingPayment ||
+                      (activeStep === 6 && !paymentConfirmed)
+                      ? "bg-[#9CA3AF] text-white cursor-not-allowed border-none"
+                      : "bg-[#0F2757] hover:bg-[#162259] text-white",
+                  )}
+                >
+                  {isCreatingFlight ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : isConfirmingBookings ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Confirming...</span>
+                    </>
+                  ) : isAllocating ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Allocating Hotels...</span>
+                    </>
+                  ) : isProcessingPayment ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Processing Payment...</span>
+                    </>
+                  ) : activeStep === 6 ? (
+                    <>
+                      <CreditCard className="h-4 w-4" />
+                      <span>
+                        Pay {currencySymbol}
+                        {totalPayment.toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span>
+                        {activeStep === 5
+                          ? "Continue to Payment"
+                          : "Continue"}
+                      </span>
+                      <ArrowRight className="h-4 w-4" />
+                    </>
+                  )}
+                </button>
+              </div>
             )}
           </div>
         )}
