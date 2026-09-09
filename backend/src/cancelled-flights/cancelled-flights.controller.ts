@@ -73,8 +73,8 @@ import {
   CancelledFlightHotelBookingListResponseDto,
   CancelledFlightBookingsListResponseDto,
   HotelSummaryCancelledFlightResponseDto,
-  HotelBookingDetailResponseDto,
 } from "./dto";
+import { HotelBookingDetailResponseDto } from "../hotel-bookings/dto";
 import { PaginationQueryDto } from "../common/dto/pagination-query.dto";
 import { AuthenticatedRequest } from "../auth/interfaces/authenticated-request.interface";
 import { RequestLogger } from "../common/decorators/request-logger.decorator";
