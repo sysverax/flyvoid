@@ -1930,37 +1930,134 @@ export class CancelledFlightsService {
       string,
       { booking: BookingEntity; shape: RoomOccupancy; roomsNeeded: number }
     >();
+    // Only what the allocator needs; names/board/price come from the real rates.
+    type HotelOption = {
+      hotelId: string;
+      category: string;
+      stars: number;
+      rateKey: string;
+      adults: number;
+      children: number;
+      allotment: number | null;
+    };
     const occupancyGroups: Array<{
       passengerGroupId: string;
       sameHotelGroup: string;
-      bookingReference: string;
       travelClass: string;
       specialNotes: string[];
       adults: number;
       children: number;
       roomsNeeded: number;
-      hotels: Array<{
-        hotelId: string;
-        name: string;
-        category: string;
-        stars: number;
-        rateKey: string;
-        roomName: string;
-        boardName: string;
-        adults: number;
-        children: number;
-        allotment: number | null;
-      }>;
+      shapeKey: string;
     }> = [];
+
+    // Per-shape catalog (built once, not per group): cheapest rate per hotel,
+    // capped, rateKeys aliased - keeps the AI request under the token limit.
+    const MAX_HOTELS_PER_SHAPE = 8;
+    const rateKeyByAlias = new Map<string, string>();
+    const aliasByRateKey = new Map<string, string>();
+    const aliasForRateKey = (rateKey: string): string => {
+      let alias = aliasByRateKey.get(rateKey);
+      if (!alias) {
+        alias = `r${aliasByRateKey.size}`;
+        aliasByRateKey.set(rateKey, alias);
+        rateKeyByAlias.set(alias, rateKey);
+      }
+      return alias;
+    };
+    const roomOptionsByShape = new Map<string, HotelOption[]>();
+    const buildRoomOptions = (shapeKey: string): HotelOption[] => {
+      const cheapestPerHotel = new Map<
+        string,
+        { hotel: AvailabilityHotel; rate: AvailabilityRoomRate }
+      >();
+      for (const hotel of hotels) {
+        for (const rate of hotel.rates) {
+          if (
+            rate.allotment === null ||
+            rate.allotment <= 0 ||
+            this.occupancyKey({
+              adults: rate.adults,
+              children: rate.children,
+              childrenAges: rate.childrenAges,
+            }) !== shapeKey
+          ) {
+            continue;
+          }
+          const current = cheapestPerHotel.get(hotel.hotelCode);
+          if (!current || rate.netPrice < current.rate.netPrice) {
+            cheapestPerHotel.set(hotel.hotelCode, { hotel, rate });
+          }
+        }
+      }
+      return Array.from(cheapestPerHotel.values())
+        .sort(
+          (a, b) =>
+            b.hotel.stars - a.hotel.stars || a.rate.netPrice - b.rate.netPrice,
+        )
+        .slice(0, MAX_HOTELS_PER_SHAPE)
+        .map(({ hotel, rate }) => ({
+          hotelId: `hb-${hotel.hotelCode}`,
+          category: hotel.category,
+          stars: hotel.stars,
+          rateKey: aliasForRateKey(rate.rateKey),
+          adults: rate.adults,
+          children: rate.children,
+          allotment: rate.allotment,
+        }));
+    };
+
+    const optionsForShape = (room: RoomOccupancy): HotelOption[] => {
+      const shapeKey = this.occupancyKey(room);
+      if (!roomOptionsByShape.has(shapeKey)) {
+        roomOptionsByShape.set(shapeKey, buildRoomOptions(shapeKey));
+      }
+      return roomOptionsByShape.get(shapeKey)!;
+    };
 
     for (const booking of eligibleBookings) {
       const splitPlan = splitPlansByBooking.get(booking.id)!;
+
+      // Rank splits (preferred + fallbacks) by ease of same-hotel placement:
+      // every shape available, then one hotel covers all, then fewest shapes.
+      const chosenSplit =
+        [splitPlan.preferred, ...splitPlan.fallbacks]
+          .map((rooms) => {
+            const byShape = new Map<string, RoomOccupancy>();
+            for (const room of rooms) {
+              byShape.set(this.occupancyKey(room), room);
+            }
+            const perShapeHotels = [...byShape.values()].map(
+              (room) =>
+                new Set(optionsForShape(room).map((o) => o.hotelId)),
+            );
+            const coverable = perShapeHotels.every((s) => s.size > 0);
+            const sharedHotels = coverable
+              ? perShapeHotels.reduce((a, b) =>
+                  new Set([...a].filter((h) => b.has(h))),
+                )
+              : new Set<string>();
+            return {
+              rooms,
+              coverable,
+              oneHotel: sharedHotels.size > 0,
+              distinctShapes: byShape.size,
+              roomCount: rooms.length,
+            };
+          })
+          .filter((c) => c.coverable)
+          .sort(
+            (a, b) =>
+              Number(b.oneHotel) - Number(a.oneHotel) ||
+              a.distinctShapes - b.distinctShapes ||
+              a.roomCount - b.roomCount,
+          )[0]?.rooms ?? splitPlan.preferred;
 
       const shapeCounts = new Map<
         string,
         { shape: RoomOccupancy; count: number }
       >();
-      for (const room of splitPlan.preferred) {
+      for (const room of chosenSplit) {
         const shapeKey = this.occupancyKey(room);
         const current = shapeCounts.get(shapeKey);
         if (current) {
@@ -1972,43 +2069,17 @@ export class CancelledFlightsService {
 
       for (const [shapeKey, { shape, count }] of shapeCounts) {
         const passengerGroupId = `${booking.pnr}#${shape.adults}a${shape.children}c`;
-
-        const shortlist = hotels.flatMap((hotel) =>
-          hotel.rates
-            .filter(
-              (rate) =>
-                this.occupancyKey({
-                  adults: rate.adults,
-                  children: rate.children,
-                  childrenAges: rate.childrenAges,
-                }) === shapeKey &&
-                rate.allotment !== null &&
-                rate.allotment > 0,
-            )
-            .map((rate) => ({
-              hotelId: `hb-${hotel.hotelCode}`,
-              name: hotel.hotelName,
-              category: hotel.category,
-              stars: hotel.stars,
-              rateKey: rate.rateKey,
-              roomName: rate.roomName,
-              boardName: rate.boardName,
-              adults: rate.adults,
-              children: rate.children,
-              allotment: rate.allotment,
-            })),
-        );
+        optionsForShape(shape);
 
         occupancyGroups.push({
           passengerGroupId,
           sameHotelGroup: booking.pnr,
-          bookingReference: booking.pnr,
           travelClass: booking.travelClass,
           specialNotes: booking.specialNotes ?? [],
           adults: shape.adults,
           children: shape.children,
           roomsNeeded: count,
-          hotels: shortlist,
+          shapeKey,
         });
         pgMeta.set(passengerGroupId, { booking, shape, roomsNeeded: count });
       }
@@ -2020,13 +2091,21 @@ export class CancelledFlightsService {
         hotelId: string;
         rateKey: string;
         roomsAssigned: number;
-        reason: string;
       }>;
       unresolved: Array<{ passengerGroupId: string; reason: string }>;
     };
+    // Drop shapes with no candidates: an empty list makes the model bail on
+    // every group. Those groups stay in pgMeta and fail the verifier/rescue.
+    const roomOptions = Object.fromEntries(
+      [...roomOptionsByShape].filter(([, options]) => options.length > 0),
+    );
+    const placeableGroups = occupancyGroups.filter(
+      (group) => (roomOptions[group.shapeKey]?.length ?? 0) > 0,
+    );
+
     try {
       aiAllocation = await this.aiService.allocateHotelGroups(
-        { occupancyGroups },
+        { roomOptions, groups: placeableGroups },
         requestId,
       );
     } catch (error: any) {
@@ -2039,30 +2118,18 @@ export class CancelledFlightsService {
       );
     }
 
-    const assignmentByPg = new Map<
-      string,
-      {
-        hotelId: string;
-        rateKey: string;
-        roomsAssigned: number;
-        reason: string;
-      }
-    >();
+    // passengerGroupId -> real rateKey (translated from the alias sent to the AI)
+    const rateKeyByPg = new Map<string, string>();
     for (const assignment of aiAllocation.assignments) {
       if (
         assignment &&
         typeof assignment.passengerGroupId === "string" &&
         typeof assignment.rateKey === "string"
       ) {
-        assignmentByPg.set(assignment.passengerGroupId, {
-          hotelId: String(assignment.hotelId ?? ""),
-          rateKey: assignment.rateKey,
-          roomsAssigned: Math.max(1, Number(assignment.roomsAssigned ?? 1)),
-          reason:
-            typeof assignment.reason === "string"
-              ? assignment.reason.trim()
-              : "",
-        });
+        rateKeyByPg.set(
+          assignment.passengerGroupId,
+          rateKeyByAlias.get(assignment.rateKey) ?? assignment.rateKey,
+        );
       }
     }
 
@@ -2105,7 +2172,6 @@ export class CancelledFlightsService {
         category: string;
       } | null = null;
       let failReason: string | null = null;
-      let allocationReason = "";
 
       for (const passengerGroupId of passengerGroupIds) {
         const meta = pgMeta.get(passengerGroupId)!;
@@ -2115,23 +2181,20 @@ export class CancelledFlightsService {
           break;
         }
 
-        const assignment = assignmentByPg.get(passengerGroupId);
-        if (!assignment) {
+        const rateKey = rateKeyByPg.get(passengerGroupId);
+        if (!rateKey) {
           failReason = "Allocator returned no assignment for this group";
           break;
         }
-        if (!allocationReason && assignment.reason) {
-          allocationReason = assignment.reason;
-        }
 
-        const entry = rateByKey.get(assignment.rateKey);
+        const entry = rateByKey.get(rateKey);
         if (!entry) {
-          failReason = `Assigned rateKey '${assignment.rateKey}' is not in the shortlist`;
+          failReason = `Assigned rateKey '${rateKey}' is not in the shortlist`;
           break;
         }
 
         if (entry.rate.allotment === null) {
-          failReason = `Assigned rateKey '${assignment.rateKey}' has no allotment and is unavailable`;
+          failReason = `Assigned rateKey '${rateKey}' has no allotment and is unavailable`;
           break;
         }
 
@@ -2154,13 +2217,13 @@ export class CancelledFlightsService {
           category: entry.hotel.category,
         };
 
-        if (allotmentLedger.has(assignment.rateKey)) {
-          const remaining = allotmentLedger.get(assignment.rateKey)!;
+        if (allotmentLedger.has(rateKey)) {
+          const remaining = allotmentLedger.get(rateKey)!;
           if (remaining < meta.roomsNeeded) {
-            failReason = `Allotment exceeded for rateKey '${assignment.rateKey}'`;
+            failReason = `Allotment exceeded for rateKey '${rateKey}'`;
             break;
           }
-          allotmentLedger.set(assignment.rateKey, remaining - meta.roomsNeeded);
+          allotmentLedger.set(rateKey, remaining - meta.roomsNeeded);
         }
 
         for (let index = 0; index < meta.roomsNeeded; index += 1) {
@@ -2191,13 +2254,12 @@ export class CancelledFlightsService {
       } else {
         const specialNotes = booking.specialNotes ?? [];
         const reason =
-          allocationReason ||
           `Best available ${hotelRef.category} option for ${booking.travelClass} class` +
-            (specialNotes.length
-              ? `; special request (${specialNotes.join(
-                  ", ",
-                )}) recorded but not verifiable from hotel data - confirm with the hotel directly.`
-              : ".");
+          (specialNotes.length
+            ? `; special request (${specialNotes.join(
+                ", ",
+              )}) recorded but not verifiable from hotel data - confirm with the hotel directly.`
+            : ".");
 
         results.push({
           bookingId: booking.id,
@@ -2218,10 +2280,125 @@ export class CancelledFlightsService {
       }
     }
 
+    // Deterministic rescue: the AI sometimes splits a booking across hotels or
+    // drops a group. Place any still-failed booking's rooms at one hotel that
+    // has capacity + remaining allotment for every shape it needs.
+    const wantsHighStars = (travelClass: string): boolean =>
+      travelClass === "first_class" || travelClass === "business";
+    for (let index = 0; index < results.length; index += 1) {
+      const item = results[index];
+      if (item.allocationStatus === "RECOMMENDED") {
+        continue;
+      }
+      const booking = eligibleBookings.find((b) => b.id === item.bookingId);
+      const needs = booking
+        ? Array.from(pgMeta.values()).filter((m) => m.booking.id === booking.id)
+        : [];
+      if (!booking || needs.length === 0) {
+        continue;
+      }
+
+      const orderedHotels = [...hotels].sort((a, b) =>
+        wantsHighStars(booking.travelClass)
+          ? b.stars - a.stars
+          : a.stars - b.stars,
+      );
+
+      let picked:
+        | {
+            hotel: AvailabilityHotel;
+            picks: Array<{ rate: AvailabilityRoomRate; roomsNeeded: number }>;
+          }
+        | undefined;
+      for (const hotel of orderedHotels) {
+        const picks: Array<{
+          rate: AvailabilityRoomRate;
+          roomsNeeded: number;
+        }> = [];
+        for (const meta of needs) {
+          const rate = hotel.rates
+            .filter(
+              (r) =>
+                r.adults === meta.shape.adults &&
+                r.children === meta.shape.children &&
+                (allotmentLedger.get(r.rateKey) ?? r.allotment ?? 0) >=
+                  meta.roomsNeeded,
+            )
+            .sort((a, b) => a.netPrice - b.netPrice)[0];
+          if (!rate) {
+            break;
+          }
+          picks.push({ rate, roomsNeeded: meta.roomsNeeded });
+        }
+        if (picks.length === needs.length) {
+          picked = { hotel, picks };
+          break;
+        }
+      }
+      if (!picked) {
+        continue;
+      }
+
+      const rescueRooms = picked.picks.flatMap(({ rate, roomsNeeded }) => {
+        allotmentLedger.set(
+          rate.rateKey,
+          (allotmentLedger.get(rate.rateKey) ?? rate.allotment ?? 0) -
+            roomsNeeded,
+        );
+        return Array.from({ length: roomsNeeded }, () => ({
+          adults: rate.adults,
+          children: rate.children,
+          rateKey: rate.rateKey,
+          roomName: rate.roomName,
+          boardName: rate.boardName,
+          price: this.roundCurrency(rate.netPrice),
+          currency: rate.currency,
+        }));
+      });
+      results[index] = {
+        bookingId: booking.id,
+        pnr: booking.pnr,
+        class: booking.travelClass,
+        passengers: { adults: booking.adults, children: booking.children },
+        hotel: {
+          hotelCode: picked.hotel.hotelCode,
+          hotelName: picked.hotel.hotelName,
+          category: picked.hotel.category,
+        },
+        rooms: rescueRooms,
+        totalPrice: this.roundCurrency(
+          rescueRooms.reduce((sum, room) => sum + room.price, 0),
+        ),
+        allocationStatus: "RECOMMENDED",
+        reason: `Assigned to ${picked.hotel.hotelName} (${picked.hotel.category}) - one hotel covering all rooms for ${booking.travelClass} class.`,
+      };
+    }
+
     const allocated = results.filter(
       (item) => item.allocationStatus === "RECOMMENDED",
     );
     const failed = results.length - allocated.length;
+
+    // All-or-nothing: abort without saving unless every booking got a hotel.
+    if (failed > 0) {
+      const failures = results
+        .filter((item) => item.allocationStatus !== "RECOMMENDED")
+        .map((item) => ({
+          bookingId: item.bookingId,
+          pnr: item.pnr,
+          status: item.allocationStatus,
+          reason: item.reason ?? null,
+        }));
+      requestLogger.error(
+        `Hotel allocation incomplete for flight '${flightId}': ${failed}/${results.length} bookings unallocated - nothing saved`,
+        { context: this.context, flightId, failures },
+      );
+      throw new BadRequestException({
+        message: `Hotel allocation failed: ${failed} of ${results.length} bookings could not be allocated. No allocations were saved.`,
+        failures,
+      });
+    }
+
     const totalRooms = allocated.reduce(
       (sum, item) => sum + (item.rooms?.length ?? 0),
       0,
