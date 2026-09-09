@@ -2011,6 +2011,7 @@ export class CancelledFlightsService {
         hotelId: string;
         rateKey: string;
         roomsAssigned: number;
+        reason: string;
       }>;
       unresolved: Array<{ passengerGroupId: string; reason: string }>;
     };
@@ -2031,7 +2032,12 @@ export class CancelledFlightsService {
 
     const assignmentByPg = new Map<
       string,
-      { hotelId: string; rateKey: string; roomsAssigned: number }
+      {
+        hotelId: string;
+        rateKey: string;
+        roomsAssigned: number;
+        reason: string;
+      }
     >();
     for (const assignment of aiAllocation.assignments) {
       if (
@@ -2043,6 +2049,10 @@ export class CancelledFlightsService {
           hotelId: String(assignment.hotelId ?? ""),
           rateKey: assignment.rateKey,
           roomsAssigned: Math.max(1, Number(assignment.roomsAssigned ?? 1)),
+          reason:
+            typeof assignment.reason === "string"
+              ? assignment.reason.trim()
+              : "",
         });
       }
     }
@@ -2086,6 +2096,7 @@ export class CancelledFlightsService {
         category: string;
       } | null = null;
       let failReason: string | null = null;
+      let allocationReason = "";
 
       for (const passengerGroupId of passengerGroupIds) {
         const meta = pgMeta.get(passengerGroupId)!;
@@ -2099,6 +2110,9 @@ export class CancelledFlightsService {
         if (!assignment) {
           failReason = "Allocator returned no assignment for this group";
           break;
+        }
+        if (!allocationReason && assignment.reason) {
+          allocationReason = assignment.reason;
         }
 
         const entry = rateByKey.get(assignment.rateKey);
@@ -2166,6 +2180,16 @@ export class CancelledFlightsService {
           reason: failReason ?? "No hotel assignment produced by allocator",
         });
       } else {
+        const specialNotes = booking.specialNotes ?? [];
+        const reason =
+          allocationReason ||
+          `Best available ${hotelRef.category} option for ${booking.travelClass} class` +
+            (specialNotes.length
+              ? `; special request (${specialNotes.join(
+                  ", ",
+                )}) recorded but not verifiable from hotel data - confirm with the hotel directly.`
+              : ".");
+
         results.push({
           bookingId: booking.id,
           pnr: booking.pnr,
@@ -2180,6 +2204,7 @@ export class CancelledFlightsService {
             bookingRooms.reduce((sum, room) => sum + room.price, 0),
           ),
           allocationStatus: "RECOMMENDED",
+          reason,
         });
       }
     }
@@ -2238,7 +2263,8 @@ export class CancelledFlightsService {
         totalRooms: item.rooms?.length ?? 0,
         allocationStatus: item.allocationStatus,
         currency: "USD",
-        bookingReference: `temp-${item.bookingId}-${index}`
+        bookingReference: `temp-${item.bookingId}-${index}`,
+        reason: item.reason ?? null,
       };
     });
 
@@ -2346,6 +2372,7 @@ export class CancelledFlightsService {
         rating: h.category,
         totalRooms: h.totalRooms,
         totalCost: h.totalPrice,
+        reason: h.reason ?? null,
         createdAt: h.createdAt.toISOString(),
         updatedAt: h.updatedAt?.toISOString() ?? null,
       })),

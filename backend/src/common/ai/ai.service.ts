@@ -247,7 +247,8 @@ HARD RULES - never break these:
 1. Capacity: the assigned room(s) must fit the group's adults/children exactly.
 2. Same hotel: every occupancyGroup that shares the same "sameHotelGroup" value must be assigned to the SAME hotelId (those rooms belong to one family/booking).
 3. Allotment: never assign more rooms of the same rateKey, summed across ALL groups in this entire input, than that rate's "allotment" value. Track a running count as you go - this is a hard cap, not a preference. If a room's "allotment" is null, that rate is unavailable - never assign it.
-4. Special needs: only treat a specialNotes code as satisfied if the hotel/room data structurally supports it (an explicit field says so). Never infer a special need from a room's name or description. If nothing in a group's shortlist structurally supports a required note, put that group in "unresolved" with a reason - do not guess.
+
+SPECIAL NEEDS are advisory only. The hotel/room data has NO accessibility, medical, or dietary fields, so a specialNotes code can never be structurally verified - do NOT mark a group "unresolved" because of a special need, and never infer one from a room's name. Allocate the group normally by the priority order below; in its "reason", state which specialNotes codes were recorded and that they could not be confirmed from provider data and must be verified with the hotel directly.
 
 PRIORITY ORDER - apply only among rooms that already satisfy the hard rules:
 Rank travelClass as FIRST > BUSINESS > PREMIUM_ECONOMY > ECONOMY, and process groups in that order.
@@ -255,11 +256,13 @@ Rank travelClass as FIRST > BUSINESS > PREMIUM_ECONOMY > ECONOMY, and process gr
 - BUSINESS groups pick next from what's left - still high category, but yield the single best hotel to FIRST class when allotment is tight.
 - PREMIUM_ECONOMY groups get mid-tier rooms (4-star preferred, 3-star OK).
 - ECONOMY groups get any comfortable, valid room. Don't force the cheapest option if a similarly priced better one is still available, but don't spend at FIRST-class levels either.
-- Within the same class: special-needs groups first, then groups with children/infants, then break remaining ties by bookingReference (alphabetical) for a consistent, repeatable result.
+- Within the same class: special-needs groups first (give them the best-ranked hotel for their class tier), then groups with children/infants, then break remaining ties by bookingReference (alphabetical) for a consistent, repeatable result.
 
 GROUPING: multiple passenger groups sharing one hotel and room type is expected and preferred, as long as allotment isn't exceeded - fill the best-ranked hotel for a class tier before spilling to the next one. Don't scatter groups across hotels for variety.
 
-NEVER leave a group unassigned if any hard-rule-satisfying room exists anywhere in its shortlist, even below its ideal category. Only use "unresolved" when nothing in the shortlist can satisfy the hard rules.
+NEVER leave a group unassigned if any room satisfying hard rules 1-3 exists anywhere in its shortlist, even below its ideal category. Only use "unresolved" when nothing in the shortlist can satisfy hard rules 1-3.
+
+Every assignment MUST include a one-sentence "reason" saying why this hotel and room is the best allocation for that group: name the class tier and how the hotel category fits it, note when it is a fallback below the group's ideal category, and add the special-needs caveat above when the group has any specialNotes.
 
 Return STRICT JSON only, matching the schema in the user message. No prose, no markdown, nothing outside the JSON object.`;
   }
@@ -296,6 +299,7 @@ Return STRICT JSON only, matching the schema in the user message. No prose, no m
       hotelId: string;
       rateKey: string;
       roomsAssigned: number;
+      reason: string;
     }>;
     unresolved: Array<{ passengerGroupId: string; reason: string }>;
   }> {
@@ -307,7 +311,7 @@ Return STRICT JSON only, matching the schema in the user message. No prose, no m
     const responseSchema = `RESPONSE SCHEMA (return exactly this shape, nothing else):
 {
   "assignments": [
-    { "passengerGroupId": "string", "hotelId": "string", "rateKey": "string", "roomsAssigned": number }
+    { "passengerGroupId": "string", "hotelId": "string", "rateKey": "string", "roomsAssigned": number, "reason": "string" }
   ],
   "unresolved": [
     { "passengerGroupId": "string", "reason": "string" }

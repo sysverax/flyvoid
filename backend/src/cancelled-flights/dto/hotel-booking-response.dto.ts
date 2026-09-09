@@ -47,6 +47,14 @@ export class HotelBookingResponseDto {
   totalCost!: number;
 
   @ApiProperty({
+    description: "Allocation rationale, including any unverifiable special-need caveat",
+    nullable: true,
+    example:
+      "Best available 4-star option for business class; special request (wheelchair_assistance) recorded but not verifiable from hotel data - confirm with the hotel directly.",
+  })
+  reason!: string | null;
+
+  @ApiProperty({
     description: "Timestamp when the hotel booking was created",
     example: "2024-01-15T10:00:00Z",
   })
