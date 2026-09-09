@@ -10,4 +10,4 @@ logs/*
 coverage/*
 *.log
 *.tsbuildinfo
-hotelbeds-cache/*
+# hotelbeds-cache/*
