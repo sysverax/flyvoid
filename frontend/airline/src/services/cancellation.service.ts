@@ -196,6 +196,75 @@ export interface CancelledFlightHotelBookingListResponseDto {
   limit: number;
 }
 
+export interface HotelBookingRoomDetailDto {
+  adults: number;
+  children: number;
+  roomName: string;
+  boardName: string;
+  price: number;
+}
+
+export interface HotelBookingHotelDetailDto {
+  hotelCode: string;
+  hotelName: string;
+  category: string;
+  checkInDate: string;
+  checkOutDate: string;
+  rooms: HotelBookingRoomDetailDto[];
+  totalRooms: number;
+  actualPrice: number;
+  buyingPrice?: number;
+  sellingPrice: number;
+  tax: number;
+  platformFee: number;
+  discount: number;
+  totalPrice: number;
+  earnings?: number;
+  status: string;
+  bookingReference: string;
+  createdAt: string;
+  updatedAt: string | null;
+  amenities?: string[];
+}
+
+export interface HotelBookingDetailFlightDto {
+  id: number;
+  flightNumber: string;
+  airlineId: number;
+  departureAirportId: number;
+  arrivalAirportId: number;
+  cancellationDate: string;
+  cancellationReason: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string | null;
+  route: {
+    departureAirport: {
+      id: number;
+      code: string;
+      name: string;
+    };
+    arrivalAirport: {
+      id: number;
+      code: string;
+      name: string;
+    };
+  };
+}
+
+export interface HotelBookingDetailDataDto {
+  id: number;
+  flight: HotelBookingDetailFlightDto;
+  booking: BookingDTO;
+  hotel: HotelBookingHotelDetailDto;
+}
+
+export interface HotelBookingDetailResponseDto {
+  success: boolean;
+  data: HotelBookingDetailDataDto;
+  message?: string;
+}
+
 export const cancellationService = {
   async listCancelledFlights(params?: {
     page?: number;
@@ -415,6 +484,25 @@ export const cancellationService = {
     } catch (error: any) {
       throw new Error(
         extractErrorMessage(error, "Failed to fetch hotel bookings"),
+      );
+    }
+  },
+
+  async getHotelBookingDetail(
+    flightId: number | string,
+    hotelBookingId: number | string,
+  ): Promise<HotelBookingDetailResponseDto> {
+    try {
+      const response = await apiClient.get(
+        `/cancelled-flights/${flightId}/hotel-bookings/${hotelBookingId}`,
+      );
+      return response.data;
+    } catch (error: any) {
+      throw new Error(
+        extractErrorMessage(
+          error,
+          "Failed to fetch hotel booking details",
+        ),
       );
     }
   },
