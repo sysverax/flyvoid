@@ -68,9 +68,9 @@ export function BookingDetailsDrawer({
     hotel?.bookingReference ||
     (activeDetailData?.id ? `HB-${String(activeDetailData.id).padStart(6, "0")}` : null) ||
     booking?.hotelBookingId ||
-    "Not Available";
+    "N/A";
 
-  const pnr = pBooking?.pnr || "Not Available";
+  const pnr = pBooking?.pnr || "N/A";
 
   const firstName = pBooking?.firstName || "";
   const lastName = pBooking?.lastName || "";
@@ -92,6 +92,20 @@ export function BookingDetailsDrawer({
       : 0;
   const totalPax = adults + children;
 
+  const rawChildAges =
+    (pBooking as any)?.childrenAges ||
+    (pBooking as any)?.childAges ||
+    (booking as any)?.childrenAges ||
+    (booking as any)?.childAges ||
+    hotel?.rooms?.flatMap((r: any) => r.childrenAges || []).filter(Boolean) ||
+    [];
+
+  const validChildAges: (number | string)[] = Array.isArray(rawChildAges)
+    ? rawChildAges.filter(
+      (a) => a !== undefined && a !== null && String(a).trim() !== "" && a !== "N/A",
+    )
+    : [];
+
   const travelClass = pBooking?.travelClass || null;
   const isBusiness =
     travelClass === "Business" || travelClass === "First Class";
@@ -105,9 +119,9 @@ export function BookingDetailsDrawer({
     ...(pBooking?.additionalNotes ? [pBooking.additionalNotes] : []),
     ...(pBooking?.notes ? [pBooking.notes] : []),
   ];
-  const notes = notesList.filter(Boolean).join(", ") || "Not Available";
+  const notes = notesList.filter(Boolean).join(", ") || "N/A";
 
-  const hotelName = hotel?.hotelName || booking?.hotelName || "Not Available";
+  const hotelName = hotel?.hotelName || booking?.hotelName || "N/A";
 
   const categoryStr = hotel?.category || "";
   const categoryNumMatch = categoryStr.match(/\d+/);
@@ -129,28 +143,51 @@ export function BookingDetailsDrawer({
     booking?.hotelAddress ||
     booking?.address ||
     booking?.location ||
-    "Not Available";
+    "N/A";
+
+  const addressParts =
+    hotelAddress && hotelAddress !== "N/A"
+      ? hotelAddress.split(",").map((s: string) => s.trim()).filter(Boolean)
+      : ["N/A"];
 
   const frontDeskPhone =
     (hotel as any)?.frontDeskPhone ||
     (hotel as any)?.phone ||
     booking?.hotelPhone ||
-    "Not Available";
+    "N/A";
 
   const reservationsPhone =
     (hotel as any)?.reservationsPhone ||
     (hotel as any)?.reservationPhone ||
-    "Not Available";
+    "N/A";
 
   const checkInDate = hotel?.checkInDate || booking?.checkInDate || null;
   const checkOutDate = hotel?.checkOutDate || booking?.checkOutDate || null;
 
+  const formatHotelDate = (d?: string | null): string => {
+    if (!d) return "";
+    try {
+      if (/^\d{1,2}\s+[A-Za-z]{3}\s+\d{4}$/.test(d.trim())) return d.trim();
+      const parsed = new Date(d);
+      if (isNaN(parsed.getTime())) return d;
+      return parsed.toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+    } catch {
+      return d;
+    }
+  };
+
+  const formattedCheckIn = formatHotelDate(checkInDate);
+  const formattedCheckOut = formatHotelDate(checkOutDate);
   const dateRangeText =
-    checkInDate && checkOutDate
-      ? `Check-in ${checkInDate} · Check-out ${checkOutDate}`
-      : checkInDate
-        ? `Check-in ${checkInDate}`
-        : "Not Available";
+    formattedCheckIn && formattedCheckOut
+      ? `Check-in ${formattedCheckIn} · Check-out ${formattedCheckOut}`
+      : formattedCheckIn
+        ? `Check-in ${formattedCheckIn}`
+        : "N/A";
 
   const rawAmenities =
     hotel?.amenities ||
@@ -276,7 +313,7 @@ export function BookingDetailsDrawer({
                         : "bg-gray-100 text-gray-700",
                     )}
                   >
-                    {travelClass || "Not Available"}
+                    {travelClass || "N/A"}
                   </span>
                 </div>
               </div>
@@ -297,19 +334,19 @@ export function BookingDetailsDrawer({
               <div>
                 <div className="text-gray-500 text-sm mb-1">Full Name</div>
                 <div className="font-medium text-gray-900 text-sm">
-                  {contactName || "Not Available"}
+                  {contactName || "N/A"}
                 </div>
               </div>
               <div>
                 <div className="text-gray-500 text-sm mb-1">Email Address</div>
                 <div className="font-medium text-gray-900 text-sm break-all">
-                  {email || "Not Available"}
+                  {email || "N/A"}
                 </div>
               </div>
               <div>
                 <div className="text-gray-500 text-sm mb-1">Phone Number</div>
                 <div className="font-medium text-gray-900 text-sm">
-                  {phone || "Not Available"}
+                  {phone || "N/A"}
                 </div>
               </div>
             </div>
@@ -327,18 +364,34 @@ export function BookingDetailsDrawer({
             </div>
             <div className="grid grid-cols-2 gap-6 pt-1">
               <div>
-                <div className="font-medium text-gray-900 text-[15px]">
+                <div className="text-lg font-bold text-[#111827] leading-none">
                   {adults}
                 </div>
-                <div className="text-gray-500 text-sm mt-0.5">Adults</div>
+                <div className="text-xs text-gray-500 mt-1">Adults</div>
               </div>
               <div>
-                <div className="font-medium text-gray-900 text-[15px]">
+                <div className="text-lg font-bold text-[#111827] leading-none">
                   {children}
                 </div>
-                <div className="text-gray-500 text-sm mt-0.5">Child</div>
+                <div className="text-xs text-gray-500 mt-1">Child</div>
               </div>
             </div>
+
+            {validChildAges.length > 0 && (
+              <>
+                <div className="h-[0.8px] bg-[#E5E7EB] w-full my-2.5" />
+                <div className="flex flex-wrap gap-2">
+                  {validChildAges.map((age, idx) => (
+                    <div
+                      key={idx}
+                      className="px-2.5 py-1 bg-white border border-gray-200 rounded-md text-xs text-gray-700 font-medium"
+                    >
+                      Child {idx + 1}: {age} yrs
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
 
           <div className="h-px bg-[#E5E7EB] w-full" />
@@ -351,9 +404,9 @@ export function BookingDetailsDrawer({
                 Hotel Booking Confirmation
               </h3>
             </div>
-            <div className="bg-[#F8FAFC] p-4.5 rounded-xl space-y-4 border border-gray-100">
+            <div className="bg-[#F8FAFC] p-4.5 rounded-xl space-y-3.5 border border-gray-100">
               <div>
-                <div className="font-semibold text-[17px] text-[#1F2937]">
+                <div className="font-bold text-[17px] text-[#111827]">
                   {hotelName}
                 </div>
                 {starCount ? (
@@ -366,71 +419,56 @@ export function BookingDetailsDrawer({
                     </span>
                   </div>
                 ) : (
-                  <div className="text-gray-500 text-xs mt-1">
-                    Not Available
-                  </div>
+                  <div className="text-gray-500 text-xs mt-1">N/A</div>
                 )}
               </div>
 
-              <div className="flex items-start gap-2 text-gray-600 text-sm">
+              <div className="flex items-start gap-2.5 text-gray-600 text-sm">
                 <MapPin className="w-4 h-4 shrink-0 text-gray-400 mt-0.5" />
-                <div className="leading-snug">
-                  {hotelAddress}
+                <div className="leading-snug text-gray-700">
+                  <div>{addressParts[0]}</div>
+                  {addressParts.length > 1 && (
+                    <div className="text-gray-500">{addressParts.slice(1).join(", ")}</div>
+                  )}
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-gray-100 grid grid-cols-2 gap-4">
-                <div className="flex items-start gap-2 text-gray-600">
-                  <Phone className="w-4 h-4 shrink-0 text-gray-400 mt-0.5" />
+              <div className="flex items-center gap-2.5 text-gray-600 text-sm">
+                <Calendar className="w-4 h-4 shrink-0 text-gray-400" />
+                <span>{dateRangeText}</span>
+              </div>
+
+              <div className="h-px bg-gray-200/80 w-full" />
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex items-start gap-2">
+                  <Phone className="w-4 h-4 shrink-0 text-gray-400 mt-1" />
                   <div>
                     <div className="text-[13px] text-gray-500">Front Desk</div>
-                    <div className="font-semibold text-gray-900 text-sm mt-0.5">
+                    <div className="font-semibold text-gray-900 text-[15px] mt-0.5">
                       {frontDeskPhone}
                     </div>
                   </div>
                 </div>
-                <div className="flex items-start gap-2 text-gray-600">
-                  <Phone className="w-4 h-4 shrink-0 text-gray-400 mt-0.5" />
+                <div className="flex items-start gap-2">
+                  <Phone className="w-4 h-4 shrink-0 text-gray-400 mt-1" />
                   <div>
                     <div className="text-[13px] text-gray-500">Reservations</div>
-                    <div className="font-semibold text-gray-900 text-sm mt-0.5">
+                    <div className="font-semibold text-gray-900 text-[15px] mt-0.5">
                       {reservationsPhone}
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-gray-100">
+              <div className="h-px bg-gray-200/80 w-full" />
+
+              <div>
                 <div className="text-[13px] text-gray-500">Number of Rooms</div>
-                <div className="font-semibold text-gray-900 text-base mt-0.5">
-                  {displayRoomCount !== null ? displayRoomCount : "Not Available"}
+                <div className="text-lg text-gray-900 leading-tight mt-1">
+                  {displayRoomCount !== null ? displayRoomCount : "N/A"}
                 </div>
               </div>
-
-              {amenitiesList.length > 0 && (
-                <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
-                  {amenitiesList.map((amenity, idx) => {
-                    const lower = amenity.toLowerCase();
-                    const isShuttle =
-                      lower.includes("shuttle") ||
-                      lower.includes("transport") ||
-                      lower.includes("airport");
-                    return (
-                      <span
-                        key={idx}
-                        className={cn(
-                          "border px-2 py-1 rounded text-xs font-medium",
-                          isShuttle
-                            ? "bg-blue-50 text-blue-700 border-blue-100"
-                            : "bg-emerald-50 text-emerald-700 border-emerald-100",
-                        )}
-                      >
-                        {amenity}
-                      </span>
-                    );
-                  })}
-                </div>
-              )}
             </div>
           </div>
 
@@ -449,7 +487,7 @@ export function BookingDetailsDrawer({
                   booking?.roomName ||
                   booking?.roomType ||
                   (hotel?.rooms?.[0]?.roomName) ||
-                  "Not Available";
+                  "N/A";
                 const guestCount = roomData
                   ? (roomData.adults || 0) + (roomData.children || 0) || 2
                   : 2;
@@ -468,31 +506,42 @@ export function BookingDetailsDrawer({
                     : rPrice * 0.08;
                 const rTotal = rPrice - rDiscount + rTax;
 
+                const roomAdults = roomData?.adults ?? adults;
+                const roomChildren = roomData?.children ?? children;
+
                 return (
                   <div key={i + 1} className="bg-white border border-gray-200 p-4.5 rounded-xl">
                     <div className="flex items-center gap-2 font-semibold text-[#1F2937] text-[15px]">
                       <BedDouble className="w-4 h-4 text-[#475569] shrink-0" />
                       <span>Room {i + 1} — {roomName}</span>
                     </div>
-                    <div className="text-xs text-gray-500 mt-1 pl-6">
-                      {guestText}
+
+                    <div className="flex items-center gap-2 mt-2.5">
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-gray-200 rounded-full text-xs text-gray-700 font-normal">
+                        <Users className="w-3.5 h-3.5 text-gray-500" />
+                        <span>{roomAdults} {roomAdults === 1 ? "Adult" : "Adults"}</span>
+                      </div>
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-gray-200 rounded-full text-xs text-gray-700 font-normal">
+                        <span>{roomChildren} {roomChildren === 1 ? "Child" : "Children"}</span>
+                      </div>
                     </div>
-                    <div className="mt-4 space-y-2.5 text-sm">
-                      <div className="flex justify-between items-center text-gray-600">
+
+                    <div className="mt-4 space-y-2 text-sm">
+                      <div className="flex justify-between items-center text-gray-500">
                         <span>1 Room × ${rPrice.toFixed(2)}</span>
-                        <span className="font-medium text-gray-900">${rPrice.toFixed(2)}</span>
+                        <span className="text-gray-900 font-normal">${rPrice.toFixed(2)}</span>
                       </div>
-                      <div className="flex justify-between items-center text-gray-600">
+                      <div className="flex justify-between items-center text-gray-500">
                         <span>Platform Discount</span>
-                        <span className="font-medium text-green-600">-${rDiscount.toFixed(2)}</span>
+                        <span className="text-emerald-600 font-normal">-${rDiscount.toFixed(2)}</span>
                       </div>
-                      <div className="flex justify-between items-center text-gray-600">
+                      <div className="flex justify-between items-center text-gray-500">
                         <span>Hotel Tax</span>
-                        <span className="font-medium text-gray-900">${rTax.toFixed(2)}</span>
+                        <span className="text-gray-900 font-normal">${rTax.toFixed(2)}</span>
                       </div>
-                      <div className="pt-3 mt-3 border-t border-gray-100 flex justify-between items-center font-bold text-gray-900 text-[14px]">
-                        <span>Room Total</span>
-                        <span>${rTotal.toFixed(2)}</span>
+                      <div className="pt-2.5 mt-2.5 border-t border-gray-200/80 flex justify-between items-center">
+                        <span className="font-bold text-gray-900 text-sm">Room Total</span>
+                        <span className="font-bold text-gray-900 text-sm">${rTotal.toFixed(2)}</span>
                       </div>
                     </div>
                   </div>

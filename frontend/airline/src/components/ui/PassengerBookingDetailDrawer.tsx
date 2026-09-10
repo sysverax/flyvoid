@@ -22,7 +22,7 @@ export function PassengerBookingDetailDrawer({
     setMounted(true);
   }, []);
 
-  const pnr = booking?.pnr || "Not Available";
+  const pnr = booking?.pnr || "N/A";
   const firstName = booking?.firstName || "";
   const lastName = booking?.lastName || "";
   const contactName =
@@ -37,6 +37,18 @@ export function PassengerBookingDetailDrawer({
     booking?.children !== undefined && booking?.children !== null
       ? Number(booking.children)
       : 0;
+
+  const rawChildAges =
+    (booking as any)?.childrenAges ||
+    (booking as any)?.childAges ||
+    [];
+
+  const validChildAges: (number | string)[] = Array.isArray(rawChildAges)
+    ? rawChildAges.filter(
+        (a) => a !== undefined && a !== null && String(a).trim() !== "" && a !== "N/A",
+      )
+    : [];
+
   const travelClass = booking?.travelClass || null;
   const isBusiness =
     travelClass === "Business" || travelClass === "First Class";
@@ -103,19 +115,19 @@ export function PassengerBookingDetailDrawer({
               <div>
                 <div className="text-gray-500 text-sm mb-1">Full Name</div>
                 <div className="font-medium text-gray-900 text-sm">
-                  {contactName || "Not Available"}
+                  {contactName || "N/A"}
                 </div>
               </div>
               <div>
                 <div className="text-gray-500 text-sm mb-1">Email Address</div>
                 <div className="font-medium text-gray-900 text-sm break-all">
-                  {email || "Not Available"}
+                  {email || "N/A"}
                 </div>
               </div>
               <div>
                 <div className="text-gray-500 text-sm mb-1">Phone Number</div>
                 <div className="font-medium text-gray-900 text-sm">
-                  {phone || "Not Available"}
+                  {phone || "N/A"}
                 </div>
               </div>
             </div>
@@ -133,18 +145,34 @@ export function PassengerBookingDetailDrawer({
             </div>
             <div className="grid grid-cols-2 gap-6 pt-1">
               <div>
-                <div className="font-medium text-gray-900 text-[15px]">
+                <div className="text-lg font-bold text-[#111827] leading-none">
                   {adults}
                 </div>
-                <div className="text-gray-500 text-sm mt-0.5">Adults</div>
+                <div className="text-xs text-gray-500 mt-1">Adults</div>
               </div>
               <div>
-                <div className="font-medium text-gray-900 text-[15px]">
+                <div className="text-lg font-bold text-[#111827] leading-none">
                   {children}
                 </div>
-                <div className="text-gray-500 text-sm mt-0.5">Child</div>
+                <div className="text-xs text-gray-500 mt-1">Child</div>
               </div>
             </div>
+
+            {validChildAges.length > 0 && (
+              <>
+                <div className="h-px bg-[#E5E7EB] w-full my-2.5" />
+                <div className="flex flex-wrap gap-2">
+                  {validChildAges.map((age, idx) => (
+                    <div
+                      key={idx}
+                      className="px-2.5 py-1 bg-white border border-gray-200 rounded-md text-xs text-gray-700 font-medium"
+                    >
+                      Child {idx + 1}: {age} yrs
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
 
           <div className="h-px bg-[#E5E7EB] w-full" />
@@ -166,7 +194,7 @@ export function PassengerBookingDetailDrawer({
                     : "bg-gray-100 text-gray-700",
                 )}
               >
-                {travelClass || "Not Available"}
+                {travelClass || "N/A"}
               </span>
             </div>
           </div>
@@ -194,7 +222,7 @@ export function PassengerBookingDetailDrawer({
                 ))
               ) : (
                 <div className="text-gray-500 text-sm">
-                  Not Available
+                  N/A
                 </div>
               )}
             </div>
