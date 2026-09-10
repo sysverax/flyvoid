@@ -646,7 +646,7 @@ export class CancelledFlightsService {
     dto: CreateBookingDto,
     requestId: string,
   ): Promise<BookingResponseDto> {
-    await this.requireFlight(flightId, requestId);
+    const flight = await this.requireFlight(flightId, requestId);
 
     const duplicate =
       await this.cancelledFlightsRepository.findBookingByPnrAndFlight(
@@ -677,6 +677,8 @@ export class CancelledFlightsService {
       requestId,
     );
 
+    await this.markFlightInProgressIfDraft(flight, requestId);
+
     this.logger.info("Booking added", this.context, requestId, {
       flightId,
       bookingId: booking.id,
@@ -693,7 +695,7 @@ export class CancelledFlightsService {
     file: { buffer: Buffer; originalname: string; mimetype: string },
     requestId: string,
   ): Promise<ImportBookingResponseDto> {
-    await this.requireFlight(flightId, requestId);
+    const flight = await this.requireFlight(flightId, requestId);
     // Parse the CSV file
     const csv = file.buffer.toString("utf-8");
     const rows = csv.split("\n").map((line) => line.split(","));
@@ -834,25 +836,28 @@ export class CancelledFlightsService {
       children: number;
       specialNotes: SpecialNote[];
       additionalNotes: string | null;
-    }[] = bookings
-      .map((b) => ({
-        cancelledFlightId: flightId,
-        pnr: b.pnr,
-        firstName: b.firstName,
-        lastName: b.lastName,
-        email: b.email,
-        phone: b.phone,
-        travelClass: b.travelClass,
-        adults: b.adults,
-        children: b.children,
-        specialNotes: b.specialNotes,
-        additionalNotes: b.additionalNotes,
-      }));
+    }[] = bookings.map((b) => ({
+      cancelledFlightId: flightId,
+      pnr: b.pnr,
+      firstName: b.firstName,
+      lastName: b.lastName,
+      email: b.email,
+      phone: b.phone,
+      travelClass: b.travelClass,
+      adults: b.adults,
+      children: b.children,
+      specialNotes: b.specialNotes,
+      additionalNotes: b.additionalNotes,
+    }));
 
     const bookingFlights = await this.cancelledFlightsRepository.saveBookings(
       toSave,
       requestId,
     );
+
+    if (bookingFlights.length > 0) {
+      await this.markFlightInProgressIfDraft(flight, requestId);
+    }
 
     return {
       bookings: bookingFlights.map((b) => this.toBookingResponse(b)),
@@ -1108,6 +1113,23 @@ export class CancelledFlightsService {
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────
+
+  private async markFlightInProgressIfDraft(
+    flight: CancelledFlightEntity,
+    requestId: string,
+  ): Promise<void> {
+    if (flight.status !== FlightStatus.DRAFT) {
+      return;
+    }
+
+    await this.cancelledFlightsRepository.updateFlightStatus({
+      cancelledFlightEntity: flight,
+      status: FlightStatus.IN_PROGRESS,
+      passengerBookingStats: null,
+      hotelBookingStats: null,
+      requestId,
+    });
+  }
 
   private async requireFlight(flightId: number, requestId: string) {
     const flight = await this.cancelledFlightsRepository.findFlightById(
