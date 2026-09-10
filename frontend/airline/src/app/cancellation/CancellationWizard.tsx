@@ -281,14 +281,11 @@ export default function CancellationWizard({
   }, [activeStep, airports.length]);
 
   const airportOptions = useMemo(() => {
-    return [
-      { value: "", label: isLoadingAirports ? "Loading airports..." : "Select airport" },
-      ...airports.map((a) => ({
-        value: a.iataCode || String(a.id),
-        label: `${a.iataCode} - ${a.name || a.city}`,
-      })),
-    ];
-  }, [airports, isLoadingAirports]);
+    return airports.map((a) => ({
+      value: a.iataCode || String(a.id),
+      label: `${a.iataCode} - ${a.name || a.city}`,
+    }));
+  }, [airports]);
 
   const resolveAirportId = (val: string): number => {
     if (!val) return 0;
@@ -1578,6 +1575,8 @@ export default function CancellationWizard({
                   value={newDepartureAirport}
                   onChange={handleDepartureAirportChange}
                   options={airportOptions}
+                  placeholder={isLoadingAirports ? "Loading airports..." : "Select airport"}
+                  searchable
                   triggerWidthClass="w-full"
                   widthClass="w-full"
                   heightClass="h-[49px]"
@@ -1606,6 +1605,8 @@ export default function CancellationWizard({
                   value={newArrivalAirport}
                   onChange={handleArrivalAirportChange}
                   options={airportOptions}
+                  placeholder={isLoadingAirports ? "Loading airports..." : "Select airport"}
+                  searchable
                   triggerWidthClass="w-full"
                   widthClass="w-full"
                   heightClass="h-[49px]"
@@ -2804,15 +2805,7 @@ export default function CancellationWizard({
               </div>
             )}
 
-            <div className="flex items-center justify-between pt-2">
-              <button
-                type="button"
-                onClick={handlePrevStep}
-                className="flex items-center gap-2 border border-gray-200 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2.5 px-5 rounded-lg transition-colors cursor-pointer text-sm"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                <span>Back</span>
-              </button>
+            <div className="flex items-center justify-end pt-2">
               <button
                 type="button"
                 onClick={handleAllocateHotels}
@@ -3069,7 +3062,7 @@ export default function CancellationWizard({
                             </div>
                           </TableCell>
                           <TableCell className="text-center">{rooms}</TableCell>
-                          <TableCell className="text-right font-semibold text-gray-900">
+                          <TableCell className="font-semibold text-gray-900">
                             {currencySymbol}
                             {bookingCost.toLocaleString(undefined, {
                               minimumFractionDigits: 2,
