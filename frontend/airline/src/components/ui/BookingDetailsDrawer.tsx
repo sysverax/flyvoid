@@ -1,6 +1,6 @@
 "use client";
 
-import { X, Star, Calendar, Loader2 } from "lucide-react";
+import { X, Star, Calendar, Loader2, Plane, User, Users, Building2, MapPin, Phone, BedDouble, Download } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { useEffect, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
@@ -120,16 +120,27 @@ export function BookingDetailsDrawer({
       ? Math.min(5, Math.max(1, parsedCategoryStars))
       : !isNaN(ratingVal)
         ? Math.min(5, Math.max(1, Math.round(ratingVal)))
-        : isBusiness
-          ? 4
-          : 3;
+        : null;
 
   const hotelAddress =
+    (hotel as any)?.address ||
+    (hotel as any)?.hotelAddress ||
+    (hotel as any)?.location ||
     booking?.hotelAddress ||
     booking?.address ||
-    (hotel?.hotelCode
-      ? `${hotel.hotelName || "Hotel"}, ${hotel.hotelCode}`
-      : "Not Available");
+    booking?.location ||
+    "Not Available";
+
+  const frontDeskPhone =
+    (hotel as any)?.frontDeskPhone ||
+    (hotel as any)?.phone ||
+    booking?.hotelPhone ||
+    "Not Available";
+
+  const reservationsPhone =
+    (hotel as any)?.reservationsPhone ||
+    (hotel as any)?.reservationPhone ||
+    "Not Available";
 
   const checkInDate = hotel?.checkInDate || booking?.checkInDate || null;
   const checkOutDate = hotel?.checkOutDate || booking?.checkOutDate || null;
@@ -153,16 +164,16 @@ export function BookingDetailsDrawer({
       ? rawAmenities.split(",").map((s: string) => s.trim()).filter(Boolean)
       : [];
 
-  const roomCount =
+  const displayRoomCount =
     hotel?.rooms && hotel.rooms.length > 0
       ? hotel.rooms.length
       : hotel?.totalRooms && Number(hotel.totalRooms) > 0
         ? Number(hotel.totalRooms)
         : booking?.totalRooms && Number(booking.totalRooms) > 0
           ? Number(booking.totalRooms)
-          : totalPax > 0
-            ? Math.ceil(totalPax / 2)
-            : 1;
+          : null;
+
+  const roomCount = displayRoomCount || (totalPax > 0 ? Math.ceil(totalPax / 2) : 1);
 
   const baseRate = isBusiness ? 160 : 120;
   const fallbackHotelCost = (Math.ceil((adults + children) / 2) || 1) * baseRate;
@@ -238,78 +249,166 @@ export function BookingDetailsDrawer({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-7 space-y-8 scrollbar-hide text-left text-sm">
-
+        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6 scrollbar-hide text-left text-sm">
           {/* Booking Information */}
           <div>
-                <h1 className="font-semibold text-base text-gray-900 mb-1 pb-2">Booking Information</h1>
-            <div className="space-y-3">
-              <div className="flex justify-between items-start gap-4">
-                <span className="text-gray-500">Hotel Booking ID</span>
-                <span className="font-medium text-gray-900 text-right">
+            <div className="flex items-center gap-2 mb-3">
+              <Plane className="w-4 h-4 text-[#475569]" />
+              <h3 className="font-semibold text-[14px] uppercase tracking-wider text-[#475569]">
+                Booking Information
+              </h3>
+            </div>
+            <div className="grid grid-cols-2 gap-6 pt-1">
+              <div>
+                <div className="text-gray-500 text-sm mb-1">Booking ID</div>
+                <div className="font-semibold text-gray-900 text-sm">
                   {displayBookingId}
-                </span>
-              </div>
-              <div className="flex justify-between items-start gap-4">
-                <span className="text-gray-500">PNR</span>
-                <span className="font-medium text-gray-900 uppercase text-right">
-                  {pnr}
-                </span>
-              </div>
-              <div className="flex justify-between items-start gap-4">
-                <span className="text-gray-500">Contact</span>
-                <div className="text-gray-900 text-right">
-                  <div className="font-medium">{contactName || "Not Available"}</div>
-                  <div className="text-gray-500 mt-0.5">{email || "Not Available"}</div>
-                  <div className="text-gray-500 mt-0.5">{phone || "Not Available"}</div>
                 </div>
               </div>
-              <div className="flex justify-between items-start gap-4">
-                <span className="text-gray-500">Passengers</span>
-                <span className="font-medium text-gray-900 text-right">
-                  {hasPax
-                    ? `${totalPax} ${totalPax === 1 ? "Passenger" : "Passengers"} · ${adults} ${adults === 1 ? "Adult" : "Adults"}, ${children} ${children === 1 ? "Child" : "Children"}`
-                    : "Not Available"}
-                </span>
-              </div>
-              <div className="flex justify-between items-center gap-4">
-                <span className="text-gray-500">Class</span>
-                <span className="font-medium text-gray-900 capitalize bg-gray-100 px-2 py-0.5 rounded inline-flex w-fit">
-                  {travelClass ? `${travelClass} class` : "Not Available"}
-                </span>
-              </div>
-              <div className="flex justify-between items-start gap-4">
-                <span className="text-gray-500">Special Notes</span>
-                <span className="text-gray-900 text-right">{notes}</span>
+              <div>
+                <div className="text-gray-500 text-sm mb-1">Travel Class</div>
+                <div className="font-medium text-gray-900">
+                  <span
+                    className={cn(
+                      "rounded px-2.5 py-0.5 text-xs font-semibold inline-block capitalize",
+                      isBusiness
+                        ? "bg-purple-100 text-purple-800"
+                        : "bg-gray-100 text-gray-700",
+                    )}
+                  >
+                    {travelClass || "Not Available"}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Hotel Information */}
+          <div className="h-px bg-[#E5E7EB] w-full" />
+
+          {/* Primary Guest / Contact */}
           <div>
-            <h3 className="font-semibold text-base text-gray-900 mb-1 pb-2">Hotel Information</h3>
-            <div className="bg-[#F8FAFC] p-4 rounded-xl space-y-3 border border-gray-100">
+            <div className="flex items-center gap-2 mb-3">
+              <User className="w-4 h-4 text-[#475569]" />
+              <h3 className="font-semibold text-[14px] uppercase tracking-wider text-[#475569]">
+                Primary Guest / Contact
+              </h3>
+            </div>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-4 pt-1">
               <div>
-                <div className="font-semibold text-base text-gray-900">
+                <div className="text-gray-500 text-sm mb-1">Full Name</div>
+                <div className="font-medium text-gray-900 text-sm">
+                  {contactName || "Not Available"}
+                </div>
+              </div>
+              <div>
+                <div className="text-gray-500 text-sm mb-1">Email Address</div>
+                <div className="font-medium text-gray-900 text-sm break-all">
+                  {email || "Not Available"}
+                </div>
+              </div>
+              <div>
+                <div className="text-gray-500 text-sm mb-1">Phone Number</div>
+                <div className="font-medium text-gray-900 text-sm">
+                  {phone || "Not Available"}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="h-[0.8px] bg-[#E5E7EB] w-full" />
+
+          {/* Passenger Details */}
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <Users className="w-4 h-4 text-[#475569]" />
+              <h3 className="font-semibold text-[14px] uppercase tracking-wider text-[#475569]">
+                Passenger Details
+              </h3>
+            </div>
+            <div className="grid grid-cols-2 gap-6 pt-1">
+              <div>
+                <div className="font-medium text-gray-900 text-[15px]">
+                  {adults}
+                </div>
+                <div className="text-gray-500 text-sm mt-0.5">Adults</div>
+              </div>
+              <div>
+                <div className="font-medium text-gray-900 text-[15px]">
+                  {children}
+                </div>
+                <div className="text-gray-500 text-sm mt-0.5">Child</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="h-px bg-[#E5E7EB] w-full" />
+
+          {/* Hotel Booking Confirmation */}
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <Building2 className="w-4 h-4 text-[#475569]" />
+              <h3 className="font-semibold text-[14px] uppercase tracking-wider text-[#475569]">
+                Hotel Booking Confirmation
+              </h3>
+            </div>
+            <div className="bg-[#F8FAFC] p-4.5 rounded-xl space-y-4 border border-gray-100">
+              <div>
+                <div className="font-semibold text-[17px] text-[#1F2937]">
                   {hotelName}
                 </div>
-                <div className="flex text-amber-400 mt-1">
-                  {[...Array(starCount)].map((_, i) => (
-                    <Star key={i} className="h-3 w-3 fill-current" />
-                  ))}
+                {starCount ? (
+                  <div className="flex items-center gap-1 text-amber-400 mt-1">
+                    {[...Array(starCount)].map((_, i) => (
+                      <Star key={i} className="h-3.5 w-3.5 fill-current" />
+                    ))}
+                    <span className="text-gray-500 text-xs ml-1 font-normal">
+                      ({starCount} Star Hotel)
+                    </span>
+                  </div>
+                ) : (
+                  <div className="text-gray-500 text-xs mt-1">
+                    Not Available
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-start gap-2 text-gray-600 text-sm">
+                <MapPin className="w-4 h-4 shrink-0 text-gray-400 mt-0.5" />
+                <div className="leading-snug">
+                  {hotelAddress}
                 </div>
               </div>
-              <div className="text-gray-600">
-                {hotelAddress}
+
+              <div className="pt-2 border-t border-gray-100 grid grid-cols-2 gap-4">
+                <div className="flex items-start gap-2 text-gray-600">
+                  <Phone className="w-4 h-4 shrink-0 text-gray-400 mt-0.5" />
+                  <div>
+                    <div className="text-[13px] text-gray-500">Front Desk</div>
+                    <div className="font-semibold text-gray-900 text-sm mt-0.5">
+                      {frontDeskPhone}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 text-gray-600">
+                  <Phone className="w-4 h-4 shrink-0 text-gray-400 mt-0.5" />
+                  <div>
+                    <div className="text-[13px] text-gray-500">Reservations</div>
+                    <div className="font-semibold text-gray-900 text-sm mt-0.5">
+                      {reservationsPhone}
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center gap-2 text-gray-600">
-                <Calendar className="h-4 w-4 shrink-0 text-gray-400" />
-                <span>
-                  {dateRangeText}
-                </span>
+
+              <div className="pt-2 border-t border-gray-100">
+                <div className="text-[13px] text-gray-500">Number of Rooms</div>
+                <div className="font-semibold text-gray-900 text-base mt-0.5">
+                  {displayRoomCount !== null ? displayRoomCount : "Not Available"}
+                </div>
               </div>
+
               {amenitiesList.length > 0 && (
-                <div className="flex flex-wrap gap-2 pt-2">
+                <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
                   {amenitiesList.map((amenity, idx) => {
                     const lower = amenity.toLowerCase();
                     const isShuttle =
@@ -335,9 +434,13 @@ export function BookingDetailsDrawer({
             </div>
           </div>
 
+          <div className="h-px bg-[#E5E7EB] w-full" />
+
           {/* Room Details */}
           <div>
-            <h3 className="font-semibold text-base text-gray-900 mb-1 pb-2">Room Details</h3>
+            <h3 className="font-semibold text-[14px] uppercase tracking-wider text-[#475569] mb-3">
+              Room Details
+            </h3>
             <div className="space-y-4">
               {Array.from({ length: roomCount }).map((_, i) => {
                 const roomData = hotel?.rooms?.[i];
@@ -347,9 +450,10 @@ export function BookingDetailsDrawer({
                   booking?.roomType ||
                   (hotel?.rooms?.[0]?.roomName) ||
                   "Not Available";
-                // const guestText = roomData
-                //   ? `Up to ${(roomData.adults || 0) + (roomData.children || 0)} Guests${roomData.boardName ? ` · ${roomData.boardName}` : ""}`
-                //   : "Up to 2 Guests";
+                const guestCount = roomData
+                  ? (roomData.adults || 0) + (roomData.children || 0) || 2
+                  : 2;
+                const guestText = `Up to ${guestCount} Guests`;
                 const rPrice =
                   roomData?.price !== undefined
                     ? Number(roomData.price)
@@ -365,12 +469,15 @@ export function BookingDetailsDrawer({
                 const rTotal = rPrice - rDiscount + rTax;
 
                 return (
-                  <div key={i + 1} className="bg-white border border-gray-200 p-4 rounded-xl">
-                    <div className="font-semibold text-gray-900">
-                      Room {i + 1} — {roomName}
+                  <div key={i + 1} className="bg-white border border-gray-200 p-4.5 rounded-xl">
+                    <div className="flex items-center gap-2 font-semibold text-[#1F2937] text-[15px]">
+                      <BedDouble className="w-4 h-4 text-[#475569] shrink-0" />
+                      <span>Room {i + 1} — {roomName}</span>
                     </div>
-                    {/* <div className="text-xs text-gray-500 mt-0.5">{guestText}</div> */}
-                    <div className="mt-4 space-y-2 text-sm">
+                    <div className="text-xs text-gray-500 mt-1 pl-6">
+                      {guestText}
+                    </div>
+                    <div className="mt-4 space-y-2.5 text-sm">
                       <div className="flex justify-between items-center text-gray-600">
                         <span>1 Room × ${rPrice.toFixed(2)}</span>
                         <span className="font-medium text-gray-900">${rPrice.toFixed(2)}</span>
@@ -383,7 +490,7 @@ export function BookingDetailsDrawer({
                         <span>Hotel Tax</span>
                         <span className="font-medium text-gray-900">${rTax.toFixed(2)}</span>
                       </div>
-                      <div className="pt-2 mt-2 border-t border-gray-100 flex justify-between items-center font-semibold text-gray-900 text-sm">
+                      <div className="pt-3 mt-3 border-t border-gray-100 flex justify-between items-center font-bold text-gray-900 text-[14px]">
                         <span>Room Total</span>
                         <span>${rTotal.toFixed(2)}</span>
                       </div>
@@ -394,49 +501,67 @@ export function BookingDetailsDrawer({
             </div>
           </div>
 
-          {/* Pricing Summary */}
+          <div className="h-px bg-[#E5E7EB] w-full" />
+
+          {/* Cost Breakdown */}
           <div>
-            <h3 className="font-semibold text-base text-gray-900 mb-1 pb-2">Pricing Summary</h3>
+            <h3 className="font-semibold text-[14px] uppercase tracking-wider text-[#475569] mb-3">
+              Cost Breakdown
+            </h3>
             <div className="bg-white border border-gray-200 p-5 rounded-xl space-y-3">
-              <div className="flex justify-between items-center text-gray-600">
+              <div className="flex justify-between items-center text-gray-600 text-sm">
                 <span>Hotel Cost</span>
                 <span className="text-gray-900 font-medium">
                   ${hotelCost.toFixed(2)}
                 </span>
               </div>
-              <div className="flex justify-between items-center text-gray-600">
+              <div className="flex justify-between items-center text-gray-600 text-sm">
                 <span>Platform Discount</span>
                 <span className="font-medium text-green-600">
                   -${discount.toFixed(2)}
                 </span>
               </div>
-              <div className="flex justify-between items-center text-gray-600">
+              <div className="flex justify-between items-center text-gray-600 text-sm">
                 <span>Hotel Tax</span>
                 <span className="text-gray-900 font-medium">
                   ${tax.toFixed(2)}
                 </span>
               </div>
-              <div className="flex justify-between items-center text-gray-900 font-semibold pt-2 border-t border-gray-100 mt-1 text-sm">
+              <div className="flex justify-between items-center text-gray-900 font-semibold pt-2.5 border-t border-gray-100 text-sm">
                 <span>Hotel Payment</span>
                 <span>
                   ${hotelPayment.toFixed(2)}
                 </span>
               </div>
-              <div className="flex justify-between items-center text-gray-500 text-sm pt-1">
+              <div className="flex justify-between items-center text-gray-500 text-sm pt-0.5">
                 <span>Platform Fee (5% of hotel payment)</span>
                 <span>
                   ${platformFee.toFixed(2)}
                 </span>
               </div>
-              <div className="flex justify-between items-center text-sm font-semibold text-gray-900 pt-2 border-t border-gray-100 mt-1">
+              <div className="flex justify-between items-center text-[15px] font-bold text-gray-900 pt-3 border-t border-gray-100 mt-1">
                 <span>Total Payment</span>
-                <span>
+                <span className="text-[18px] font-bold text-emerald-600">
                   ${totalPrice.toFixed(2)}
                 </span>
               </div>
             </div>
           </div>
 
+        </div>
+
+        {/* Footer with Download PDF button */}
+        <div className="p-4 border-t border-gray-200 bg-white">
+          <button
+            type="button"
+            onClick={() => {
+              window.print();
+            }}
+            className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-[#0F2757] hover:bg-[#162259] text-white text-sm font-semibold rounded-xl shadow-sm transition-colors cursor-pointer"
+          >
+            <Download className="w-4 h-4 shrink-0" />
+            <span>Download PDF</span>
+          </button>
         </div>
       </div>
     </>
