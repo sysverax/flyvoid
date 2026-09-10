@@ -23,12 +23,14 @@ export interface DropdownProps {
   maxListHeightClass?: string;
   error?: boolean;
   searchable?: boolean;
+  placeholder?: string;
 }
 
 export function Dropdown({
   value,
   onChange,
   options,
+  placeholder,
   widthClass = "w-60",
   triggerWidthClass = "w-[180px]",
   heightClass = "h-11",
@@ -57,7 +59,8 @@ export function Dropdown({
     };
   }, []);
 
-  const selectedOption = options.find((opt) => opt.value === value) || options[0];
+  const selectedOption = options.find((opt) => opt.value === value) || (placeholder ? undefined : options[0]);
+  const isPlaceholder = !selectedOption && !!placeholder;
 
   const handleSelect = (val: string) => {
     onChange(val);
@@ -88,13 +91,13 @@ export function Dropdown({
     const query = searchQuery.toLowerCase();
     return options.filter(
       (option) =>
-        option.value === "" ||
-        option.label.toLowerCase().includes(query)
+        option.label.toLowerCase().includes(query) ||
+        option.value.toLowerCase().includes(query)
     );
   }, [options, searchable, searchQuery]);
 
   const triggerText = `${labelPrefix ? `${labelPrefix}: ` : ""}${
-    selectedOption ? selectedOption.label : value
+    selectedOption ? selectedOption.label : (placeholder || value || "")
   }`;
 
   return (
@@ -110,7 +113,7 @@ export function Dropdown({
               disabled={disabled}
               onClick={toggleDropdown}
               className={cn(
-                "w-full flex items-center justify-between rounded-[8px] border pl-4 pr-3.5 text-[#1F2937] outline-none cursor-pointer hover:bg-slate-100/80 transition-colors text-[16px]",
+                "w-full flex items-center justify-between rounded-[8px] border pl-4 pr-3.5 outline-none cursor-pointer hover:bg-slate-100/80 transition-colors text-[16px]",
                 error
                   ? "border-rose-500 bg-rose-50/10 focus:border-rose-500"
                   : "border-[#D1D5DB]",
@@ -119,7 +122,13 @@ export function Dropdown({
                 disabled && "opacity-50 cursor-not-allowed hover:bg-transparent"
               )}
             >
-              <span ref={triggerSpanRef} className="truncate text-left flex-1 mr-2">
+              <span
+                ref={triggerSpanRef}
+                className={cn(
+                  "truncate text-left flex-1 mr-2",
+                  isPlaceholder ? "text-[#9CA3AF]" : "text-[#1F2937]"
+                )}
+              >
                 {triggerText}
               </span>
               <ChevronDown
