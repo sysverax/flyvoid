@@ -163,7 +163,7 @@ function mapApiCancelledFlight(
     totalCost: Number(item.totalCost || 0),
     status: mappedStatus.status,
     displayStatus: mappedStatus.displayStatus,
-    reason: "Not specified",
+    reason: "",
   };
 }
 
@@ -344,7 +344,7 @@ function PublishedDetailView({
     ? reviewData.flight.cancellationReason.replace(/_/g, " ")
     : cancellation.reason && cancellation.reason !== "Not specified"
       ? cancellation.reason
-      : "Not specified";
+      : "";
 
   // Financial calculations from hotel summary
   const totalRoomsBooked = hotelSummary?.totalRooms ?? 0;

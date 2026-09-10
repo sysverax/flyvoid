@@ -58,6 +58,8 @@ import { AddCardModal } from "@/src/components/ui/AddCardModal";
 import { cn } from "@/src/lib/utils";
 import {
   cancellationService,
+  CreateCancelledFlightPayload,
+  UpdateCancelledFlightPayload,
   CreateBookingPayload,
   BookingDTO,
   ReviewFlightResponse,
@@ -102,8 +104,9 @@ const ENUM_TO_TRAVEL_CLASS: Record<string, string> = {
 };
 
 
-function mapCancellationReason(tag: string, text: string): string {
-  const combined = (tag + " " + text).toLowerCase();
+function mapCancellationReason(tag: string, text: string): string | undefined {
+  const combined = (tag + " " + text).trim().toLowerCase();
+  if (!combined) return undefined;
   if (combined.includes("weather")) return "weather_disruption";
   if (
     combined.includes("tech") ||
@@ -124,7 +127,7 @@ function mapCancellationReason(tag: string, text: string): string {
     combined.includes("control")
   )
     return "air_traffic_control";
-  return "weather_disruption";
+  return undefined;
 }
 
 const TRAVEL_CLASS_OPTIONS = [
@@ -932,11 +935,16 @@ export default function CancellationWizard({
   const currencySymbol = hotelAllocations?.currency === "EUR" ? "€" : "$";
 
   const handleTagClick = (tag: string) => {
-    setSelectedReasonTag(tag);
-    if (tag === "Other") {
+    if (selectedReasonTag === tag) {
+      setSelectedReasonTag("");
       setNewReason("");
     } else {
-      setNewReason(tag);
+      setSelectedReasonTag(tag);
+      if (tag === "Other") {
+        setNewReason("");
+      } else {
+        setNewReason(tag);
+      }
     }
   };
 
@@ -987,17 +995,24 @@ export default function CancellationWizard({
   };
 
   const handleEditBooking = (booking: ManualBooking) => {
+    setBookingTab("manual");
     setEditingBookingId(booking.id);
-    setBookingPnr(booking.pnr);
-    setBookingFirstName(booking.firstName);
-    setBookingLastName(booking.lastName);
-    setBookingEmail(booking.email);
-    setBookingPhone(booking.phone);
-    setBookingClass(booking.travelClass);
-    setBookingAdults(String(booking.adults));
-    setBookingChildren(String(booking.children));
-    setBookingNotesText(booking.notes);
-    setSelectedNoteTags(booking.tags);
+    setBookingPnr(booking.pnr || "");
+    setBookingFirstName(booking.firstName || "");
+    setBookingLastName(booking.lastName || "");
+    setBookingEmail(booking.email || "");
+    setBookingPhone(booking.phone || "");
+    setBookingClass(booking.travelClass || "Economy");
+    setBookingAdults(String(booking.adults ?? 1));
+    setBookingChildren(String(booking.children ?? 0));
+    setBookingNotesText(booking.notes || "");
+    setSelectedNoteTags(booking.tags || []);
+
+    setTimeout(() => {
+      const pnrInput = document.querySelector('input[placeholder="e.g., ABC123"]');
+      pnrInput?.scrollIntoView({ behavior: "smooth", block: "center" });
+      (pnrInput as HTMLInputElement)?.focus();
+    }, 50);
   };
 
   const handleDeleteBooking = async (id: string) => {
@@ -1262,35 +1277,34 @@ export default function CancellationWizard({
     try {
       const formattedDate = toIsoDate(newDate);
       const reasonEnum = mapCancellationReason(selectedReasonTag, newReason);
-      const reasonText =
-        newReason.trim() ||
-        selectedReasonTag ||
-        "Severe weather conditions at departure";
+      const reasonText = newReason.trim() || selectedReasonTag || undefined;
 
       if (flightId) {
+        const updatePayload: UpdateCancelledFlightPayload = {
+          flightNumber: newFlight.trim(),
+          departureAirportId: depId,
+          arrivalAirportId: arrId,
+          cancellationDate: formattedDate,
+          cancellationReason: reasonEnum || null,
+          cancellationReasonText: reasonText || null,
+        };
         const response = await cancellationService.updateCancelledFlight(
           flightId,
-          {
-            flightNumber: newFlight.trim(),
-            departureAirportId: depId,
-            arrivalAirportId: arrId,
-            cancellationDate: formattedDate,
-            cancellationReason: reasonEnum,
-            cancellationReasonText: reasonText,
-          },
+          updatePayload,
         );
         toast.success(
           response?.message || "Cancelled flight updated successfully",
         );
       } else {
-        const response = await cancellationService.createCancelledFlight({
+        const createPayload: CreateCancelledFlightPayload = {
           flightNumber: newFlight.trim(),
           departureAirportId: depId,
           arrivalAirportId: arrId,
           cancellationDate: formattedDate,
-          cancellationReason: reasonEnum,
-          cancellationReasonText: reasonText,
-        });
+          ...(reasonEnum ? { cancellationReason: reasonEnum } : {}),
+          ...(reasonText ? { cancellationReasonText: reasonText } : {}),
+        };
+        const response = await cancellationService.createCancelledFlight(createPayload);
 
         if (response?.data?.id) {
           setCreatedFlightId(response.data.id);
@@ -1324,7 +1338,7 @@ export default function CancellationWizard({
         passengers: totalPassengersCount,
         totalCost: totalPayment,
         status: "Published",
-        reason: newReason || selectedReasonTag || "Weather disruption",
+        reason: newReason || selectedReasonTag || "N/A",
       };
       toast.success("Cancelled flight published successfully");
       onSave(added);
@@ -1349,7 +1363,7 @@ export default function CancellationWizard({
         passengers: totalPassengersCount,
         totalCost: totalPayment,
         status: "Published",
-        reason: newReason || selectedReasonTag || "Weather disruption",
+        reason: newReason || selectedReasonTag || "N/A",
       };
       onSave(added);
     } catch (error: any) {
@@ -1640,7 +1654,7 @@ export default function CancellationWizard({
                       ? "border-red-500 focus:ring-red-500/20 focus:border-red-500"
                       : "border-[#D1D5DB] focus:ring-[#1B2B6B]/20 focus:border-[#1B2B6B]",
                   )}
-                  placeholder="mm/dd/yyyy"
+                  placeholder="dd/mm/yyyy"
                 />
                 {step1Errors.checkInDate && step1Touched.checkInDate && (
                   <p className="field-error mt-1 text-xs text-red-500">
@@ -1666,7 +1680,7 @@ export default function CancellationWizard({
                       ? "border-red-500 focus:ring-red-500/20 focus:border-red-500"
                       : "border-[#D1D5DB] focus:ring-[#1B2B6B]/20 focus:border-[#1B2B6B]",
                   )}
-                  placeholder="mm/dd/yyyy"
+                  placeholder="dd/mm/yyyy"
                 />
                 {step1Errors.checkOutDate && step1Touched.checkOutDate && (
                   <p className="field-error mt-1 text-xs text-red-500">
@@ -2153,17 +2167,6 @@ export default function CancellationWizard({
                   />
                 </div>
 
-                {/* Info Alert Box */}
-                <div className="bg-[#EFF6FF] border border-[#D1D5DB] p-4 rounded-lg flex items-start gap-3 text-left">
-                  <AlertCircle className="h-4 w-4 shrink-0 mt-1 opacity-80 text-blue-900 " />
-                  <p className="text-sm text-blue-900 leading-relaxed font-figtree">
-                    Each booking can contain multiple passengers. Room
-                    allocation: 2 passengers per room. Business class passengers
-                    are assigned 4-star hotels, economy passengers get 3-star
-                    hotels.
-                  </p>
-                </div>
-
                 <button
                   type="button"
                   disabled={isSavingBooking}
@@ -2476,7 +2479,7 @@ export default function CancellationWizard({
                   <p className="font-semibold text-gray-900 text-base">
                     {reviewData?.flight?.cancellationReason
                       ? reviewData.flight.cancellationReason.replace(/_/g, " ")
-                      : newReason || selectedReasonTag || "Weather disruption"}
+                      : newReason || selectedReasonTag || "N/A"}
                   </p>
                 </div>
               </div>
@@ -3007,10 +3010,7 @@ export default function CancellationWizard({
                       const isBusiness =
                         travelClass === "Business" || travelClass === "First Class";
                       const totalPassengers = (pb?.adults || 0) + (pb?.children || 0);
-                      const passengersStr =
-                        totalPassengers > 1
-                          ? `${totalPassengers} Passengers`
-                          : `${totalPassengers || 1} Passenger`;
+                      const passengersCount = totalPassengers || 1;
                       const hotelName = hb.hotelName || "Transit Hotel";
                       const ratingVal = parseFloat(hb.rating) || 4;
                       const stars = Math.min(5, Math.max(1, Math.round(ratingVal)));
@@ -3046,13 +3046,13 @@ export default function CancellationWizard({
                             </span>
                           </TableCell>
                           <TableCell className="text-center">
-                            {passengersStr}
+                            {passengersCount}
                           </TableCell>
                           <TableCell className="font-medium">
                             {hotelName}
                           </TableCell>
                           <TableCell>
-                            <div className="flex justify-center items-center text-amber-400">
+                            <div className="flex items-center justify-start text-left text-amber-400">
                               {[...Array(stars)].map((_, i) => (
                                 <Star
                                   key={i}
@@ -3131,10 +3131,7 @@ export default function CancellationWizard({
                           hotelAllocations?.totalSellingPrice && (addedBookings.length === 1 || !addedBookings.length)
                             ? hotelAllocations.totalSellingPrice
                             : rooms * (isBusiness ? 160 : 120);
-                        const passengersStr =
-                          b.adults + b.children > 1
-                            ? `${b.adults + b.children} Passengers`
-                            : `${b.adults + b.children} Passenger`;
+                        const passengersCount = b.adults + b.children;
 
                         return (
                           <TableRow key={b.id || idx}>
@@ -3165,7 +3162,7 @@ export default function CancellationWizard({
                               </span>
                             </TableCell>
                             <TableCell className="text-center">
-                              {passengersStr}
+                              {passengersCount}
                             </TableCell>
                             <TableCell className="font-medium">
                               {hotelName}
