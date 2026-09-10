@@ -96,7 +96,6 @@ const room = (adults: number, children = 0): RoomOccupancy => ({
   children,
 });
 
-
 const ROOM_SPLIT_RULES: Record<string, RoomSplitPlan> = {
   "1_0": { preferred: [room(1)], fallbacks: [] },
   "2_0": { preferred: [room(2)], fallbacks: [] },
@@ -555,7 +554,7 @@ export class CancelledFlightsService {
         cancellationReason:
           (dto.cancellationReason as CancellationReason) ?? null,
         cancellationReasonText: dto.cancellationReasonText ?? null,
-        status: FlightStatus.IN_PROGRESS,
+        status: FlightStatus.DRAFT,
       },
       requestId,
     );
@@ -647,7 +646,7 @@ export class CancelledFlightsService {
     dto: CreateBookingDto,
     requestId: string,
   ): Promise<BookingResponseDto> {
-    await this.requireFlight(flightId, requestId);
+    const flight = await this.requireFlight(flightId, requestId);
 
     const duplicate =
       await this.cancelledFlightsRepository.findBookingByPnrAndFlight(
@@ -678,6 +677,8 @@ export class CancelledFlightsService {
       requestId,
     );
 
+    await this.markFlightInProgressIfDraft(flight, requestId);
+
     this.logger.info("Booking added", this.context, requestId, {
       flightId,
       bookingId: booking.id,
@@ -694,7 +695,7 @@ export class CancelledFlightsService {
     file: { buffer: Buffer; originalname: string; mimetype: string },
     requestId: string,
   ): Promise<ImportBookingResponseDto> {
-    await this.requireFlight(flightId, requestId);
+    const flight = await this.requireFlight(flightId, requestId);
     // Parse the CSV file
     const csv = file.buffer.toString("utf-8");
     const rows = csv.split("\n").map((line) => line.split(","));
@@ -710,7 +711,6 @@ export class CancelledFlightsService {
       travelClass: TravelClass;
       adults: number;
       children: number;
-      estRooms: number;
       specialNotes: SpecialNote[];
       additionalNotes: string | null;
     }[] = [];
@@ -756,7 +756,7 @@ export class CancelledFlightsService {
       const validTravelClasses = Object.values(TravelClass) as string[];
       if (!validTravelClasses.includes(travelClassRaw)) {
         errors.push(
-          "Travel Class must be one of: economy, premium_economy, business, first_class",
+          `Travel Class must be one of: ${validTravelClasses.join(", ")}`,
         );
       }
       if (isNaN(adultsRaw) || adultsRaw < 1) {
@@ -773,7 +773,10 @@ export class CancelledFlightsService {
             .map((s) => s.trim().toLowerCase())
             .filter((s) => {
               if (s && !validSpecialNotes.includes(s)) {
-                errors.push(`Invalid special note: '${s}'`);
+                // errors.push(`Invalid special note: '${s}'`);
+                errors.push(
+                  `Special note must be one of: ${validSpecialNotes.join(", ")}`,
+                );
                 return false;
               }
               return !!s;
@@ -797,7 +800,6 @@ export class CancelledFlightsService {
         travelClass: travelClassRaw as TravelClass,
         adults: adultsRaw,
         children: childrenRaw,
-        estRooms: isValid ? Math.ceil((adultsRaw + childrenRaw) / 2) : 0,
         specialNotes,
         additionalNotes,
       });
@@ -814,7 +816,6 @@ export class CancelledFlightsService {
     existingBookings.forEach((bookingEntity: BookingEntity) => {
       const row = bookings.find((b) => b.pnr === bookingEntity.pnr);
       if (row) {
-        row.estRooms = 0; // Mark as invalid
         errorsList.push({
           row: row.row,
           errors: [`PNR '${bookingEntity.pnr}' already exists for this flight`],
@@ -833,30 +834,30 @@ export class CancelledFlightsService {
       travelClass: TravelClass;
       adults: number;
       children: number;
-      estRooms: number;
       specialNotes: SpecialNote[];
       additionalNotes: string | null;
-    }[] = bookings
-      .filter((b) => b.estRooms > 0)
-      .map((b) => ({
-        cancelledFlightId: flightId,
-        pnr: b.pnr,
-        firstName: b.firstName,
-        lastName: b.lastName,
-        email: b.email,
-        phone: b.phone,
-        travelClass: b.travelClass,
-        adults: b.adults,
-        children: b.children,
-        estRooms: b.estRooms,
-        specialNotes: b.specialNotes,
-        additionalNotes: b.additionalNotes,
-      }));
+    }[] = bookings.map((b) => ({
+      cancelledFlightId: flightId,
+      pnr: b.pnr,
+      firstName: b.firstName,
+      lastName: b.lastName,
+      email: b.email,
+      phone: b.phone,
+      travelClass: b.travelClass,
+      adults: b.adults,
+      children: b.children,
+      specialNotes: b.specialNotes,
+      additionalNotes: b.additionalNotes,
+    }));
 
     const bookingFlights = await this.cancelledFlightsRepository.saveBookings(
       toSave,
       requestId,
     );
+
+    if (bookingFlights.length > 0) {
+      await this.markFlightInProgressIfDraft(flight, requestId);
+    }
 
     return {
       bookings: bookingFlights.map((b) => this.toBookingResponse(b)),
@@ -1112,6 +1113,23 @@ export class CancelledFlightsService {
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────
+
+  private async markFlightInProgressIfDraft(
+    flight: CancelledFlightEntity,
+    requestId: string,
+  ): Promise<void> {
+    if (flight.status !== FlightStatus.DRAFT) {
+      return;
+    }
+
+    await this.cancelledFlightsRepository.updateFlightStatus({
+      cancelledFlightEntity: flight,
+      status: FlightStatus.IN_PROGRESS,
+      passengerBookingStats: null,
+      hotelBookingStats: null,
+      requestId,
+    });
+  }
 
   private async requireFlight(flightId: number, requestId: string) {
     const flight = await this.cancelledFlightsRepository.findFlightById(
@@ -2028,13 +2046,12 @@ export class CancelledFlightsService {
               byShape.set(this.occupancyKey(room), room);
             }
             const perShapeHotels = [...byShape.values()].map(
-              (room) =>
-                new Set(optionsForShape(room).map((o) => o.hotelId)),
+              (room) => new Set(optionsForShape(room).map((o) => o.hotelId)),
             );
             const coverable = perShapeHotels.every((s) => s.size > 0);
             const sharedHotels = coverable
-              ? perShapeHotels.reduce((a, b) =>
-                  new Set([...a].filter((h) => b.has(h))),
+              ? perShapeHotels.reduce(
+                  (a, b) => new Set([...a].filter((h) => b.has(h))),
                 )
               : new Set<string>();
             return {
@@ -2808,8 +2825,6 @@ export class CancelledFlightsService {
   //     );
   //   }
   // }
-
-
 
   // async allocateHotel(
   //   flightId: number,
