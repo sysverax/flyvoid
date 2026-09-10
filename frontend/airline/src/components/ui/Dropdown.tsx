@@ -88,7 +88,31 @@ export function Dropdown({
 
   const filteredOptions = useMemo(() => {
     if (!searchable || !searchQuery.trim()) return options;
-    const query = searchQuery.toLowerCase();
+    const query = searchQuery.trim().toLowerCase();
+
+    const matches = options.filter((option) => {
+      const val = option.value.toLowerCase();
+      const lbl = option.label.toLowerCase();
+      const words = lbl.split(/[\s\-\(\),]+/);
+      return (
+        val.startsWith(query) ||
+        lbl.startsWith(query) ||
+        words.some((w) => w.startsWith(query))
+      );
+    });
+
+    if (matches.length > 0) {
+      return matches.sort((a, b) => {
+        const valA = a.value.toLowerCase();
+        const valB = b.value.toLowerCase();
+        const aCodeStarts = valA.startsWith(query);
+        const bCodeStarts = valB.startsWith(query);
+        if (aCodeStarts && !bCodeStarts) return -1;
+        if (!aCodeStarts && bCodeStarts) return 1;
+        return 0;
+      });
+    }
+
     return options.filter(
       (option) =>
         option.label.toLowerCase().includes(query) ||

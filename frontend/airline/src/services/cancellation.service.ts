@@ -52,8 +52,8 @@ export interface UpdateCancelledFlightPayload {
   departureAirportId?: number;
   arrivalAirportId?: number;
   cancellationDate?: string;
-  cancellationReason?: string;
-  cancellationReasonText?: string;
+  cancellationReason?: string | null;
+  cancellationReasonText?: string | null;
 }
 
 export interface BookingDTO {

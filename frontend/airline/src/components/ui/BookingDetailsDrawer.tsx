@@ -9,6 +9,8 @@ import {
   HotelBookingDetailDataDto,
 } from "@/src/services/cancellation.service";
 
+const PLATFORM_FEE_PERCENT = 10;
+
 interface BookingDetailsDrawerProps {
   isOpen: boolean;
   onClose: () => void;
@@ -63,12 +65,9 @@ export function BookingDetailsDrawer({
 
   const pBooking = activeDetailData?.booking || booking;
   const hotel = activeDetailData?.hotel;
-
-  const displayBookingId =
-    hotel?.bookingReference ||
-    (activeDetailData?.id ? `HB-${String(activeDetailData.id).padStart(6, "0")}` : null) ||
-    booking?.hotelBookingId ||
-    "N/A";
+  const displayBookingId = activeDetailData?.id
+    ? `HB-${String(activeDetailData.id).padStart(3, "0")}`
+    : "N/A";
 
   const pnr = pBooking?.pnr || "N/A";
 
@@ -235,12 +234,12 @@ export function BookingDetailsDrawer({
   const hotelPayment = hotelCost - discount + tax;
 
   const platformFee =
-    hotel?.platformFee !== undefined
+    hotel?.platformFee !== undefined && hotel?.platformFee !== null
       ? Number(hotel.platformFee)
-      : hotelPayment * 0.05;
+      : (hotelPayment * PLATFORM_FEE_PERCENT) / 100;
 
   const totalPrice =
-    hotel?.totalPrice !== undefined
+    hotel?.totalPrice !== undefined && hotel?.totalPrice !== null
       ? Number(hotel.totalPrice)
       : hotelPayment + platformFee;
 
@@ -583,15 +582,15 @@ export function BookingDetailsDrawer({
                 </span>
               </div>
               <div className="flex justify-between items-center text-gray-500 text-sm pt-0.5">
-                <span>Platform Fee (5% of hotel payment)</span>
+                <span>Platform Fee ({PLATFORM_FEE_PERCENT}% of hotel payment)</span>
                 <span>
-                  ${platformFee.toFixed(2)}
+                  {typeof platformFee === "number" ? `$${platformFee.toFixed(2)}` : platformFee}
                 </span>
               </div>
               <div className="flex justify-between items-center text-[15px] font-bold text-gray-900 pt-3 border-t border-gray-100 mt-1">
                 <span>Total Payment</span>
                 <span className="text-[18px] font-bold text-emerald-600">
-                  ${totalPrice.toFixed(2)}
+                  {typeof totalPrice === "number" ? `$${totalPrice.toFixed(2)}` : totalPrice}
                 </span>
               </div>
             </div>
