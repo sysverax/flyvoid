@@ -37,8 +37,11 @@ import {
   DollarSign,
   Wallet,
   Eye,
+  Armchair,
+  Ticket,
 } from "lucide-react";
 import { BookingDetailsDrawer } from "@/src/components/ui/BookingDetailsDrawer";
+import { PassengerBookingDetailDrawer } from "@/src/components/ui/PassengerBookingDetailDrawer";
 import {
   Table,
   TableBody,
@@ -837,6 +840,9 @@ export default function CancellationWizard({
     () => initialData?.status?.toLowerCase() === "paid",
   );
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  // Step 3 Passenger Booking Detail Drawer state
+  const [isPassengerBookingDrawerOpen, setIsPassengerBookingDrawerOpen] = useState(false);
+  const [selectedPassengerBooking, setSelectedPassengerBooking] = useState<any>(null);
 
   // Step 5 Drawer state
   const [isBookingDetailsOpen, setIsBookingDetailsOpen] = useState(false);
@@ -2196,47 +2202,90 @@ export default function CancellationWizard({
               ) : (
                 <div className="space-y-4 text-left">
                   {/* Summary Grid stats */}
-                  <div className="grid grid-cols-4 gap-4">
-                    <div className="bg-[#F6F7F8] rounded-xl py-4 flex flex-col items-center justify-center">
-                      <div className="text-[22px] leading-tight font-bold text-[#111827]">
-                        {addedBookings.length}
+                  <div className="grid grid-cols-3 gap-4">
+                    {/* Bookings Card */}
+                    <div className="bg-[#F6F7F8] rounded-xl p-3.5 flex items-center gap-3.5">
+                      <div className="size-10 rounded-lg bg-gray-200/60 flex items-center justify-center shrink-0 text-[#0F2757]">
+                        <Ticket className="w-5 h-5 text-[#0F2757]" />
                       </div>
-                      <div className="text-[13px] text-[#6B7280] mt-1">
-                        Bookings
-                      </div>
-                    </div>
-                    <div className="bg-[#F6F7F8] rounded-xl py-4 flex flex-col items-center justify-center">
-                      <div className="text-[22px] leading-tight font-bold text-[#111827]">
-                        {totalPassengersCount}
-                      </div>
-                      <div className="text-[13px] text-[#6B7280] mt-1">
-                        Passengers
+                      <div className="flex flex-col">
+                        <span className="text-[20px] leading-tight font-bold text-[#111827]">
+                          {addedBookings.length}
+                        </span>
+                        <span className="text-[13px] text-[#6B7280] mt-0.5">
+                          Bookings
+                        </span>
                       </div>
                     </div>
-                    <div className="bg-[#F6F7F8] rounded-xl py-4 flex flex-col items-center justify-center">
-                      <div className="text-[22px] leading-tight font-bold text-[#111827]">
-                        {addedBookings.reduce(
-                          (sum, b) =>
-                            sum + Math.ceil((b.adults + b.children) / 2),
-                          0,
-                        )}
+
+                    {/* Passengers Card */}
+                    <div className="bg-[#F6F7F8] rounded-xl p-3.5 flex items-center gap-3.5">
+                      <div className="size-10 rounded-lg bg-gray-200/60 flex items-center justify-center shrink-0 text-[#0F2757]">
+                        <Users className="w-5 h-5 text-[#0F2757]" />
                       </div>
-                      <div className="text-[13px] text-[#6B7280] mt-1">
-                        Est. Rooms
+                      <div className="flex flex-col">
+                        <span className="text-[20px] leading-tight font-bold text-[#111827]">
+                          {totalPassengersCount}
+                        </span>
+                        <span className="text-[13px] text-[#6B7280] mt-0.5">
+                          Passengers
+                        </span>
                       </div>
                     </div>
-                    <div className="bg-[#F6F7F8] rounded-xl py-4 flex flex-col items-center justify-center">
-                      <div className="text-[22px] leading-tight font-bold text-[#111827]">
-                        {
-                          addedBookings.filter(
-                            (b) =>
-                              b.travelClass === "Business" ||
-                              b.travelClass === "First Class",
-                          ).length
-                        }
+                    {/* Travel Class Breakdown Card */}
+                    <div className="bg-[#F6F7F8] rounded-xl p-3.5 flex items-center gap-3.5">
+                      <div className="size-10 rounded-lg bg-gray-200/60 flex items-center justify-center shrink-0 text-[#0F2757]">
+                        <Armchair className="w-5 h-5 text-[#0F2757]" />
                       </div>
-                      <div className="text-[13px] text-[#6B7280] mt-1">
-                        Business
+                      <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 flex-1 text-xs">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-gray-600 truncate">Economy</span>
+                          <span className="font-semibold text-gray-900">
+                            {
+                              addedBookings.filter(
+                                (b) =>
+                                  (b.travelClass || "").toLowerCase() === "economy",
+                              ).length
+                            }
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-gray-600 truncate" title="Premium Economy">
+                            Premium economy
+                          </span>
+                          <span className="font-semibold text-gray-900">
+                            {
+                              addedBookings.filter(
+                                (b) =>
+                                  (b.travelClass || "").toLowerCase() === "premium economy" ||
+                                  (b.travelClass || "").toLowerCase() === "premium_economy",
+                              ).length
+                            }
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-gray-600 truncate">Business</span>
+                          <span className="font-semibold text-gray-900">
+                            {
+                              addedBookings.filter(
+                                (b) =>
+                                  (b.travelClass || "").toLowerCase() === "business",
+                              ).length
+                            }
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-gray-600 truncate">First class</span>
+                          <span className="font-semibold text-gray-900">
+                            {
+                              addedBookings.filter(
+                                (b) =>
+                                  (b.travelClass || "").toLowerCase() === "first class" ||
+                                  (b.travelClass || "").toLowerCase() === "first_class",
+                              ).length
+                            }
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -2432,55 +2481,95 @@ export default function CancellationWizard({
               </div>
             </div>
 
-            <div className="grid grid-cols-4 gap-4">
-              <div className="bg-[#F6F7F8] rounded-xl py-5 flex flex-col items-center justify-center text-center">
-                <span className="text-[22px] leading-tight font-bold text-[#111827]">
-                  {reviewData?.summary?.totalBookings ?? addedBookings.length}
-                </span>
-                <span className="text-[13px] text-[#6B7280] mt-1">
-                  Total Bookings
-                </span>
+            <div className="grid grid-cols-3 gap-4">
+              {/* Bookings Card */}
+              <div className="bg-[#F6F7F8] rounded-xl p-3.5 flex items-center gap-3.5">
+                <div className="size-10 rounded-lg bg-gray-200/60 flex items-center justify-center shrink-0 text-[#0F2757]">
+                  <Ticket className="w-5 h-5 text-[#0F2757]" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[20px] leading-tight font-bold text-[#111827]">
+                    {reviewData?.summary?.totalBookings ?? addedBookings.length}
+                  </span>
+                  <span className="text-[13px] text-[#6B7280] mt-0.5">
+                    Bookings
+                  </span>
+                </div>
               </div>
-              <div className="bg-[#F6F7F8] rounded-xl py-5 flex flex-col items-center justify-center text-center">
-                <span className="text-[22px] leading-tight font-bold text-[#111827]">
-                  {reviewData?.summary
-                    ? reviewData.summary.totalAdults +
-                    reviewData.summary.totalChildren
-                    : totalPassengersCount}
-                </span>
-                <span className="text-[13px] text-[#6B7280] mt-1">
-                  Total Passengers
-                </span>
+
+              {/* Passengers Card */}
+              <div className="bg-[#F6F7F8] rounded-xl p-3.5 flex items-center gap-3.5">
+                <div className="size-10 rounded-lg bg-gray-200/60 flex items-center justify-center shrink-0 text-[#0F2757]">
+                  <Users className="w-5 h-5 text-[#0F2757]" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[20px] leading-tight font-bold text-[#111827]">
+                    {reviewData?.summary
+                      ? reviewData.summary.totalAdults +
+                      reviewData.summary.totalChildren
+                      : totalPassengersCount}
+                  </span>
+                  <span className="text-[13px] text-[#6B7280] mt-0.5">
+                    Passengers
+                  </span>
+                </div>
               </div>
-              <div className="bg-[#F6F7F8] rounded-xl py-5 flex flex-col items-center justify-center text-center">
-                <span className="text-[22px] leading-tight font-bold text-[#111827]">
-                  {totalRoomsCount > 0
-                    ? totalRoomsCount
-                    : reviewData?.summary
-                      ? Math.ceil(
-                        ((reviewData.summary.totalAdults || 0) +
-                          (reviewData.summary.totalChildren || 0)) /
-                        2,
-                      )
-                      : 0}
-                </span>
-                <span className="text-[13px] text-[#6B7280] mt-1">
-                  Est. Rooms Required
-                </span>
-              </div>
-              <div className="bg-[#F6F7F8] rounded-xl py-5 flex flex-col items-center justify-center text-center">
-                <span className="text-[22px] leading-tight font-bold text-[#111827]">
-                  {
-                    addedBookings.filter(
-                      (b) =>
-                        b.travelClass === "Business" ||
-                        b.travelClass === "First Class",
-                    ).length
-                  }
-                </span>
-                <span className="text-[13px] text-[#6B7280] mt-1">
-                  Business Class
-                </span>
+
+              {/* Travel Class Breakdown Card */}
+              <div className="bg-[#F6F7F8] rounded-xl p-3.5 flex items-center gap-3.5">
+                <div className="size-10 rounded-lg bg-gray-200/60 flex items-center justify-center shrink-0 text-[#0F2757]">
+                  <Armchair className="w-5 h-5 text-[#0F2757]" />
+                </div>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 flex-1 text-xs">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-gray-600 truncate">Economy</span>
+                    <span className="font-semibold text-gray-900">
+                      {
+                        addedBookings.filter(
+                          (b) =>
+                            (b.travelClass || "").toLowerCase() === "economy",
+                        ).length
+                      }
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-gray-600 truncate" title="Premium Economy">
+                      Premium economy
+                    </span>
+                    <span className="font-semibold text-gray-900">
+                      {
+                        addedBookings.filter(
+                          (b) =>
+                            (b.travelClass || "").toLowerCase() === "premium economy" ||
+                            (b.travelClass || "").toLowerCase() === "premium_economy",
+                        ).length
+                      }
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-gray-600 truncate">Business</span>
+                    <span className="font-semibold text-gray-900">
+                      {
+                        addedBookings.filter(
+                          (b) =>
+                            (b.travelClass || "").toLowerCase() === "business",
+                        ).length
+                      }
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-gray-600 truncate">First class</span>
+                    <span className="font-semibold text-gray-900">
+                      {
+                        addedBookings.filter(
+                          (b) =>
+                            (b.travelClass || "").toLowerCase() === "first class" ||
+                            (b.travelClass || "").toLowerCase() === "first_class",
+                        ).length
+                      }
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -2496,7 +2585,7 @@ export default function CancellationWizard({
                     <TableHead className="min-w-[80px]">Adults</TableHead>
                     <TableHead className="min-w-[80px]">Children</TableHead>
                     <TableHead className="min-w-[100px]">Class</TableHead>
-                    <TableHead className="min-w-[100px]">Est. Rooms</TableHead>
+                    <TableHead className="min-w-[80px] text-center">Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -2545,8 +2634,18 @@ export default function CancellationWizard({
                             {b.travelClass}
                           </span>
                         </TableCell>
-                        <TableCell>
-                          {Math.ceil((b.adults + b.children) / 2)}
+                        <TableCell className="text-center">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedPassengerBooking(b);
+                              setIsPassengerBookingDrawerOpen(true);
+                            }}
+                            className="p-1.5 text-gray-400 hover:text-[#0F2757] hover:bg-gray-100 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center"
+                            title="View Booking Details"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -3524,6 +3623,15 @@ export default function CancellationWizard({
           </div>
         )}
       </div>
+
+      <PassengerBookingDetailDrawer
+        isOpen={isPassengerBookingDrawerOpen}
+        onClose={() => {
+          setIsPassengerBookingDrawerOpen(false);
+          setSelectedPassengerBooking(null);
+        }}
+        booking={selectedPassengerBooking}
+      />
 
       <BookingDetailsDrawer
         isOpen={isBookingDetailsOpen}
