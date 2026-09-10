@@ -96,7 +96,6 @@ const room = (adults: number, children = 0): RoomOccupancy => ({
   children,
 });
 
-
 const ROOM_SPLIT_RULES: Record<string, RoomSplitPlan> = {
   "1_0": { preferred: [room(1)], fallbacks: [] },
   "2_0": { preferred: [room(2)], fallbacks: [] },
@@ -555,7 +554,7 @@ export class CancelledFlightsService {
         cancellationReason:
           (dto.cancellationReason as CancellationReason) ?? null,
         cancellationReasonText: dto.cancellationReasonText ?? null,
-        status: FlightStatus.IN_PROGRESS,
+        status: FlightStatus.DRAFT,
       },
       requestId,
     );
@@ -710,7 +709,6 @@ export class CancelledFlightsService {
       travelClass: TravelClass;
       adults: number;
       children: number;
-      estRooms: number;
       specialNotes: SpecialNote[];
       additionalNotes: string | null;
     }[] = [];
@@ -756,7 +754,7 @@ export class CancelledFlightsService {
       const validTravelClasses = Object.values(TravelClass) as string[];
       if (!validTravelClasses.includes(travelClassRaw)) {
         errors.push(
-          "Travel Class must be one of: economy, premium_economy, business, first_class",
+          `Travel Class must be one of: ${validTravelClasses.join(", ")}`,
         );
       }
       if (isNaN(adultsRaw) || adultsRaw < 1) {
@@ -773,7 +771,10 @@ export class CancelledFlightsService {
             .map((s) => s.trim().toLowerCase())
             .filter((s) => {
               if (s && !validSpecialNotes.includes(s)) {
-                errors.push(`Invalid special note: '${s}'`);
+                // errors.push(`Invalid special note: '${s}'`);
+                errors.push(
+                  `Special note must be one of: ${validSpecialNotes.join(", ")}`,
+                );
                 return false;
               }
               return !!s;
@@ -797,7 +798,6 @@ export class CancelledFlightsService {
         travelClass: travelClassRaw as TravelClass,
         adults: adultsRaw,
         children: childrenRaw,
-        estRooms: isValid ? Math.ceil((adultsRaw + childrenRaw) / 2) : 0,
         specialNotes,
         additionalNotes,
       });
@@ -814,7 +814,6 @@ export class CancelledFlightsService {
     existingBookings.forEach((bookingEntity: BookingEntity) => {
       const row = bookings.find((b) => b.pnr === bookingEntity.pnr);
       if (row) {
-        row.estRooms = 0; // Mark as invalid
         errorsList.push({
           row: row.row,
           errors: [`PNR '${bookingEntity.pnr}' already exists for this flight`],
@@ -833,11 +832,9 @@ export class CancelledFlightsService {
       travelClass: TravelClass;
       adults: number;
       children: number;
-      estRooms: number;
       specialNotes: SpecialNote[];
       additionalNotes: string | null;
     }[] = bookings
-      .filter((b) => b.estRooms > 0)
       .map((b) => ({
         cancelledFlightId: flightId,
         pnr: b.pnr,
@@ -848,7 +845,6 @@ export class CancelledFlightsService {
         travelClass: b.travelClass,
         adults: b.adults,
         children: b.children,
-        estRooms: b.estRooms,
         specialNotes: b.specialNotes,
         additionalNotes: b.additionalNotes,
       }));
@@ -2028,13 +2024,12 @@ export class CancelledFlightsService {
               byShape.set(this.occupancyKey(room), room);
             }
             const perShapeHotels = [...byShape.values()].map(
-              (room) =>
-                new Set(optionsForShape(room).map((o) => o.hotelId)),
+              (room) => new Set(optionsForShape(room).map((o) => o.hotelId)),
             );
             const coverable = perShapeHotels.every((s) => s.size > 0);
             const sharedHotels = coverable
-              ? perShapeHotels.reduce((a, b) =>
-                  new Set([...a].filter((h) => b.has(h))),
+              ? perShapeHotels.reduce(
+                  (a, b) => new Set([...a].filter((h) => b.has(h))),
                 )
               : new Set<string>();
             return {
@@ -2808,8 +2803,6 @@ export class CancelledFlightsService {
   //     );
   //   }
   // }
-
-
 
   // async allocateHotel(
   //   flightId: number,
