@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,300..900;1,300..900&display=swap');
 @import "tailwindcss";
 
 :root {
@@ -5,18 +6,27 @@
   --primary-hover: rgb(25, 52, 108);
   --background: #F8FAFC;
   --foreground: #09090B;
+  --font-figtree: 'Figtree', sans-serif;
 }
 
 @theme {
-  --font-figtree: var(--font-figtree);
+  --font-sans: 'Figtree', sans-serif;
+  --font-figtree: 'Figtree', sans-serif;
   --color-primary: var(--primary);
   --color-primary-hover: var(--primary-hover);
+}
+
+*, ::before, ::after {
+  font-family: 'Figtree', sans-serif !important;
+}
+
+html, body, button, input, select, textarea {
+  font-family: 'Figtree', sans-serif !important;
 }
 
 body {
   background-color: #F8FAFC;
   color: var(--foreground);
-  font-family: var(--font-figtree), system-ui, sans-serif;
 }
 
 @layer utilities {
@@ -24,6 +34,7 @@ body {
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }

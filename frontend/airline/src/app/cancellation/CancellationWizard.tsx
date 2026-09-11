@@ -932,7 +932,7 @@ export default function CancellationWizard({
   const hotelTax = hotelSummary?.totalHotelTax ?? 0;
   const platformFee = hotelSummary?.totalPlatformFee ?? 0;
   const totalPayment = hotelSummary?.totalPayable ?? 0;
-  const currencySymbol = hotelAllocations?.currency === "EUR" ? "€" : "$";
+  const currencySymbol = "$";
 
   const handleTagClick = (tag: string) => {
     if (selectedReasonTag === tag) {
