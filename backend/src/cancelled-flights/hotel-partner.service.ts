@@ -846,20 +846,22 @@ export class HotelPartnerService {
     hotelCode: string,
     requestId: string,
     requestLogger: Logger,
+    isDev = true,
   ): Promise<HotelContentDetails | null> {
-    // Temporarily disabled (Content API call commented out below); returns empty placeholders.
-    return {
-      address: "",
-      contact: { phones: [], email: "" },
-      latitude: null,
-      longitude: null,
-      distanceFromAirportKm: null,
-      imageUrl: "",
-      website: "",
-      amenities: [],
-    };
+    if (isDev) {
+      // Temporarily disabled (Content API call commented out below); returns empty placeholders.
+      return {
+        address: "",
+        contact: { phones: [], email: "" },
+        latitude: null,
+        longitude: null,
+        distanceFromAirportKm: null,
+        imageUrl: "",
+        website: "",
+        amenities: [],
+      };
+    }
 
-    /*
     if (!this.apiKey || !this.secret) {
       return null;
     }
@@ -948,7 +950,6 @@ export class HotelPartnerService {
       );
       return null;
     }
-    */
   }
 
   async checkRate(rateKey: string, requestId: string): Promise<any> {
