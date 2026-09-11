@@ -171,7 +171,7 @@ export class AirlineInvitationRepository {
         pending: AIRLINE_INVITATION_STATUSES.PENDING,
       })
       .andWhere("invite.expires_at > :now", { now: new Date() })
-      .orderBy("invite.created_at", "DESC")
+      .orderBy("invite.createdAt", "DESC")
       .getOne();
   }
 
@@ -201,7 +201,7 @@ export class AirlineInvitationRepository {
         pending: AIRLINE_INVITATION_STATUSES.PENDING,
       })
       .andWhere("invite.expires_at > :now", { now: new Date() })
-      .orderBy("invite.created_at", "DESC")
+      .orderBy("invite.createdAt", "DESC")
       .getOne();
   }
 

@@ -135,7 +135,11 @@ export class HotelPartnerService {
     let lastError: Error | null = null;
     let attemptsMade = 0;
 
-    for (let attempt = 1; attempt <= this.availabilityMaxAttempts; attempt += 1) {
+    for (
+      let attempt = 1;
+      attempt <= this.availabilityMaxAttempts;
+      attempt += 1
+    ) {
       attemptsMade = attempt;
       let response: Awaited<ReturnType<typeof fetch>>;
       try {
@@ -510,8 +514,8 @@ export class HotelPartnerService {
           geolocation: {
             latitude: Number(airport.latitude),
             longitude: Number(airport.longitude),
-            radius: 20,
-            unit: "km",
+            radius: config.hotelSearch.defaultRadius,
+            unit: config.hotelSearch.unit,
           },
         },
       };

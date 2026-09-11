@@ -349,7 +349,7 @@ export class CancelledFlightsRepository {
       .where("booking.cancelled_flight_id = :cancelledFlightId", {
         cancelledFlightId,
       })
-      .orderBy("booking.created_at", "DESC")
+      .orderBy("booking.createdAt", "DESC")
       .skip(skip)
       .take(limit)
       .getManyAndCount();
@@ -481,7 +481,7 @@ export class CancelledFlightsRepository {
       .where("hotelBooking.cancelled_flight_id = :cancelledFlightId", {
         cancelledFlightId,
       })
-      .orderBy("booking.created_at", "DESC")
+      .orderBy("booking.createdAt", "DESC")
       .skip(skip)
       .take(limit)
       .getManyAndCount();
