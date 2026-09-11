@@ -116,6 +116,7 @@ export const config = {
   hotelSearch: {
     defaultRadius: parseInt(process.env.HOTEL_SEARCH_RADIUS ?? "10", 10),
     unit: process.env.HOTEL_SEARCH_RADIUS_UNIT ?? "km",
+    maxRadius: parseInt(process.env.HOTEL_SEARCH_MAX_RADIUS ?? "50", 10),
   },
   platformFeePercentage: parseFloat(
     process.env.PLATFORM_FEE_PERCENTAGE ?? "10",
