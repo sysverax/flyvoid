@@ -208,6 +208,16 @@ export interface HotelBookingHotelDetailDto {
   hotelCode: string;
   hotelName: string;
   category: string;
+  address?: string | null;
+  contact?: {
+    phones: Array<{ phoneNumber: string; phoneType: string }>;
+    email: string | null;
+  } | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  distanceFromAirportKm?: number | null;
+  imageUrl?: string | null;
+  website?: string | null;
   checkInDate: string;
   checkOutDate: string;
   rooms: HotelBookingRoomDetailDto[];
