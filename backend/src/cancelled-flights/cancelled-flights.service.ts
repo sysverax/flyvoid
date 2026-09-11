@@ -2459,11 +2459,13 @@ export class CancelledFlightsService {
       ),
     );
     const contentByHotelCode = new Map<string, HotelContentDetails>();
+    // TODO: isDev flag can be toggled; for now for testing isDev set to true. we don't need the hotel details. Please change it to false in production.
     for (const hotelCode of allocatedHotelCodes) {
       const content = await this.hotelPartnerService.getHotelContentDetails(
         hotelCode,
         requestId,
         requestLogger,
+        true, // isDev flag set to true for testing purposes
       );
       if (content) {
         contentByHotelCode.set(hotelCode, content);
