@@ -39,6 +39,7 @@ import { PaginationQueryDto } from "../common/dto/pagination-query.dto";
 import {
   AvailabilityHotel,
   AvailabilityRoomRate,
+  HotelContentDetails,
   HotelPartnerService,
   RoomOccupancy,
 } from "./hotel-partner.service";
@@ -2435,11 +2436,34 @@ export class CancelledFlightsService {
     // Booked the hotel recommendations using the allocated results and hotel partner APIs
     // For now avoid the booking step and only provide recommendations(consider as booked)
 
+    // Best-effort hotel content lookup, once per allocated hotel (not per booking).
+    const allocatedHotelCodes = Array.from(
+      new Set(
+        results
+          .map((item) => item.hotel?.hotelCode)
+          .filter((code): code is string => !!code),
+      ),
+    );
+    const contentByHotelCode = new Map<string, HotelContentDetails>();
+    for (const hotelCode of allocatedHotelCodes) {
+      const content = await this.hotelPartnerService.getHotelContentDetails(
+        hotelCode,
+        requestId,
+        requestLogger,
+      );
+      if (content) {
+        contentByHotelCode.set(hotelCode, content);
+      }
+    }
+
     // create hotel bookings in db
     // step 1 - Format the data for hotel bookings in the database
     const hotelBookings = results.map((item, index) => {
       const price = item?.totalPrice || 0;
       const pricing = this.calculatePricing(price, price, 0, 0);
+      const content = item.hotel?.hotelCode
+        ? contentByHotelCode.get(item.hotel.hotelCode)
+        : undefined;
       return {
         cancelledFlightId: flightId,
         bookingId: item.bookingId,
@@ -2456,6 +2480,14 @@ export class CancelledFlightsService {
         hotelCode: item.hotel?.hotelCode || "temp",
         hotelName: item.hotel?.hotelName || "temp",
         category: item.hotel?.category || "temp",
+        address: content?.address ?? null,
+        contact: content?.contact ?? null,
+        latitude: content?.latitude ?? null,
+        longitude: content?.longitude ?? null,
+        distanceFromAirportKm: content?.distanceFromAirportKm ?? null,
+        imageUrl: content?.imageUrl ?? null,
+        website: content?.website ?? null,
+        amenities: content?.amenities ?? null,
         rooms: item.rooms?.map((room) => ({
           adults: room.adults,
           children: room.children,
@@ -2652,6 +2684,14 @@ export class CancelledFlightsService {
         hotelCode: hotelBooking.hotelCode,
         hotelName: hotelBooking.hotelName,
         category: hotelBooking.category,
+        address: hotelBooking.address ?? null,
+        contact: hotelBooking.contact ?? null,
+        latitude: hotelBooking.latitude ?? null,
+        longitude: hotelBooking.longitude ?? null,
+        distanceFromAirportKm: hotelBooking.distanceFromAirportKm ?? null,
+        imageUrl: hotelBooking.imageUrl ?? null,
+        website: hotelBooking.website ?? null,
+        amenities: hotelBooking.amenities ?? null,
         checkInDate: hotelBooking.checkInDate,
         checkOutDate: hotelBooking.checkOutDate,
         rooms: hotelBooking.rooms ?? [],

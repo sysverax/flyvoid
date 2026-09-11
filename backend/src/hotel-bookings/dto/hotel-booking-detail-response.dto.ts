@@ -30,6 +30,46 @@ export class HotelBookingHotelDetailDto {
   @ApiProperty({ example: "4EST" })
   category!: string;
 
+  @ApiProperty({ example: "123 Beach Road, Colombo", nullable: true })
+  address?: string | null;
+
+  @ApiProperty({
+    example: {
+      phones: [{ phoneNumber: "+94112345678", phoneType: "PHONEHOTEL" }],
+      email: "reservations@grandhotel.com",
+    },
+    nullable: true,
+  })
+  contact?: {
+    phones: Array<{ phoneNumber: string; phoneType: string }>;
+    email: string | null;
+  } | null;
+
+  @ApiProperty({ example: 7.292639, nullable: true })
+  latitude?: number | null;
+
+  @ApiProperty({ example: 79.839859, nullable: true })
+  longitude?: number | null;
+
+  @ApiProperty({ example: 20, nullable: true })
+  distanceFromAirportKm?: number | null;
+
+  @ApiProperty({
+    example: "https://photos.hotelbeds.com/giata/bigger/10/101080/101080a.jpg",
+    nullable: true,
+  })
+  imageUrl?: string | null;
+
+  @ApiProperty({ example: "https://www.grandhotel.com", nullable: true })
+  website?: string | null;
+
+  @ApiProperty({
+    example: ["Swimming pool", "Free WiFi", "Gym"],
+    nullable: true,
+    type: [String],
+  })
+  amenities?: string[] | null;
+
   @ApiProperty({ example: "2024-01-15" })
   checkInDate!: string;
 
