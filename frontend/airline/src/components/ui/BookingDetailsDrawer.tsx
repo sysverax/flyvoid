@@ -1,6 +1,6 @@
 "use client";
 
-import { X, Star, Calendar, Loader2, Plane, User, Users, Building2, MapPin, Phone, BedDouble, Download } from "lucide-react";
+import { X, Star, Calendar, Loader2, Plane, User, Users, Building2, MapPin, Phone, BedDouble, Download, Globe, ExternalLink } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { useEffect, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
@@ -65,7 +65,7 @@ export function BookingDetailsDrawer({
   }, [isOpen, flightId, hotelBookingId, propDetailData, fetchDetail]);
 
   const pBooking = activeDetailData?.booking || booking;
-  const hotel = activeDetailData?.hotel;
+  const hotel = activeDetailData?.hotel || booking?.hotel;
   const displayBookingId = activeDetailData?.id
     ? `HB-${String(activeDetailData.id).padStart(3, "0")}`
     : "N/A";
@@ -154,6 +154,8 @@ export function BookingDetailsDrawer({
     hotelAddress && hotelAddress !== "N/A"
       ? hotelAddress.split(",").map((s: string) => s.trim()).filter(Boolean)
       : ["N/A"];
+
+  const hotelWebsite = hotel?.website?.trim() || null;
 
   const hotelPhones: Array<{ phoneNumber: string; phoneType: string }> =
     (hotel as any)?.contact?.phones || [];
@@ -453,6 +455,21 @@ export function BookingDetailsDrawer({
                     )}
                   </div>
                 </div>
+
+                {hotelWebsite && (
+                  <div className="flex items-center gap-2.5 text-gray-600 text-sm">
+                    <Globe className="w-4 h-4 shrink-0 text-gray-400" />
+                    <a
+                      href={hotelWebsite.startsWith("http") ? hotelWebsite : `https://${hotelWebsite}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[#2563EB] hover:text-[#1D4ED8] font-semibold underline inline-flex items-center gap-1"
+                    >
+                      <span>Visit hotel website</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                )}
 
                 <div className="flex items-center gap-2.5 text-gray-600 text-sm">
                   <Calendar className="w-4 h-4 shrink-0 text-gray-400" />

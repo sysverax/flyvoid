@@ -1562,6 +1562,7 @@ export class CancelledFlightsService {
         uniqueOccupancies,
         requestId,
         requestLogger,
+        true
       );
     } catch (error: any) {
       this.logger.error(
@@ -1909,21 +1910,8 @@ export class CancelledFlightsService {
         uniqueOccupancies,
         requestId,
         requestLogger,
+        config.hotelSearch.isAllowSearchAPI,
       );
-
-      // // Use JSON-based hotel search for testing purposes
-      // hotels = await this.hotelPartnerService.searchNearbyHotelsWithOccupanciesFromJson(
-      //   {
-      //     iataCode: departureAirport.iataCode,
-      //     latitude: Number(departureAirport.latitude),
-      //     longitude: Number(departureAirport.longitude),
-      //   },
-      //   checkIn,
-      //   checkOut,
-      //   uniqueOccupancies,
-      //   requestId,
-      //   requestLogger,
-      // );
     } catch (error: any) {
       this.logger.error(
         "Hotel availability search failed",
@@ -2459,13 +2447,13 @@ export class CancelledFlightsService {
       ),
     );
     const contentByHotelCode = new Map<string, HotelContentDetails>();
-    // TODO: isDev flag can be toggled; for now for testing isDev set to true. we don't need the hotel details. Please change it to false in production.
+    
     for (const hotelCode of allocatedHotelCodes) {
       const content = await this.hotelPartnerService.getHotelContentDetails(
         hotelCode,
         requestId,
         requestLogger,
-        true, // isDev flag set to true for testing purposes
+        config.hotelSearch.isAllowFetchHotelDetails,
       );
       if (content) {
         contentByHotelCode.set(hotelCode, content);

@@ -1,0 +1,70 @@
+{
+  "auditData": {
+    "processTime": "84",
+    "timestamp": "2026-09-09 15:18:31.808",
+    "requestHost": "",
+    "serverId": "",
+    "environment": "",
+    "release": "",
+    "token": "A38DEE1D730345268FCFF38ECCC04FC1",
+    "internal": "0|EB1CEE43F2D840E178896711172505|UK|10|1|1||||||||||||1||1~1~1~2|0|0||0|f58e1425618e7b0f7697adc201e60234||||"
+  },
+  "hotels": {
+    "hotels": [
+      {
+        "code": 101080,
+        "name": "Club Hotel Dolphin",
+        "categoryCode": "5EST",
+        "categoryName": "5 STARS",
+        "destinationCode": "NBO",
+        "destinationName": "Negombo",
+        "zoneCode": 1,
+        "zoneName": "Negombo",
+        "latitude": "7.29263900000000000000",
+        "longitude": "79.83985900000000000000",
+        "rooms": [
+          {
+            "code": "DBL.SU",
+            "name": "Superior Double",
+            "rates": [
+              {
+                "rateKey": "20260930|20261001|W|246|101080|DBL.SU|BAR BB|BB||1~1~2|6~6|N@07~~24b129~-507158795~N~~~NOR~~EB1CEE43F2D840E178896711172505AAUK00010000000010212105",
+                "rateClass": "NOR",
+                "rateType": "BOOKABLE",
+                "net": "261.18",
+                "allotment": 5,
+                "paymentType": "AT_WEB",
+                "packaging": false,
+                "boardCode": "BB",
+                "boardName": "BED AND BREAKFAST",
+                "cancellationPolicies": [
+                  {
+                    "amount": "261.18",
+                    "from": "2026-09-22T23:59:00+05:30"
+                  }
+                ],
+                "rooms": 1,
+                "adults": 1,
+                "children": 2,
+                "childrenAges": "6,6",
+                "offers": [
+                  {
+                    "code": "9001",
+                    "name": "Child discount",
+                    "amount": "-107.88"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "minRate": "261.18",
+        "maxRate": "261.18",
+        "currency": "EUR"
+      }
+    ],
+    "checkIn": "2026-09-30",
+    "total": 1,
+    "checkOut": "2026-10-01"
+  }
+}
