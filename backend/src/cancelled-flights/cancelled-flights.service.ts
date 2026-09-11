@@ -1910,6 +1910,20 @@ export class CancelledFlightsService {
         requestId,
         requestLogger,
       );
+
+      // // Use JSON-based hotel search for testing purposes
+      // hotels = await this.hotelPartnerService.searchNearbyHotelsWithOccupanciesFromJson(
+      //   {
+      //     iataCode: departureAirport.iataCode,
+      //     latitude: Number(departureAirport.latitude),
+      //     longitude: Number(departureAirport.longitude),
+      //   },
+      //   checkIn,
+      //   checkOut,
+      //   uniqueOccupancies,
+      //   requestId,
+      //   requestLogger,
+      // );
     } catch (error: any) {
       this.logger.error(
         "Hotel availability search failed",
