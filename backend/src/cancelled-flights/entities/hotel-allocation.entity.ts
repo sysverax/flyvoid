@@ -102,6 +102,33 @@ export class HotelAllocationEntity {
   @Column({ name: "category", type: "varchar", length: 255 })
   category!: string;
 
+  @Column({ name: "address", type: "text", nullable: true })
+  address?: string | null;
+
+  @Column({ name: "contact", type: "jsonb", nullable: true })
+  contact?: {
+    phones: Array<{ phoneNumber: string; phoneType: string }>;
+    email: string | null;
+  } | null;
+
+  @Column({ name: "latitude", type: "numeric", precision: 10, scale: 7, nullable: true })
+  latitude?: number | null;
+
+  @Column({ name: "longitude", type: "numeric", precision: 10, scale: 7, nullable: true })
+  longitude?: number | null;
+
+  @Column({ name: "distance_from_airport_km", type: "numeric", nullable: true })
+  distanceFromAirportKm?: number | null;
+
+  @Column({ name: "image_url", type: "text", nullable: true })
+  imageUrl?: string | null;
+
+  @Column({ name: "website", type: "text", nullable: true })
+  website?: string | null;
+
+  @Column({ name: "amenities", type: "jsonb", nullable: true })
+  amenities?: string[] | null;
+
   // adults, children, roomName, boardName, price
   @Column({ name: "rooms", type: "jsonb", nullable: true })
   rooms!: {

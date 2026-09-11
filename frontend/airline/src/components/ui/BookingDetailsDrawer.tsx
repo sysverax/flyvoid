@@ -30,6 +30,7 @@ export function BookingDetailsDrawer({
 }: BookingDetailsDrawerProps) {
   const [mounted, setMounted] = useState(false);
   const [internalDetailData, setInternalDetailData] = useState<HotelBookingDetailDataDto | null>(null);
+  const [hotelImageError, setHotelImageError] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -121,6 +122,11 @@ export function BookingDetailsDrawer({
   const notes = notesList.filter(Boolean).join(", ") || "N/A";
 
   const hotelName = hotel?.hotelName || booking?.hotelName || "N/A";
+  const hotelImageUrl = (hotel as any)?.imageUrl || null;
+
+  useEffect(() => {
+    setHotelImageError(false);
+  }, [hotelImageUrl]);
 
   const categoryStr = hotel?.category || "";
   const categoryNumMatch = categoryStr.match(/\d+/);
@@ -149,13 +155,20 @@ export function BookingDetailsDrawer({
       ? hotelAddress.split(",").map((s: string) => s.trim()).filter(Boolean)
       : ["N/A"];
 
+  const hotelPhones: Array<{ phoneNumber: string; phoneType: string }> =
+    (hotel as any)?.contact?.phones || [];
+  const phoneByType = (type: string) =>
+    hotelPhones.find((p) => p.phoneType === type)?.phoneNumber;
+
   const frontDeskPhone =
+    phoneByType("PHONEHOTEL") ||
     (hotel as any)?.frontDeskPhone ||
     (hotel as any)?.phone ||
     booking?.hotelPhone ||
     "N/A";
 
   const reservationsPhone =
+    phoneByType("PHONEBOOKING") ||
     (hotel as any)?.reservationsPhone ||
     (hotel as any)?.reservationPhone ||
     "N/A";
@@ -403,69 +416,79 @@ export function BookingDetailsDrawer({
                 Hotel Booking Confirmation
               </h3>
             </div>
-            <div className="bg-[#F8FAFC] p-4.5 rounded-xl space-y-3.5 border border-gray-100">
-              <div>
-                <div className="font-bold text-[17px] text-[#111827]">
-                  {hotelName}
-                </div>
-                {starCount ? (
-                  <div className="flex items-center gap-1 text-amber-400 mt-1">
-                    {[...Array(starCount)].map((_, i) => (
-                      <Star key={i} className="h-3.5 w-3.5 fill-current" />
-                    ))}
-                    <span className="text-gray-500 text-xs ml-1 font-normal">
-                      ({starCount} Star Hotel)
-                    </span>
+            <div className="bg-[#F8FAFC] rounded-xl border border-gray-100 overflow-hidden">
+              {hotelImageUrl && !hotelImageError && (
+                <img
+                  src={hotelImageUrl}
+                  alt={hotelName}
+                  className="w-full h-40 object-cover"
+                  onError={() => setHotelImageError(true)}
+                />
+              )}
+              <div className="p-4.5 space-y-3.5">
+                <div>
+                  <div className="font-bold text-[17px] text-[#111827]">
+                    {hotelName}
                   </div>
-                ) : (
-                  <div className="text-gray-500 text-xs mt-1">N/A</div>
-                )}
-              </div>
-
-              <div className="flex items-start gap-2.5 text-gray-600 text-sm">
-                <MapPin className="w-4 h-4 shrink-0 text-gray-400 mt-0.5" />
-                <div className="leading-snug text-gray-700">
-                  <div>{addressParts[0]}</div>
-                  {addressParts.length > 1 && (
-                    <div className="text-gray-500">{addressParts.slice(1).join(", ")}</div>
+                  {starCount ? (
+                    <div className="flex items-center gap-1 text-amber-400 mt-1">
+                      {[...Array(starCount)].map((_, i) => (
+                        <Star key={i} className="h-3.5 w-3.5 fill-current" />
+                      ))}
+                      <span className="text-gray-500 text-xs ml-1 font-normal">
+                        ({starCount} Star Hotel)
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="text-gray-500 text-xs mt-1">N/A</div>
                   )}
                 </div>
-              </div>
 
-              <div className="flex items-center gap-2.5 text-gray-600 text-sm">
-                <Calendar className="w-4 h-4 shrink-0 text-gray-400" />
-                <span>{dateRangeText}</span>
-              </div>
+                <div className="flex items-start gap-2.5 text-gray-600 text-sm">
+                  <MapPin className="w-4 h-4 shrink-0 text-gray-400 mt-0.5" />
+                  <div className="leading-snug text-gray-700">
+                    <div>{addressParts[0]}</div>
+                    {addressParts.length > 1 && (
+                      <div className="text-gray-500">{addressParts.slice(1).join(", ")}</div>
+                    )}
+                  </div>
+                </div>
 
-              <div className="h-px bg-gray-200/80 w-full" />
+                <div className="flex items-center gap-2.5 text-gray-600 text-sm">
+                  <Calendar className="w-4 h-4 shrink-0 text-gray-400" />
+                  <span>{dateRangeText}</span>
+                </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="flex items-start gap-2">
-                  <Phone className="w-4 h-4 shrink-0 text-gray-400 mt-1" />
-                  <div>
-                    <div className="text-[13px] text-gray-500">Front Desk</div>
-                    <div className="font-semibold text-gray-900 text-[15px] mt-0.5">
-                      {frontDeskPhone}
+                <div className="h-px bg-gray-200/80 w-full" />
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="flex items-start gap-2">
+                    <Phone className="w-4 h-4 shrink-0 text-gray-400 mt-1" />
+                    <div>
+                      <div className="text-[13px] text-gray-500">Front Desk</div>
+                      <div className="font-semibold text-gray-900 text-[15px] mt-0.5">
+                        {frontDeskPhone}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <Phone className="w-4 h-4 shrink-0 text-gray-400 mt-1" />
+                    <div>
+                      <div className="text-[13px] text-gray-500">Reservations</div>
+                      <div className="font-semibold text-gray-900 text-[15px] mt-0.5">
+                        {reservationsPhone}
+                      </div>
                     </div>
                   </div>
                 </div>
-                <div className="flex items-start gap-2">
-                  <Phone className="w-4 h-4 shrink-0 text-gray-400 mt-1" />
-                  <div>
-                    <div className="text-[13px] text-gray-500">Reservations</div>
-                    <div className="font-semibold text-gray-900 text-[15px] mt-0.5">
-                      {reservationsPhone}
-                    </div>
+
+                <div className="h-px bg-gray-200/80 w-full" />
+
+                <div>
+                  <div className="text-[13px] text-gray-500">Number of Rooms</div>
+                  <div className="text-lg text-gray-900 leading-tight mt-1">
+                    {displayRoomCount !== null ? displayRoomCount : "N/A"}
                   </div>
-                </div>
-              </div>
-
-              <div className="h-px bg-gray-200/80 w-full" />
-
-              <div>
-                <div className="text-[13px] text-gray-500">Number of Rooms</div>
-                <div className="text-lg text-gray-900 leading-tight mt-1">
-                  {displayRoomCount !== null ? displayRoomCount : "N/A"}
                 </div>
               </div>
             </div>
