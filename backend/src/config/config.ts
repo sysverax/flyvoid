@@ -118,8 +118,8 @@ export const config = {
     unit: process.env.HOTEL_SEARCH_RADIUS_UNIT ?? "km",
     maxRadius: parseInt(process.env.HOTEL_SEARCH_MAX_RADIUS ?? "50", 10),
     minRate: parseFloat(process.env.HOTEL_SEARCH_MIN_RATE ?? "3"), // 3 stars
-    isAllowSearchAPI: false,
-    isAllowFetchHotelDetails: false,
+    isAllowSearchAPI: true,
+    isAllowFetchHotelDetails: true,
   },
   platformFeePercentage: parseFloat(
     process.env.PLATFORM_FEE_PERCENTAGE ?? "10",
