@@ -1,0 +1,176 @@
+{
+  "auditData": {
+    "processTime": "85",
+    "timestamp": "2026-09-09 15:18:31.424",
+    "requestHost": "",
+    "serverId": "",
+    "environment": "",
+    "release": "",
+    "token": "D554BDE299634B83916E5E22C3E2F622",
+    "internal": "0|C39B31A1720F4D4178896711134005|UK|10|1|4||||||||||||4||1~1~2~2|0|0||0|f58e1425618e7b0f7697adc201e60234||||"
+  },
+  "hotels": {
+    "hotels": [
+      {
+        "code": 101080,
+        "name": "Club Hotel Dolphin",
+        "categoryCode": "5EST",
+        "categoryName": "5 STARS",
+        "destinationCode": "NBO",
+        "destinationName": "Negombo",
+        "zoneCode": 1,
+        "zoneName": "Negombo",
+        "latitude": "7.29263900000000000000",
+        "longitude": "79.83985900000000000000",
+        "rooms": [
+          {
+            "code": "FAM.2D",
+            "name": "Superior Family Room King/ Twin",
+            "rates": [
+              {
+                "rateKey": "20260930|20261001|W|246|101080|FAM.2D|BAR BB|BB||1~2~2|6~6|N@07~~25edc~-967838149~N~~~NOR~~C39B31A1720F4D4178896711134005AAUK00010000000010250c1",
+                "rateClass": "NOR",
+                "rateType": "BOOKABLE",
+                "net": "193.80",
+                "allotment": 3,
+                "paymentType": "AT_WEB",
+                "packaging": false,
+                "boardCode": "BB",
+                "boardName": "BED AND BREAKFAST",
+                "cancellationPolicies": [
+                  {
+                    "amount": "193.80",
+                    "from": "2026-09-22T23:59:00+05:30"
+                  }
+                ],
+                "rooms": 1,
+                "adults": 2,
+                "children": 2,
+                "childrenAges": "6,6",
+                "offers": [
+                  {
+                    "code": "9001",
+                    "name": "Child discount",
+                    "amount": "-51.46"
+                  }
+                ]
+              },
+              {
+                "rateKey": "20260930|20261001|W|246|101080|FAM.2D|FIT-BB|BB||1~2~2|6~6|N@07~~20b24da~1301189460~N~~~NOR~~C39B31A1720F4D4178896711134005AAUK0001000000001020b24da",
+                "rateClass": "NOR",
+                "rateType": "BOOKABLE",
+                "net": "9434.11",
+                "allotment": 3,
+                "paymentType": "AT_WEB",
+                "packaging": false,
+                "boardCode": "BB",
+                "boardName": "BED AND BREAKFAST",
+                "cancellationPolicies": [
+                  {
+                    "amount": "2358.53",
+                    "from": "2026-09-09T23:59:00+05:30"
+                  },
+                  {
+                    "amount": "4717.06",
+                    "from": "2026-09-15T23:59:00+05:30"
+                  },
+                  {
+                    "amount": "9434.11",
+                    "from": "2026-09-22T23:59:00+05:30"
+                  }
+                ],
+                "rooms": 1,
+                "adults": 2,
+                "children": 2,
+                "childrenAges": "6,6",
+                "offers": [
+                  {
+                    "code": "9001",
+                    "name": "Child discount",
+                    "amount": "-2329.12"
+                  }
+                ]
+              },
+              {
+                "rateKey": "20260930|20261001|W|246|101080|FAM.2D|FIT-HB|HB||1~2~2|6~6|N@07~~25124de~2006012144~N~~~NOR~~C39B31A1720F4D4178896711134005AAUK0001000000001025124de",
+                "rateClass": "NOR",
+                "rateType": "BOOKABLE",
+                "net": "9438.81",
+                "allotment": 3,
+                "paymentType": "AT_WEB",
+                "packaging": false,
+                "boardCode": "HB",
+                "boardName": "HALF BOARD",
+                "cancellationPolicies": [
+                  {
+                    "amount": "2359.70",
+                    "from": "2026-09-09T23:59:00+05:30"
+                  },
+                  {
+                    "amount": "4719.40",
+                    "from": "2026-09-15T23:59:00+05:30"
+                  },
+                  {
+                    "amount": "9438.81",
+                    "from": "2026-09-22T23:59:00+05:30"
+                  }
+                ],
+                "rooms": 1,
+                "adults": 2,
+                "children": 2,
+                "childrenAges": "6,6",
+                "offers": [
+                  {
+                    "code": "9001",
+                    "name": "Child discount",
+                    "amount": "-2324.41"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "DBL.SU",
+            "name": "Superior Double",
+            "rates": [
+              {
+                "rateKey": "20260930|20261001|W|246|101080|DBL.SU|BAR BB|BB||1~2~2|6~6|N@07~~20113b~-441983514~N~~~NOR~~C39B31A1720F4D4178896711134005AAUK00010000000010220114",
+                "rateClass": "NOR",
+                "rateType": "BOOKABLE",
+                "net": "276.32",
+                "allotment": 5,
+                "paymentType": "AT_WEB",
+                "packaging": false,
+                "boardCode": "BB",
+                "boardName": "BED AND BREAKFAST",
+                "cancellationPolicies": [
+                  {
+                    "amount": "276.32",
+                    "from": "2026-09-22T23:59:00+05:30"
+                  }
+                ],
+                "rooms": 1,
+                "adults": 2,
+                "children": 2,
+                "childrenAges": "6,6",
+                "offers": [
+                  {
+                    "code": "9001",
+                    "name": "Child discount",
+                    "amount": "-215.76"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "minRate": "193.80",
+        "maxRate": "9438.81",
+        "currency": "EUR"
+      }
+    ],
+    "checkIn": "2026-09-30",
+    "total": 1,
+    "checkOut": "2026-10-01"
+  }
+}

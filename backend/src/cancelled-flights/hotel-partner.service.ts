@@ -524,7 +524,18 @@ export class HotelPartnerService {
     occupancies: RoomOccupancy[],
     requestId: string,
     requestLogger: Logger,
+    isAllowSearchAPI: boolean,
   ): Promise<AvailabilityHotel[]> {
+    if (!isAllowSearchAPI) {
+      return await this.searchNearbyHotelsWithOccupanciesFromJson(
+        airport,
+        checkInDate,
+        checkOutDate,
+        occupancies,
+        requestId,
+        requestLogger,
+      );
+    }
     if (!this.apiKey || !this.secret) {
       requestLogger.warn("Hotelbeds credentials not configured.", {
         context: "HotelPartnerService",
@@ -808,6 +819,7 @@ export class HotelPartnerService {
       [{ adults: 1, children: 0 }],
       requestId,
       this.logger as unknown as Logger,
+      config.hotelSearch.isAllowSearchAPI,
     );
 
     return hotels.slice(0, 10).map((hotel) => {
@@ -846,9 +858,9 @@ export class HotelPartnerService {
     hotelCode: string,
     requestId: string,
     requestLogger: Logger,
-    isDev = true,
+    isAllowFetchHotelDetails: boolean,
   ): Promise<HotelContentDetails | null> {
-    if (isDev) {
+    if (!isAllowFetchHotelDetails) {
       // Temporarily disabled (Content API call commented out below); returns empty placeholders.
       return {
         address: "",
