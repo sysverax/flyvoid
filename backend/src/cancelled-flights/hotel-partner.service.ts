@@ -135,7 +135,9 @@ export class HotelPartnerService {
         const dirPath = path.join(this.occupancyCacheDir, name);
         try {
           const stats = await fs.stat(dirPath);
-          return stats.isDirectory() ? { dirPath, mtimeMs: stats.mtimeMs } : null;
+          return stats.isDirectory()
+            ? { dirPath, mtimeMs: stats.mtimeMs }
+            : null;
         } catch {
           return null;
         }
@@ -201,7 +203,11 @@ export class HotelPartnerService {
     let lastError: Error | null = null;
     let attemptsMade = 0;
 
-    for (let attempt = 1; attempt <= this.availabilityMaxAttempts; attempt += 1) {
+    for (
+      let attempt = 1;
+      attempt <= this.availabilityMaxAttempts;
+      attempt += 1
+    ) {
       attemptsMade = attempt;
       let response: Awaited<ReturnType<typeof fetch>>;
       try {
@@ -493,7 +499,6 @@ export class HotelPartnerService {
   //   }
   // }
 
-
   // Actual hotebeds API call with concurrency and retry logic for each occupancy
   // async searchNearbyHotelsWithOccupancies(
   //   airport: {
@@ -718,7 +723,7 @@ export class HotelPartnerService {
         ),
       })),
     );
-
+    
     const mergedByHotelCode = new Map<string, any>();
     for (const { rawHotels } of responses) {
       for (const hotel of rawHotels) {

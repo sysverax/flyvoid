@@ -98,6 +98,7 @@ export const config = {
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? "",
     fromEmail: process.env.AWS_SES_FROM_EMAIL ?? "noreply@example.com",
   },
+
   ai: {
     apiKey: process.env.AI_API_KEY ?? "",
     model: process.env.AI_MODEL ?? "llama-3.3-70b-versatile",
@@ -106,10 +107,17 @@ export const config = {
       "https://api.groq.com/openai/v1/chat/completions",
     temperature: parseFloat(process.env.AI_TEMPERATURE ?? "0.2"),
   },
+
   hotelbeds: {
     apiKey: process.env.HOTELBEDS_API_KEY ?? "",
     secret: process.env.HOTELBEDS_SECRET ?? "",
     useSandbox: process.env.HOTELBEDS_USE_SANDBOX !== "false",
+  },
+  hotelSearch: {
+    defaultRadius: parseInt(process.env.HOTEL_SEARCH_RADIUS ?? "10", 10),
+    unit: process.env.HOTEL_SEARCH_RADIUS_UNIT ?? "km",
+    maxRadius: parseInt(process.env.HOTEL_SEARCH_MAX_RADIUS ?? "50", 10),
+    minRate: parseFloat(process.env.HOTEL_SEARCH_MIN_RATE ?? "3"),  // 3 stars
   },
   platformFeePercentage: parseFloat(
     process.env.PLATFORM_FEE_PERCENTAGE ?? "10",
