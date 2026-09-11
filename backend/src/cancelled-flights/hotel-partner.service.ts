@@ -492,59 +492,53 @@ export class HotelPartnerService {
       ).values(),
     );
 
-    const payloads = dedupedOccupancies.map((occupancy) => {
-      const childrenCount = Number(occupancy.children ?? 0);
-      const normalizedAges = (occupancy.childrenAges ?? []).filter(
-        (age) => Number.isFinite(age) && age > 0,
-      );
-      const agesToSend =
-        childrenCount > 0
-          ? Array.from(
-              { length: childrenCount },
-              (_, index) => normalizedAges[index] ?? 6,
-            )
-          : [];
+    const buildPayloads = (radius: number) =>
+      dedupedOccupancies.map((occupancy) => {
+        const childrenCount = Number(occupancy.children ?? 0);
+        const normalizedAges = (occupancy.childrenAges ?? []).filter(
+          (age) => Number.isFinite(age) && age > 0,
+        );
+        const agesToSend =
+          childrenCount > 0
+            ? Array.from(
+                { length: childrenCount },
+                (_, index) => normalizedAges[index] ?? 6,
+              )
+            : [];
 
-      const paxes =
-        agesToSend.length > 0
-          ? agesToSend.map((age) => ({ type: "CH", age }))
-          : undefined;
+        const paxes =
+          agesToSend.length > 0
+            ? agesToSend.map((age) => ({ type: "CH", age }))
+            : undefined;
 
-      return {
-        occupancy,
-        payload: {
-          stay: {
-            checkIn: checkInDate,
-            checkOut: checkOutDate,
-          },
-          occupancies: [
-            {
-              rooms: 1,
-              adults: Number(occupancy.adults),
-              children: childrenCount,
-              ...(paxes ? { paxes } : {}),
+        return {
+          occupancy,
+          payload: {
+            stay: {
+              checkIn: checkInDate,
+              checkOut: checkOutDate,
             },
-          ],
-          geolocation: {
-            latitude: Number(airport.latitude),
-            longitude: Number(airport.longitude),
-            radius: config.hotelSearch.defaultRadius,
-            unit: config.hotelSearch.unit,
+            occupancies: [
+              {
+                rooms: 1,
+                adults: Number(occupancy.adults),
+                children: childrenCount,
+                ...(paxes ? { paxes } : {}),
+              },
+            ],
+            geolocation: {
+              latitude: Number(airport.latitude),
+              longitude: Number(airport.longitude),
+              radius,
+              unit: config.hotelSearch.unit,
+            },
           },
-        },
-      };
-    });
+        };
+      });
 
-    requestLogger.info("Fetching hotel availability from Hotelbeds API", {
-      context: "HotelPartnerService",
-      airportCode: airport.iataCode,
-      occupancyCount: dedupedOccupancies.length,
-      useSandbox: this.useSandbox,
-    });
-
-    try {
+    const fetchMergedHotels = async (radius: number) => {
       const responses = await this.mapWithConcurrency(
-        payloads,
+        buildPayloads(radius),
         this.availabilityMaxConcurrency,
         (group) =>
           this.fetchOccupancyAvailability(endpoint, group, requestLogger),
@@ -573,7 +567,30 @@ export class HotelPartnerService {
         }
       }
 
-      const mergedRawHotels = Array.from(mergedByHotelCode.values());
+      return Array.from(mergedByHotelCode.values());
+    };
+
+    requestLogger.info("Fetching hotel availability from Hotelbeds API", {
+      context: "HotelPartnerService",
+      airportCode: airport.iataCode,
+      occupancyCount: dedupedOccupancies.length,
+      useSandbox: this.useSandbox,
+    });
+
+    try {
+      const { defaultRadius, maxRadius } = config.hotelSearch;
+
+      let mergedRawHotels: any[] = [];
+      for (let radius = defaultRadius; radius <= maxRadius; radius += 10) {
+        mergedRawHotels = await fetchMergedHotels(radius);
+        if (mergedRawHotels.length > 0) {
+          break;
+        }
+        requestLogger.info(
+          `No hotels within ${radius}${config.hotelSearch.unit} of ${airport.iataCode}, widening search`,
+          { context: "HotelPartnerService" },
+        );
+      }
 
       requestLogger.info(
         `Successfully received ${mergedRawHotels.length} merged hotels from Hotelbeds API`,
@@ -666,6 +683,19 @@ export class HotelPartnerService {
     requestId: string,
     requestLogger: Logger,
   ): Promise<HotelContentDetails | null> {
+    // Temporarily disabled (Content API call commented out below); returns empty placeholders.
+    return {
+      address: "",
+      contact: { phones: [], email: "" },
+      latitude: null,
+      longitude: null,
+      distanceFromAirportKm: null,
+      imageUrl: "",
+      website: "",
+      amenities: [],
+    };
+
+    /*
     if (!this.apiKey || !this.secret) {
       return null;
     }
@@ -754,6 +784,7 @@ export class HotelPartnerService {
       );
       return null;
     }
+    */
   }
 
   async checkRate(rateKey: string, requestId: string): Promise<any> {
