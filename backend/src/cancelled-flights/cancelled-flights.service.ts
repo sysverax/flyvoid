@@ -1898,21 +1898,7 @@ export class CancelledFlightsService {
 
     let hotels: AvailabilityHotel[] = [];
     try {
-      hotels = await this.hotelPartnerService.searchNearbyHotelsWithOccupancies(
-        {
-          iataCode: departureAirport.iataCode,
-          latitude: Number(departureAirport.latitude),
-          longitude: Number(departureAirport.longitude),
-        },
-        checkIn,
-        checkOut,
-        uniqueOccupancies,
-        requestId,
-        requestLogger,
-      );
-
-      // // Use JSON-based hotel search for testing purposes
-      // hotels = await this.hotelPartnerService.searchNearbyHotelsWithOccupanciesFromJson(
+      // hotels = await this.hotelPartnerService.searchNearbyHotelsWithOccupancies(
       //   {
       //     iataCode: departureAirport.iataCode,
       //     latitude: Number(departureAirport.latitude),
@@ -1924,6 +1910,21 @@ export class CancelledFlightsService {
       //   requestId,
       //   requestLogger,
       // );
+
+      // Use JSON-based hotel search for testing purposes
+      hotels =
+        await this.hotelPartnerService.searchNearbyHotelsWithOccupanciesFromJson(
+          {
+            iataCode: departureAirport.iataCode,
+            latitude: Number(departureAirport.latitude),
+            longitude: Number(departureAirport.longitude),
+          },
+          checkIn,
+          checkOut,
+          uniqueOccupancies,
+          requestId,
+          requestLogger,
+        );
     } catch (error: any) {
       this.logger.error(
         "Hotel availability search failed",
