@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hotelbeds Certification Guide</title>
+<style>
+  :root{
+    --bg:#0f1720;
+    --panel:#111c27;
+    --panel-2:#0b141c;
+    --border:#22323f;
+    --text:#e6edf3;
+    --muted:#9fb1c1;
+    --accent:#3ea6ff;
+    --accent-2:#5ee6b0;
+    --warn:#ffb454;
+    --danger:#ff6b6b;
+    --code-bg:#0a1117;
+    --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:var(--sans);
+    background:var(--bg);
+    color:var(--text);
+    line-height:1.6;
+  }
+  .layout{
+    display:grid;
+    grid-template-columns: 260px 1fr;
+    min-height:100vh;
+  }
+  nav{
+    background:var(--panel-2);
+    border-right:1px solid var(--border);
+    padding:28px 20px;
+    position:sticky;
+    top:0;
+    height:100vh;
+    overflow-y:auto;
+  }
+  nav h2{
+    font-size:13px;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+    color:var(--muted);
+    margin:0 0 14px;
+  }
+  nav ul{list-style:none;margin:0 0 22px;padding:0;}
+  nav li{margin-bottom:6px;}
+  nav a{
+    color:var(--text);
+    text-decoration:none;
+    font-size:14px;
+    display:block;
+    padding:6px 10px;
+    border-radius:6px;
+  }
+  nav a:hover{background:rgba(62,166,255,.12); color:var(--accent);}
+  nav .sub a{ font-size:13px; color:var(--muted); padding-left:20px;}
+  main{padding:48px 56px 100px; max-width:920px;}
+  h1{font-size:32px; margin:0 0 6px;}
+  .subtitle{color:var(--muted); font-size:16px; margin:0 0 40px;}
+  h2{
+    font-size:22px;
+    margin-top:56px;
+    padding-top:16px;
+    border-top:1px solid var(--border);
+    scroll-margin-top:24px;
+  }
+  h2 .num{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    width:28px; height:28px;
+    background:var(--accent);
+    color:#04141f;
+    border-radius:50%;
+    font-size:14px;
+    font-weight:700;
+    margin-right:10px;
+  }
+  h3{font-size:17px; margin-top:28px; color:var(--text); scroll-margin-top:24px;}
+  h4{font-size:14px; text-transform:uppercase; letter-spacing:.04em; color:var(--accent-2); margin:22px 0 8px;}
+  p{color:#cdd9e3;}
+  .lead{color:var(--muted);}
+  .badge{
+    display:inline-block;
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:.03em;
+    padding:3px 9px;
+    border-radius:20px;
+    margin-left:8px;
+    vertical-align:middle;
+  }
+  .badge.get{background:rgba(94,230,176,.15); color:var(--accent-2);}
+  .badge.post{background:rgba(62,166,255,.15); color:var(--accent);}
+  .badge.delete{background:rgba(255,107,107,.15); color:var(--danger);}
+  .badge.mandatory{background:rgba(255,180,84,.15); color:var(--warn);}
+  .badge.recommended{background:rgba(159,177,193,.15); color:var(--muted);}
+  .callout{
+    background:rgba(62,166,255,.08);
+    border-left:3px solid var(--accent);
+    padding:14px 18px;
+    border-radius:6px;
+    margin:16px 0;
+    color:#d7e6f5;
+    font-size:14px;
+  }
+  .callout.warn{ background:rgba(255,180,84,.08); border-left-color:var(--warn); }
+  .callout.danger{ background:rgba(255,107,107,.08); border-left-color:var(--danger); }
+  .callout strong{color:var(--text);}
+  table{
+    width:100%;
+    border-collapse:collapse;
+    margin:18px 0 8px;
+    font-size:14px;
+  }
+  th, td{
+    text-align:left;
+    padding:10px 12px;
+    border-bottom:1px solid var(--border);
+    vertical-align:top;
+  }
+  th{color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.03em;}
+  td code, th code{font-size:13px;}
+  .steps{ counter-reset: step; list-style:none; padding:0; margin:20px 0;}
+  .steps > li{
+    counter-increment: step;
+    position:relative;
+    padding:14px 16px 14px 52px;
+    margin-bottom:10px;
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:10px;
+  }
+  .steps > li::before{
+    content: counter(step);
+    position:absolute;
+    left:14px; top:14px;
+    width:24px; height:24px;
+    background:var(--accent);
+    color:#04141f;
+    border-radius:50%;
+    font-size:13px;
+    font-weight:700;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .steps h4{margin:0 0 4px; color:var(--text); text-transform:none; letter-spacing:0; font-size:15px;}
+  .steps p{margin:0; font-size:14px;}
+  pre{
+    background:var(--code-bg);
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:16px 18px;
+    overflow-x:auto;
+    font-family:var(--mono);
+    font-size:13px;
+    line-height:1.55;
+    position:relative;
+    margin:10px 0 20px;
+  }
+  code{font-family:var(--mono);}
+  .code-label{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    font-size:12px;
+    color:var(--muted);
+    margin:16px 0 0;
+  }
+  .copy-btn{
+    background:var(--panel);
+    border:1px solid var(--border);
+    color:var(--muted);
+    font-size:11px;
+    padding:4px 10px;
+    border-radius:6px;
+    cursor:pointer;
+  }
+  .copy-btn:hover{color:var(--accent); border-color:var(--accent);}
+  .tok{color:var(--accent-2);}
+  .checklist{list-style:none; padding:0; margin:14px 0;}
+  .checklist li{
+    padding:8px 0 8px 28px;
+    position:relative;
+    font-size:14px;
+    color:#cdd9e3;
+    border-bottom:1px dashed var(--border);
+  }
+  .checklist li::before{
+    content:"✓";
+    position:absolute;
+    left:0; top:8px;
+    color:var(--accent-2);
+    font-weight:700;
+  }
+  footer{
+    margin-top:60px;
+    padding-top:20px;
+    border-top:1px solid var(--border);
+    color:var(--muted);
+    font-size:13px;
+  }
+  a.inline{color:var(--accent);}
+  @media (max-width: 860px){
+    .layout{grid-template-columns: 1fr;}
+    nav{position:relative; height:auto;}
+    main{padding:32px 20px 80px;}
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+<nav>
+  <h2>Hotelbeds Certification</h2>
+  <ul>
+    <li><a href="#overview">Overview</a></li>
+    <li><a href="#prereqs">Postman setup</a></li>
+    <li><a href="#roadmap">Certification roadmap</a></li>
+    <li><a href="#status">0. Status check</a></li>
+    <li><a href="#availability">1. Availability</a></li>
+    <li><a href="#checkrate">2. CheckRate</a></li>
+    <li><a href="#booking">3. Booking confirm</a></li>
+    <li><a href="#booking-detail">4. Booking detail</a></li>
+    <li><a href="#booking-list">5. Booking list</a></li>
+    <li><a href="#cancel">6. Cancel booking</a></li>
+    <li><a href="#voucher">7. Voucher assembly</a></li>
+    <li><a href="#content">8. Content API</a></li>
+    <li><a href="#request">Requesting certification</a></li>
+    <li><a href="#live">Going live</a></li>
+  </ul>
+</nav>
+
+<main>
+  <h1>Hotelbeds (HBX Group) Certification Guide</h1>
+  <p class="subtitle">Everything needed to prepare, self-test, and request certification for the Hotel Booking API — with request bodies and JSON schemas ready to drop into Postman.</p>
+
+  <section id="overview">
+    <h2><span class="num">i</span>Overview</h2>
+    <p>Certification confirms your integration calls the Hotel API in the correct order, displays all mandatory information correctly, generates a compliant voucher, and behaves correctly on a real live booking. Reference: <a class="inline" href="https://developer.hotelbeds.com/documentation/hotels/knowledge-base/certification-process/" target="_blank">official certification process doc</a>.</p>
+    <div class="callout">
+      Contact for certification requests and questions: <strong>apitude@hotelbeds.com</strong>
+    </div>
+  </section>
+
+  <section id="prereqs">
+    <h2><span class="num">i</span>Postman variables used in this guide</h2>
+    <p>All requests below use these collection/environment variables — set them once in Postman and every request in this guide will work as-is.</p>
+    <table>
+      <tr><th>Variable</th><th>Example value</th><th>Notes</th></tr>
+      <tr><td><code>{{baseURL}}</code></td><td><code>https://api.test.hotelbeds.com</code></td><td>Switch to <code>https://api.hotelbeds.com</code> only after certification, for live keys</td></tr>
+      <tr><td><code>{{version}}</code></td><td><code>1.0</code></td><td>Applies to hotel-api and hotel-content-api</td></tr>
+      <tr><td><code>{{hotelbeds-api-key}}</code></td><td>your test Api-key</td><td>Sent as <code>Api-key</code> header</td></tr>
+      <tr><td><code>{{hotebeds-x-signature}}</code></td><td>computed per-request</td><td>SHA-256 of <code>apiKey + secret + UTC epoch seconds</code>. Should be a Postman pre-request script so it's fresh on every send.</td></tr>
+    </table>
+    <div class="callout warn"><strong>Important:</strong> the X-Signature must be regenerated for every request (it embeds the current timestamp). If you hardcode it, requests will start failing within ~30 seconds.</div>
+  </section>
+
+  <section id="roadmap">
+    <h2><span class="num">i</span>Certification roadmap</h2>
+    <ol class="steps">
+      <li><h4>Read the best practices doc and build against the test environment</h4><p>Implement Availability → CheckRate (conditional) → Booking in the correct order, with GZIP compression enabled on requests.</p></li>
+      <li><h4>Self-test every endpoint below</h4><p>Use the curl commands and schemas in this guide to confirm each call works and returns the shape you expect before contacting Hotelbeds.</p></li>
+      <li><h4>Implement voucher generation</h4><p>Assemble the mandatory voucher fields (Section 7) from the Booking detail response plus Content API data.</p></li>
+      <li><h4>Email apitude@hotelbeds.com to request certification</h4><p>Include your workflow, commercial exclusions, test URL/credentials, and any language notes (see "Requesting certification" section).</p></li>
+      <li><h4>Pass the 5-area review</h4><p>Technical (GZIP/config), Workflow (call order/batching), Availability–CheckRate–Confirmation (data display + rules), Voucher, and Content.</p></li>
+      <li><h4>Receive live API keys</h4><p>Point <code>{{baseURL}}</code> at the live host once issued.</p></li>
+      <li><h4>Perform one real live booking, then cancel it</h4><p>6 months out, 2 adults/2 children, non-NRF rate. Send Hotelbeds the voucher and price, coordinate cancellation timing with them, then cancel.</p></li>
+      <li><h4>Confirm non-breaking-change tolerance</h4><p>Your integration must not break on new fields, new optional params, or reordered response properties.</p></li>
+    </ol>
+  </section>
+
+  <section id="status">
+    <h2><span class="num">0</span>Status check <span class="badge get">GET</span></h2>
+    <p>Confirms your Api-key and X-Signature are valid before you test anything else.</p>
+    <div class="code-label"><span>curl</span><button class="copy-btn" onclick="copyBlock('status-curl')">Copy</button></div>
+    <pre id="status-curl">curl --location --request GET '<span class="tok">{{baseURL}}</span>/hotel-api/<span class="tok">{{version}}</span>/status' \
+--header 'Api-key: <span class="tok">{{hotelbeds-api-key}}</span>' \
+--header 'X-Signature: <span class="tok">{{hotebeds-x-signature}}</span>' \
+--header 'Accept: application/json' \
+--header 'Accept-Encoding: gzip'</pre>
+  </section>
+
+  <section id="availability">
+    <h2><span class="num">1</span>Availability <span class="badge post">POST</span> <span class="badge mandatory">Batch all rooms, ≤2000 hotels</span></h2>
+    <p>First call in the workflow. Request every hotel you can (up to 2000) and every room needed for the booking in a single call — do not split rooms of the same booking across multiple Availability calls.</p>
+    <div class="code-label"><span>curl</span><button class="copy-btn" onclick="copyBlock('avail-curl')">Copy</button></div>
+    <pre id="avail-curl">curl --location --request POST '<span class="tok">{{baseURL}}</span>/hotel-api/<span class="tok">{{version}}</span>/hotels' \
+--header 'Api-key: <span class="tok">{{hotelbeds-api-key}}</span>' \
+--header 'X-Signature: <span class="tok">{{hotebeds-x-signature}}</span>' \
+--header 'Accept: application/json' \
+--header 'Accept-Encoding: gzip' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+    "sourceMarket": "UK",
+    "stay": { "checkIn": "2026-06-15", "checkOut": "2026-06-16" },
+    "occupancies": [
+        { "rooms": 1, "adults": 2, "children": 0 },
+        {
+            "rooms": 1, "adults": 3, "children": 1,
+            "paxes": [ { "type": "CH", "age": 7 } ]
+        }
+    ],
+    "hotels": { "hotel": [1067, 1070, 1074] },
+    "filter": { "maxHotels": 50, "minRate": 0, "maxRate": 1000 }
+}'</pre>
+    <h4>JSON Schema — Availability request body</h4>
+    <div class="code-label"><span>schema</span><button class="copy-btn" onclick="copyBlock('avail-schema')">Copy</button></div>
+    <pre id="avail-schema">{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AvailabilityRequest",
+  "type": "object",
+  "required": ["stay", "occupancies", "hotels"],
+  "properties": {
+    "sourceMarket": { "type": "string", "description": "2-letter country code of end client" },
+    "stay": {
+      "type": "object",
+      "required": ["checkIn", "checkOut"],
+      "properties": {
+        "checkIn": { "type": "string", "format": "date" },
+        "checkOut": { "type": "string", "format": "date" }
+      }
+    },
+    "occupancies": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["rooms", "adults"],
+        "properties": {
+          "rooms": { "type": "integer", "minimum": 1 },
+          "adults": { "type": "integer", "minimum": 1 },
+          "children": { "type": "integer", "minimum": 0 },
+          "paxes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": { "type": "string", "enum": ["AD", "CH"] },
+                "age": { "type": "integer" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "hotels": {
+      "type": "object",
+      "required": ["hotel"],
+      "properties": {
+        "hotel": {
+          "type": "array",
+          "maxItems": 2000,
+          "items": { "type": "integer" }
+        }
+      }
+    },
+    "filter": {
+      "type": "object",
+      "properties": {
+        "maxHotels": { "type": "integer" },
+        "minRate": { "type": "number" },
+        "maxRate": { "type": "number" },
+        "minCategory": { "type": "number" },
+        "maxCategory": { "type": "number" },
+        "paymentType": { "type": "string", "enum": ["AT_WEB", "AT_HOTEL"] },
+        "maxRatesPerRoom": { "type": "integer" },
+        "packaging": { "type": "boolean" },
+        "maxRooms": { "type": "integer" }
+      }
+    },
+    "boards": {
+      "type": "object",
+      "properties": {
+        "included": { "type": "boolean" },
+        "board": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}</pre>
+    <h3>Key rule from the Availability response</h3>
+    <p>Every rate has a <code>rateType</code>. Only call CheckRate when it equals <code>RECHECK</code> — otherwise book directly with the returned <code>rateKey</code>.</p>
+    <pre>"rates": [
+  {
+    "rateKey": "20260615|20260616|W|1|1067|DBT.SU|CG-BAR17HB|HB||1~2~0||...",
+    "rateClass": "NOR",
+    "rateType": "BOOKABLE"
+  }
+]</pre>
+  </section>
+
+  <section id="checkrate">
+    <h2><span class="num">2</span>CheckRate <span class="badge post">POST</span> <span class="badge mandatory">Only if rateType=RECHECK, ≤10 keys/call</span></h2>
+    <p>Revalidates price and availability for a rateKey immediately before booking. Group up to 10 rateKeys in one call rather than calling repeatedly.</p>
+    <div class="code-label"><span>curl</span><button class="copy-btn" onclick="copyBlock('checkrate-curl')">Copy</button></div>
+    <pre id="checkrate-curl">curl --location --request POST '<span class="tok">{{baseURL}}</span>/hotel-api/<span class="tok">{{version}}</span>/checkrates' \
+--header 'Api-key: <span class="tok">{{hotelbeds-api-key}}</span>' \
+--header 'X-Signature: <span class="tok">{{hotebeds-x-signature}}</span>' \
+--header 'Accept: application/json' \
+--header 'Accept-Encoding: gzip' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+    "rooms": [
+        { "rateKey": "PASTE_RATEKEY_1_FROM_AVAILABILITY" },
+        { "rateKey": "PASTE_RATEKEY_2_FROM_AVAILABILITY" }
+    ]
+}'</pre>
+    <h4>JSON Schema — CheckRate request body</h4>
+    <div class="code-label"><span>schema</span><button class="copy-btn" onclick="copyBlock('checkrate-schema')">Copy</button></div>
+    <pre id="checkrate-schema">{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CheckRateRequest",
+  "type": "object",
+  "required": ["rooms"],
+  "properties": {
+    "rooms": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "required": ["rateKey"],
+        "properties": {
+          "rateKey": { "type": "string" }
+        }
+      }
+    }
+  }
+}</pre>
+  </section>
+
+  <section id="booking">
+    <h2><span class="num">3</span>Booking confirm <span class="badge post">POST</span> <span class="badge mandatory">Min. 60s timeout (use 65s buffer)</span></h2>
+    <p>Final step of the workflow. Do not call Availability or CheckRate again immediately before this — use the rateKey you already have.</p>
+    <div class="code-label"><span>curl</span><button class="copy-btn" onclick="copyBlock('booking-curl')">Copy</button></div>
+    <pre id="booking-curl">curl --location --request POST '<span class="tok">{{baseURL}}</span>/hotel-api/<span class="tok">{{version}}</span>/bookings' \
+--max-time 65 \
+--header 'Api-key: <span class="tok">{{hotelbeds-api-key}}</span>' \
+--header 'X-Signature: <span class="tok">{{hotebeds-x-signature}}</span>' \
+--header 'Accept: application/json' \
+--header 'Accept-Encoding: gzip' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+    "holder": { "name": "John", "surname": "Smith" },
+    "rooms": [
+        {
+            "rateKey": "PASTE_FINAL_RATEKEY_HERE",
+            "paxes": [
+                { "roomId": 1, "type": "AD", "name": "John", "surname": "Smith" },
+                { "roomId": 1, "type": "AD", "name": "Jane", "surname": "Smith" }
+            ]
+        }
+    ],
+    "clientReference": "your-internal-ref-001",
+    "remark": "Certification test booking",
+    "tolerance": 2.00
+}'</pre>
+    <h4>JSON Schema — Booking confirm request body</h4>
+    <div class="code-label"><span>schema</span><button class="copy-btn" onclick="copyBlock('booking-schema')">Copy</button></div>
+    <pre id="booking-schema">{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "BookingConfirmRequest",
+  "type": "object",
+  "required": ["holder", "rooms"],
+  "properties": {
+    "holder": {
+      "type": "object",
+      "required": ["name", "surname"],
+      "properties": {
+        "name": { "type": "string" },
+        "surname": { "type": "string" }
+      }
+    },
+    "rooms": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["rateKey", "paxes"],
+        "properties": {
+          "rateKey": { "type": "string" },
+          "paxes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["roomId", "type", "name", "surname"],
+              "properties": {
+                "roomId": { "type": "integer" },
+                "type": { "type": "string", "enum": ["AD", "CH"] },
+                "age": { "type": "integer" },
+                "name": { "type": "string" },
+                "surname": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "clientReference": { "type": "string" },
+    "remark": { "type": "string" },
+    "tolerance": { "type": "number", "description": "Allowed price variance vs the last checked rate" }
+  }
+}</pre>
+    <div class="callout warn"><strong>Timeout:</strong> Hotelbeds requires your system to wait at least 60 seconds for the Booking Confirmation response before treating it as failed/timed out. Using 65s gives a safety margin.</div>
+  </section>
+
+  <section id="booking-detail">
+    <h2><span class="num">4</span>Booking detail / status <span class="badge get">GET</span></h2>
+    <p>Retrieves full itinerary — this is also your primary data source for assembling the voucher.</p>
+    <div class="code-label"><span>curl</span><button class="copy-btn" onclick="copyBlock('detail-curl')">Copy</button></div>
+    <pre id="detail-curl">curl --location --request GET '<span class="tok">{{baseURL}}</span>/hotel-api/<span class="tok">{{version}}</span>/bookings/<span class="tok">{{bookingReference}}</span>' \
+--header 'Api-key: <span class="tok">{{hotelbeds-api-key}}</span>' \
+--header 'X-Signature: <span class="tok">{{hotebeds-x-signature}}</span>' \
+--header 'Accept: application/json' \
+--header 'Accept-Encoding: gzip'</pre>
+  </section>
+
+  <section id="booking-list">
+    <h2><span class="num">5</span>Booking list <span class="badge get">GET</span> <span class="badge recommended">Not part of core certification, but reviewed if used</span></h2>
+    <div class="code-label"><span>curl</span><button class="copy-btn" onclick="copyBlock('list-curl')">Copy</button></div>
+    <pre id="list-curl">curl --location --request GET '<span class="tok">{{baseURL}}</span>/hotel-api/<span class="tok">{{version}}</span>/bookings?start=1&size=25&filter=CREATION_DATE&createFrom=2026-01-01&createTo=2026-12-31' \
+--header 'Api-key: <span class="tok">{{hotelbeds-api-key}}</span>' \
+--header 'X-Signature: <span class="tok">{{hotebeds-x-signature}}</span>' \
+--header 'Accept: application/json' \
+--header 'Accept-Encoding: gzip'</pre>
+  </section>
+
+  <section id="cancel">
+    <h2><span class="num">6</span>Cancel booking <span class="badge delete">DELETE</span> <span class="badge mandatory">Mandatory after the live test booking</span></h2>
+    <div class="code-label"><span>curl</span><button class="copy-btn" onclick="copyBlock('cancel-curl')">Copy</button></div>
+    <pre id="cancel-curl">curl --location --request DELETE '<span class="tok">{{baseURL}}</span>/hotel-api/<span class="tok">{{version}}</span>/bookings/<span class="tok">{{bookingReference}}</span>?cancellationFlag=CANCELLATION' \
+--header 'Api-key: <span class="tok">{{hotelbeds-api-key}}</span>' \
+--header 'X-Signature: <span class="tok">{{hotebeds-x-signature}}</span>' \
+--header 'Accept: application/json' \
+--header 'Accept-Encoding: gzip'</pre>
+    <div class="callout danger"><strong>Live environment reminder:</strong> any booking made once you have live keys is real. Cancel test bookings promptly to avoid being charged, and confirm cancellation timing with Hotelbeds beforehand if it's the mandatory live certification booking.</div>
+  </section>
+
+  <section id="voucher">
+    <h2><span class="num">7</span>Voucher assembly <span class="badge mandatory">Not an endpoint — built from Booking detail + Content API</span></h2>
+    <p>Every confirmed booking must produce a voucher for the end client. Build it from the Booking detail response, enriched with Content API hotel data.</p>
+    <h4>Hotel information</h4>
+    <ul class="checklist">
+      <li>Hotel name <span class="badge mandatory">mandatory</span></li>
+      <li>Hotel address <span class="badge mandatory">mandatory</span></li>
+      <li>Hotel category <span class="badge recommended">recommended</span></li>
+      <li>Destination name <span class="badge recommended">recommended</span></li>
+      <li>Hotel phone number <span class="badge recommended">recommended</span></li>
+    </ul>
+    <h4>Passenger information (all mandatory)</h4>
+    <ul class="checklist">
+      <li>Holder name — must be the lead passenger from the booking request</li>
+      <li>At least one pax name per room (holder's name is sufficient for single-room bookings)</li>
+      <li>Children's ages, if children are present</li>
+    </ul>
+    <h4>Booking information</h4>
+    <ul class="checklist">
+      <li>Hotelbeds booking reference <span class="badge mandatory">mandatory</span></li>
+      <li>Agency reference <span class="badge recommended">recommended</span></li>
+      <li>Check-in / check-out dates <span class="badge mandatory">mandatory</span></li>
+      <li>Room type <span class="badge mandatory">mandatory</span></li>
+      <li>Board type <span class="badge mandatory">mandatory</span></li>
+      <li>Rate comments, if applicable <span class="badge mandatory">mandatory</span></li>
+    </ul>
+    <h4>Payment disclosure <span class="badge mandatory">mandatory wording</span></h4>
+    <p>Do not display the reservation price on the voucher. Instead show:</p>
+    <pre>"Payable through XXX, acting as agent for the service operating company,
+details of which can be provided upon request. VAT: YYY  Reference: ZZZ"</pre>
+    <p>Where <strong>XXX</strong> = supplier name (<code>supplier</code> tag), <strong>YYY</strong> = VAT number (<code>supplier</code> tag), <strong>ZZZ</strong> = booking reference.</p>
+  </section>
+
+  <section id="content">
+    <h2><span class="num">8</span>Content API <span class="badge get">GET</span> — category, images, facilities, descriptions</h2>
+    <p>Not mandatory to use, but if you do, certification checks it's implemented correctly. Cache this data locally and refresh at least weekly.</p>
+    <div class="code-label"><span>curl</span><button class="copy-btn" onclick="copyBlock('content-curl')">Copy</button></div>
+    <pre id="content-curl">curl --location --request GET '<span class="tok">{{baseURL}}</span>/hotel-content-api/<span class="tok">{{version}}</span>/hotels/1067/details?language=ENG&useSecondaryLanguage=false' \
+--header 'Api-key: <span class="tok">{{hotelbeds-api-key}}</span>' \
+--header 'X-Signature: <span class="tok">{{hotebeds-x-signature}}</span>' \
+--header 'Accept: application/json' \
+--header 'Accept-Encoding: gzip'</pre>
+    <h4>What certification checks here</h4>
+    <ul class="checklist">
+      <li>Category types shown (stars, keys, apart-hotel ratings) and values</li>
+      <li>Images displayed, correctly matched to the right hotel, and in reasonable quantity</li>
+      <li>Facilities shown, including paid (<code>indFee</code>) and "mandatory-reported" (<code>indYesOrNo</code>) facilities</li>
+      <li>Hotel description, contract remarks, room types, board types, points of interest</li>
+    </ul>
+    <h4>Facility response example</h4>
+    <pre>{
+  "facilityCode": 330,
+  "facilityGroupCode": 70,
+  "description": { "content": "Garage" },
+  "order": 1,
+  "indFee": true,
+  "indYesOrNo": true
+}</pre>
+    <p><code>indFee: true</code> = paid facility. <code>indYesOrNo</code> present = a "mandatory-reported" facility, meaning Hotelbeds always asks the hotel to confirm whether it has this facility or not (the value tells you which).</p>
+  </section>
+
+  <section id="request">
+    <h2><span class="num">i</span>Requesting certification</h2>
+    <p>Once every endpoint above works as expected and your voucher is compliant, email <strong>apitude@hotelbeds.com</strong> with:</p>
+    <ul class="checklist">
+      <li>Your integration workflow (per distribution channel, if more than one)</li>
+      <li>Any commercial exclusions (destinations, room types, board types, hotels deliberately omitted)</li>
+      <li>The certification test URL</li>
+      <li>Username/password, if your system requires login to view the integration</li>
+      <li>Payment information, if applicable</li>
+      <li>A language guide, if your UI isn't in a common language</li>
+      <li>How to isolate HBX Group product, if you integrate multiple suppliers</li>
+      <li>Any other context relevant to reviewing your integration</li>
+    </ul>
+  </section>
+
+  <section id="live">
+    <h2><span class="num">i</span>Going live</h2>
+    <ol class="steps">
+      <li><h4>Receive live Api-key and secret</h4><p>Point <code>{{baseURL}}</code> at the live host and regenerate your X-Signature against the live secret.</p></li>
+      <li><h4>Make one real booking</h4><p>Dates 6 months in advance, 2 adults/2 children, a non-NRF rate (NRF = non-refundable, carries cancellation fees).</p></li>
+      <li><h4>Send Hotelbeds the voucher and price</h4><p>For their final verification.</p></li>
+      <li><h4>Cancel the booking</h4><p>Confirm timing with Hotelbeds first — otherwise you may be charged.</p></li>
+      <li><h4>Confirm non-breaking-change tolerance</h4><p>New response fields, new endpoints, new optional request params, reordered response properties, and changed string lengths/formats should never break your integration.</p></li>
+    </ol>
+    <div class="callout danger"><strong>Any action on the live environment is real</strong> — the hotel is informed and cancellation fees apply if the rate carries them. Never test with an NRF or fee-bearing rate.</div>
+  </section>
+
+  <footer>
+    Source: <a class="inline" href="https://developer.hotelbeds.com/documentation/hotels/knowledge-base/certification-process/" target="_blank">developer.hotelbeds.com — Certification process</a>. Endpoint paths compiled from the Hotelbeds Getting Started, Workflow, and Mutual Authentication docs. Verify exact paths/params against your own API Reference access before going live.
+  </footer>
+</main>
+</div>
+
+<script>
+function copyBlock(id){
+  const el = document.getElementById(id);
+  const text = el.innerText;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = el.previousElementSibling.querySelector('.copy-btn');
+    if(btn){
+      const original = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(() => btn.textContent = original, 1200);
+    }
+  });
+}
+</script>
+</body>
+</html>
