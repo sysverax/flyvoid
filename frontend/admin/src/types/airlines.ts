@@ -22,6 +22,7 @@ export interface Airline {
   adminEmail: string;
   adminJobTitle: string;
   creditLimit: number;
+  platformFeePercentage: number;
   totalCancelledFlights: number;
   totalPassengersMetric: number;
   avgCostPerPassenger: number;

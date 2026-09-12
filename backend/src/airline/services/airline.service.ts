@@ -147,6 +147,8 @@ export class AirlineService {
     if (dto.currency !== undefined)
       airlineUpdate.currency = dto.currency.trim().toUpperCase();
     if (dto.address !== undefined) airlineUpdate.address = dto.address.trim();
+    if (dto.platformFeePercentage !== undefined)
+      airlineUpdate.platformFeePercentage = dto.platformFeePercentage;
     if (dto.isActive !== undefined) airlineUpdate.isActive = dto.isActive;
     if (dto.isSuspended !== undefined)
       airlineUpdate.isSuspended = dto.isSuspended;
@@ -283,6 +285,7 @@ export class AirlineService {
       logo: airline.logo ?? undefined,
       currency: airline.currency ?? null,
       creditLimit: airline.wallet?.creditLimit ?? 0,
+      platformFeePercentage: Number(airline.platformFeePercentage),
       address: airline.address ?? null,
       isActive: airline.isActive,
       isSuspended: airline.isSuspended,

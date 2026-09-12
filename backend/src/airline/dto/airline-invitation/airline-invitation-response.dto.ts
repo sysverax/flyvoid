@@ -41,6 +41,12 @@ export class AirlineInvitationResponseDto {
   })
   creditLimit?: number;
 
+  @ApiPropertyOptional({
+    description: "Platform fee percentage charged to this airline",
+    example: 12.5,
+  })
+  platformFeePercentage?: number;
+
   @ApiProperty({
     description: "Invitation status",
     enum: AIRLINE_INVITATION_STATUSES,

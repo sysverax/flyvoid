@@ -55,6 +55,7 @@ export class AirlineRepository {
       | "address"
       | "logo"
       | "isActive"
+      | "platformFeePercentage"
     >,
     requestId: string,
     manager?: EntityManager,
@@ -193,6 +194,7 @@ export class AirlineRepository {
         | "address"
         | "isActive"
         | "isSuspended"
+        | "platformFeePercentage"
       >
     >,
     requestId: string,

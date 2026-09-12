@@ -111,6 +111,15 @@ function validate(key: string, value: any): string {
       if (v === "" || v === undefined) return "";
       if (isNaN(Number(v)) || Number(v) < 0) return "Credit Limit must be a valid number";
       return "";
+    case "platformFeePercentage": {
+      if (v === "" || v === undefined) return "Platform Fee is required";
+      const num = Number(v);
+      if (isNaN(num)) return "Platform Fee must be a valid number";
+      if (!/^\d+(\.\d{1,2})?$/.test(v)) return "Platform Fee can have up to 2 decimal places";
+      if (num <= 0) return "Platform Fee must be greater than 0";
+      if (num >= 100) return "Platform Fee must be less than 100";
+      return "";
+    }
     default:
       return "";
   }
@@ -154,6 +163,7 @@ export function EditAirlineModal({
     adminEmail: "",
     adminJobTitle: "",
     creditLimit: 0,
+    platformFeePercentage: 0,
   });
 
   const [airports, setAirports] = useState<AirportItem[]>([]);
@@ -196,6 +206,7 @@ export function EditAirlineModal({
         adminEmail: airline.adminEmail || "",
         adminJobTitle: airline.adminJobTitle || "",
         creditLimit: airline.creditLimit || 0,
+        platformFeePercentage: airline.platformFeePercentage || 0,
       });
 
       setAirportSearch("");
@@ -247,7 +258,7 @@ export function EditAirlineModal({
     if (!airline) return false;
     const keys = Object.keys(editFormState) as Array<keyof typeof editFormState>;
     const anyFieldChanged = keys.some((k) => {
-      if (k === "creditLimit") {
+      if (k === "creditLimit" || k === "platformFeePercentage") {
         return Number(editFormState[k]) !== Number(airline[k]);
       }
       return String(editFormState[k] ?? "").trim() !== String(airline[k] ?? "").trim();
@@ -534,7 +545,7 @@ export function EditAirlineModal({
                   <input value={editFormState.adminJobTitle} onChange={handleChange("adminJobTitle")} onBlur={handleBlur("adminJobTitle")} className={ic("adminJobTitle")} />
                   {err("adminJobTitle")}
                 </Field>
-                <Field label="Credit Limit" required className="col-span-2">
+                <Field label="Credit Limit" required className="col-span-1">
                   <input
                     type="number"
                     value={editFormState.creditLimit}
@@ -547,6 +558,23 @@ export function EditAirlineModal({
                     className={ic("creditLimit")}
                   />
                   {err("creditLimit")}
+                </Field>
+                <Field label="Platform Fee (%)" required className="col-span-1">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    value={editFormState.platformFeePercentage}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setEditFormState({ ...editFormState, platformFeePercentage: val });
+                      if (touched["platformFeePercentage"]) setErr("platformFeePercentage", validate("platformFeePercentage", val));
+                    }}
+                    onBlur={handleBlur("platformFeePercentage")}
+                    className={ic("platformFeePercentage")}
+                  />
+                  {err("platformFeePercentage")}
                 </Field>
               </div>
             </section>

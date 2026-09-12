@@ -36,6 +36,12 @@ export class BaseAdminAirlineResponseDto {
   @ApiProperty({ example: "CRN-001234" })
   companyRegistrationNumber!: string;
 
+  @ApiProperty({
+    description: "Platform fee percentage charged to this airline",
+    example: 12.5,
+  })
+  platformFeePercentage!: number;
+
   @ApiProperty({ example: true })
   isActive!: boolean;
 

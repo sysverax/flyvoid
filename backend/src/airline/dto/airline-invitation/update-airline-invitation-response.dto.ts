@@ -73,6 +73,12 @@ export class UpdateAirlineInvitationResponseDto {
   })
   creditLimit?: number;
 
+  @ApiProperty({
+    description: "Platform fee percentage charged to this airline",
+    example: 12.5,
+  })
+  platformFeePercentage!: number;
+
   @ApiProperty({ description: "Invited admin first name", example: "Aisha" })
   adminFirstName!: string;
 

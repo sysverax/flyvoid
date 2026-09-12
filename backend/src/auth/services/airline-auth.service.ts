@@ -209,6 +209,7 @@ export class AirlineAuthService {
           currency: meta.currency,
           address: meta.address,
           logo: meta.logo ?? undefined,
+          platformFeePercentage: meta.platformFeePercentage,
           isActive: true,
         },
         requestId,
@@ -307,10 +308,23 @@ export class AirlineAuthService {
       email: dto.email,
     });
 
-    const user = await this.authRepository.findAirlineUserByEmail(
-      dto.email.toLowerCase().trim(),
-      requestId,
-    );
+    const [user, airline] =
+      await this.authRepository.findAirlineUserByEmailWithAirlineDetails(
+        dto.email.toLowerCase().trim(),
+        requestId,
+      );
+
+    if (!airline) {
+      throw new UnauthorizedException("Invalid credentials");
+    }
+
+    if (!airline.isActive) {
+      throw new UnauthorizedException("Invalid credentials");
+    }
+
+    if (airline.isSuspended) {
+      throw new UnauthorizedException("Invalid credentials");
+    }
 
     if (!user || !user.isActive) {
       throw new UnauthorizedException("Invalid credentials");

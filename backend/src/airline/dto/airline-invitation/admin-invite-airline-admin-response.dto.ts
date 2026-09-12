@@ -105,6 +105,12 @@ export class AdminInviteAirlineAdminResponseDto {
   creditLimit!: number;
 
   @ApiProperty({
+    description: "Platform fee percentage charged to this airline",
+    example: 12.5,
+  })
+  platformFeePercentage!: number;
+
+  @ApiProperty({
     description: "Invitation expiry duration",
     example: "48h",
   })

@@ -139,6 +139,7 @@ export class AirlineInvitationService {
               address: dto.address.trim(),
               logo: dto.logo?.trim() ?? undefined,
               creditLimit: dto.creditLimit ?? 0,
+              platformFeePercentage: dto.platformFeePercentage,
               adminFirstName: dto.adminFirstName.trim(),
               adminLastName: dto.adminLastName.trim(),
               adminEmail: normalizedAdminEmail,
@@ -197,6 +198,7 @@ export class AirlineInvitationService {
       email: normalizedAdminEmail,
       jobTitle: dto.jobTitle.trim(),
       creditLimit: dto.creditLimit ?? 0,
+      platformFeePercentage: dto.platformFeePercentage,
       expiresIn: config.auth.airlineAdminInviteExpiresIn,
       onboardingLink: this.isOtpRestrictedEnvironment()
         ? onboardingLink
@@ -383,6 +385,7 @@ export class AirlineInvitationService {
       address: meta.address,
       logo: meta.logo ?? undefined,
       creditLimit: meta.creditLimit ?? undefined,
+      platformFeePercentage: Number(meta.platformFeePercentage),
       adminFirstName: meta.adminFirstName,
       adminLastName: meta.adminLastName,
       adminEmail: meta.adminEmail,
@@ -519,6 +522,8 @@ export class AirlineInvitationService {
     if (dto.address !== undefined) metaUpdate.address = dto.address;
     if (dto.logo !== undefined) metaUpdate.logo = dto.logo ?? null;
     if (dto.creditLimit !== undefined) metaUpdate.creditLimit = dto.creditLimit;
+    if (dto.platformFeePercentage !== undefined)
+      metaUpdate.platformFeePercentage = dto.platformFeePercentage;
     if (dto.adminFirstName !== undefined)
       metaUpdate.adminFirstName = dto.adminFirstName;
     if (dto.adminLastName !== undefined)
@@ -552,6 +557,7 @@ export class AirlineInvitationService {
       address: updatedMeta.address,
       logo: updatedMeta.logo ?? undefined,
       creditLimit: updatedMeta.creditLimit ?? undefined,
+      platformFeePercentage: Number(updatedMeta.platformFeePercentage),
       adminFirstName: updatedMeta.adminFirstName,
       adminLastName: updatedMeta.adminLastName,
       adminEmail: updatedMeta.adminEmail,
@@ -580,6 +586,9 @@ export class AirlineInvitationService {
       companyRegistrationNumber: invite.meta.companyRegistrationNumber,
       contactEmail: invite.meta.contactEmail,
       creditLimit: invite.meta.creditLimit ?? undefined,
+      platformFeePercentage: invite.meta.platformFeePercentage
+        ? Number(invite.meta.platformFeePercentage)
+        : undefined,
       status: this.resolveInvitationStatus(invite),
       expiresAt: invite.expiresAt.toISOString(),
       createdAt: invite.createdAt.toISOString(),

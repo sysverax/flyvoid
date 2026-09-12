@@ -92,6 +92,7 @@ export class AirlineInvitationRepository {
       | "address"
       | "logo"
       | "creditLimit"
+      | "platformFeePercentage"
       | "adminFirstName"
       | "adminLastName"
       | "adminEmail"
@@ -349,6 +350,7 @@ export class AirlineInvitationRepository {
         "meta.companyRegistrationNumber",
         "meta.contactEmail",
         "meta.creditLimit",
+        "meta.platformFeePercentage",
       ]);
 
     if (query.countryCode) {
@@ -565,6 +567,7 @@ export class AirlineInvitationRepository {
         | "address"
         | "logo"
         | "creditLimit"
+        | "platformFeePercentage"
         | "adminFirstName"
         | "adminLastName"
         | "adminEmail"

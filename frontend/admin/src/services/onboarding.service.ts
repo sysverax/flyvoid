@@ -9,6 +9,7 @@ export interface InvitationResponse {
   companyRegistrationNumber: string;
   contactEmail: string;
   creditLimit?: number;
+  platformFeePercentage?: number;
   status: "PENDING" | "ACCEPTED" | "REVOKED" | "EXPIRED";
   expiresAt: string;
   createdAt: string;
@@ -53,6 +54,7 @@ export interface InviteAirlineRequest {
   adminEmail: string;
   jobTitle: string;
   creditLimit?: number;
+  platformFeePercentage: number;
 }
 
 export const onboardingService = {

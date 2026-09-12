@@ -22,6 +22,7 @@ export interface InviteAirlinePayload {
   adminEmail: string;
   jobTitle: string;
   creditLimit?: number;
+  platformFeePercentage: number;
 }
 
 export function uniqueAirlineCode(prefix = "E2E"): string {
@@ -60,6 +61,7 @@ export function validInvitePayload(
     adminEmail: baseEmail,
     jobTitle: "Country Manager",
     creditLimit: 500000,
+    platformFeePercentage: 12.5,
     ...overrides,
   };
 }

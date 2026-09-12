@@ -106,6 +106,7 @@ export class JwtAuthGuard extends AuthGuard("jwt") {
         userType: UserType.AIRLINE,
         airlineId: airlineUser.airlineId,
         accessControls: accessControls,
+        platformFeePercentage: airline.platformFeePercentage,
       };
     } else {
       throw new ForbiddenException("Access denied");

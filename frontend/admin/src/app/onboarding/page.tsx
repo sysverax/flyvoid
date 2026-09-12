@@ -105,6 +105,7 @@ export default function OnboardingPage() {
     contactEmail: "",
     country: "",
     creditLimit: "",
+    platformFeePercentage: "",
     expiryDate: "",
     companyReg: "",
     website: "",
@@ -152,6 +153,7 @@ export default function OnboardingPage() {
         invitedDate: formatDate(inv.createdAt),
         expiryDate: formatDate(inv.expiresAt),
         creditLimit: inv.creditLimit || 0,
+        platformFeePercentage: inv.platformFeePercentage || 0,
         status: mapStatus(inv.status),
       }));
       return { mapped, total: res.total };
@@ -270,6 +272,7 @@ export default function OnboardingPage() {
         invitedDate: formatDate(details.createdAt),
         expiryDate: formatDate(details.expiresAt),
         creditLimit: details.creditLimit || 0,
+        platformFeePercentage: details.platformFeePercentage || 0,
         status: mapStatus(details.status),
         companyReg: details.companyRegistrationNumber,
         website: details.website || "",
@@ -306,6 +309,7 @@ export default function OnboardingPage() {
         invitedDate: formatDate(details.createdAt),
         expiryDate: formatDate(details.expiresAt),
         creditLimit: details.creditLimit || 0,
+        platformFeePercentage: details.platformFeePercentage || 0,
         status: mapStatus(details.status),
         companyReg: details.companyRegistrationNumber,
         website: details.website || "",
@@ -327,6 +331,7 @@ export default function OnboardingPage() {
         contactEmail: details.contactEmail,
         country: details.countryCode,
         creditLimit: details.creditLimit ? String(details.creditLimit) : "",
+        platformFeePercentage: details.platformFeePercentage != null ? String(details.platformFeePercentage) : "",
         expiryDate: formatDate(details.expiresAt),
         companyReg: details.companyRegistrationNumber,
         website: details.website || "",
@@ -393,7 +398,8 @@ export default function OnboardingPage() {
       !inviteForm.currency ||
       !inviteForm.timezone ||
       !inviteForm.phone ||
-      !inviteForm.companyReg
+      !inviteForm.companyReg ||
+      !inviteForm.platformFeePercentage
     ) {
       toast.warn("Please fill in all required fields");
       return;
@@ -428,6 +434,7 @@ export default function OnboardingPage() {
         adminEmail: inviteForm.adminEmail,
         jobTitle: inviteForm.adminJobTitle,
         creditLimit: inviteForm.creditLimit ? Number(inviteForm.creditLimit) : null,
+        platformFeePercentage: Number(inviteForm.platformFeePercentage),
       };
 
       if (editTarget) {
@@ -448,6 +455,7 @@ export default function OnboardingPage() {
         contactEmail: "",
         country: "",
         creditLimit: "",
+        platformFeePercentage: "",
         expiryDate: "",
         companyReg: "",
         website: "",
@@ -561,6 +569,9 @@ export default function OnboardingPage() {
                 <TableHead className="whitespace-nowrap min-w-[110px]">
                   <SortHeader label="Credit Limit" field="creditLimit" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                 </TableHead>
+                <TableHead className="whitespace-nowrap min-w-[110px]">
+                  <SortHeader label="Platform Fee (%)" field="platformFeePercentage" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                </TableHead>
                 <TableHead className="min-w-[100px]">
                   <SortHeader label="Status" field="status" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                 </TableHead>
@@ -570,7 +581,7 @@ export default function OnboardingPage() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={showActionsColumn ? 9 : 8} className="px-6 py-12 text-center text-gray-500 font-figtree">
+                  <TableCell colSpan={showActionsColumn ? 10 : 9} className="px-6 py-12 text-center text-gray-500 font-figtree">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <svg className="animate-spin h-8 w-8 text-primary" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -582,7 +593,7 @@ export default function OnboardingPage() {
                 </TableRow>
               ) : sortedInvitations.length === 0 ? (
                 <TableEmptyState
-                  colSpan={showActionsColumn ? 9 : 8}
+                  colSpan={showActionsColumn ? 10 : 9}
                   icon={Search}
                   title="No invitations found"
                   message="Try adjusting your filters or search query."
@@ -622,6 +633,9 @@ export default function OnboardingPage() {
                     </TableCell>
                     <TableCell className={cn(inv.status === "Revoked" && "opacity-50")}>
                       {inv.creditLimit > 0 ? `$${inv.creditLimit.toLocaleString()}` : "N/A"}
+                    </TableCell>
+                    <TableCell className={cn(inv.status === "Revoked" && "opacity-50")}>
+                      {inv.platformFeePercentage > 0 ? `${inv.platformFeePercentage}%` : "N/A"}
                     </TableCell>
                     <TableCell className={cn(inv.status === "Revoked" && "opacity-50")}>
                       <StatusBadge status={inv.status} />
@@ -724,6 +738,7 @@ export default function OnboardingPage() {
               contactEmail: "",
               country: "",
               creditLimit: "",
+              platformFeePercentage: "",
               expiryDate: "",
               companyReg: "",
               website: "",

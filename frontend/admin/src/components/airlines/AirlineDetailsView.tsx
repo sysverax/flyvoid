@@ -202,6 +202,14 @@ export function AirlineDetailsView({
                 ${airline.creditLimit.toLocaleString()}
               </div>
             </div>
+            <div className="self-stretch flex justify-between items-center h-[22px]">
+              <div className="text-gray-500 text-lg font-normal font-figtree">
+                Platform Fee
+              </div>
+              <div className="text-gray-800 text-lg font-medium font-figtree">
+                {airline.platformFeePercentage}%
+              </div>
+            </div>
           </div>
         </div>
 
