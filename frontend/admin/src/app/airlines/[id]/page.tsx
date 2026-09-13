@@ -55,6 +55,7 @@ export default function AirlineDetailPage({ params }: { params: Promise<{ id: st
         logo: updatedFields.logoUrl || undefined,
         currency: updatedFields.currency,
         address: updatedFields.address,
+        platformFeePercentage: updatedFields.platformFeePercentage,
         isActive,
         isSuspended,
         adminFirstName: updatedFields.adminFirstName,

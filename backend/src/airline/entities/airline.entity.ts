@@ -51,6 +51,14 @@ export class AirlineEntity {
   @Column({ name: "currency", type: "varchar", length: 10 })
   currency!: string;
 
+  @Column({
+    name: "platform_fee_percentage",
+    type: "decimal",
+    precision: 5,
+    scale: 2,
+  })
+  platformFeePercentage!: number;
+
   @Column({ name: "is_active", type: "boolean", default: true })
   isActive!: boolean;
 

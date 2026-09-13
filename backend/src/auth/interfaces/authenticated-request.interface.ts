@@ -24,4 +24,5 @@ export interface AuthenticatedUser {
   userType: UserType;
   airlineId?: number;
   accessControls: UserAccessControlEntry[];
+  platformFeePercentage?: number;
 }

@@ -8,6 +8,7 @@ export interface Invitation {
   invitedDate: string;
   expiryDate: string;
   creditLimit: number;
+  platformFeePercentage: number;
   status: "Pending" | "Accepted" | "Revoked" | "Expired";
   adminFirstName?: string;
   adminLastName?: string;
@@ -30,6 +31,7 @@ export interface InviteFormState {
   contactEmail: string;
   country: string;
   creditLimit: string;
+  platformFeePercentage: string;
   expiryDate: string;
   companyReg: string;
   website: string;

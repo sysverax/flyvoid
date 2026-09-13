@@ -45,7 +45,10 @@ import {
 } from "./hotel-partner.service";
 import { AiService } from "../common/ai/ai.service";
 import { Logger } from "winston";
-import { AuthenticatedUser } from "../auth/interfaces/authenticated-request.interface";
+import {
+  AuthenticatedRequest,
+  AuthenticatedUser,
+} from "../auth/interfaces/authenticated-request.interface";
 import { UserType } from "../common/constants/user.constants";
 import { GetCancelledFlightsQueryDto } from "./dto/get-cancelled-flights-query.dto";
 import { HotelAllocationsDto } from "./dto/hotel-allocations.dto";
@@ -1562,7 +1565,7 @@ export class CancelledFlightsService {
         uniqueOccupancies,
         requestId,
         requestLogger,
-        true
+        true,
       );
     } catch (error: any) {
       this.logger.error(
@@ -1721,9 +1724,12 @@ export class CancelledFlightsService {
 
   async hotelAllocationsForFlight(
     flightId: number,
+    user: AuthenticatedRequest["user"],
     requestId: string,
     requestLogger: Logger,
   ): Promise<HotelAllocationsDto> {
+    const platformFeePercentage =
+      user.platformFeePercentage || config.platformFeePercentage;
     requestLogger.info("Starting flight-level hotel allocation process", {
       context: this.context,
       flightId,
@@ -2447,7 +2453,7 @@ export class CancelledFlightsService {
       ),
     );
     const contentByHotelCode = new Map<string, HotelContentDetails>();
-    
+
     for (const hotelCode of allocatedHotelCodes) {
       const content = await this.hotelPartnerService.getHotelContentDetails(
         hotelCode,
@@ -2464,7 +2470,13 @@ export class CancelledFlightsService {
     // step 1 - Format the data for hotel bookings in the database
     const hotelBookings = results.map((item, index) => {
       const price = item?.totalPrice || 0;
-      const pricing = this.calculatePricing(price, price, 0, 0);
+      const pricing = this.calculatePricing(
+        price,
+        price,
+        platformFeePercentage,
+        0,
+        0,
+      );
       const content = item.hotel?.hotelCode
         ? contentByHotelCode.get(item.hotel.hotelCode)
         : undefined;
@@ -2477,6 +2489,7 @@ export class CancelledFlightsService {
         buyingPrice: pricing.buyingPrice,
         sellingPrice: pricing.sellingPrice,
         tax: pricing.tax,
+        platformFeePercentage: platformFeePercentage,
         platformFee: pricing.platformFee,
         totalPrice: pricing.totalPrice,
         earnings: pricing.earnings,
@@ -2555,6 +2568,7 @@ export class CancelledFlightsService {
         totalSellingPrice,
         totalDiscounts,
         totalHotelTaxes,
+        platformFeePercentage,
         totalPlatformFee,
         totalPrice: totalPriceForAll,
         totalHotelRooms,
@@ -2575,6 +2589,7 @@ export class CancelledFlightsService {
       totalSellingPrice,
       totalDiscounts,
       totalHotelTaxes,
+      platformFeePercentage,
       totalPlatformFee,
       currency,
     };
@@ -2706,6 +2721,7 @@ export class CancelledFlightsService {
         }),
         sellingPrice: Number(hotelBooking.sellingPrice),
         tax: Number(hotelBooking.tax),
+        platformFeePercentage: Number(hotelBooking.platformFeePercentage),
         platformFee: Number(hotelBooking.platformFee),
         discount: Number(hotelBooking.discount),
         totalPrice: Number(hotelBooking.totalPrice),
@@ -3078,6 +3094,7 @@ export class CancelledFlightsService {
   private calculatePricing(
     actualPrice: number,
     buyingPrice: number,
+    platformFeePercentage: number,
     commissionPercentage: number,
     tax: number,
   ): {
@@ -3094,8 +3111,6 @@ export class CancelledFlightsService {
     const sellingPrice =
       actualPrice - actualPrice * (commissionPercentage / 100);
     const subTotal = sellingPrice + tax;
-    // config.platformFee
-    const platformFeePercentage = config.platformFeePercentage; // Assuming platform fee is defined in the config
     const platformFee = subTotal * (platformFeePercentage / 100);
     const total = subTotal + platformFee;
     const earnings = total - buyingPrice;

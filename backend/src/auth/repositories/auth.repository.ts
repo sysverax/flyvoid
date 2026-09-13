@@ -511,6 +511,29 @@ export class AuthRepository {
     return this.airlineUserRepository.findOne({ where: { email } });
   }
 
+  async findAirlineUserByEmailWithAirlineDetails(
+    email: string,
+    requestId: string,
+  ): Promise<[AirlineUserEntity, AirlineEntity] | [null, null]> {
+    this.logger.debug(
+      "Finding airline user by email",
+      "AuthRepository",
+      requestId,
+      { email },
+    );
+
+    const user = await this.airlineUserRepository.findOne({
+      where: { email },
+      relations: ["airline"],
+    });
+
+    if (!user) {
+      return [null, null];
+    }
+
+    return [user, user.airline];
+  }
+
   async findAirlineUserById(
     id: number,
     requestId: string,

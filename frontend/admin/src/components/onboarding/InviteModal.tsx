@@ -82,6 +82,15 @@ function validate(key: keyof InviteFormState, value: string): string {
       if (!v) return "";
       if (isNaN(Number(v)) || Number(v) < 0) return "Credit Limit must be a valid number";
       return "";
+    case "platformFeePercentage": {
+      if (!v) return "Platform Fee is required";
+      const num = Number(v);
+      if (isNaN(num)) return "Platform Fee must be a valid number";
+      if (!/^\d+(\.\d{1,2})?$/.test(v)) return "Platform Fee can have up to 2 decimal places";
+      if (num <= 0) return "Platform Fee must be greater than 0";
+      if (num >= 100) return "Platform Fee must be less than 100";
+      return "";
+    }
     default:
       return "";
   }
@@ -329,6 +338,10 @@ export function InviteModal({
                 <Field label="Credit Limit" className="col-span-1">
                   <input type="number" placeholder="" value={formState.creditLimit} onChange={handleChange("creditLimit")} onBlur={handleBlur("creditLimit")} className={ic("creditLimit")} disabled={isLoading} />
                   {err("creditLimit")}
+                </Field>
+                <Field label="Platform Fee (%)" required className="col-span-1">
+                  <input type="number" step="0.01" min="0" max="100" placeholder="" value={formState.platformFeePercentage} onChange={handleChange("platformFeePercentage")} onBlur={handleBlur("platformFeePercentage")} className={ic("platformFeePercentage")} disabled={isLoading} />
+                  {err("platformFeePercentage")}
                 </Field>
               </div>
             </section>
