@@ -99,6 +99,9 @@ export class HotelBookingHotelDetailDto {
   tax!: number;
 
   @ApiProperty({ example: 10 })
+  platformFeePercentage!: number;
+
+  @ApiProperty({ example: 10 })
   platformFee!: number;
 
   @ApiProperty({ example: 5 })

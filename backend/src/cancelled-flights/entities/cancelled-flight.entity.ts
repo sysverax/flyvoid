@@ -138,6 +138,15 @@ export class CancelledFlightEntity {
   totalHotelTaxes?: number;
 
   @Column({
+    name: "platform_fee_percentage",
+    type: "decimal",
+    precision: 5,
+    scale: 2,
+    default: 0,
+  })
+  platformFeePercentage?: number;
+
+  @Column({
     name: "total_platform_fee",
     type: "decimal",
     precision: 10,

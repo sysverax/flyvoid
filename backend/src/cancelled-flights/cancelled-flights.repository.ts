@@ -417,6 +417,7 @@ export class CancelledFlightsRepository {
       totalSellingPrice: number;
       totalDiscounts: number;
       totalHotelTaxes: number;
+      platformFeePercentage: number;
       totalPlatformFee: number;
       totalPrice: number;
       totalEarnings: number;
@@ -446,6 +447,7 @@ export class CancelledFlightsRepository {
             totalSellingPrice: payload.totalSellingPrice,
             totalDiscounts: payload.totalDiscounts,
             totalHotelTaxes: payload.totalHotelTaxes,
+            platformFeePercentage: payload.platformFeePercentage,
             totalPlatformFee: payload.totalPlatformFee,
             totalPrice: payload.totalPrice,
             totalHotelRooms: payload.totalHotelRooms,

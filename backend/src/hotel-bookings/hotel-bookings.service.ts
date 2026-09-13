@@ -370,6 +370,7 @@ export class HotelBookingsService {
       }),
       sellingPrice: Number(hotelBooking.sellingPrice),
       tax: Number(hotelBooking.tax),
+      platformFeePercentage: Number(hotelBooking.platformFeePercentage),
       platformFee: Number(hotelBooking.platformFee),
       discount: Number(hotelBooking.discount),
       totalPrice: Number(hotelBooking.totalPrice),
@@ -460,6 +461,9 @@ export class HotelBookingsService {
       "Check-out Date",
       "Rooms",
       "Total Rooms",
+      "Hotel Cost",
+      "Platform Fee Percentage",
+      "Platform Fee",
       "Total Price",
       "Status",
     ];
@@ -483,6 +487,9 @@ export class HotelBookingsService {
       detail.hotel.checkOutDate,
       roomsSummary,
       detail.hotel.totalRooms,
+      detail.hotel.actualPrice,
+      detail.hotel.platformFeePercentage,
+      detail.hotel.platformFee,
       detail.hotel.totalPrice,
       detail.hotel.status,
     ];

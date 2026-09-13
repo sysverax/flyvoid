@@ -24,6 +24,7 @@ export interface AirlineDTO {
   logo?: string;
   currency: string;
   address: string;
+  platformFeePercentage: number;
   isActive: boolean;
   isSuspended: boolean;
   adminUser: AirlineUserDTO;
@@ -43,6 +44,7 @@ export interface UpdateAirlineRequest {
   logo?: string;
   currency: string;
   address: string;
+  platformFeePercentage: number;
   isActive: boolean;
   isSuspended: boolean;
   adminFirstName: string;
@@ -180,6 +182,7 @@ export function mapAirlineDTOToAirline(dto: any): Airline {
     adminEmail: dto.adminUser?.email || "",
     adminJobTitle: dto.adminUser?.jobTitle || "",
     creditLimit: dto.creditLimit || 0,
+    platformFeePercentage: dto.platformFeePercentage || 0,
     totalCancelledFlights: 0,
     totalPassengersMetric: 0,
     avgCostPerPassenger: 0,

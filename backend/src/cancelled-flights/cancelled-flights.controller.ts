@@ -804,7 +804,8 @@ export class CancelledFlightsController {
       "/api/v1/cancelled-flights/:id/hotel-allocations",
     ),
   })
-  async getFlightHotelAllocations(
+  async hotelAllocations(
+    @Req() request: AuthenticatedRequest,
     @Param("id", ParseIntPipe) id: number,
     @RequestId() requestId: string,
     @RequestLogger() requestLogger: Logger,
@@ -812,6 +813,7 @@ export class CancelledFlightsController {
     requestLogger.info(`Fetching hotel allocations for cancelled flight ${id}`);
     const data = await this.service.hotelAllocationsForFlight(
       id,
+      request.user,
       requestId,
       requestLogger,
     );

@@ -62,6 +62,15 @@ export class HotelAllocationEntity {
   tax!: number;
 
   @Column({
+    name: "platform_fee_percentage",
+    type: "decimal",
+    precision: 5,
+    scale: 2,
+    default: 0,
+  })
+  platformFeePercentage?: number;
+
+  @Column({
     name: "platform_fee",
     type: "decimal",
     precision: 10,
@@ -111,10 +120,22 @@ export class HotelAllocationEntity {
     email: string | null;
   } | null;
 
-  @Column({ name: "latitude", type: "numeric", precision: 10, scale: 7, nullable: true })
+  @Column({
+    name: "latitude",
+    type: "numeric",
+    precision: 10,
+    scale: 7,
+    nullable: true,
+  })
   latitude?: number | null;
 
-  @Column({ name: "longitude", type: "numeric", precision: 10, scale: 7, nullable: true })
+  @Column({
+    name: "longitude",
+    type: "numeric",
+    precision: 10,
+    scale: 7,
+    nullable: true,
+  })
   longitude?: number | null;
 
   @Column({ name: "distance_from_airport_km", type: "numeric", nullable: true })
