@@ -120,9 +120,9 @@ jobs:
                     ${{env.BACKEND_PATH}}/ ${{env.EC2_USERNAME}}@${{env.EC2_INSTANCE_IP}}:${{env.REMOTE_BACKEND_PATH}}
                   echo "[INFO] Transfer complete."
 
-            - name: Deploy backend on EC2
+            - name: Prepare backend on EC2 (env + install)
               run: |
-                  echo "[INFO] Deploying backend on EC2..."
+                  echo "[INFO] Writing env file and installing dependencies..."
                   ssh -i ~/ec2_key.pem -o StrictHostKeyChecking=no ${{env.EC2_USERNAME}}@${{env.EC2_INSTANCE_IP}} << EOF
                   set -e
                   cd "${{env.REMOTE_BACKEND_PATH}}"
@@ -133,7 +133,26 @@ jobs:
 
                   echo "[INFO] Installing dependencies..."
                   npm install
+                  EOF
 
+            - name: Configure AWS credentials
+              uses: aws-actions/configure-aws-credentials@v4
+              with:
+                  aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+                  aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                  aws-region: ${{ secrets.AWS_REGION }}
+
+            - name: Wait for RDS to become available
+              run: |
+                  echo "[INFO] Waiting for RDS to be available before starting backend..."
+                  aws rds wait db-instance-available --db-instance-identifier "${{ secrets.RDS_INSTANCE_ID }}"
+
+            - name: Start backend on EC2 (pm2)
+              run: |
+                  echo "[INFO] Starting backend process..."
+                  ssh -i ~/ec2_key.pem -o StrictHostKeyChecking=no ${{env.EC2_USERNAME}}@${{env.EC2_INSTANCE_IP}} << EOF
+                  set -e
+                  cd "${{env.REMOTE_BACKEND_PATH}}"
                   echo "[INFO] Restarting PM2 process..."
                   pm2 stop "${{env.BACKEND_APP_NAME}}" || true
                   pm2 delete "${{env.BACKEND_APP_NAME}}" || true
