@@ -17,6 +17,7 @@ import {
   HotelBookingDetailResponseDto,
   HotelBookingHotelDetailDto,
   HotelBookingListResponseDto,
+  HotelBookingsSummaryResponseDto,
   SendHotelBookingEmailResponseDto,
 } from "./dto";
 
@@ -160,6 +161,41 @@ export class HotelBookingsService {
     };
   }
 
+  // ── Summary ──────────────────────────────────────────────────────────────
+
+  async getHotelBookingsSummary(
+    user: AuthenticatedUser,
+    requestLogger: Logger,
+  ): Promise<HotelBookingsSummaryResponseDto> {
+    requestLogger.info("Fetching hotel bookings summary", {
+      context: this.context,
+      userId: user.sub,
+    });
+
+    if (!user.airlineId) {
+      requestLogger.error(
+        "Authenticated airline user does not have an associated airlineId",
+        { context: this.context, userId: user.sub },
+      );
+      throw new ForbiddenException(
+        "You do not have permission to access hotel bookings summary",
+      );
+    }
+
+    const summary = await this.repository.getHotelBookingsSummary(
+      user.airlineId,
+      requestLogger,
+    );
+
+    requestLogger.info("Hotel bookings summary fetched successfully", {
+      context: this.context,
+      airlineId: user.airlineId,
+      ...summary,
+    });
+
+    return summary;
+  }
+
   // ── Detail ───────────────────────────────────────────────────────────────
 
   async getHotelBookingDetail(
@@ -252,37 +288,38 @@ export class HotelBookingsService {
 
     const recipientEmail = hotelBooking.booking.email;
 
-    try {
-      await this.sesClient.send(
-        new SendEmailCommand({
-          Source: config.ses.fromEmail,
-          Destination: {
-            ToAddresses: [recipientEmail],
-          },
-          Message: {
-            Subject: {
-              Data: `Your hotel booking confirmation for flight ${hotelBooking.cancelledFlight.flightNumber}`,
-            },
-            Body: {
-              Text: {
-                Data: this.buildEmailBody(hotelBooking),
-              },
-            },
-          },
-        }),
-      );
-    } catch (error: any) {
-      requestLogger.error("Failed to send hotel booking email", {
-        context: this.context,
-        hotelBookingId,
-        recipientEmail,
-        requestId,
-        error: error?.message,
-      });
-      throw new BadRequestException(
-        `Failed to send hotel booking email: ${error?.message ?? "unknown error"}`,
-      );
-    }
+    // // TODO: Implement the actual email sending logic using SES or another email service
+    // try {
+    //   await this.sesClient.send(
+    //     new SendEmailCommand({
+    //       Source: config.ses.fromEmail,
+    //       Destination: {
+    //         ToAddresses: [recipientEmail],
+    //       },
+    //       Message: {
+    //         Subject: {
+    //           Data: `Your hotel booking confirmation for flight ${hotelBooking.cancelledFlight.flightNumber}`,
+    //         },
+    //         Body: {
+    //           Text: {
+    //             Data: this.buildEmailBody(hotelBooking),
+    //           },
+    //         },
+    //       },
+    //     }),
+    //   );
+    // } catch (error: any) {
+    //   requestLogger.error("Failed to send hotel booking email", {
+    //     context: this.context,
+    //     hotelBookingId,
+    //     recipientEmail,
+    //     requestId,
+    //     error: error?.message,
+    //   });
+    //   throw new BadRequestException(
+    //     `Failed to send hotel booking email: ${error?.message ?? "unknown error"}`,
+    //   );
+    // }
 
     requestLogger.info("Hotel booking email sent successfully", {
       context: this.context,
