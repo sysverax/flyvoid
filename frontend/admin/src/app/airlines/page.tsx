@@ -357,6 +357,9 @@ export default function AirlinesPage() {
                   <TableHead className="min-w-[115px] -translate-x-1.5">
                     <SortHeader label="Revenue" field="revenue" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                   </TableHead>
+                  <TableHead className="min-w-[110px] -translate-x-1.5">
+                    <SortHeader label="Platform Fee (%)" field="platformFeePercentage" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                  </TableHead>
                   {hasPermission("edit") && (
                     <TableHead className="whitespace-nowrap min-w-[143px] -translate-x-1">
                       <SortHeader label="Enable/Disable" field="status" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
@@ -368,7 +371,7 @@ export default function AirlinesPage() {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="px-6 py-12 text-center text-gray-500 font-figtree">
+                    <TableCell colSpan={10} className="px-6 py-12 text-center text-gray-500 font-figtree">
                       <div className="flex flex-col items-center justify-center gap-2">
                         <svg className="animate-spin h-8 w-8 text-primary" fill="none" viewBox="0 0 24 24">
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -380,7 +383,7 @@ export default function AirlinesPage() {
                   </TableRow>
                 ) : sortedAirlines.length === 0 ? (
                   <TableEmptyState
-                    colSpan={9}
+                    colSpan={10}
                     icon={Search}
                     title="No airlines found"
                     message="Try adjusting your filters or search query."
@@ -410,6 +413,9 @@ export default function AirlinesPage() {
                       </TableCell>
                       <TableCell className="text-[#6B7280] -translate-x-1.5">
                         <MetricTooltip value={airline.revenue} isCurrency />
+                      </TableCell>
+                      <TableCell className="text-[#1F2937] -translate-x-1.5">
+                        {airline.platformFeePercentage}%
                       </TableCell>
                       {hasPermission("edit") && (
                         <TableCell>

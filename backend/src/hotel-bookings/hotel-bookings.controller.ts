@@ -47,6 +47,7 @@ import {
   GetHotelBookingsQueryDto,
   HotelBookingDetailResponseDto,
   HotelBookingListResponseDto,
+  HotelBookingsSummaryResponseDto,
   SendHotelBookingEmailResponseDto,
 } from "./dto";
 import { Logger } from "winston";
@@ -56,7 +57,11 @@ import { Logger } from "winston";
 @UseGuards(JwtAuthGuard, RbacGuard)
 @RequireUserTypes(UserType.PLATFORM, UserType.AIRLINE)
 @Controller("hotel-bookings")
-@ApiExtraModels(HotelBookingListResponseDto, HotelBookingDetailResponseDto)
+@ApiExtraModels(
+  HotelBookingListResponseDto,
+  HotelBookingDetailResponseDto,
+  HotelBookingsSummaryResponseDto,
+)
 export class HotelBookingsController {
   constructor(private readonly service: HotelBookingsService) {}
 
@@ -68,7 +73,7 @@ export class HotelBookingsController {
       access: [AccessAction.VIEW],
     },
     airline: {
-      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      asset: [AirlineAsset.CANCELLED_FLIGHTS, AirlineAsset.BOOKINGS],
       access: [AccessAction.VIEW],
     },
   })
@@ -106,6 +111,45 @@ export class HotelBookingsController {
     );
   }
 
+  // ── GET /hotel-bookings/summary ───────────────────────────────────────────
+  // Registered before ":id" so "summary" isn't swallowed by the :id route.
+  @Get("summary")
+  @RequireUserTypes(UserType.AIRLINE)
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.BOOKINGS,
+      access: [AccessAction.VIEW],
+    },
+  })
+  @ApiOperation({
+    summary: "Get hotel bookings summary",
+    description:
+      "Returns total hotel bookings, total passengers, and total cost for the authenticated airline's cancelled flights. Airline users only, requires VIEW access on the Bookings tab.",
+  })
+  @ApiOkResponse({
+    schema: {
+      properties: {
+        success: { type: "boolean", example: true },
+        data: { $ref: getSchemaPath(HotelBookingsSummaryResponseDto) },
+      },
+    },
+  })
+  async getHotelBookingsSummary(
+    @Req() req: AuthenticatedRequest,
+    @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
+  ): Promise<BaseResponseDto<HotelBookingsSummaryResponseDto>> {
+    const data = await this.service.getHotelBookingsSummary(
+      req.user,
+      requestLogger,
+    );
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Hotel bookings summary fetched successfully",
+    );
+  }
+
   // ── GET /hotel-bookings/:id ──────────────────────────────────────────────
   @Get(":id")
   @RequireAccessControl({
@@ -114,7 +158,7 @@ export class HotelBookingsController {
       access: [AccessAction.VIEW],
     },
     airline: {
-      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      asset: [AirlineAsset.CANCELLED_FLIGHTS, AirlineAsset.BOOKINGS],
       access: [AccessAction.VIEW],
     },
   })
@@ -164,7 +208,7 @@ export class HotelBookingsController {
       access: [AccessAction.EXPORT],
     },
     airline: {
-      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      asset: [AirlineAsset.CANCELLED_FLIGHTS, AirlineAsset.BOOKINGS],
       access: [AccessAction.EXPORT],
     },
   })
@@ -205,7 +249,7 @@ export class HotelBookingsController {
   @RequireUserTypes(UserType.AIRLINE)
   @RequireAccessControl({
     airline: {
-      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      asset: [AirlineAsset.CANCELLED_FLIGHTS, AirlineAsset.BOOKINGS],
       access: [AccessAction.EDIT],
     },
   })

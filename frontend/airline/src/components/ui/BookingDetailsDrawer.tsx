@@ -1,6 +1,22 @@
 "use client";
 
-import { X, Star, Calendar, Loader2, Plane, User, Users, Building2, MapPin, Phone, BedDouble, Download, Globe, ExternalLink, Mail } from "lucide-react";
+import {
+  X,
+  Star,
+  Calendar,
+  Loader2,
+  Plane,
+  User,
+  Users,
+  Building2,
+  MapPin,
+  Phone,
+  BedDouble,
+  Download,
+  Globe,
+  ExternalLink,
+  Mail,
+} from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { useEffect, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
@@ -35,7 +51,8 @@ export function BookingDetailsDrawer({
   downloadType = "pdf",
 }: BookingDetailsDrawerProps) {
   const [mounted, setMounted] = useState(false);
-  const [internalDetailData, setInternalDetailData] = useState<HotelBookingDetailDataDto | null>(null);
+  const [internalDetailData, setInternalDetailData] =
+    useState<HotelBookingDetailDataDto | null>(null);
   const [hotelImageError, setHotelImageError] = useState(false);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -159,8 +176,12 @@ export function BookingDetailsDrawer({
 
   const validChildAges: (number | string)[] = Array.isArray(rawChildAges)
     ? rawChildAges.filter(
-      (a) => a !== undefined && a !== null && String(a).trim() !== "" && a !== "N/A",
-    )
+        (a) =>
+          a !== undefined &&
+          a !== null &&
+          String(a).trim() !== "" &&
+          a !== "N/A",
+      )
     : [];
 
   const travelClass = pBooking?.travelClass || null;
@@ -209,7 +230,10 @@ export function BookingDetailsDrawer({
 
   const addressParts =
     hotelAddress && hotelAddress !== "N/A"
-      ? hotelAddress.split(",").map((s: string) => s.trim()).filter(Boolean)
+      ? hotelAddress
+          .split(",")
+          .map((s: string) => s.trim())
+          .filter(Boolean)
       : ["N/A"];
 
   const hotelWebsite = hotel?.website?.trim() || null;
@@ -269,7 +293,10 @@ export function BookingDetailsDrawer({
   const amenitiesList: string[] = Array.isArray(rawAmenities)
     ? rawAmenities.filter(Boolean).map(String)
     : typeof rawAmenities === "string"
-      ? rawAmenities.split(",").map((s: string) => s.trim()).filter(Boolean)
+      ? rawAmenities
+          .split(",")
+          .map((s: string) => s.trim())
+          .filter(Boolean)
       : [];
 
   const displayRoomCount =
@@ -281,10 +308,12 @@ export function BookingDetailsDrawer({
           ? Number(booking.totalRooms)
           : null;
 
-  const roomCount = displayRoomCount || (totalPax > 0 ? Math.ceil(totalPax / 2) : 1);
+  const roomCount =
+    displayRoomCount || (totalPax > 0 ? Math.ceil(totalPax / 2) : 1);
 
   const baseRate = isBusiness ? 160 : 120;
-  const fallbackHotelCost = (Math.ceil((adults + children) / 2) || 1) * baseRate;
+  const fallbackHotelCost =
+    (Math.ceil((adults + children) / 2) || 1) * baseRate;
   const fallbackDiscount = fallbackHotelCost * 0.1;
   const fallbackTax = fallbackHotelCost * 0.08;
 
@@ -296,19 +325,22 @@ export function BookingDetailsDrawer({
         : fallbackHotelCost;
 
   const discount =
-    hotel?.discount !== undefined
-      ? Number(hotel.discount)
-      : fallbackDiscount;
+    hotel?.discount !== undefined ? Number(hotel.discount) : fallbackDiscount;
 
-  const tax =
-    hotel?.tax !== undefined ? Number(hotel.tax) : fallbackTax;
+  const tax = hotel?.tax !== undefined ? Number(hotel.tax) : fallbackTax;
 
   const hotelPayment = hotelCost - discount + tax;
+
+  const platformFeePercentage =
+    hotel?.platformFeePercentage !== undefined &&
+    hotel?.platformFeePercentage !== null
+      ? Number(hotel.platformFeePercentage)
+      : PLATFORM_FEE_PERCENT;
 
   const platformFee =
     hotel?.platformFee !== undefined && hotel?.platformFee !== null
       ? Number(hotel.platformFee)
-      : (hotelPayment * PLATFORM_FEE_PERCENT) / 100;
+      : (hotelPayment * platformFeePercentage) / 100;
 
   const totalPrice =
     hotel?.totalPrice !== undefined && hotel?.totalPrice !== null
@@ -321,7 +353,9 @@ export function BookingDetailsDrawer({
       <div
         className={cn(
           "fixed inset-0 bg-black/40 z-[100] transition-opacity duration-300",
-          isOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+          isOpen
+            ? "opacity-100 pointer-events-auto"
+            : "opacity-0 pointer-events-none",
         )}
         onClick={onClose}
       />
@@ -330,7 +364,7 @@ export function BookingDetailsDrawer({
       <div
         className={cn(
           "fixed top-0 right-0 h-full w-full max-w-[500px] bg-white z-[110] shadow-2xl flex flex-col transition-transform duration-300 ease-in-out",
-          isOpen ? "translate-x-0" : "translate-x-full"
+          isOpen ? "translate-x-0" : "translate-x-full",
         )}
       >
         {/* Header */}
@@ -508,7 +542,9 @@ export function BookingDetailsDrawer({
                   <div className="leading-snug text-gray-700">
                     <div>{addressParts[0]}</div>
                     {addressParts.length > 1 && (
-                      <div className="text-gray-500">{addressParts.slice(1).join(", ")}</div>
+                      <div className="text-gray-500">
+                        {addressParts.slice(1).join(", ")}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -517,7 +553,11 @@ export function BookingDetailsDrawer({
                   <div className="flex items-center gap-2.5 text-gray-600 text-sm">
                     <Globe className="w-4 h-4 shrink-0 text-gray-400" />
                     <a
-                      href={hotelWebsite.startsWith("http") ? hotelWebsite : `https://${hotelWebsite}`}
+                      href={
+                        hotelWebsite.startsWith("http")
+                          ? hotelWebsite
+                          : `https://${hotelWebsite}`
+                      }
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-[#2563EB] hover:text-[#1D4ED8] font-semibold underline inline-flex items-center gap-1"
@@ -539,7 +579,9 @@ export function BookingDetailsDrawer({
                   <div className="flex items-start gap-2">
                     <Phone className="w-4 h-4 shrink-0 text-gray-400 mt-1" />
                     <div>
-                      <div className="text-[13px] text-gray-500">Front Desk</div>
+                      <div className="text-[13px] text-gray-500">
+                        Front Desk
+                      </div>
                       <div className="font-semibold text-gray-900 text-[15px] mt-0.5">
                         {frontDeskPhone}
                       </div>
@@ -548,7 +590,9 @@ export function BookingDetailsDrawer({
                   <div className="flex items-start gap-2">
                     <Phone className="w-4 h-4 shrink-0 text-gray-400 mt-1" />
                     <div>
-                      <div className="text-[13px] text-gray-500">Reservations</div>
+                      <div className="text-[13px] text-gray-500">
+                        Reservations
+                      </div>
                       <div className="font-semibold text-gray-900 text-[15px] mt-0.5">
                         {reservationsPhone}
                       </div>
@@ -559,7 +603,9 @@ export function BookingDetailsDrawer({
                 <div className="h-px bg-gray-200/80 w-full" />
 
                 <div>
-                  <div className="text-[13px] text-gray-500">Number of Rooms</div>
+                  <div className="text-[13px] text-gray-500">
+                    Number of Rooms
+                  </div>
                   <div className="text-lg text-gray-900 leading-tight mt-1">
                     {displayRoomCount !== null ? displayRoomCount : "N/A"}
                   </div>
@@ -582,7 +628,7 @@ export function BookingDetailsDrawer({
                   roomData?.roomName ||
                   booking?.roomName ||
                   booking?.roomType ||
-                  (hotel?.rooms?.[0]?.roomName) ||
+                  hotel?.rooms?.[0]?.roomName ||
                   "N/A";
                 const guestCount = roomData
                   ? (roomData.adults || 0) + (roomData.children || 0) || 2
@@ -606,38 +652,58 @@ export function BookingDetailsDrawer({
                 const roomChildren = roomData?.children ?? children;
 
                 return (
-                  <div key={i + 1} className="bg-white border border-gray-200 p-4.5 rounded-xl">
+                  <div
+                    key={i + 1}
+                    className="bg-white border border-gray-200 p-4.5 rounded-xl"
+                  >
                     <div className="flex items-center gap-2 font-semibold text-[#1F2937] text-[15px]">
                       <BedDouble className="w-4 h-4 text-[#475569] shrink-0" />
-                      <span>Room {i + 1} — {roomName}</span>
+                      <span>
+                        Room {i + 1} — {roomName}
+                      </span>
                     </div>
 
                     <div className="flex items-center gap-2 mt-2.5">
                       <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-gray-200 rounded-full text-xs text-gray-700 font-normal">
                         <Users className="w-3.5 h-3.5 text-gray-500" />
-                        <span>{roomAdults} {roomAdults === 1 ? "Adult" : "Adults"}</span>
+                        <span>
+                          {roomAdults} {roomAdults === 1 ? "Adult" : "Adults"}
+                        </span>
                       </div>
                       <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-gray-200 rounded-full text-xs text-gray-700 font-normal">
-                        <span>{roomChildren} {roomChildren === 1 ? "Child" : "Children"}</span>
+                        <span>
+                          {roomChildren}{" "}
+                          {roomChildren === 1 ? "Child" : "Children"}
+                        </span>
                       </div>
                     </div>
 
                     <div className="mt-4 space-y-2 text-sm">
                       <div className="flex justify-between items-center text-gray-500">
                         <span>1 Room × ${rPrice.toFixed(2)}</span>
-                        <span className="text-gray-900 font-normal">${rPrice.toFixed(2)}</span>
+                        <span className="text-gray-900 font-normal">
+                          ${rPrice.toFixed(2)}
+                        </span>
                       </div>
                       <div className="flex justify-between items-center text-gray-500">
                         <span>Platform Discount</span>
-                        <span className="text-emerald-600 font-normal">-${rDiscount.toFixed(2)}</span>
+                        <span className="text-emerald-600 font-normal">
+                          -${rDiscount.toFixed(2)}
+                        </span>
                       </div>
                       <div className="flex justify-between items-center text-gray-500">
                         <span>Hotel Tax</span>
-                        <span className="text-gray-900 font-normal">${rTax.toFixed(2)}</span>
+                        <span className="text-gray-900 font-normal">
+                          ${rTax.toFixed(2)}
+                        </span>
                       </div>
                       <div className="pt-2.5 mt-2.5 border-t border-gray-200/80 flex justify-between items-center">
-                        <span className="font-bold text-gray-900 text-sm">Room Total</span>
-                        <span className="font-bold text-gray-900 text-sm">${rTotal.toFixed(2)}</span>
+                        <span className="font-bold text-gray-900 text-sm">
+                          Room Total
+                        </span>
+                        <span className="font-bold text-gray-900 text-sm">
+                          ${rTotal.toFixed(2)}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -674,25 +740,28 @@ export function BookingDetailsDrawer({
               </div>
               <div className="flex justify-between items-center text-gray-900 font-semibold pt-2.5 border-t border-gray-100 text-sm">
                 <span>Hotel Payment</span>
-                <span>
-                  ${hotelPayment.toFixed(2)}
-                </span>
+                <span>${hotelPayment.toFixed(2)}</span>
               </div>
               <div className="flex justify-between items-center text-gray-500 text-sm pt-0.5">
-                <span>Platform Fee ({PLATFORM_FEE_PERCENT}% of hotel payment)</span>
                 <span>
-                  {typeof platformFee === "number" ? `$${platformFee.toFixed(2)}` : platformFee}
+                  Platform Fee ({platformFeePercentage}% of hotel payment)
+                </span>
+                <span>
+                  {typeof platformFee === "number"
+                    ? `$${platformFee.toFixed(2)}`
+                    : platformFee}
                 </span>
               </div>
               <div className="flex justify-between items-center text-[15px] font-bold text-gray-900 pt-3 border-t border-gray-100 mt-1">
                 <span>Total Payment</span>
                 <span className="text-[18px] font-bold text-emerald-600">
-                  {typeof totalPrice === "number" ? `$${totalPrice.toFixed(2)}` : totalPrice}
+                  {typeof totalPrice === "number"
+                    ? `$${totalPrice.toFixed(2)}`
+                    : totalPrice}
                 </span>
               </div>
             </div>
           </div>
-
         </div>
 
         {/* Footer with Download button (CSV or PDF) and optionally Send Confirmation button */}

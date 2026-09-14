@@ -53,11 +53,18 @@ export class HotelAllocationsDto {
     example: 100,
   })
   totalDiscounts: number;
+
   @ApiProperty({
     description: "Total hotel taxes for the allocated rooms",
     example: 50,
   })
   totalHotelTaxes: number;
+
+  @ApiProperty({
+    description: "Platform fee percentage for the allocated hotel rooms",
+    example: 10,
+  })
+  platformFeePercentage: number;
 
   @ApiProperty({
     description: "Total platform fee for the allocated hotel rooms",

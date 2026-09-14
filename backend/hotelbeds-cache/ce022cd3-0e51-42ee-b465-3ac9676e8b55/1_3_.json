@@ -1,0 +1,15 @@
+{
+  "auditData": {
+    "processTime": "78",
+    "timestamp": "2026-09-09 15:18:35.976",
+    "requestHost": "",
+    "serverId": "",
+    "environment": "",
+    "release": "",
+    "token": "DE78A05B3C1C43389F92CD91FE5D20AE",
+    "internal": "0||UK|10|0|0||||||||||||0||1~1~1~3|0|0||0|f58e1425618e7b0f7697adc201e60234||||"
+  },
+  "hotels": {
+    "total": 0
+  }
+}

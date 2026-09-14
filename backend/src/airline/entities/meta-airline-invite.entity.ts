@@ -52,6 +52,14 @@ export class MetaAirlineInviteEntity {
   @Column({ name: "credit_limit", type: "integer", default: 0 })
   creditLimit!: number;
 
+  @Column({
+    name: "platform_fee_percentage",
+    type: "decimal",
+    precision: 5,
+    scale: 2,
+  })
+  platformFeePercentage!: number;
+
   @Column({ name: "admin_first_name", type: "varchar", length: 100 })
   adminFirstName!: string;
 
