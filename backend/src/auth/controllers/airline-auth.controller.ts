@@ -17,17 +17,20 @@ import {
   ApiTags,
   getSchemaPath,
   ApiExtraModels,
+  ApiInternalServerErrorResponse,
 } from "@nestjs/swagger";
 import {
   REQUEST_ID_EXAMPLE,
   TIMESTAMP_EXAMPLE,
   createBadRequestErrorSchema,
   createConflictErrorSchema,
+  createSuccessResponseSchema,
   createUnauthorizedErrorSchema,
 } from "../../common/constants/swagger.constants";
 import { BaseResponseDto } from "../../common/dto/base-response.dto";
 import { RequestId } from "../../common/decorators/request-id.decorator";
 import {
+  AirlineChangePasswordRequestDto,
   AirlineInitialPasswordResetRequestDto,
   AirlineTwoFactorDisableRequestDto,
   AirlineTwoFactorEnableRequestDto,
@@ -54,12 +57,14 @@ import { AirlineAuthService } from "../services/airline-auth.service";
 
 @ApiTags("Airline Auth")
 @ApiExtraModels(
+  BaseResponseDto,
   AirlineAdminOnboardResponseDto,
   AirlineSigninResponseDto,
   AirlineSigninTwoFactorChallengeResponseDto,
   AirlineSigninPasswordResetChallengeResponseDto,
   AirlineTwoFactorSetupResponseDto,
   AirlineTwoFactorEnableResponseDto,
+  AirlineForgotPasswordVerifyOtpResponseDto,
 )
 @Controller("auth/airline")
 export class AirlineAuthController {
@@ -223,6 +228,23 @@ export class AirlineAuthController {
         2. TOTP code must be correct (401 if invalid)`,
   })
   @ApiBody({ type: AirlineSigninTwoFactorVerifyRequestDto })
+  @ApiOkResponse({
+    schema: createSuccessResponseSchema(
+      "/api/v1/auth/airline/signin/2fa/verify",
+      AirlineSigninResponseDto,
+    ),
+  })
+  @ApiUnauthorizedResponse({
+    schema: createUnauthorizedErrorSchema(
+      "/api/v1/auth/airline/signin/2fa/verify",
+      "Invalid challenge token or TOTP code",
+    ),
+  })
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema(
+      "/api/v1/auth/airline/signin/2fa/verify",
+    ),
+  })
   async verifyTwoFactor(
     @Body() dto: AirlineSigninTwoFactorVerifyRequestDto,
     @RequestId() requestId: string,
@@ -253,6 +275,29 @@ export class AirlineAuthController {
         1. resetPasswordToken must be valid and unexpired (401 if invalid)`,
   })
   @ApiBody({ type: AirlineInitialPasswordResetRequestDto })
+  @ApiOkResponse({
+    schema: createSuccessResponseSchema(
+      "/api/v1/auth/airline/signin/reset-password",
+      null,
+    ),
+  })
+  @ApiUnauthorizedResponse({
+    schema: createUnauthorizedErrorSchema(
+      "/api/v1/auth/airline/signin/reset-password",
+      "Invalid reset password token",
+    ),
+  })
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema(
+      "/api/v1/auth/airline/signin/reset-password",
+    ),
+  })
+  @ApiUnauthorizedResponse({
+    schema: createUnauthorizedErrorSchema(
+      "/api/v1/auth/airline/signin/reset-password",
+      "Invalid reset password token",
+    ),
+  })
   async airlineInitialPasswordReset(
     @Body() dto: AirlineInitialPasswordResetRequestDto,
     @RequestId() requestId: string,
@@ -262,6 +307,51 @@ export class AirlineAuthController {
       null,
       requestId,
       "Initial password reset successful",
+    );
+  }
+
+  @Post("change-password")
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth("access-token")
+  @ApiOperation({
+    summary: "Airline change password",
+    description: `
+    Changes the authenticated airline user's password after verifying the current password.
+      All active sessions (refresh tokens) are revoked after a successful change — the user must sign in again elsewhere.
+      Access: Authenticated airline user. Requires a valid access token.
+      Business logic validations:
+        1. currentPassword must match the stored password (401 if invalid)
+        2. newPassword must meet complexity requirements (400 if invalid)`,
+  })
+  @ApiBody({ type: AirlineChangePasswordRequestDto })
+  @ApiOkResponse({
+    schema: createSuccessResponseSchema(
+      "/api/v1/auth/airline/change-password",
+      null,
+    ),
+  })
+  @ApiUnauthorizedResponse({
+    schema: createUnauthorizedErrorSchema(
+      "/api/v1/auth/airline/change-password",
+      "Current password is incorrect",
+    ),
+  })
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema(
+      "/api/v1/auth/airline/change-password",
+    ),
+  })
+  async changePassword(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: AirlineChangePasswordRequestDto,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<null>> {
+    await this.airlineAuthService.changePassword(req.user, dto, requestId);
+    return BaseResponseDto.success(
+      null,
+      requestId,
+      "Password changed successfully",
     );
   }
 
@@ -277,6 +367,27 @@ export class AirlineAuthController {
       Access: Authenticated airline user. Requires a valid access token.
       Business logic validations:
         1. 2FA must not already be enabled (409 Conflict)`,
+  })
+  @ApiOkResponse({
+    schema: createSuccessResponseSchema(
+      "/api/v1/auth/airline/2fa/setup",
+      AirlineTwoFactorSetupResponseDto,
+    ),
+  })
+  @ApiUnauthorizedResponse({
+    schema: createUnauthorizedErrorSchema(
+      "/api/v1/auth/airline/2fa/setup",
+      "Invalid access token",
+    ),
+  })
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema("/api/v1/auth/airline/2fa/setup"),
+  })
+  @ApiConflictResponse({
+    schema: createConflictErrorSchema(
+      "/api/v1/auth/airline/2fa/setup",
+      "2FA is already enabled",
+    ),
   })
   async setupTwoFactor(
     @Req() req: AuthenticatedRequest,
@@ -308,6 +419,27 @@ export class AirlineAuthController {
         2. TOTP code must be valid (401 if invalid)`,
   })
   @ApiBody({ type: AirlineTwoFactorEnableRequestDto })
+  @ApiOkResponse({
+    schema: createSuccessResponseSchema(
+      "/api/v1/auth/airline/2fa/enable",
+      AirlineTwoFactorEnableResponseDto,
+    ),
+  })
+  @ApiUnauthorizedResponse({
+    schema: createUnauthorizedErrorSchema(
+      "/api/v1/auth/airline/2fa/enable",
+      "Invalid access token",
+    ),
+  })
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema("/api/v1/auth/airline/2fa/enable"),
+  })
+  @ApiConflictResponse({
+    schema: createConflictErrorSchema(
+      "/api/v1/auth/airline/2fa/enable",
+      "2FA setup missing or already enabled",
+    ),
+  })
   async enableTwoFactor(
     @Req() req: AuthenticatedRequest,
     @Body() dto: AirlineTwoFactorEnableRequestDto,
@@ -339,6 +471,27 @@ export class AirlineAuthController {
         2. TOTP code must be valid (401 if invalid)`,
   })
   @ApiBody({ type: AirlineTwoFactorDisableRequestDto })
+  @ApiOkResponse({
+    schema: createSuccessResponseSchema(
+      "/api/v1/auth/airline/2fa/disable",
+      null,
+    ),
+  })
+  @ApiUnauthorizedResponse({
+    schema: createUnauthorizedErrorSchema(
+      "/api/v1/auth/airline/2fa/disable",
+      "Invalid access token",
+    ),
+  })
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema("/api/v1/auth/airline/2fa/disable"),
+  })
+  @ApiConflictResponse({
+    schema: createConflictErrorSchema(
+      "/api/v1/auth/airline/2fa/disable",
+      "2FA not enabled",
+    ),
+  })
   async disableTwoFactor(
     @Req() req: AuthenticatedRequest,
     @Body() dto: AirlineTwoFactorDisableRequestDto,
@@ -365,6 +518,27 @@ export class AirlineAuthController {
         2. Recovery code must be valid and unused (401 if invalid)`,
   })
   @ApiBody({ type: AirlineTwoFactorRecoverRequestDto })
+  @ApiOkResponse({
+    schema: createSuccessResponseSchema(
+      "/api/v1/auth/airline/2fa/recover",
+      null,
+    ),
+  })
+  @ApiUnauthorizedResponse({
+    schema: createUnauthorizedErrorSchema(
+      "/api/v1/auth/airline/2fa/recover",
+      "Invalid access token",
+    ),
+  })
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema("/api/v1/auth/airline/2fa/recover"),
+  })
+  @ApiConflictResponse({
+    schema: createConflictErrorSchema(
+      "/api/v1/auth/airline/2fa/recover",
+      "2FA not enabled",
+    ),
+  })
   async recoverTwoFactor(
     @Body() dto: AirlineTwoFactorRecoverRequestDto,
     @RequestId() requestId: string,
@@ -387,6 +561,29 @@ export class AirlineAuthController {
       Access: Public endpoint — no authentication required.`,
   })
   @ApiBody({ type: AirlineForgotPasswordSendOtpRequestDto })
+  @ApiOkResponse({
+    schema: createSuccessResponseSchema(
+      "/api/v1/auth/airline/forgot-password/send-otp",
+      null,
+    ),
+  })
+  @ApiUnauthorizedResponse({
+    schema: createUnauthorizedErrorSchema(
+      "/api/v1/auth/airline/forgot-password/send-otp",
+      "Invalid access token",
+    ),
+  })
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema(
+      "/api/v1/auth/airline/forgot-password/send-otp",
+    ),
+  })
+  @ApiConflictResponse({
+    schema: createConflictErrorSchema(
+      "/api/v1/auth/airline/forgot-password/send-otp",
+      "2FA not enabled",
+    ),
+  })
   async forgotPasswordSendOtp(
     @Body() dto: AirlineForgotPasswordSendOtpRequestDto,
     @RequestId() requestId: string,
@@ -411,6 +608,29 @@ export class AirlineAuthController {
         2. Too many failed attempts will invalidate the OTP`,
   })
   @ApiBody({ type: AirlineForgotPasswordVerifyOtpRequestDto })
+  @ApiOkResponse({
+    schema: createSuccessResponseSchema(
+      "/api/v1/auth/airline/forgot-password/verify-otp",
+      AirlineForgotPasswordVerifyOtpResponseDto,
+    ),
+  })
+  @ApiUnauthorizedResponse({
+    schema: createUnauthorizedErrorSchema(
+      "/api/v1/auth/airline/forgot-password/verify-otp",
+      "Invalid access token",
+    ),
+  })
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema(
+      "/api/v1/auth/airline/forgot-password/verify-otp",
+    ),
+  })
+  @ApiConflictResponse({
+    schema: createConflictErrorSchema(
+      "/api/v1/auth/airline/forgot-password/verify-otp",
+      "2FA not enabled",
+    ),
+  })
   async forgotPasswordVerifyOtp(
     @Body() dto: AirlineForgotPasswordVerifyOtpRequestDto,
     @RequestId() requestId: string,
@@ -436,6 +656,27 @@ export class AirlineAuthController {
       Business logic validations:
         1. resetPasswordToken must be valid and unexpired (401 if invalid)`,
   })
+  @ApiOkResponse({
+    schema: createSuccessResponseSchema(
+      "/api/v1/auth/airline/forgot-password",
+      null,
+    ),
+  })
+  @ApiUnauthorizedResponse({
+    schema: createUnauthorizedErrorSchema(
+      "/api/v1/auth/airline/forgot-password",
+      "Invalid access token",
+    ),
+  })
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema("/api/v1/auth/airline/forgot-password"),
+  })
+  @ApiConflictResponse({
+    schema: createConflictErrorSchema(
+      "/api/v1/auth/airline/forgot-password",
+      "2FA not enabled",
+    ),
+  })
   @ApiBody({ type: AirlineForgotPasswordResetRequestDto })
   async forgotPasswordReset(
     @Body() dto: AirlineForgotPasswordResetRequestDto,
@@ -460,6 +701,24 @@ export class AirlineAuthController {
         1. Refresh token must be valid and not revoked (401 if invalid or expired)`,
   })
   @ApiBody({ type: RefreshTokenRequestDto })
+  @ApiOkResponse({
+    schema: createSuccessResponseSchema("/api/v1/auth/airline/refresh", null),
+  })
+  @ApiUnauthorizedResponse({
+    schema: createUnauthorizedErrorSchema(
+      "/api/v1/auth/airline/refresh",
+      "Invalid access token",
+    ),
+  })
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema("/api/v1/auth/airline/refresh"),
+  })
+  @ApiConflictResponse({
+    schema: createConflictErrorSchema(
+      "/api/v1/auth/airline/refresh",
+      "2FA not enabled",
+    ),
+  })
   async refresh(
     @Body() dto: RefreshTokenRequestDto,
     @RequestId() requestId: string,
@@ -483,6 +742,24 @@ export class AirlineAuthController {
       Access: Authenticated airline user. Requires a valid access token.`,
   })
   @ApiBody({ type: SignoutRequestDto })
+  @ApiOkResponse({
+    schema: createSuccessResponseSchema("/api/v1/auth/airline/signout", null),
+  })
+  @ApiUnauthorizedResponse({
+    schema: createUnauthorizedErrorSchema(
+      "/api/v1/auth/airline/signout",
+      "Invalid access token",
+    ),
+  })
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema("/api/v1/auth/airline/signout"),
+  })
+  @ApiConflictResponse({
+    schema: createConflictErrorSchema(
+      "/api/v1/auth/airline/signout",
+      "2FA not enabled",
+    ),
+  })
   async signout(
     @Req() req: AuthenticatedRequest,
     @Body() dto: SignoutRequestDto,

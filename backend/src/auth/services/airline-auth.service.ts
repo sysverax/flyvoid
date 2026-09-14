@@ -23,6 +23,7 @@ import { AirlineRole, UserType } from "../../common/constants/user.constants";
 import { LoggerService } from "../../common/logger/logger.service";
 import { config } from "../../config/config";
 import {
+  AirlineChangePasswordRequestDto,
   AirlineInitialPasswordResetRequestDto,
   AirlineTwoFactorDisableRequestDto,
   AirlineTwoFactorEnableRequestDto,
@@ -435,6 +436,40 @@ export class AirlineAuthService {
     await this.authRepository.revokeActiveAirlineRefreshTokensByAirlineUserId(
       user.id,
       requestId,
+    );
+  }
+
+  async changePassword(
+    authenticatedUser: AuthenticatedUser,
+    dto: AirlineChangePasswordRequestDto,
+    requestId: string,
+  ): Promise<void> {
+    const user = await this.requireAirlineUser(authenticatedUser, requestId);
+
+    const isCurrentPasswordValid = await bcrypt.compare(
+      dto.currentPassword,
+      user.passwordHash,
+    );
+    if (!isCurrentPasswordValid) {
+      throw new UnauthorizedException("Current password is incorrect");
+    }
+
+    const newPasswordHash = await bcrypt.hash(dto.newPassword, 10);
+    await this.authRepository.updateAirlineUserPasswordHash(
+      user.id,
+      newPasswordHash,
+      requestId,
+    );
+    await this.authRepository.revokeActiveAirlineRefreshTokensByAirlineUserId(
+      user.id,
+      requestId,
+    );
+
+    this.logger.info(
+      "Airline user changed password",
+      this.context,
+      requestId,
+      { airlineUserId: user.id },
     );
   }
 

@@ -60,6 +60,7 @@ import {
   InviteAirlineUserRequestDto,
   InviteAirlineUserResponseDto,
   UpdateAirlineUserRequestDto,
+  UpdateAirlineUserProfileRequestDto,
 } from "../dto";
 import { AirlineUserService } from "../services/airline-user.service";
 import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
@@ -449,6 +450,74 @@ export class AirlineUserController {
       response,
       requestId,
       "Airline user profile fetched",
+    );
+  }
+
+  @Patch("profile")
+  @RequireUserRoles(AirlineRole.AIRLINE_ADMIN, AirlineRole.AIRLINE_STAFF)
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.PROFILE,
+      access: [AccessAction.EDIT],
+    },
+  })
+  @ApiBearerAuth("access-token")
+  @ApiOperation({
+    summary: "Update airline user profile",
+    description: `
+    Updates the authenticated airline user's own first and/or last name only.
+      Access: AIRLINE_ADMIN and AIRLINE_STAFF with EDIT access on the PROFILE asset. Requires userType=AIRLINE.
+      Business logic validations:
+        1. At least one of firstName/lastName must be provided (400 if neither)
+        2. Authenticated user must be an active airline user (401 if not found or inactive)`,
+  })
+  @ApiBody({ type: UpdateAirlineUserProfileRequestDto })
+  @ApiOkResponse({
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(BaseResponseDto) },
+        {
+          properties: {
+            success: { type: "boolean", example: true },
+            requestId: { type: "string", example: REQUEST_ID_EXAMPLE },
+            timestamp: { type: "string", example: TIMESTAMP_EXAMPLE },
+            message: {
+              type: "string",
+              example: "Airline user profile updated",
+            },
+            data: { $ref: getSchemaPath(AirlineUserProfileResponseDto) },
+          },
+        },
+      ],
+    },
+  })
+  @ApiBadRequestResponse({
+    description: "Validation failed",
+    schema: createBadRequestErrorSchema("/api/v1/airline/users/profile"),
+  })
+  @ApiForbiddenResponse({
+    description: "Insufficient permissions. AIRLINE user type is required.",
+  })
+  @ApiUnauthorizedResponse({
+    schema: createUnauthorizedErrorSchema(
+      "/api/v1/airline/users/profile",
+      "Unauthorized",
+    ),
+  })
+  async updateUserProfile(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: UpdateAirlineUserProfileRequestDto,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<AirlineUserProfileResponseDto>> {
+    const response = await this.airlineUserService.updateUserProfile(
+      req.user,
+      dto,
+      requestId,
+    );
+    return BaseResponseDto.success(
+      response,
+      requestId,
+      "Airline user profile updated",
     );
   }
 
