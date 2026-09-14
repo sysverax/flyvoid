@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -25,6 +26,7 @@ import {
   InviteAirlineUserRequestDto,
   InviteAirlineUserResponseDto,
   UpdateAirlineUserRequestDto,
+  UpdateAirlineUserProfileRequestDto,
 } from "../dto";
 import { AirlineEntity } from "../entities/airline.entity";
 import { AirlineUserEntity } from "../entities/airline-user.entity";
@@ -206,6 +208,49 @@ export class AirlineUserService {
     requestId: string,
   ): Promise<AirlineUserProfileResponseDto> {
     return await this.requireAirlineUser(authenticatedUser, requestId);
+  }
+
+  async updateUserProfile(
+    authenticatedUser: AuthenticatedUser,
+    dto: UpdateAirlineUserProfileRequestDto,
+    requestId: string,
+  ): Promise<AirlineUserProfileResponseDto> {
+    if (authenticatedUser.userType !== UserType.AIRLINE) {
+      throw new UnauthorizedException("Unauthorized");
+    }
+
+    if (dto.firstName === undefined && dto.lastName === undefined) {
+      throw new BadRequestException("At least one field must be provided");
+    }
+
+    const user = await this.airlineUserRepository.findById(
+      authenticatedUser.sub,
+      requestId,
+    );
+    if (!user || !user.isActive) {
+      this.logger.warn("Airline user not found", this.context, requestId, {
+        airlineUserId: authenticatedUser.sub,
+      });
+      throw new UnauthorizedException("Airline user not found");
+    }
+
+    await this.airlineUserRepository.updateAirlineUser(
+      user.id,
+      {
+        ...(dto.firstName !== undefined && { firstName: dto.firstName.trim() }),
+        ...(dto.lastName !== undefined && { lastName: dto.lastName.trim() }),
+      },
+      requestId,
+    );
+
+    this.logger.info(
+      "Airline user updated own profile",
+      this.context,
+      requestId,
+      { airlineUserId: user.id },
+    );
+
+    return this.requireAirlineUser(authenticatedUser, requestId);
   }
 
   async getAirlineProfile(

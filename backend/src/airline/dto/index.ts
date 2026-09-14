@@ -6,6 +6,7 @@ export * from "./airline-user-response.dto";
 export * from "./invite-airline-user-request.dto";
 export * from "./invite-airline-user-response.dto";
 export * from "./update-airline-user-request.dto";
+export * from "./update-airline-user-profile-request.dto";
 export * from "./admin-airline-query.dto";
 export * from "./admin-airline-response.dto";
 export * from "./admin-airline-list-response.dto";

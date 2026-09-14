@@ -30,6 +30,7 @@ import {
 import { BaseResponseDto } from "../../common/dto/base-response.dto";
 import { RequestId } from "../../common/decorators/request-id.decorator";
 import {
+  AirlineChangePasswordRequestDto,
   AirlineInitialPasswordResetRequestDto,
   AirlineTwoFactorDisableRequestDto,
   AirlineTwoFactorEnableRequestDto,
@@ -306,6 +307,51 @@ export class AirlineAuthController {
       null,
       requestId,
       "Initial password reset successful",
+    );
+  }
+
+  @Post("change-password")
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth("access-token")
+  @ApiOperation({
+    summary: "Airline change password",
+    description: `
+    Changes the authenticated airline user's password after verifying the current password.
+      All active sessions (refresh tokens) are revoked after a successful change — the user must sign in again elsewhere.
+      Access: Authenticated airline user. Requires a valid access token.
+      Business logic validations:
+        1. currentPassword must match the stored password (401 if invalid)
+        2. newPassword must meet complexity requirements (400 if invalid)`,
+  })
+  @ApiBody({ type: AirlineChangePasswordRequestDto })
+  @ApiOkResponse({
+    schema: createSuccessResponseSchema(
+      "/api/v1/auth/airline/change-password",
+      null,
+    ),
+  })
+  @ApiUnauthorizedResponse({
+    schema: createUnauthorizedErrorSchema(
+      "/api/v1/auth/airline/change-password",
+      "Current password is incorrect",
+    ),
+  })
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema(
+      "/api/v1/auth/airline/change-password",
+    ),
+  })
+  async changePassword(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: AirlineChangePasswordRequestDto,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<null>> {
+    await this.airlineAuthService.changePassword(req.user, dto, requestId);
+    return BaseResponseDto.success(
+      null,
+      requestId,
+      "Password changed successfully",
     );
   }
 

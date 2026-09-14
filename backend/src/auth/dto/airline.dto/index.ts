@@ -5,6 +5,7 @@ export * from "./2fa/airline-2fa-recover-request.dto";
 export * from "./2fa/airline-2fa-setup-response.dto";
 export * from "./airline-admin-onboard-request.dto";
 export * from "./airline-admin-onboard-response.dto";
+export * from "./airline-change-password-request.dto";
 export * from "./forgot-password/airline-forgot-password-reset-request.dto";
 export * from "./forgot-password/airline-forgot-password-send-otp-request.dto";
 export * from "./forgot-password/airline-forgot-password-verify-otp-request.dto";
