@@ -15,14 +15,17 @@ import {
   Download,
   Globe,
   ExternalLink,
+  Mail,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { useEffect, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
+import { toast } from "react-toastify";
 import {
   cancellationService,
   HotelBookingDetailDataDto,
 } from "@/src/services/cancellation.service";
+import { hotelBookingsService } from "@/src/services/hotel-bookings.service";
 
 const PLATFORM_FEE_PERCENT = 10;
 
@@ -33,6 +36,8 @@ interface BookingDetailsDrawerProps {
   flightId?: number | string | null;
   hotelBookingId?: number | string | null;
   detailData?: HotelBookingDetailDataDto | null;
+  showSendConfirmation?: boolean;
+  downloadType?: "pdf" | "csv";
 }
 
 export function BookingDetailsDrawer({
@@ -42,11 +47,15 @@ export function BookingDetailsDrawer({
   flightId,
   hotelBookingId,
   detailData: propDetailData,
+  showSendConfirmation = false,
+  downloadType = "pdf",
 }: BookingDetailsDrawerProps) {
   const [mounted, setMounted] = useState(false);
   const [internalDetailData, setInternalDetailData] =
     useState<HotelBookingDetailDataDto | null>(null);
   const [hotelImageError, setHotelImageError] = useState(false);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -55,14 +64,27 @@ export function BookingDetailsDrawer({
   const activeDetailData = propDetailData || internalDetailData;
 
   const fetchDetail = useCallback(async () => {
-    if (!flightId || !hotelBookingId) return;
+    if (!hotelBookingId && !flightId) return;
     try {
-      const res = await cancellationService.getHotelBookingDetail(
-        flightId,
-        hotelBookingId,
-      );
-      if (res?.data) {
-        setInternalDetailData(res.data);
+      if (hotelBookingId) {
+        try {
+          const data = await hotelBookingsService.getHotelBookingDetail(hotelBookingId);
+          if (data) {
+            setInternalDetailData(data as any);
+            return;
+          }
+        } catch {
+          // fallback to cancellationService below
+        }
+      }
+      if (flightId && hotelBookingId) {
+        const res = await cancellationService.getHotelBookingDetail(
+          flightId,
+          hotelBookingId,
+        );
+        if (res?.data) {
+          setInternalDetailData(res.data);
+        }
       }
     } catch (err: any) {
       console.error("Failed to load hotel booking detail:", err);
@@ -75,10 +97,46 @@ export function BookingDetailsDrawer({
       return;
     }
 
-    if (!propDetailData && flightId && hotelBookingId) {
+    if (!propDetailData && (hotelBookingId || (flightId && hotelBookingId))) {
       fetchDetail();
     }
   }, [isOpen, flightId, hotelBookingId, propDetailData, fetchDetail]);
+
+  const handleSendConfirmation = async () => {
+    const rawId = activeDetailData?.id || hotelBookingId || booking?.id;
+    const targetId = typeof rawId === "string" ? rawId.replace(/\D/g, "") : rawId;
+    if (!targetId) {
+      toast.error("Invalid booking ID.");
+      return;
+    }
+    setIsSendingEmail(true);
+    try {
+      const res = await hotelBookingsService.sendHotelBookingEmail(targetId);
+      toast.success(res?.message || "Hotel booking confirmation email sent successfully.");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to send hotel booking confirmation email.");
+    } finally {
+      setIsSendingEmail(false);
+    }
+  };
+
+  const handleDownloadCsv = async () => {
+    const rawId = activeDetailData?.id || hotelBookingId || booking?.id;
+    const targetId = typeof rawId === "string" ? rawId.replace(/\D/g, "") : rawId;
+    if (!targetId) {
+      toast.error("Invalid booking ID for export.");
+      return;
+    }
+    setIsExporting(true);
+    try {
+      await hotelBookingsService.exportHotelBooking(targetId);
+      toast.success("Booking CSV exported successfully.");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to export hotel booking CSV.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const pBooking = activeDetailData?.booking || booking;
   const hotel = activeDetailData?.hotel || booking?.hotel;
@@ -706,18 +764,67 @@ export function BookingDetailsDrawer({
           </div>
         </div>
 
-        {/* Footer with Download PDF button */}
+        {/* Footer with Download button (CSV or PDF) and optionally Send Confirmation button */}
         <div className="p-4 border-t border-gray-200 bg-white">
-          <button
-            type="button"
-            onClick={() => {
-              window.print();
-            }}
-            className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-[#0F2757] hover:bg-[#162259] text-white text-sm font-semibold rounded-xl shadow-sm transition-colors cursor-pointer"
-          >
-            <Download className="w-4 h-4 shrink-0" />
-            <span>Download PDF</span>
-          </button>
+          {showSendConfirmation ? (
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={downloadType === "csv" ? handleDownloadCsv : () => window.print()}
+                disabled={downloadType === "csv" && isExporting}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-semibold rounded-xl shadow-sm transition-colors cursor-pointer disabled:opacity-60"
+              >
+                {downloadType === "csv" && isExporting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 shrink-0 animate-spin text-gray-500" />
+                    <span>Downloading...</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4 shrink-0 text-gray-500" />
+                    <span>{downloadType === "csv" ? "Download CSV" : "Download PDF"}</span>
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={handleSendConfirmation}
+                disabled={isSendingEmail}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-[#0F2757] hover:bg-[#162259] text-white text-sm font-semibold rounded-xl shadow-sm transition-colors cursor-pointer disabled:opacity-60"
+              >
+                {isSendingEmail ? (
+                  <>
+                    <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
+                    <span>Sending...</span>
+                  </>
+                ) : (
+                  <>
+                    <Mail className="w-4 h-4 shrink-0" />
+                    <span>Send Confirmation</span>
+                  </>
+                )}
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={downloadType === "csv" ? handleDownloadCsv : () => window.print()}
+              disabled={downloadType === "csv" && isExporting}
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-[#0F2757] hover:bg-[#162259] text-white text-sm font-semibold rounded-xl shadow-sm transition-colors cursor-pointer disabled:opacity-60"
+            >
+              {downloadType === "csv" && isExporting ? (
+                <>
+                  <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
+                  <span>Downloading...</span>
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4 shrink-0" />
+                  <span>{downloadType === "csv" ? "Download CSV" : "Download PDF"}</span>
+                </>
+              )}
+            </button>
+          )}
         </div>
       </div>
     </>
