@@ -1,0 +1,58 @@
+name: Start RDS then EC2
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_backend:
+        description: "Deploy backend after starting"
+        type: boolean
+        required: true
+        default: true
+
+jobs:
+  start:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Start RDS instance
+        run: |
+          aws rds start-db-instance --db-instance-identifier "${{ secrets.RDS_INSTANCE_ID }}"
+
+      - name: Wait for RDS to become available
+        run: |
+          aws rds wait db-instance-available --db-instance-identifier "${{ secrets.RDS_INSTANCE_ID }}"
+
+      - name: Start EC2 instance
+        run: |
+          aws ec2 start-instances --instance-ids "${{ secrets.EC2_INSTANCE_ID }}"
+
+      - name: Wait for EC2 to be running
+        run: |
+          aws ec2 wait instance-running --instance-ids "${{ secrets.EC2_INSTANCE_ID }}"
+
+      - name: Wait for SSH to accept connections
+        run: |
+          for i in $(seq 1 20); do
+            if nc -z -w5 "${{ secrets.TEST_EC2_IP }}" 22; then
+              echo "SSH is ready"
+              exit 0
+            fi
+            echo "Waiting for SSH... attempt $i"
+            sleep 10
+          done
+          echo "[ERROR] SSH did not become ready in time"
+          exit 1
+
+  deploy_backend:
+    needs: start
+    if: ${{ github.event.inputs.deploy_backend == 'true' }}
+    uses: ./.github/workflows/manual-test-deploy.yml
+    with:
+      deploy_backend: true
+    secrets: inherit
