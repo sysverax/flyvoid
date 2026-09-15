@@ -80,6 +80,187 @@ import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
 export class AirlineUserController {
   constructor(private readonly airlineUserService: AirlineUserService) {}
 
+  @Get("users/profile")
+  @RequireUserRoles(AirlineRole.AIRLINE_ADMIN, AirlineRole.AIRLINE_STAFF)
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.PROFILE,
+      access: [AccessAction.VIEW],
+    },
+  })
+  @ApiBearerAuth("access-token")
+  @ApiOperation({
+    summary: "Airline user profile",
+    description: `
+    Returns the authenticated airline user's own profile.
+      Access: AIRLINE_ADMIN and AIRLINE_STAFF with VIEW access on the PROFILE asset. Requires userType=AIRLINE.
+      Business logic validations:
+        1. Authenticated user must be an active airline user (401 if not found or inactive)`,
+  })
+  @ApiOkResponse({
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(BaseResponseDto) },
+        {
+          properties: {
+            success: { type: "boolean", example: true },
+            requestId: { type: "string", example: REQUEST_ID_EXAMPLE },
+            timestamp: { type: "string", example: TIMESTAMP_EXAMPLE },
+            message: {
+              type: "string",
+              example: "Airline user profile fetched",
+            },
+            data: { $ref: getSchemaPath(AirlineUserProfileResponseDto) },
+          },
+        },
+      ],
+    },
+  })
+  @ApiForbiddenResponse({
+    description: "Insufficient permissions. AIRLINE user type is required.",
+  })
+  @ApiUnauthorizedResponse({
+    schema: createUnauthorizedErrorSchema(
+      "/api/v1/airline/users/profile",
+      "Unauthorized",
+    ),
+  })
+  async getUserProfile(
+    @Req() req: AuthenticatedRequest,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<AirlineUserProfileResponseDto>> {
+    const response = await this.airlineUserService.getUserProfile(
+      req.user,
+      requestId,
+    );
+    return BaseResponseDto.success(
+      response,
+      requestId,
+      "Airline user profile fetched",
+    );
+  }
+
+  @Patch("users/profile")
+  @RequireUserRoles(AirlineRole.AIRLINE_ADMIN, AirlineRole.AIRLINE_STAFF)
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.PROFILE,
+      access: [AccessAction.EDIT],
+    },
+  })
+  @ApiBearerAuth("access-token")
+  @ApiOperation({
+    summary: "Update airline user profile",
+    description: `
+    Updates the authenticated airline user's own first and/or last name only.
+      Access: AIRLINE_ADMIN and AIRLINE_STAFF with EDIT access on the PROFILE asset. Requires userType=AIRLINE.
+      Business logic validations:
+        1. At least one of firstName/lastName must be provided (400 if neither)
+        2. Authenticated user must be an active airline user (401 if not found or inactive)`,
+  })
+  @ApiBody({ type: UpdateAirlineUserProfileRequestDto })
+  @ApiOkResponse({
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(BaseResponseDto) },
+        {
+          properties: {
+            success: { type: "boolean", example: true },
+            requestId: { type: "string", example: REQUEST_ID_EXAMPLE },
+            timestamp: { type: "string", example: TIMESTAMP_EXAMPLE },
+            message: {
+              type: "string",
+              example: "Airline user profile updated",
+            },
+            data: { $ref: getSchemaPath(AirlineUserProfileResponseDto) },
+          },
+        },
+      ],
+    },
+  })
+  @ApiBadRequestResponse({
+    description: "Validation failed",
+    schema: createBadRequestErrorSchema("/api/v1/airline/users/profile"),
+  })
+  @ApiForbiddenResponse({
+    description: "Insufficient permissions. AIRLINE user type is required.",
+  })
+  @ApiUnauthorizedResponse({
+    schema: createUnauthorizedErrorSchema(
+      "/api/v1/airline/users/profile",
+      "Unauthorized",
+    ),
+  })
+  async updateUserProfile(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: UpdateAirlineUserProfileRequestDto,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<AirlineUserProfileResponseDto>> {
+    const response = await this.airlineUserService.updateUserProfile(
+      req.user,
+      dto,
+      requestId,
+    );
+    return BaseResponseDto.success(
+      response,
+      requestId,
+      "Airline user profile updated",
+    );
+  }
+
+  @Get("profile")
+  @RequireUserRoles(AirlineRole.AIRLINE_ADMIN)
+  @ApiBearerAuth("access-token")
+  @ApiOperation({
+    summary: "Airline profile",
+    description: `
+    Returns the airline profile associated with the authenticated airline admin's account.
+      Access: AIRLINE_ADMIN only. Requires userType=AIRLINE.
+      Business logic validations:
+        1. Authenticated user must be an active airline user (401 if not found or inactive)
+        2. Associated airline must be active (401 if not found or inactive)`,
+  })
+  @ApiOkResponse({
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(BaseResponseDto) },
+        {
+          properties: {
+            success: { type: "boolean", example: true },
+            requestId: { type: "string", example: REQUEST_ID_EXAMPLE },
+            timestamp: { type: "string", example: TIMESTAMP_EXAMPLE },
+            message: { type: "string", example: "Airline profile fetched" },
+            data: { $ref: getSchemaPath(AirlineProfileResponseDto) },
+          },
+        },
+      ],
+    },
+  })
+  @ApiForbiddenResponse({
+    description:
+      "Insufficient permissions. AIRLINE_ADMIN role is required for this endpoint.",
+  })
+  @ApiUnauthorizedResponse({
+    schema: createUnauthorizedErrorSchema(
+      "/api/v1/airline/profile",
+      "Unauthorized",
+    ),
+  })
+  async getAirlineProfile(
+    @Req() req: AuthenticatedRequest,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<AirlineProfileResponseDto>> {
+    const response = await this.airlineUserService.getAirlineProfile(
+      req.user,
+      requestId,
+    );
+    return BaseResponseDto.success(
+      response,
+      requestId,
+      "Airline profile fetched",
+    );
+  }
+
   @Post("users")
   @HttpCode(201)
   @RequireUserRoles(AirlineRole.AIRLINE_ADMIN, AirlineRole.AIRLINE_STAFF)
@@ -390,187 +571,6 @@ export class AirlineUserController {
       response,
       requestId,
       "Airline users fetched successfully",
-    );
-  }
-
-  @Get("users/profile")
-  @RequireUserRoles(AirlineRole.AIRLINE_ADMIN, AirlineRole.AIRLINE_STAFF)
-  @RequireAccessControl({
-    airline: {
-      asset: AirlineAsset.PROFILE,
-      access: [AccessAction.VIEW],
-    },
-  })
-  @ApiBearerAuth("access-token")
-  @ApiOperation({
-    summary: "Airline user profile",
-    description: `
-    Returns the authenticated airline user's own profile.
-      Access: AIRLINE_ADMIN and AIRLINE_STAFF with VIEW access on the PROFILE asset. Requires userType=AIRLINE.
-      Business logic validations:
-        1. Authenticated user must be an active airline user (401 if not found or inactive)`,
-  })
-  @ApiOkResponse({
-    schema: {
-      allOf: [
-        { $ref: getSchemaPath(BaseResponseDto) },
-        {
-          properties: {
-            success: { type: "boolean", example: true },
-            requestId: { type: "string", example: REQUEST_ID_EXAMPLE },
-            timestamp: { type: "string", example: TIMESTAMP_EXAMPLE },
-            message: {
-              type: "string",
-              example: "Airline user profile fetched",
-            },
-            data: { $ref: getSchemaPath(AirlineUserProfileResponseDto) },
-          },
-        },
-      ],
-    },
-  })
-  @ApiForbiddenResponse({
-    description: "Insufficient permissions. AIRLINE user type is required.",
-  })
-  @ApiUnauthorizedResponse({
-    schema: createUnauthorizedErrorSchema(
-      "/api/v1/airline/users/profile",
-      "Unauthorized",
-    ),
-  })
-  async getUserProfile(
-    @Req() req: AuthenticatedRequest,
-    @RequestId() requestId: string,
-  ): Promise<BaseResponseDto<AirlineUserProfileResponseDto>> {
-    const response = await this.airlineUserService.getUserProfile(
-      req.user,
-      requestId,
-    );
-    return BaseResponseDto.success(
-      response,
-      requestId,
-      "Airline user profile fetched",
-    );
-  }
-
-  @Patch("users/profile")
-  @RequireUserRoles(AirlineRole.AIRLINE_ADMIN, AirlineRole.AIRLINE_STAFF)
-  @RequireAccessControl({
-    airline: {
-      asset: AirlineAsset.PROFILE,
-      access: [AccessAction.EDIT],
-    },
-  })
-  @ApiBearerAuth("access-token")
-  @ApiOperation({
-    summary: "Update airline user profile",
-    description: `
-    Updates the authenticated airline user's own first and/or last name only.
-      Access: AIRLINE_ADMIN and AIRLINE_STAFF with EDIT access on the PROFILE asset. Requires userType=AIRLINE.
-      Business logic validations:
-        1. At least one of firstName/lastName must be provided (400 if neither)
-        2. Authenticated user must be an active airline user (401 if not found or inactive)`,
-  })
-  @ApiBody({ type: UpdateAirlineUserProfileRequestDto })
-  @ApiOkResponse({
-    schema: {
-      allOf: [
-        { $ref: getSchemaPath(BaseResponseDto) },
-        {
-          properties: {
-            success: { type: "boolean", example: true },
-            requestId: { type: "string", example: REQUEST_ID_EXAMPLE },
-            timestamp: { type: "string", example: TIMESTAMP_EXAMPLE },
-            message: {
-              type: "string",
-              example: "Airline user profile updated",
-            },
-            data: { $ref: getSchemaPath(AirlineUserProfileResponseDto) },
-          },
-        },
-      ],
-    },
-  })
-  @ApiBadRequestResponse({
-    description: "Validation failed",
-    schema: createBadRequestErrorSchema("/api/v1/airline/users/profile"),
-  })
-  @ApiForbiddenResponse({
-    description: "Insufficient permissions. AIRLINE user type is required.",
-  })
-  @ApiUnauthorizedResponse({
-    schema: createUnauthorizedErrorSchema(
-      "/api/v1/airline/users/profile",
-      "Unauthorized",
-    ),
-  })
-  async updateUserProfile(
-    @Req() req: AuthenticatedRequest,
-    @Body() dto: UpdateAirlineUserProfileRequestDto,
-    @RequestId() requestId: string,
-  ): Promise<BaseResponseDto<AirlineUserProfileResponseDto>> {
-    const response = await this.airlineUserService.updateUserProfile(
-      req.user,
-      dto,
-      requestId,
-    );
-    return BaseResponseDto.success(
-      response,
-      requestId,
-      "Airline user profile updated",
-    );
-  }
-
-  @Get("profile")
-  @RequireUserRoles(AirlineRole.AIRLINE_ADMIN)
-  @ApiBearerAuth("access-token")
-  @ApiOperation({
-    summary: "Airline profile",
-    description: `
-    Returns the airline profile associated with the authenticated airline admin's account.
-      Access: AIRLINE_ADMIN only. Requires userType=AIRLINE.
-      Business logic validations:
-        1. Authenticated user must be an active airline user (401 if not found or inactive)
-        2. Associated airline must be active (401 if not found or inactive)`,
-  })
-  @ApiOkResponse({
-    schema: {
-      allOf: [
-        { $ref: getSchemaPath(BaseResponseDto) },
-        {
-          properties: {
-            success: { type: "boolean", example: true },
-            requestId: { type: "string", example: REQUEST_ID_EXAMPLE },
-            timestamp: { type: "string", example: TIMESTAMP_EXAMPLE },
-            message: { type: "string", example: "Airline profile fetched" },
-            data: { $ref: getSchemaPath(AirlineProfileResponseDto) },
-          },
-        },
-      ],
-    },
-  })
-  @ApiForbiddenResponse({
-    description:
-      "Insufficient permissions. AIRLINE_ADMIN role is required for this endpoint.",
-  })
-  @ApiUnauthorizedResponse({
-    schema: createUnauthorizedErrorSchema(
-      "/api/v1/airline/profile",
-      "Unauthorized",
-    ),
-  })
-  async getAirlineProfile(
-    @Req() req: AuthenticatedRequest,
-    @RequestId() requestId: string,
-  ): Promise<BaseResponseDto<AirlineProfileResponseDto>> {
-    const response = await this.airlineUserService.getAirlineProfile(
-      req.user,
-      requestId,
-    );
-    return BaseResponseDto.success(
-      response,
-      requestId,
-      "Airline profile fetched",
     );
   }
 }
