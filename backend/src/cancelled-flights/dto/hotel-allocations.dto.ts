@@ -77,4 +77,24 @@ export class HotelAllocationsDto {
     example: "USD",
   })
   currency: string;
+
+  @ApiProperty({
+    description:
+      "Bookings that could not be allocated a hotel room, with the reason - empty when every booking succeeded",
+    example: [
+      {
+        bookingId: 12,
+        pnr: "PNR001",
+        status: "NO_SUITABLE_HOTEL",
+        reason: "No hotel had capacity for this party size",
+      },
+    ],
+    required: false,
+  })
+  failures?: Array<{
+    bookingId: number;
+    pnr: string;
+    status: string;
+    reason: string | null;
+  }>;
 }

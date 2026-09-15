@@ -268,8 +268,70 @@ export class CancelledFlightsService {
     return `${occupancy.adults}_${occupancy.children}_${ages}`;
   }
 
+  // Adults/children only, no ages - bookings never carry child ages, so an
+  // ages-aware key never matches a real rate. Use for matching supply to
+  // demand; occupancyKey (with ages) stays for building the search request.
+  private roomShapeKey(occupancy: { adults: number; children: number }): string {
+    return `${occupancy.adults}_${occupancy.children}`;
+  }
+
   private roundCurrency(value: number): number {
     return Math.round((value + Number.EPSILON) * 100) / 100;
+  }
+
+  private async mapWithConcurrency<T, R>(
+    items: T[],
+    limit: number,
+    worker: (item: T, index: number) => Promise<R>,
+  ): Promise<R[]> {
+    const results = new Array<R>(items.length);
+    let next = 0;
+    const runnerCount = Math.max(1, Math.min(limit, items.length));
+    const runners = Array.from({ length: runnerCount }, async () => {
+      while (next < items.length) {
+        const index = next++;
+        results[index] = await worker(items[index], index);
+      }
+    });
+    await Promise.all(runners);
+    return results;
+  }
+
+  // Cheapest exact-fit rate; if none, the smallest room with enough
+  // capacity (e.g. a double for a lone adult) as a last resort.
+  private pickRateForShape(
+    hotel: AvailabilityHotel,
+    shape: RoomOccupancy,
+    roomsNeeded: number,
+    allotmentLedger: Map<string, number>,
+  ): AvailabilityRoomRate | undefined {
+    const hasCapacity = (rate: AvailabilityRoomRate) =>
+      (allotmentLedger.get(rate.rateKey) ?? rate.allotment ?? 0) >= roomsNeeded;
+
+    const exact = hotel.rates
+      .filter(
+        (rate) =>
+          rate.adults === shape.adults &&
+          rate.children === shape.children &&
+          hasCapacity(rate),
+      )
+      .sort((a, b) => a.netPrice - b.netPrice)[0];
+    if (exact) {
+      return exact;
+    }
+
+    return hotel.rates
+      .filter(
+        (rate) =>
+          rate.adults >= shape.adults &&
+          rate.children >= shape.children &&
+          hasCapacity(rate),
+      )
+      .sort((a, b) => {
+        const oversizeA = a.adults + a.children - (shape.adults + shape.children);
+        const oversizeB = b.adults + b.children - (shape.adults + shape.children);
+        return oversizeA - oversizeB || a.netPrice - b.netPrice;
+      })[0];
   }
 
   private validateSplit(
@@ -487,11 +549,7 @@ export class CancelledFlightsService {
   }> | null {
     const buckets = new Map<string, AvailabilityRoomRate[]>();
     for (const rate of rates) {
-      const key = this.occupancyKey({
-        adults: rate.adults,
-        children: rate.children,
-        childrenAges: rate.childrenAges,
-      });
+      const key = this.roomShapeKey(rate);
       const existing = buckets.get(key);
       if (existing) {
         existing.push(rate);
@@ -511,7 +569,7 @@ export class CancelledFlightsService {
     }> = [];
 
     for (const occupancy of split) {
-      const key = this.occupancyKey(occupancy);
+      const key = this.roomShapeKey(occupancy);
       const candidates = (buckets.get(key) ?? [])
         .filter((rate) => rate.allotment === null || rate.allotment > 0)
         .sort((a, b) => a.netPrice - b.netPrice);
@@ -692,6 +750,53 @@ export class CancelledFlightsService {
     return this.toBookingResponse(booking);
   }
 
+  // Minimal RFC4180 parser: handles quoted fields (so a comma-separated
+  // special_notes cell doesn't shift later columns) and "" escaped quotes.
+  private parseCsvRows(content: string): string[][] {
+    const rows: string[][] = [];
+    let row: string[] = [];
+    let field = "";
+    let inQuotes = false;
+    const text = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+
+    for (let i = 0; i < text.length; i += 1) {
+      const char = text[i];
+
+      if (inQuotes) {
+        if (char === '"') {
+          if (text[i + 1] === '"') {
+            field += '"';
+            i += 1;
+          } else {
+            inQuotes = false;
+          }
+        } else {
+          field += char;
+        }
+        continue;
+      }
+
+      if (char === '"') {
+        inQuotes = true;
+      } else if (char === ",") {
+        row.push(field);
+        field = "";
+      } else if (char === "\n") {
+        row.push(field);
+        rows.push(row);
+        row = [];
+        field = "";
+      } else {
+        field += char;
+      }
+    }
+    if (field.length > 0 || row.length > 0) {
+      row.push(field);
+      rows.push(row);
+    }
+    return rows;
+  }
+
   // ── Import preview ───────────────────────────────────────────────────────
 
   async importBookings(
@@ -702,7 +807,7 @@ export class CancelledFlightsService {
     const flight = await this.requireFlight(flightId, requestId);
     // Parse the CSV file
     const csv = file.buffer.toString("utf-8");
-    const rows = csv.split("\n").map((line) => line.split(","));
+    const rows = this.parseCsvRows(csv);
     const pnrSet = new Set<string>();
 
     const bookings: {
@@ -2003,11 +2108,7 @@ export class CancelledFlightsService {
           if (
             rate.allotment === null ||
             rate.allotment <= 0 ||
-            this.occupancyKey({
-              adults: rate.adults,
-              children: rate.children,
-              childrenAges: rate.childrenAges,
-            }) !== shapeKey
+            this.roomShapeKey(rate) !== shapeKey
           ) {
             continue;
           }
@@ -2035,24 +2136,54 @@ export class CancelledFlightsService {
     };
 
     const optionsForShape = (room: RoomOccupancy): HotelOption[] => {
-      const shapeKey = this.occupancyKey(room);
+      const shapeKey = this.roomShapeKey(room);
       if (!roomOptionsByShape.has(shapeKey)) {
         roomOptionsByShape.set(shapeKey, buildRoomOptions(shapeKey));
       }
       return roomOptionsByShape.get(shapeKey)!;
     };
 
+    // Cheapest rate for a shape, uncapped - only for comparing split prices,
+    // not for the AI shortlist (which caps to MAX_HOTELS_PER_SHAPE above).
+    const cheapestPriceByShape = new Map<string, number>();
+    const cheapestPriceForShape = (shape: RoomOccupancy): number => {
+      const shapeKey = this.roomShapeKey(shape);
+      const cached = cheapestPriceByShape.get(shapeKey);
+      if (cached !== undefined) {
+        return cached;
+      }
+      let cheapest = Number.POSITIVE_INFINITY;
+      for (const hotel of hotels) {
+        for (const rate of hotel.rates) {
+          if (
+            rate.allotment === null ||
+            rate.allotment <= 0 ||
+            rate.adults !== shape.adults ||
+            rate.children !== shape.children
+          ) {
+            continue;
+          }
+          if (rate.netPrice < cheapest) {
+            cheapest = rate.netPrice;
+          }
+        }
+      }
+      cheapestPriceByShape.set(shapeKey, cheapest);
+      return cheapest;
+    };
+
     for (const booking of eligibleBookings) {
       const splitPlan = splitPlansByBooking.get(booking.id)!;
 
-      // Rank splits (preferred + fallbacks) by ease of same-hotel placement:
-      // every shape available, then one hotel covers all, then fewest shapes.
+      // Rank splits (preferred + fallbacks): every shape available, then one
+      // hotel covers all, then the cheapest total estimated price, then
+      // fewest distinct shapes/rooms as a final tiebreaker.
       const chosenSplit =
         [splitPlan.preferred, ...splitPlan.fallbacks]
           .map((rooms) => {
             const byShape = new Map<string, RoomOccupancy>();
             for (const room of rooms) {
-              byShape.set(this.occupancyKey(room), room);
+              byShape.set(this.roomShapeKey(room), room);
             }
             const perShapeHotels = [...byShape.values()].map(
               (room) => new Set(optionsForShape(room).map((o) => o.hotelId)),
@@ -2063,10 +2194,17 @@ export class CancelledFlightsService {
                   (a, b) => new Set([...a].filter((h) => b.has(h))),
                 )
               : new Set<string>();
+            const estimatedPrice = coverable
+              ? rooms.reduce(
+                  (sum, room) => sum + cheapestPriceForShape(room),
+                  0,
+                )
+              : Number.POSITIVE_INFINITY;
             return {
               rooms,
               coverable,
               oneHotel: sharedHotels.size > 0,
+              estimatedPrice,
               distinctShapes: byShape.size,
               roomCount: rooms.length,
             };
@@ -2075,6 +2213,7 @@ export class CancelledFlightsService {
           .sort(
             (a, b) =>
               Number(b.oneHotel) - Number(a.oneHotel) ||
+              a.estimatedPrice - b.estimatedPrice ||
               a.distinctShapes - b.distinctShapes ||
               a.roomCount - b.roomCount,
           )[0]?.rooms ?? splitPlan.preferred;
@@ -2084,7 +2223,7 @@ export class CancelledFlightsService {
         { shape: RoomOccupancy; count: number }
       >();
       for (const room of chosenSplit) {
-        const shapeKey = this.occupancyKey(room);
+        const shapeKey = this.roomShapeKey(room);
         const current = shapeCounts.get(shapeKey);
         if (current) {
           current.count += 1;
@@ -2111,15 +2250,97 @@ export class CancelledFlightsService {
       }
     }
 
-    let aiAllocation: {
-      assignments: Array<{
-        passengerGroupId: string;
-        hotelId: string;
-        rateKey: string;
-        roomsAssigned: number;
-      }>;
-      unresolved: Array<{ passengerGroupId: string; reason: string }>;
-    };
+    // Pre-flight supply check: fail fast if a shape has no chance of being
+    // covered (exact or oversized rooms), before spending an AI call.
+    // Conservative estimate, not exact bin-packing - the ledger-accurate
+    // verifier/rescue below still do the real per-booking accounting.
+    const demandByShape = new Map<
+      string,
+      { shape: RoomOccupancy; rooms: number }
+    >();
+    for (const group of occupancyGroups) {
+      const current = demandByShape.get(group.shapeKey);
+      if (current) {
+        current.rooms += group.roomsNeeded;
+      } else {
+        demandByShape.set(group.shapeKey, {
+          shape: { adults: group.adults, children: group.children },
+          rooms: group.roomsNeeded,
+        });
+      }
+    }
+
+    const totalAllotmentWhere = (
+      predicate: (rate: AvailabilityRoomRate) => boolean,
+    ): number =>
+      hotels.reduce(
+        (sum, hotel) =>
+          sum +
+          hotel.rates
+            .filter(
+              (rate) =>
+                rate.allotment !== null && rate.allotment > 0 && predicate(rate),
+            )
+            .reduce((roomSum, rate) => roomSum + (rate.allotment ?? 0), 0),
+        0,
+      );
+
+    const shortages: Array<{
+      shapeKey: string;
+      shape: RoomOccupancy;
+      roomsNeeded: number;
+      roomsAvailable: number;
+    }> = [];
+    for (const [shapeKey, { shape, rooms }] of demandByShape) {
+      const exactSupply = totalAllotmentWhere(
+        (rate) => rate.adults === shape.adults && rate.children === shape.children,
+      );
+      if (exactSupply >= rooms) {
+        continue;
+      }
+      const coveringSupply = totalAllotmentWhere(
+        (rate) => rate.adults >= shape.adults && rate.children >= shape.children,
+      );
+      if (coveringSupply < rooms) {
+        shortages.push({ shapeKey, shape, roomsNeeded: rooms, roomsAvailable: coveringSupply });
+      }
+    }
+
+    if (shortages.length > 0) {
+      const affectedPnrs = Array.from(
+        new Set(
+          occupancyGroups
+            .filter((group) =>
+              shortages.some((shortage) => shortage.shapeKey === group.shapeKey),
+            )
+            .map((group) => pgMeta.get(group.passengerGroupId)?.booking.pnr)
+            .filter((pnr): pnr is string => Boolean(pnr)),
+        ),
+      );
+      const shortageDetails = shortages.map((shortage) => ({
+        occupancy: `${shortage.shape.adults} adult(s), ${shortage.shape.children} child(ren)`,
+        roomsNeeded: shortage.roomsNeeded,
+        roomsAvailable: shortage.roomsAvailable,
+      }));
+      requestLogger.error(
+        `Insufficient hotel room supply for flight '${flightId}' - aborting before the AI allocation call`,
+        {
+          context: this.context,
+          flightId,
+          shortages: shortageDetails,
+          affectedPnrs,
+        },
+      );
+      throw new BadRequestException({
+        message:
+          `Hotel allocation aborted: not enough hotel rooms near the airport to cover ` +
+          `${shortages.length} occupancy shape(s) for ${affectedPnrs.length} booking(s). ` +
+          `No AI call was made. Widen the search radius or add hotel supply and retry.`,
+        shortages: shortageDetails,
+        affectedPnrs,
+      });
+    }
+
     // Drop shapes with no candidates: an empty list makes the model bail on
     // every group. Those groups stay in pgMeta and fail the verifier/rescue.
     const roomOptions = Object.fromEntries(
@@ -2129,20 +2350,103 @@ export class CancelledFlightsService {
       (group) => (roomOptions[group.shapeKey]?.length ?? 0) > 0,
     );
 
-    try {
-      aiAllocation = await this.aiService.allocateHotelGroups(
-        { roomOptions, groups: placeableGroups },
-        requestId,
-      );
-    } catch (error: any) {
-      requestLogger.error(`AI hotel allocation failed: ${error.message}`, {
-        context: this.context,
-        flightId,
-      });
-      throw new BadRequestException(
-        `AI hotel allocation failed for flight '${flightId}': ${error.message}`,
-      );
+    // Batch the AI call to stay under the token limit: pack bookings into
+    // batches by token budget, never splitting one booking's rooms across
+    // batches (they all need the same hotel). One call for a small flight,
+    // several in parallel for a large one.
+    const estimateJsonTokens = (value: unknown): number =>
+      Math.ceil(JSON.stringify(value).length / 4);
+
+    const groupsByBooking = new Map<string, typeof placeableGroups>();
+    for (const group of placeableGroups) {
+      const list = groupsByBooking.get(group.sameHotelGroup);
+      if (list) {
+        list.push(group);
+      } else {
+        groupsByBooking.set(group.sameHotelGroup, [group]);
+      }
     }
+
+    type AiBatch = {
+      groups: typeof placeableGroups;
+      shapeKeys: Set<string>;
+      tokens: number;
+    };
+    const maxInputTokens = config.ai.maxInputTokensPerCall;
+    const batches: AiBatch[] = [];
+    let currentBatch: AiBatch = { groups: [], shapeKeys: new Set(), tokens: 0 };
+
+    for (const bookingGroups of groupsByBooking.values()) {
+      const shapeKeys = Array.from(new Set(bookingGroups.map((g) => g.shapeKey)));
+      const newShapeKeys = shapeKeys.filter((key) => !currentBatch.shapeKeys.has(key));
+      const addedTokens =
+        estimateJsonTokens(bookingGroups) +
+        newShapeKeys.reduce(
+          (sum, key) => sum + estimateJsonTokens(roomOptions[key]),
+          0,
+        );
+
+      if (
+        currentBatch.groups.length > 0 &&
+        currentBatch.tokens + addedTokens > maxInputTokens
+      ) {
+        batches.push(currentBatch);
+        currentBatch = { groups: [], shapeKeys: new Set(), tokens: 0 };
+      }
+
+      currentBatch.groups.push(...bookingGroups);
+      for (const key of shapeKeys) {
+        currentBatch.shapeKeys.add(key);
+      }
+      currentBatch.tokens += addedTokens;
+    }
+    if (currentBatch.groups.length > 0) {
+      batches.push(currentBatch);
+    }
+
+    requestLogger.info("Split AI hotel allocation into batches", {
+      context: this.context,
+      flightId,
+      batchCount: batches.length,
+      totalGroups: placeableGroups.length,
+      maxInputTokens,
+    });
+
+    const AI_BATCH_CONCURRENCY = 3;
+    const batchResults = await this.mapWithConcurrency(
+      batches,
+      AI_BATCH_CONCURRENCY,
+      async (batch) => {
+        const batchRoomOptions = Object.fromEntries(
+          Array.from(batch.shapeKeys).map((key) => [key, roomOptions[key]]),
+        );
+        try {
+          return await this.aiService.allocateHotelGroups(
+            { roomOptions: batchRoomOptions, groups: batch.groups },
+            requestId,
+          );
+        } catch (error: any) {
+          // A failed batch doesn't abort the flight - its groups fall
+          // through to the deterministic rescue pass below instead.
+          requestLogger.error(
+            `AI hotel allocation batch failed, falling back to deterministic rescue for its bookings: ${error.message}`,
+            { context: this.context, flightId },
+          );
+          return {
+            assignments: [],
+            unresolved: batch.groups.map((group) => ({
+              passengerGroupId: group.passengerGroupId,
+              reason: `AI allocation call failed: ${error.message}`,
+            })),
+          };
+        }
+      },
+    );
+
+    const aiAllocation = {
+      assignments: batchResults.flatMap((result) => result.assignments),
+      unresolved: batchResults.flatMap((result) => result.unresolved),
+    };
 
     // passengerGroupId -> real rateKey (translated from the alias sent to the AI)
     const rateKeyByPg = new Map<string, string>();
@@ -2341,19 +2645,25 @@ export class CancelledFlightsService {
           rate: AvailabilityRoomRate;
           roomsNeeded: number;
         }> = [];
+        // Cloned per hotel: two different shape needs can widen to the same
+        // oversized rate, so decrement a local copy as each is tentatively
+        // filled to avoid double-booking the last unit.
+        const trialLedger = new Map(allotmentLedger);
         for (const meta of needs) {
-          const rate = hotel.rates
-            .filter(
-              (r) =>
-                r.adults === meta.shape.adults &&
-                r.children === meta.shape.children &&
-                (allotmentLedger.get(r.rateKey) ?? r.allotment ?? 0) >=
-                  meta.roomsNeeded,
-            )
-            .sort((a, b) => a.netPrice - b.netPrice)[0];
+          const rate = this.pickRateForShape(
+            hotel,
+            meta.shape,
+            meta.roomsNeeded,
+            trialLedger,
+          );
           if (!rate) {
             break;
           }
+          trialLedger.set(
+            rate.rateKey,
+            (trialLedger.get(rate.rateKey) ?? rate.allotment ?? 0) -
+              meta.roomsNeeded,
+          );
           picks.push({ rate, roomsNeeded: meta.roomsNeeded });
         }
         if (picks.length === needs.length) {
@@ -2405,24 +2715,21 @@ export class CancelledFlightsService {
     );
     const failed = results.length - allocated.length;
 
-    // All-or-nothing: abort without saving unless every booking got a hotel.
+    // Partial success: save what was allocated, report the rest as failures
+    // instead of discarding the whole flight over one bad PNR.
+    const failures = results
+      .filter((item) => item.allocationStatus !== "RECOMMENDED")
+      .map((item) => ({
+        bookingId: item.bookingId,
+        pnr: item.pnr,
+        status: item.allocationStatus,
+        reason: item.reason ?? null,
+      }));
     if (failed > 0) {
-      const failures = results
-        .filter((item) => item.allocationStatus !== "RECOMMENDED")
-        .map((item) => ({
-          bookingId: item.bookingId,
-          pnr: item.pnr,
-          status: item.allocationStatus,
-          reason: item.reason ?? null,
-        }));
       requestLogger.error(
-        `Hotel allocation incomplete for flight '${flightId}': ${failed}/${results.length} bookings unallocated - nothing saved`,
+        `Hotel allocation partially incomplete for flight '${flightId}': ${failed}/${results.length} bookings unallocated - saving the rest`,
         { context: this.context, flightId, failures },
       );
-      throw new BadRequestException({
-        message: `Hotel allocation failed: ${failed} of ${results.length} bookings could not be allocated. No allocations were saved.`,
-        failures,
-      });
     }
 
     const totalRooms = allocated.reduce(
@@ -2592,6 +2899,7 @@ export class CancelledFlightsService {
       platformFeePercentage,
       totalPlatformFee,
       currency,
+      failures,
     };
   }
 

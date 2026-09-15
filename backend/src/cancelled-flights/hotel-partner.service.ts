@@ -615,7 +615,9 @@ export class HotelPartnerService {
         };
       });
 
-    const fetchMergedHotels = async (radius: number) => {
+    const fetchMergedHotels = async (
+      radius: number,
+    ): Promise<{ merged: any[]; emptyOccupancyKeys: string[] }> => {
       const responses = await this.mapWithConcurrency(
         buildPayloads(radius),
         this.availabilityMaxConcurrency,
@@ -624,7 +626,11 @@ export class HotelPartnerService {
       );
 
       const mergedByHotelCode = new Map<string, any>();
-      for (const { rawHotels } of responses) {
+      const emptyOccupancyKeys: string[] = [];
+      for (const { occupancy, rawHotels } of responses) {
+        if (!Array.isArray(rawHotels) || rawHotels.length === 0) {
+          emptyOccupancyKeys.push(this.occupancyKey(occupancy));
+        }
         for (const hotel of rawHotels) {
           const key = String(hotel?.code ?? "");
           if (!key) {
@@ -646,7 +652,10 @@ export class HotelPartnerService {
         }
       }
 
-      return Array.from(mergedByHotelCode.values());
+      return {
+        merged: Array.from(mergedByHotelCode.values()),
+        emptyOccupancyKeys,
+      };
     };
 
     requestLogger.info("Fetching hotel availability from Hotelbeds API", {
@@ -660,14 +669,18 @@ export class HotelPartnerService {
       const { defaultRadius, maxRadius } = config.hotelSearch;
 
       let mergedRawHotels: any[] = [];
+      // Widen while ANY shape has zero hits, not just when the total is
+      // zero - otherwise a rare shape can starve while common ones already
+      // found hotels.
       for (let radius = defaultRadius; radius <= maxRadius; radius += 10) {
-        mergedRawHotels = await fetchMergedHotels(radius);
-        if (mergedRawHotels.length > 0) {
+        const { merged, emptyOccupancyKeys } = await fetchMergedHotels(radius);
+        mergedRawHotels = merged;
+        if (emptyOccupancyKeys.length === 0) {
           break;
         }
         requestLogger.info(
-          `No hotels within ${radius}${config.hotelSearch.unit} of ${airport.iataCode}, widening search`,
-          { context: "HotelPartnerService" },
+          `${emptyOccupancyKeys.length} occupancy shape(s) had no hotels within ${radius}${config.hotelSearch.unit} of ${airport.iataCode}, widening search`,
+          { context: "HotelPartnerService", emptyOccupancyKeys },
         );
       }
 
