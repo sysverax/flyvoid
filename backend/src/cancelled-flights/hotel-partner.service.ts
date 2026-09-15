@@ -321,10 +321,14 @@ export class HotelPartnerService {
             `Near Airport (Zone: ${hotel.zoneName || "Transit"})`,
         );
 
+        // Prefer categoryCode's leading digit (e.g. "5EST") over scanning categoryName, which can grab a stray digit like a bedroom count.
         let stars = 3;
-        const starMatch = category.match(/(\d)/);
-        if (starMatch) {
-          stars = parseInt(starMatch[1], 10);
+        const codeMatch = String(hotel.categoryCode ?? "").match(/^(\d)/);
+        const nameMatch = category.match(/(\d)\s*(?:STARS?|\*)/i);
+        if (codeMatch) {
+          stars = parseInt(codeMatch[1], 10);
+        } else if (nameMatch) {
+          stars = parseInt(nameMatch[1], 10);
         }
 
         const rates: AvailabilityRoomRate[] = (hotel.rooms ?? []).flatMap(
