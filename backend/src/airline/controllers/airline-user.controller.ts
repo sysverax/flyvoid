@@ -65,7 +65,7 @@ import {
 import { AirlineUserService } from "../services/airline-user.service";
 import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
 
-@ApiTags("Airline Users")
+@ApiTags("Airline &  Airline Users")
 @ApiExtraModels(
   BaseResponseDto,
   AirlineUserResponseDto,
@@ -76,11 +76,11 @@ import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
 )
 @UseGuards(JwtAuthGuard, RbacGuard)
 @RequireUserTypes(UserType.AIRLINE)
-@Controller("airline/users")
+@Controller("airline")
 export class AirlineUserController {
   constructor(private readonly airlineUserService: AirlineUserService) {}
 
-  @Post("/")
+  @Post("users")
   @HttpCode(201)
   @RequireUserRoles(AirlineRole.AIRLINE_ADMIN, AirlineRole.AIRLINE_STAFF)
   @RequireAccessControl({
@@ -159,7 +159,7 @@ export class AirlineUserController {
     );
   }
 
-  @Patch(":userId")
+  @Patch("users/:userId")
   @RequireUserRoles(AirlineRole.AIRLINE_ADMIN, AirlineRole.AIRLINE_STAFF)
   @RequireAccessControl({
     airline: {
@@ -247,7 +247,7 @@ export class AirlineUserController {
     );
   }
 
-  @Delete(":userId")
+  @Delete("users/:userId")
   @HttpCode(200)
   @RequireUserRoles(AirlineRole.AIRLINE_ADMIN)
   @RequireAccessControl({
@@ -326,7 +326,7 @@ export class AirlineUserController {
     );
   }
 
-  @Get("/")
+  @Get("users")
   @RequireUserRoles(AirlineRole.AIRLINE_ADMIN, AirlineRole.AIRLINE_STAFF)
   @RequireAccessControl({
     airline: {
@@ -393,7 +393,7 @@ export class AirlineUserController {
     );
   }
 
-  @Get("profile")
+  @Get("users/profile")
   @RequireUserRoles(AirlineRole.AIRLINE_ADMIN, AirlineRole.AIRLINE_STAFF)
   @RequireAccessControl({
     airline: {
@@ -434,7 +434,7 @@ export class AirlineUserController {
   })
   @ApiUnauthorizedResponse({
     schema: createUnauthorizedErrorSchema(
-      "/api/v1/airline/user/profile",
+      "/api/v1/airline/users/profile",
       "Unauthorized",
     ),
   })
@@ -453,7 +453,7 @@ export class AirlineUserController {
     );
   }
 
-  @Patch("profile")
+  @Patch("users/profile")
   @RequireUserRoles(AirlineRole.AIRLINE_ADMIN, AirlineRole.AIRLINE_STAFF)
   @RequireAccessControl({
     airline: {
