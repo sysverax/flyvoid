@@ -890,7 +890,7 @@ export class HotelAllocationService {
         uniqueOccupancies,
         requestId,
         requestLogger,
-        true,
+        config.hotelSearch.isAllowSearchAPI,
       );
     } catch (error: any) {
       this.logger.error(
@@ -1937,13 +1937,18 @@ export class HotelAllocationService {
     // Hard class-priority pass: the AI/rescue above only treat class tiering
     // as guidance, so a lower class can end up in a better-starred hotel than
     // a higher class - this fixes that deterministically instead of hoping
-    // the model got it right. Scope: bookings needing exactly one room shape
-    // (the common case). For each group of RECOMMENDED bookings that share a
-    // shape, re-zip the hotels already assigned within that group - sorted by
+    // the model got it right. Scope: RECOMMENDED bookings whose room-shape
+    // composition (multiset of adults/children per room) exactly matches
+    // another booking's - covers solo/couple/family bookings alike, as long
+    // as two bookings need the identical set of rooms. For each such group,
+    // re-zip the hotels already assigned within that group - sorted by
     // stars - to the bookings, sorted by class rank. This only reassigns
-    // which already-valid room goes to which booking, so capacity/allotment
-    // stay untouched; multi-shape bookings are left as-is since swapping part
-    // of a multi-room booking could split it across hotels.
+    // which already-valid room set goes to which booking (same total rooms
+    // consumed either way), so capacity/allotment stay untouched. Bookings
+    // with no exact-composition match elsewhere aren't compared to anyone
+    // and keep their original assignment - this is a same-supply reshuffle,
+    // not a full solve, so it can't promote a booking to a better hotel that
+    // was available but never assigned to any matching booking.
     const classRank: Record<string, number> = {
       first_class: 3,
       business: 2,
@@ -1954,8 +1959,15 @@ export class HotelAllocationService {
       if (!item.rooms || item.rooms.length === 0) {
         return null;
       }
-      const shapes = new Set(item.rooms.map((r) => `${r.adults}_${r.children}`));
-      return shapes.size === 1 ? `${[...shapes][0]}#${item.rooms.length}` : null;
+      const counts = new Map<string, number>();
+      for (const r of item.rooms) {
+        const key = `${r.adults}_${r.children}`;
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+      return [...counts.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([shape, count]) => `${shape}x${count}`)
+        .join("|");
     };
     const rebalanceGroups = new Map<string, number[]>();
     results.forEach((item, index) => {
@@ -2165,6 +2177,14 @@ export class HotelAllocationService {
     const totalEarnings = this.roundCurrency(rawTotals.totalEarnings);
     const totalHotelRooms = this.roundCurrency(rawTotals.totalHotelRooms);
 
+    // Only a fully-successful allocation reaches ALLOCATED (and is therefore
+    // payment-eligible - processPayment gates on this exact status). A
+    // partial result is still saved so nothing already found is lost, but
+    // stays at HOTEL_ALLOCATION_IN_PROGRESS so payment can't proceed while
+    // any passenger has no real room.
+    const flightStatus =
+      failed > 0 ? FlightStatus.HOTEL_ALLOCATION_IN_PROGRESS : FlightStatus.ALLOCATED;
+
     await this.cancelledFlightsRepository.saveHotelAllocations(
       flightId,
       {
@@ -2179,6 +2199,7 @@ export class HotelAllocationService {
         totalPrice: totalPriceForAll,
         totalHotelRooms,
         totalEarnings,
+        status: flightStatus,
       },
       requestId,
       requestLogger,
@@ -2186,7 +2207,7 @@ export class HotelAllocationService {
 
     return {
       cancelledFlightId: flight.id,
-      status: FlightStatus.ALLOCATED,
+      status: flightStatus,
       totalBookings: bookings.length,
       allocatedBookings: allocated.length,
       failedBookings: failed,

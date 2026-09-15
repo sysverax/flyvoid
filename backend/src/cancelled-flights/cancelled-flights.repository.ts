@@ -422,6 +422,7 @@ export class CancelledFlightsRepository {
       totalPrice: number;
       totalEarnings: number;
       totalHotelRooms: number;
+      status: FlightStatus;
     },
     requestId: string,
     requestLogger: Logger,
@@ -452,7 +453,7 @@ export class CancelledFlightsRepository {
             totalPrice: payload.totalPrice,
             totalHotelRooms: payload.totalHotelRooms,
             totalEarnings: payload.totalEarnings,
-            status: FlightStatus.ALLOCATED,
+            status: payload.status,
           },
         );
       },

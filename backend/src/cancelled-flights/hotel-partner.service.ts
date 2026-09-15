@@ -324,7 +324,7 @@ export class HotelPartnerService {
         // Prefer categoryCode's leading digit (e.g. "5EST") over scanning categoryName, which can grab a stray digit like a bedroom count.
         let stars = 3;
         const codeMatch = String(hotel.categoryCode ?? "").match(/^(\d)/);
-        const nameMatch = category.match(/(\d)\s*(?:STARS?|\*)/i);
+        const nameMatch = category.match(/(\d)(?:\.\d)?\s*-?\s*(?:STARS?|\*)/i);
         if (codeMatch) {
           stars = parseInt(codeMatch[1], 10);
         } else if (nameMatch) {
@@ -575,8 +575,8 @@ export class HotelPartnerService {
       ).values(),
     );
 
-    const buildPayloads = (radius: number) =>
-      dedupedOccupancies.map((occupancy) => {
+    const buildPayloads = (radius: number, occupanciesToQuery: RoomOccupancy[]) =>
+      occupanciesToQuery.map((occupancy) => {
         const childrenCount = Number(occupancy.children ?? 0);
         const normalizedAges = (occupancy.childrenAges ?? []).filter(
           (age) => Number.isFinite(age) && age > 0,
@@ -619,47 +619,52 @@ export class HotelPartnerService {
         };
       });
 
-    const fetchMergedHotels = async (
+    // Accumulates across widen rounds so a shape that already found hotels
+    // at a smaller radius is never re-merged or re-queried.
+    const mergedByHotelCode = new Map<string, any>();
+    const mergeHotel = (hotel: any) => {
+      const key = String(hotel?.code ?? "");
+      if (!key) {
+        return;
+      }
+      const existing = mergedByHotelCode.get(key);
+      if (!existing) {
+        mergedByHotelCode.set(key, {
+          ...hotel,
+          rooms: Array.isArray(hotel.rooms) ? [...hotel.rooms] : [],
+        });
+        return;
+      }
+      if (Array.isArray(hotel.rooms) && hotel.rooms.length > 0) {
+        existing.rooms = [...(existing.rooms ?? []), ...hotel.rooms];
+      }
+    };
+
+    // Queries only occupanciesToQuery (not every shape) and returns which of
+    // those are still empty, so subsequent widen rounds only re-query the
+    // shapes that actually need it instead of re-fetching everything.
+    const fetchAndMerge = async (
       radius: number,
-    ): Promise<{ merged: any[]; emptyOccupancyKeys: string[] }> => {
+      occupanciesToQuery: RoomOccupancy[],
+    ): Promise<RoomOccupancy[]> => {
       const responses = await this.mapWithConcurrency(
-        buildPayloads(radius),
+        buildPayloads(radius, occupanciesToQuery),
         this.availabilityMaxConcurrency,
         (group) =>
           this.fetchOccupancyAvailability(endpoint, group, requestLogger),
       );
 
-      const mergedByHotelCode = new Map<string, any>();
-      const emptyOccupancyKeys: string[] = [];
+      const stillMissing: RoomOccupancy[] = [];
       for (const { occupancy, rawHotels } of responses) {
         if (!Array.isArray(rawHotels) || rawHotels.length === 0) {
-          emptyOccupancyKeys.push(this.occupancyKey(occupancy));
+          stillMissing.push(occupancy);
+          continue;
         }
         for (const hotel of rawHotels) {
-          const key = String(hotel?.code ?? "");
-          if (!key) {
-            continue;
-          }
-
-          const existing = mergedByHotelCode.get(key);
-          if (!existing) {
-            mergedByHotelCode.set(key, {
-              ...hotel,
-              rooms: Array.isArray(hotel.rooms) ? [...hotel.rooms] : [],
-            });
-            continue;
-          }
-
-          if (Array.isArray(hotel.rooms) && hotel.rooms.length > 0) {
-            existing.rooms = [...(existing.rooms ?? []), ...hotel.rooms];
-          }
+          mergeHotel(hotel);
         }
       }
-
-      return {
-        merged: Array.from(mergedByHotelCode.values()),
-        emptyOccupancyKeys,
-      };
+      return stillMissing;
     };
 
     requestLogger.info("Fetching hotel availability from Hotelbeds API", {
@@ -672,21 +677,26 @@ export class HotelPartnerService {
     try {
       const { defaultRadius, maxRadius } = config.hotelSearch;
 
-      let mergedRawHotels: any[] = [];
       // Widen while ANY shape has zero hits, not just when the total is
       // zero - otherwise a rare shape can starve while common ones already
-      // found hotels.
-      for (let radius = defaultRadius; radius <= maxRadius; radius += 10) {
-        const { merged, emptyOccupancyKeys } = await fetchMergedHotels(radius);
-        mergedRawHotels = merged;
-        if (emptyOccupancyKeys.length === 0) {
+      // found hotels. Each round only re-queries the shapes still missing.
+      let stillMissing = dedupedOccupancies;
+      for (
+        let radius = defaultRadius;
+        radius <= maxRadius && stillMissing.length > 0;
+        radius += 10
+      ) {
+        const missingBefore = stillMissing.length;
+        stillMissing = await fetchAndMerge(radius, stillMissing);
+        if (stillMissing.length === 0) {
           break;
         }
         requestLogger.info(
-          `${emptyOccupancyKeys.length} occupancy shape(s) had no hotels within ${radius}${config.hotelSearch.unit} of ${airport.iataCode}, widening search`,
-          { context: "HotelPartnerService", emptyOccupancyKeys },
+          `${stillMissing.length} occupancy shape(s) still had no hotels within ${radius}${config.hotelSearch.unit} of ${airport.iataCode}, widening search for just those`,
+          { context: "HotelPartnerService", stillMissingCount: stillMissing.length, queriedCount: missingBefore },
         );
       }
+      const mergedRawHotels = Array.from(mergedByHotelCode.values());
 
       requestLogger.info(
         `Successfully received ${mergedRawHotels.length} merged hotels from Hotelbeds API`,
