@@ -1454,12 +1454,16 @@ export class HotelAllocationService {
       }
 
       for (const [shapeKey, { shape, count }] of shapeCounts) {
-        const passengerGroupId = `${booking.pnr}#${shape.adults}a${shape.children}c`;
+        // booking.id, not pnr - pnr has no unique constraint and a
+        // collision would merge two bookings; pnr stays in the string only
+        // for readable logs.
+        const passengerGroupId = `${booking.id}:${booking.pnr}#${shape.adults}a${shape.children}c`;
+        const sameHotelGroup = `${booking.id}:${booking.pnr}`;
         optionsForShape(shape);
 
         occupancyGroups.push({
           passengerGroupId,
-          sameHotelGroup: booking.pnr,
+          sameHotelGroup,
           travelClass: booking.travelClass,
           specialNotes: booking.specialNotes ?? [],
           adults: shape.adults,
@@ -1491,35 +1495,25 @@ export class HotelAllocationService {
       }
     }
 
-    // Claim allotment as each shape is checked, so one room can't count as
-    // available capacity for two different shapes at once.
-    const claimedByRateKey = new Map<string, number>();
-    const availableAllotment = (rate: AvailabilityRoomRate): number =>
-      Math.max(0, (rate.allotment ?? 0) - (claimedByRateKey.get(rate.rateKey) ?? 0));
-    const claim = (rates: AvailabilityRoomRate[], roomsNeeded: number): void => {
-      let remaining = roomsNeeded;
-      for (const rate of rates) {
-        if (remaining <= 0) break;
-        const avail = availableAllotment(rate);
-        if (avail <= 0) continue;
-        const take = Math.min(avail, remaining);
-        claimedByRateKey.set(rate.rateKey, (claimedByRateKey.get(rate.rateKey) ?? 0) + take);
-        remaining -= take;
-      }
-    };
-    const allotmentWhere = (
+    // A room can count toward more than one shape's estimate here -
+    // deliberate: over-estimating supply can waste an AI call but never
+    // wrongly aborts a viable flight. A "claim once" version was tried and
+    // reverted: order-dependent, so it could give the only 3-adult room to
+    // a 1-adult shape and falsely report the 3-adult shape as short.
+    const totalAllotmentWhere = (
       predicate: (rate: AvailabilityRoomRate) => boolean,
-    ): { rates: AvailabilityRoomRate[]; total: number } => {
-      const rates = hotels.flatMap((hotel) =>
-        hotel.rates.filter(
-          (rate) => rate.allotment !== null && rate.allotment > 0 && predicate(rate),
-        ),
+    ): number =>
+      hotels.reduce(
+        (sum, hotel) =>
+          sum +
+          hotel.rates
+            .filter(
+              (rate) =>
+                rate.allotment !== null && rate.allotment > 0 && predicate(rate),
+            )
+            .reduce((roomSum, rate) => roomSum + (rate.allotment ?? 0), 0),
+        0,
       );
-      return {
-        rates,
-        total: rates.reduce((sum, rate) => sum + availableAllotment(rate), 0),
-      };
-    };
 
     const shortages: Array<{
       shapeKey: string;
@@ -1528,20 +1522,17 @@ export class HotelAllocationService {
       roomsAvailable: number;
     }> = [];
     for (const [shapeKey, { shape, rooms }] of demandByShape) {
-      const exact = allotmentWhere(
+      const exactSupply = totalAllotmentWhere(
         (rate) => rate.adults === shape.adults && rate.children === shape.children,
       );
-      if (exact.total >= rooms) {
-        claim(exact.rates, rooms);
+      if (exactSupply >= rooms) {
         continue;
       }
-      const covering = allotmentWhere(
+      const coveringSupply = totalAllotmentWhere(
         (rate) => rate.adults >= shape.adults && rate.children >= shape.children,
       );
-      if (covering.total < rooms) {
-        shortages.push({ shapeKey, shape, roomsNeeded: rooms, roomsAvailable: covering.total });
-      } else {
-        claim(covering.rates, rooms);
+      if (coveringSupply < rooms) {
+        shortages.push({ shapeKey, shape, roomsNeeded: rooms, roomsAvailable: coveringSupply });
       }
     }
 
@@ -1611,19 +1602,31 @@ export class HotelAllocationService {
       shapeKeys: Set<string>;
       tokens: number;
     };
-    const maxInputTokens = config.ai.maxInputTokensPerCall;
+    // The estimate below covers only roomOptions+groups; system prompt +
+    // response schema add ~450 fixed tokens per call, so reserve for them.
+    const promptOverheadTokens = 500;
+    const maxInputTokens = Math.max(
+      500,
+      config.ai.maxInputTokensPerCall - promptOverheadTokens,
+    );
     const batches: AiBatch[] = [];
     let currentBatch: AiBatch = { groups: [], shapeKeys: new Set(), tokens: 0 };
 
+    const tokensToAdd = (
+      batch: AiBatch,
+      bookingGroups: typeof placeableGroups,
+      shapeKeys: string[],
+    ): number => {
+      const newShapeKeys = shapeKeys.filter((key) => !batch.shapeKeys.has(key));
+      return (
+        estimateJsonTokens(bookingGroups) +
+        newShapeKeys.reduce((sum, key) => sum + estimateJsonTokens(roomOptions[key]), 0)
+      );
+    };
+
     for (const bookingGroups of groupsByBooking.values()) {
       const shapeKeys = Array.from(new Set(bookingGroups.map((g) => g.shapeKey)));
-      const newShapeKeys = shapeKeys.filter((key) => !currentBatch.shapeKeys.has(key));
-      const addedTokens =
-        estimateJsonTokens(bookingGroups) +
-        newShapeKeys.reduce(
-          (sum, key) => sum + estimateJsonTokens(roomOptions[key]),
-          0,
-        );
+      let addedTokens = tokensToAdd(currentBatch, bookingGroups, shapeKeys);
 
       // Can't split one booking across batches (same-hotel rule), so log
       // when it alone exceeds budget - it still goes out as one oversized call.
@@ -1640,6 +1643,8 @@ export class HotelAllocationService {
       ) {
         batches.push(currentBatch);
         currentBatch = { groups: [], shapeKeys: new Set(), tokens: 0 };
+        // Recompute: the discount above was against the batch we just closed.
+        addedTokens = tokensToAdd(currentBatch, bookingGroups, shapeKeys);
       }
 
       currentBatch.groups.push(...bookingGroups);
@@ -1657,7 +1662,8 @@ export class HotelAllocationService {
       flightId,
       batchCount: batches.length,
       totalGroups: placeableGroups.length,
-      maxInputTokens,
+      dataTokenBudget: maxInputTokens,
+      configuredMaxInputTokens: config.ai.maxInputTokensPerCall,
     });
 
     const AI_BATCH_CONCURRENCY = 3;
@@ -1765,6 +1771,9 @@ export class HotelAllocationService {
         stars: number;
       } | null = null;
       let failReason: string | null = null;
+      // Trial only, committed below on success - otherwise a later group
+      // failing would leave an earlier group's decrement stuck for good.
+      const trialDecrements = new Map<string, number>();
 
       for (const passengerGroupId of passengerGroupIds) {
         const meta = pgMeta.get(passengerGroupId)!;
@@ -1812,12 +1821,13 @@ export class HotelAllocationService {
         };
 
         if (allotmentLedger.has(rateKey)) {
-          const remaining = allotmentLedger.get(rateKey)!;
+          const alreadyTrialed = trialDecrements.get(rateKey) ?? 0;
+          const remaining = allotmentLedger.get(rateKey)! - alreadyTrialed;
           if (remaining < meta.roomsNeeded) {
             failReason = `Allotment exceeded for rateKey '${rateKey}'`;
             break;
           }
-          allotmentLedger.set(rateKey, remaining - meta.roomsNeeded);
+          trialDecrements.set(rateKey, alreadyTrialed + meta.roomsNeeded);
         }
 
         for (let index = 0; index < meta.roomsNeeded; index += 1) {
@@ -1846,6 +1856,10 @@ export class HotelAllocationService {
           reason: failReason ?? "No hotel assignment produced by allocator",
         });
       } else {
+        // Booking fully verified - commit the trial decrements for real.
+        for (const [rateKey, amount] of trialDecrements) {
+          allotmentLedger.set(rateKey, allotmentLedger.get(rateKey)! - amount);
+        }
         const specialNotes = booking.specialNotes ?? [];
         const reason =
           `Best available ${hotelRef.category} option for ${booking.travelClass} class` +
@@ -1901,13 +1915,18 @@ export class HotelAllocationService {
       let picked:
         | {
             hotel: AvailabilityHotel;
-            picks: Array<{ rate: AvailabilityRoomRate; roomsNeeded: number }>;
+            picks: Array<{
+              rate: AvailabilityRoomRate;
+              roomsNeeded: number;
+              shape: RoomOccupancy;
+            }>;
           }
         | undefined;
       for (const hotel of orderedHotels) {
         const picks: Array<{
           rate: AvailabilityRoomRate;
           roomsNeeded: number;
+          shape: RoomOccupancy;
         }> = [];
         // Cloned per hotel: two different shape needs can widen to the same
         // oversized rate, so decrement a local copy as each is tentatively
@@ -1928,7 +1947,7 @@ export class HotelAllocationService {
             (trialLedger.get(rate.rateKey) ?? rate.allotment ?? 0) -
               meta.roomsNeeded,
           );
-          picks.push({ rate, roomsNeeded: meta.roomsNeeded });
+          picks.push({ rate, roomsNeeded: meta.roomsNeeded, shape: meta.shape });
         }
         if (picks.length === needs.length) {
           picked = { hotel, picks };
@@ -1939,15 +1958,17 @@ export class HotelAllocationService {
         continue;
       }
 
-      const rescueRooms = picked.picks.flatMap(({ rate, roomsNeeded }) => {
+      const rescueRooms = picked.picks.flatMap(({ rate, roomsNeeded, shape }) => {
         allotmentLedger.set(
           rate.rateKey,
           (allotmentLedger.get(rate.rateKey) ?? rate.allotment ?? 0) -
             roomsNeeded,
         );
+        // Party's real size (shape), not the room's capacity (rate) -
+        // widening can pick an oversized room; verifier does the same.
         return Array.from({ length: roomsNeeded }, () => ({
-          adults: rate.adults,
-          children: rate.children,
+          adults: shape.adults,
+          children: shape.children,
           rateKey: rate.rateKey,
           roomName: rate.roomName,
           boardName: rate.boardName,
@@ -2068,8 +2089,15 @@ export class HotelAllocationService {
         `Hotel allocation incomplete for flight '${flightId}': ${failed}/${results.length} bookings unallocated - nothing saved`,
         { context: this.context, flightId, failures },
       );
+      // HttpExceptionFilter only forwards message/errors, not a plain
+      // `failures` field - array message is its known convention: first
+      // element becomes the headline, the array becomes `errors`.
+      const headline = `Hotel allocation failed: ${failed} of ${results.length} bookings could not be allocated. No allocations were saved.`;
       throw new BadRequestException({
-        message: `Hotel allocation failed: ${failed} of ${results.length} bookings could not be allocated. No allocations were saved.`,
+        message: [
+          headline,
+          ...failures.map((f) => `${f.pnr}: ${f.reason ?? "No hotel assignment"}`),
+        ],
         failures,
       });
     }
