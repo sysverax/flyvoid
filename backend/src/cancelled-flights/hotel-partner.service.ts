@@ -675,7 +675,8 @@ export class HotelPartnerService {
     });
 
     try {
-      const { defaultRadius, maxRadius } = config.hotelSearch;
+      const { defaultRadius } = config.hotelSearch;
+      const maxRadius = Math.max(defaultRadius, config.hotelSearch.maxRadius);
 
       // Widen while ANY shape has zero hits, not just when the total is
       // zero - otherwise a rare shape can starve while common ones already

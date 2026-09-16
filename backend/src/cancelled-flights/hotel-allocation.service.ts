@@ -1054,8 +1054,10 @@ export class HotelAllocationService {
     requestId: string,
     requestLogger: Logger,
   ): Promise<HotelAllocationsDto> {
+    // ?? not || : a legitimate 0% fee is falsy and must not fall back to
+    // the default.
     const platformFeePercentage =
-      user.platformFeePercentage || config.platformFeePercentage;
+      user.platformFeePercentage ?? config.platformFeePercentage;
     requestLogger.info("Starting flight-level hotel allocation process", {
       context: this.context,
       flightId,
