@@ -9,7 +9,7 @@ import { Logger } from "winston";
 import { LoggerService } from "../common/logger/logger.service";
 import { CancelledFlightsRepository } from "./cancelled-flights.repository";
 import { BookingEntity } from "./entities/booking.entity";
-import { FlightStatus, TravelClass } from "./entities/enums";
+import { FlightStatus, HotelAllocationStatus, TravelClass } from "./entities/enums";
 import {
   AvailabilityHotel,
   AvailabilityRoomRate,
@@ -1491,20 +1491,35 @@ export class HotelAllocationService {
       }
     }
 
-    const totalAllotmentWhere = (
+    // Claim allotment as each shape is checked, so one room can't count as
+    // available capacity for two different shapes at once.
+    const claimedByRateKey = new Map<string, number>();
+    const availableAllotment = (rate: AvailabilityRoomRate): number =>
+      Math.max(0, (rate.allotment ?? 0) - (claimedByRateKey.get(rate.rateKey) ?? 0));
+    const claim = (rates: AvailabilityRoomRate[], roomsNeeded: number): void => {
+      let remaining = roomsNeeded;
+      for (const rate of rates) {
+        if (remaining <= 0) break;
+        const avail = availableAllotment(rate);
+        if (avail <= 0) continue;
+        const take = Math.min(avail, remaining);
+        claimedByRateKey.set(rate.rateKey, (claimedByRateKey.get(rate.rateKey) ?? 0) + take);
+        remaining -= take;
+      }
+    };
+    const allotmentWhere = (
       predicate: (rate: AvailabilityRoomRate) => boolean,
-    ): number =>
-      hotels.reduce(
-        (sum, hotel) =>
-          sum +
-          hotel.rates
-            .filter(
-              (rate) =>
-                rate.allotment !== null && rate.allotment > 0 && predicate(rate),
-            )
-            .reduce((roomSum, rate) => roomSum + (rate.allotment ?? 0), 0),
-        0,
+    ): { rates: AvailabilityRoomRate[]; total: number } => {
+      const rates = hotels.flatMap((hotel) =>
+        hotel.rates.filter(
+          (rate) => rate.allotment !== null && rate.allotment > 0 && predicate(rate),
+        ),
       );
+      return {
+        rates,
+        total: rates.reduce((sum, rate) => sum + availableAllotment(rate), 0),
+      };
+    };
 
     const shortages: Array<{
       shapeKey: string;
@@ -1513,17 +1528,20 @@ export class HotelAllocationService {
       roomsAvailable: number;
     }> = [];
     for (const [shapeKey, { shape, rooms }] of demandByShape) {
-      const exactSupply = totalAllotmentWhere(
+      const exact = allotmentWhere(
         (rate) => rate.adults === shape.adults && rate.children === shape.children,
       );
-      if (exactSupply >= rooms) {
+      if (exact.total >= rooms) {
+        claim(exact.rates, rooms);
         continue;
       }
-      const coveringSupply = totalAllotmentWhere(
+      const covering = allotmentWhere(
         (rate) => rate.adults >= shape.adults && rate.children >= shape.children,
       );
-      if (coveringSupply < rooms) {
-        shortages.push({ shapeKey, shape, roomsNeeded: rooms, roomsAvailable: coveringSupply });
+      if (covering.total < rooms) {
+        shortages.push({ shapeKey, shape, roomsNeeded: rooms, roomsAvailable: covering.total });
+      } else {
+        claim(covering.rates, rooms);
       }
     }
 
@@ -1606,6 +1624,15 @@ export class HotelAllocationService {
           (sum, key) => sum + estimateJsonTokens(roomOptions[key]),
           0,
         );
+
+      // Can't split one booking across batches (same-hotel rule), so log
+      // when it alone exceeds budget - it still goes out as one oversized call.
+      if (addedTokens > maxInputTokens) {
+        requestLogger.warn(
+          `Booking ${bookingGroups[0]?.sameHotelGroup} alone exceeds the AI token budget (${addedTokens} > ${maxInputTokens}) - sending as a single oversized batch`,
+          { context: this.context, flightId },
+        );
+      }
 
       if (
         currentBatch.groups.length > 0 &&
@@ -1703,7 +1730,21 @@ export class HotelAllocationService {
       }
     }
 
-    for (const booking of eligibleBookings) {
+    // Concurrent batches can both claim the same scarce rateKey; process
+    // higher classes first so they win contested inventory over economy,
+    // not whichever booking happens to sit earlier in the list. `results`
+    // (and the rescue loop below, which walks it in order) inherits this.
+    const classRank: Record<string, number> = {
+      first_class: 3,
+      business: 2,
+      premium_economy: 1,
+      economy: 0,
+    };
+    const bookingsByPriority = [...eligibleBookings].sort(
+      (a, b) => (classRank[b.travelClass] ?? 0) - (classRank[a.travelClass] ?? 0),
+    );
+
+    for (const booking of bookingsByPriority) {
       const passengerGroupIds = Array.from(pgMeta.entries())
         .filter(([, meta]) => meta.booking.id === booking.id)
         .map(([id]) => id);
@@ -1934,27 +1975,12 @@ export class HotelAllocationService {
       };
     }
 
-    // Hard class-priority pass: the AI/rescue above only treat class tiering
-    // as guidance, so a lower class can end up in a better-starred hotel than
-    // a higher class - this fixes that deterministically instead of hoping
-    // the model got it right. Scope: RECOMMENDED bookings whose room-shape
-    // composition (multiset of adults/children per room) exactly matches
-    // another booking's - covers solo/couple/family bookings alike, as long
-    // as two bookings need the identical set of rooms. For each such group,
-    // re-zip the hotels already assigned within that group - sorted by
-    // stars - to the bookings, sorted by class rank. This only reassigns
-    // which already-valid room set goes to which booking (same total rooms
-    // consumed either way), so capacity/allotment stay untouched. Bookings
-    // with no exact-composition match elsewhere aren't compared to anyone
-    // and keep their original assignment - this is a same-supply reshuffle,
-    // not a full solve, so it can't promote a booking to a better hotel that
-    // was available but never assigned to any matching booking.
-    const classRank: Record<string, number> = {
-      first_class: 3,
-      business: 2,
-      premium_economy: 1,
-      economy: 0,
-    };
+    // Hard class-priority pass: AI/rescue only treat class as guidance, so a
+    // lower class can end up in a better hotel. Group RECOMMENDED bookings
+    // whose room-shape composition matches exactly, then re-zip the hotels
+    // already assigned within that group (sorted by stars) to the bookings
+    // (sorted by class rank) - a same-supply reshuffle, not a full solve, so
+    // it can't promote to a hotel no matching booking was ever assigned.
     const shapeSignature = (item: BookingRecommendationResult): string | null => {
       if (!item.rooms || item.rooms.length === 0) {
         return null;
@@ -2026,21 +2052,26 @@ export class HotelAllocationService {
     );
     const failed = results.length - allocated.length;
 
-    // Partial success: save what was allocated, report the rest as failures
-    // instead of discarding the whole flight over one bad PNR.
-    const failures = results
-      .filter((item) => item.allocationStatus !== "RECOMMENDED")
-      .map((item) => ({
-        bookingId: item.bookingId,
-        pnr: item.pnr,
-        status: item.allocationStatus,
-        reason: item.reason ?? null,
-      }));
+    // All-or-nothing: a partial save left the flight unable to retry
+    // (needs PASSENGERS_BOOKING_CONFIRMED) or pay (needs ALLOCATED) - a dead
+    // end for one bad PNR. Throw instead so the flight stays retriable.
     if (failed > 0) {
+      const failures = results
+        .filter((item) => item.allocationStatus !== "RECOMMENDED")
+        .map((item) => ({
+          bookingId: item.bookingId,
+          pnr: item.pnr,
+          status: item.allocationStatus,
+          reason: item.reason ?? null,
+        }));
       requestLogger.error(
-        `Hotel allocation partially incomplete for flight '${flightId}': ${failed}/${results.length} bookings unallocated - saving the rest`,
+        `Hotel allocation incomplete for flight '${flightId}': ${failed}/${results.length} bookings unallocated - nothing saved`,
         { context: this.context, flightId, failures },
       );
+      throw new BadRequestException({
+        message: `Hotel allocation failed: ${failed} of ${results.length} bookings could not be allocated. No allocations were saved.`,
+        failures,
+      });
     }
 
     const totalRooms = allocated.reduce(
@@ -2131,7 +2162,9 @@ export class HotelAllocationService {
           price: room.price,
         })),
         totalRooms: item.rooms?.length ?? 0,
-        allocationStatus: item.allocationStatus,
+        // "status" is the real column - "allocationStatus" was silently
+        // dropped by TypeORM, leaving every row stuck at the DRAFT default.
+        status: HotelAllocationStatus.CONFIRMED,
         currency: "USD",
         bookingReference: `temp-${item.bookingId}-${index}`,
         reason: item.reason ?? null,
@@ -2139,9 +2172,9 @@ export class HotelAllocationService {
     });
 
     // step 2 - Save the formatted hotel bookings to the database
-    const rawTotals = hotelBookings
-      .filter((item) => item.allocationStatus === "RECOMMENDED")
-      .reduce(
+    // No filter needed: every entry here is a successful allocation, since
+    // the all-or-nothing gate above already rejected the batch otherwise.
+    const rawTotals = hotelBookings.reduce(
         (acc, item) => {
           acc.totalActualPrice += item.actualPrice ?? 0;
           acc.totalBuyingPrice += item.buyingPrice ?? 0;
@@ -2177,14 +2210,8 @@ export class HotelAllocationService {
     const totalEarnings = this.roundCurrency(rawTotals.totalEarnings);
     const totalHotelRooms = this.roundCurrency(rawTotals.totalHotelRooms);
 
-    // Only a fully-successful allocation reaches ALLOCATED (and is therefore
-    // payment-eligible - processPayment gates on this exact status). A
-    // partial result is still saved so nothing already found is lost, but
-    // stays at HOTEL_ALLOCATION_IN_PROGRESS so payment can't proceed while
-    // any passenger has no real room.
-    const flightStatus =
-      failed > 0 ? FlightStatus.HOTEL_ALLOCATION_IN_PROGRESS : FlightStatus.ALLOCATED;
-
+    // failed === 0 is guaranteed here (the all-or-nothing throw above),
+    // so this save always represents a fully-successful allocation.
     await this.cancelledFlightsRepository.saveHotelAllocations(
       flightId,
       {
@@ -2199,7 +2226,7 @@ export class HotelAllocationService {
         totalPrice: totalPriceForAll,
         totalHotelRooms,
         totalEarnings,
-        status: flightStatus,
+        status: FlightStatus.ALLOCATED,
       },
       requestId,
       requestLogger,
@@ -2207,7 +2234,7 @@ export class HotelAllocationService {
 
     return {
       cancelledFlightId: flight.id,
-      status: flightStatus,
+      status: FlightStatus.ALLOCATED,
       totalBookings: bookings.length,
       allocatedBookings: allocated.length,
       failedBookings: failed,
@@ -2219,9 +2246,9 @@ export class HotelAllocationService {
       platformFeePercentage,
       totalPlatformFee,
       currency,
-      failures,
     };
   }
+
   private calculatePricing(
     actualPrice: number,
     buyingPrice: number,

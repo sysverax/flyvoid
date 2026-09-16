@@ -430,6 +430,12 @@ export class CancelledFlightsRepository {
     // transactionally save all hotel allocations, updated cancel flight
     await this.allocationRepo.manager.transaction(
       async (transactionalEntityManager) => {
+        // Clear prior rows first - insert-only would duplicate every booking
+        // if a retry path is ever added (unreachable today; the entry guard blocks it).
+        await transactionalEntityManager.delete(HotelAllocationEntity, {
+          cancelledFlightId,
+        });
+
         const entities = payload.hotelBookings.map((p) =>
           this.allocationRepo.create(p),
         );
