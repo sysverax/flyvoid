@@ -170,7 +170,7 @@ export default function AirportsPage() {
             setSearchQuery(q);
             setCurrentPage(1);
           }}
-          searchPlaceholder="Search airports..."
+          searchPlaceholder="Search by airport name, IATA code or country"
           onClearFilters={handleClearAll}
         >
           {/* Country selector */}
@@ -213,8 +213,8 @@ export default function AirportsPage() {
                 </TableHead>
                 <TableHead className="min-w-[140px]">
                   <SortHeader
-                    label="City"
-                    field="city"
+                    label="Type"
+                    field="type"
                     sortField={sortField}
                     sortOrder={sortOrder}
                     onSort={handleSort}
@@ -272,24 +272,16 @@ export default function AirportsPage() {
               ) : (
                 sortedAirports.map((airport) => (
                   <TableRow key={airport.id}>
-                    <TableCell className="font-medium text-[#1F2937]">
-                      <TruncatedTooltip text={airport.name} side="top">
-                        <div className="max-w-[200px] truncate cursor-default">
-                          {airport.name}
-                        </div>
-                      </TruncatedTooltip>
+                    <TableCell className="font-medium text-[#1F2937] whitespace-normal">
+                      {airport.name}
                     </TableCell>
                     <TableCell>
                       <span className="rounded-[4px] bg-[#E5E7EB] text-[#1F2937] font-inter text-[12px] px-2.5 py-1.5 font-medium h-[28px]">
                         {airport.iataCode}
                       </span>
                     </TableCell>
-                    <TableCell className="text-[#6B7280]">
-                      <TruncatedTooltip text={airport.city} side="top">
-                        <div className="max-w-[150px] truncate cursor-default">
-                          {airport.city}
-                        </div>
-                      </TruncatedTooltip>
+                    <TableCell className="text-[#6B7280] capitalize font-figtree">
+                      {airport.type || "N/A"}
                     </TableCell>
                     <TableCell className="text-[#6B7280]">
                       <TruncatedTooltip text={airport.country} side="top">

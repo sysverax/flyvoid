@@ -12,6 +12,7 @@ interface FiltersCardProps {
   children?: React.ReactNode;
   showSearch?: boolean;
   className?: string;
+  singleRow?: boolean;
 }
 
 export function FiltersCard({
@@ -23,7 +24,52 @@ export function FiltersCard({
   children,
   showSearch = true,
   className,
+  singleRow = false,
 }: FiltersCardProps) {
+  if (singleRow) {
+    return (
+      <div
+        className={cn(
+          "rounded-[12px] border border-[#E5E7EB] bg-white p-[17px] flex flex-wrap items-center justify-between gap-4",
+          className
+        )}
+      >
+        {/* Search input (left) */}
+        {showSearch && setSearchQuery && (
+          <div className="relative flex-1 min-w-[240px]">
+            <span className="absolute inset-y-0 left-3.5 flex items-center pointer-events-none">
+              <Search className="h-4.5 w-4.5 text-[#6B7280]" />
+            </span>
+            <input
+              type="text"
+              placeholder={searchPlaceholder}
+              value={searchQuery ?? ""}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="block h-11 w-full rounded-[8px] border border-[#D1D5DB] bg-[#F3F4F6] py-[10px] pl-10 pr-4 text-[15px] text-slate-950 placeholder-[#6B7280] transition-all hover:bg-slate-100/50 focus:border-[#0F2757] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0F2757]/20"
+            />
+          </div>
+        )}
+
+        {/* Status Dropdown / Children (middle) */}
+        {children && (
+          <div className="flex flex-wrap items-center gap-3 shrink-0">
+            {children}
+          </div>
+        )}
+
+        {/* Clear All Button (far right) */}
+        <button
+          type="button"
+          onClick={onClearFilters}
+          className="flex h-11 items-center gap-2 rounded-[8px] px-[14px] py-2 text-[15px] text-[#6B7280] transition-colors hover:text-gray-800 hover:bg-gray-100 cursor-pointer shrink-0"
+        >
+          <X className="h-4 w-4" />
+          <span>Clear All</span>
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(
