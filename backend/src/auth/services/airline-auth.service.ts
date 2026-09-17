@@ -464,12 +464,9 @@ export class AirlineAuthService {
       requestId,
     );
 
-    this.logger.info(
-      "Airline user changed password",
-      this.context,
-      requestId,
-      { airlineUserId: user.id },
-    );
+    this.logger.info("Airline user changed password", this.context, requestId, {
+      airlineUserId: user.id,
+    });
   }
 
   async setupTwoFactor(
