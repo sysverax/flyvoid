@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { forwardRef, Module } from "@nestjs/common";
 import { JwtModule } from "@nestjs/jwt";
 import { PassportModule } from "@nestjs/passport";
 import { TypeOrmModule } from "@nestjs/typeorm";
@@ -42,7 +42,7 @@ import { JwtStrategy } from "./strategies/jwt.strategy";
       PlatformAccessControlEntity,
       AirlineAccessControlEntity,
     ]),
-    FinanceModule,
+    forwardRef(() => FinanceModule),
     JwtModule.register({}),
     PassportModule,
   ],

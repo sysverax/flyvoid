@@ -1,12 +1,22 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { EntityManager, Repository } from "typeorm";
+import { Logger } from "winston";
 import { LoggerService } from "../../common/logger/logger.service";
 import { WalletEntity } from "../entities/wallet.entity";
 import { WalletTransactionEntity } from "../entities/wallet-transaction.entity";
 import { WalletAdjustmentEntity } from "../entities/wallet-adjustment.entity";
 import { WalletCreditLimitHistoryEntity } from "../entities/wallet-credit-limit-history.entity";
 import { TRANSACTION_TYPES, TRANSACTION_REFERENCE_TYPES } from "../constants";
+
+export interface WalletTransactionFilters {
+  page: number;
+  limit: number;
+  airlineId?: number;
+  type?: TRANSACTION_REFERENCE_TYPES;
+  startDate?: string;
+  endDate?: string;
+}
 
 @Injectable()
 export class WalletRepository {
@@ -29,12 +39,7 @@ export class WalletRepository {
   async createWallet(
     payload: Pick<
       WalletEntity,
-      | "airlineId"
-      | "balance"
-      | "creditLimit"
-      | "usedCredit"
-      | "lockedAmount"
-      | "currency"
+      "airlineId" | "balance" | "creditLimit" | "lockedAmount" | "currency"
     >,
     requestId: string,
     manager?: EntityManager,
@@ -67,6 +72,28 @@ export class WalletRepository {
     return repo.findOne({ where: { airlineId } });
   }
 
+  /** Locks the wallet row for the duration of the transaction so concurrent
+   * adjustments to the same airline's wallet serialize instead of racing. */
+  async lockWalletByAirlineId(
+    airlineId: number,
+    requestId: string,
+    manager: EntityManager,
+  ): Promise<WalletEntity | null> {
+    this.logger.debug(
+      "Locking wallet by airline id for update",
+      this.context,
+      requestId,
+      { airlineId },
+    );
+
+    return manager
+      .getRepository(WalletEntity)
+      .createQueryBuilder("wallet")
+      .setLock("pessimistic_write")
+      .where("wallet.airlineId = :airlineId", { airlineId })
+      .getOne();
+  }
+
   async findWalletById(
     walletId: number,
     requestId: string,
@@ -85,9 +112,7 @@ export class WalletRepository {
 
   async updateWalletBalances(
     walletId: number,
-    updates: Partial<
-      Pick<WalletEntity, "balance" | "usedCredit" | "lockedAmount">
-    >,
+    updates: Partial<Pick<WalletEntity, "balance" | "lockedAmount">>,
     requestId: string,
     manager?: EntityManager,
   ): Promise<void> {
@@ -177,7 +202,7 @@ export class WalletRepository {
   async recordAdjustment(
     payload: Pick<
       WalletAdjustmentEntity,
-      "walletId" | "type" | "amount" | "reason" | "notes" | "adjustedByAdminId"
+      "walletId" | "type" | "amount" | "reason" | "adjustedByAdminId"
     >,
     requestId: string,
     manager?: EntityManager,
@@ -261,5 +286,90 @@ export class WalletRepository {
       where: { walletId },
       order: { createdAt: "DESC" },
     });
+  }
+
+  // ─── Transaction list / summary ───────────────────────────────────────────
+
+  async findTransactionsWithPaginationAndFilters(
+    filters: WalletTransactionFilters,
+    requestLogger: Logger,
+  ): Promise<{ transactions: WalletTransactionEntity[]; totalCount: number }> {
+    requestLogger.debug("Querying wallet transactions with filters", {
+      context: this.context,
+      filters,
+    });
+
+    const skip = (filters.page - 1) * filters.limit;
+
+    const qb = this.walletTransactionRepository
+      .createQueryBuilder("transaction")
+      .leftJoinAndSelect("transaction.wallet", "wallet")
+      .leftJoinAndSelect("wallet.airline", "airline")
+      .orderBy("transaction.createdAt", "DESC")
+      .skip(skip)
+      .take(filters.limit);
+
+    if (typeof filters.airlineId === "number") {
+      qb.andWhere("wallet.airlineId = :airlineId", {
+        airlineId: filters.airlineId,
+      });
+    }
+
+    if (filters.type) {
+      qb.andWhere("transaction.referenceType = :type", { type: filters.type });
+    }
+
+    if (filters.startDate) {
+      qb.andWhere("transaction.createdAt >= :startDate", {
+        startDate: filters.startDate,
+      });
+    }
+
+    if (filters.endDate) {
+      qb.andWhere("transaction.createdAt <= :endDate", {
+        endDate: filters.endDate,
+      });
+    }
+
+    const [transactions, totalCount] = await qb.getManyAndCount();
+
+    requestLogger.debug("Wallet transaction query complete", {
+      context: this.context,
+      totalCount,
+    });
+
+    return { transactions, totalCount };
+  }
+
+  async getWalletsSummary(requestLogger: Logger): Promise<{
+    totalWalletBalance: number;
+    totalCreditIssued: number;
+    totalCreditUsed: number;
+  }> {
+    requestLogger.debug("Querying wallets summary", { context: this.context });
+
+    // usedCredit isn't a stored column — lockedAmount is reserved for
+    // in-flight processes, so a wallet is only drawing on credit once
+    // balance can no longer cover both zero AND what's locked, i.e.
+    // (balance - lockedAmount) < 0. The shortfall is the credit used.
+    const raw = await this.walletRepository
+      .createQueryBuilder("wallet")
+      .select("COALESCE(SUM(wallet.balance), 0)", "totalWalletBalance")
+      .addSelect("COALESCE(SUM(wallet.creditLimit), 0)", "totalCreditIssued")
+      .addSelect(
+        "COALESCE(SUM(CASE WHEN (wallet.balance - wallet.lockedAmount) < 0 THEN (wallet.lockedAmount - wallet.balance) ELSE 0 END), 0)",
+        "totalCreditUsed",
+      )
+      .getRawOne<{
+        totalWalletBalance: string;
+        totalCreditIssued: string;
+        totalCreditUsed: string;
+      }>();
+
+    return {
+      totalWalletBalance: Number(raw?.totalWalletBalance ?? 0),
+      totalCreditIssued: Number(raw?.totalCreditIssued ?? 0),
+      totalCreditUsed: Number(raw?.totalCreditUsed ?? 0),
+    };
   }
 }
