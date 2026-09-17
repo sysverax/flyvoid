@@ -84,9 +84,12 @@ export class HotelBookingsRepository {
         new Brackets((sub) => {
           sub
             .where("CAST(hotelBooking.id AS TEXT) ILIKE :search", { search })
-            .orWhere("CAST(cancelledFlight.flight_number AS TEXT) ILIKE :search", {
-              search,
-            })
+            .orWhere(
+              "CAST(cancelledFlight.flight_number AS TEXT) ILIKE :search",
+              {
+                search,
+              },
+            )
             .orWhere("hotelBooking.hotel_name ILIKE :search", { search })
             .orWhere("booking.email ILIKE :search", { search });
         }),
@@ -105,6 +108,13 @@ export class HotelBookingsRepository {
 
   async getHotelBookingsSummary(
     airlineId: number,
+    filters: {
+      destinationAirportId?: number;
+      cancelledFlightId?: number;
+      search?: string;
+      startDate?: string;
+      endDate?: string;
+    },
     requestLogger: Logger,
   ): Promise<{
     totalCancelFlights: number;
@@ -124,16 +134,71 @@ export class HotelBookingsRepository {
     // totalPlatformFee), kept up to date as passengers are confirmed and
     // hotels are allocated — so this is a single aggregate over that table,
     // no joins to bookings/hotel_allocations needed.
-    const raw = await this.cancelledFlightRepo
+    const summaryQb = this.cancelledFlightRepo
       .createQueryBuilder("cancelledFlight")
-      .where("cancelledFlight.airlineId = :airlineId", { airlineId })
+      .where("cancelledFlight.airlineId = :airlineId", { airlineId });
+
+    if (typeof filters.destinationAirportId === "number") {
+      summaryQb.andWhere(
+        "cancelledFlight.arrivalAirportId = :destinationAirportId",
+        { destinationAirportId: filters.destinationAirportId },
+      );
+    }
+
+    if (typeof filters.cancelledFlightId === "number") {
+      summaryQb.andWhere("cancelledFlight.id = :cancelledFlightId", {
+        cancelledFlightId: filters.cancelledFlightId,
+      });
+    }
+
+    if (filters.startDate || filters.endDate || filters.search?.trim()) {
+      const hotelBookingSubquery = summaryQb
+        .subQuery()
+        .select("1")
+        .from(HotelAllocationEntity, "hotelBooking")
+        .leftJoin("hotelBooking.booking", "booking")
+        .where("hotelBooking.cancelledFlightId = cancelledFlight.id");
+
+      if (filters.startDate) {
+        hotelBookingSubquery.andWhere("hotelBooking.checkInDate >= :startDate");
+      }
+
+      if (filters.endDate) {
+        hotelBookingSubquery.andWhere("hotelBooking.checkInDate <= :endDate");
+      }
+
+      if (filters.search?.trim()) {
+        const search = `%${filters.search.trim()}%`;
+        hotelBookingSubquery.andWhere(
+          new Brackets((sub) => {
+            sub
+              .where("CAST(hotelBooking.id AS TEXT) ILIKE :search")
+              .orWhere(
+                "CAST(cancelledFlight.flight_number AS TEXT) ILIKE :search",
+              )
+              .orWhere("hotelBooking.hotel_name ILIKE :search")
+              .orWhere("booking.email ILIKE :search");
+          }),
+        );
+      }
+
+      summaryQb.andWhere(`EXISTS ${hotelBookingSubquery.getQuery()}`);
+    }
+
+    const raw = await summaryQb
       .select("COUNT(cancelledFlight.id)", "totalCancelFlights")
-      .addSelect("COALESCE(SUM(cancelledFlight.totalBooking), 0)", "totalBookings")
+      .addSelect(
+        "COALESCE(SUM(cancelledFlight.totalBooking), 0)",
+        "totalBookings",
+      )
       .addSelect(
         "COALESCE(SUM(cancelledFlight.totalAdults + cancelledFlight.totalChildren), 0)",
         "totalPassengers",
       )
-      .addSelect("COALESCE(SUM(cancelledFlight.totalHotelRooms), 0)", "totalRooms")
+      .addSelect(
+        "COALESCE(SUM(cancelledFlight.totalHotelRooms), 0)",
+        "totalRooms",
+      )
       .addSelect("COALESCE(SUM(cancelledFlight.totalPrice), 0)", "totalCost")
       .addSelect(
         "COALESCE(SUM(cancelledFlight.totalPlatformFee), 0)",

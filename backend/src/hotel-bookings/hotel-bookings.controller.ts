@@ -45,6 +45,7 @@ import { AuthenticatedRequest } from "../auth/interfaces/authenticated-request.i
 import { HotelBookingsService } from "./hotel-bookings.service";
 import {
   GetHotelBookingsQueryDto,
+  GetHotelBookingsSummaryQueryDto,
   HotelBookingDetailResponseDto,
   HotelBookingListResponseDto,
   HotelBookingsSummaryResponseDto,
@@ -136,11 +137,13 @@ export class HotelBookingsController {
   })
   async getHotelBookingsSummary(
     @Req() req: AuthenticatedRequest,
+    @Query() query: GetHotelBookingsSummaryQueryDto,
     @RequestId() requestId: string,
     @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<HotelBookingsSummaryResponseDto>> {
     const data = await this.service.getHotelBookingsSummary(
       req.user,
+      query,
       requestLogger,
     );
     return BaseResponseDto.success(

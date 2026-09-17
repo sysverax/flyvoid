@@ -14,6 +14,7 @@ import { HotelAllocationEntity } from "../cancelled-flights/entities/hotel-alloc
 import { HotelBookingsRepository } from "./hotel-bookings.repository";
 import {
   GetHotelBookingsQueryDto,
+  GetHotelBookingsSummaryQueryDto,
   HotelBookingDetailResponseDto,
   HotelBookingHotelDetailDto,
   HotelBookingListResponseDto,
@@ -165,6 +166,7 @@ export class HotelBookingsService {
 
   async getHotelBookingsSummary(
     user: AuthenticatedUser,
+    query: GetHotelBookingsSummaryQueryDto,
     requestLogger: Logger,
   ): Promise<HotelBookingsSummaryResponseDto> {
     requestLogger.info("Fetching hotel bookings summary", {
@@ -184,6 +186,13 @@ export class HotelBookingsService {
 
     const summary = await this.repository.getHotelBookingsSummary(
       user.airlineId,
+      {
+        destinationAirportId: query.destinationAirportId,
+        cancelledFlightId: query.cancelledFlightId,
+        search: query.search,
+        startDate: query.startDate,
+        endDate: query.endDate,
+      },
       requestLogger,
     );
 
