@@ -120,6 +120,7 @@ export interface ReviewCancelledFlightData {
     };
     cancellationDate: string;
     cancellationReason: string | null;
+    cancellationReasonText?: string | null;
     status: string;
     createdAt?: string;
     updatedAt?: string | null;

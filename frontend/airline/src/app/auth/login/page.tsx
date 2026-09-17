@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { toast } from "react-toastify";
@@ -94,10 +95,18 @@ export default function LoginPage() {
     try {
       const result = await authService.signin(email, password);
       
-      if (result?.requiresPasswordReset) {
+      if (result?.requiresTwoFactor) {
+        sessionStorage.setItem("two_factor_token", result.twoFactorToken || "");
+        sessionStorage.setItem("two_factor_email", email);
+        sessionStorage.removeItem("reset_password_token");
+        toast.info(result.message || "2FA verification required");
+        router.push("/auth/verify");
+      } else if (result?.requiresPasswordReset) {
         sessionStorage.setItem("reset_password_token", result.resetPasswordToken);
+        sessionStorage.removeItem("two_factor_token");
+        sessionStorage.removeItem("two_factor_email");
         toast.info(result.message || "Password reset required");
-        router.push("/verify");
+        router.push("/auth/verify");
       } else {
         toast.success("Successfully signed in");
         router.push("/");
@@ -206,13 +215,12 @@ export default function LoginPage() {
 
           {/* Forgot password section */}
           <div className="flex justify-end mt-[1px] mb-2">
-            <button
-              type="button"
-              onClick={() => router.push("/forgot-password")}
+            <Link
+              href="/auth/forgot-password"
               className="text-[#0F2757] text-sm font-semibold hover:underline cursor-pointer font-figtree leading-tight"
             >
               Forgot password?
-            </button>
+            </Link>
           </div>
 
           <button

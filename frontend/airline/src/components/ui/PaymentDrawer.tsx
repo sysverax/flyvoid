@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { X, CreditCard, Plus, Check, Loader2 } from "lucide-react";
 import { AddCardModal } from "./AddCardModal";
 import { useLockBodyScroll } from "@/src/hooks/useLockBodyScroll";
+import { PLATFORM_FEE_PERCENT } from "@/src/lib/constants";
 
 export interface PendingPaymentInfo {
   id: string;
@@ -253,7 +254,7 @@ export function PaymentDrawer({
             </div>
 
             <div className="flex justify-between items-center text-sm font-figtree">
-              <span className="text-gray-600">Platform Fee</span>
+              <span className="text-gray-600">Platform Fee ({PLATFORM_FEE_PERCENT}%)</span>
               <span className="font-semibold text-gray-900">
                 ${platformFee.toLocaleString(undefined, {
                   minimumFractionDigits: 2,

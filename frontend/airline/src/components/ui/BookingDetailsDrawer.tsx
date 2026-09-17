@@ -26,8 +26,7 @@ import {
   HotelBookingDetailDataDto,
 } from "@/src/services/cancellation.service";
 import { hotelBookingsService } from "@/src/services/hotel-bookings.service";
-
-const PLATFORM_FEE_PERCENT = 10;
+import { PLATFORM_FEE_PERCENT } from "@/src/lib/constants";
 
 interface BookingDetailsDrawerProps {
   isOpen: boolean;
@@ -472,13 +471,17 @@ export function BookingDetailsDrawer({
                 <div className="text-lg font-bold text-[#111827] leading-none">
                   {adults}
                 </div>
-                <div className="text-xs text-gray-500 mt-1">Adults</div>
+                <div className="text-xs text-gray-500 mt-1">
+                  {adults === 1 ? "Adult" : "Adults"}
+                </div>
               </div>
               <div>
                 <div className="text-lg font-bold text-[#111827] leading-none">
                   {children}
                 </div>
-                <div className="text-xs text-gray-500 mt-1">Child</div>
+                <div className="text-xs text-gray-500 mt-1">
+                  {children === 1 ? "Child" : "Children"}
+                </div>
               </div>
             </div>
 
@@ -633,7 +636,7 @@ export function BookingDetailsDrawer({
                 const guestCount = roomData
                   ? (roomData.adults || 0) + (roomData.children || 0) || 2
                   : 2;
-                const guestText = `Up to ${guestCount} Guests`;
+                const guestText = `Up to ${guestCount} ${guestCount === 1 ? "Guest" : "Guests"}`;
                 const rPrice =
                   roomData?.price !== undefined
                     ? Number(roomData.price)
@@ -743,9 +746,7 @@ export function BookingDetailsDrawer({
                 <span>${hotelPayment.toFixed(2)}</span>
               </div>
               <div className="flex justify-between items-center text-gray-500 text-sm pt-0.5">
-                <span>
-                  Platform Fee ({platformFeePercentage}% of hotel payment)
-                </span>
+                <span>Platform Fee ({PLATFORM_FEE_PERCENT}%)</span>
                 <span>
                   {typeof platformFee === "number"
                     ? `$${platformFee.toFixed(2)}`
