@@ -258,7 +258,6 @@ export class AirlineAuthService {
           airlineId: airline.id,
           balance: 0,
           creditLimit: meta.creditLimit,
-          usedCredit: 0,
           lockedAmount: 0,
           currency: meta.currency,
         },

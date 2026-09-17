@@ -16,6 +16,7 @@ export enum PlatformAsset {
 
 export enum AirlineAsset {
   DASHBOARD = "DASHBOARD",
+  WALLET = "WALLET",
   AIRPORTS = "AIRPORTS",
   CANCELLED_FLIGHTS = "CANCELLED_FLIGHTS",
   BOOKINGS = "BOOKINGS",

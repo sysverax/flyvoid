@@ -435,7 +435,6 @@ CREATE TABLE IF NOT EXISTS public.wallets (
   airline_id integer NOT NULL,
   balance numeric(12,2) NOT NULL DEFAULT 0,
   credit_limit numeric(12,2) NOT NULL DEFAULT 0,
-  used_credit numeric(12,2) NOT NULL DEFAULT 0,
   locked_amount numeric(12,2) NOT NULL DEFAULT 0,
   currency varchar(10) NOT NULL DEFAULT 'USD',
   created_at timestamp without time zone NOT NULL DEFAULT now(),

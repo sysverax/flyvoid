@@ -37,15 +37,6 @@ export class WalletEntity {
   creditLimit!: number;
 
   @Column({
-    name: "used_credit",
-    type: "decimal",
-    precision: 12,
-    scale: 2,
-    default: 0,
-  })
-  usedCredit!: number;
-
-  @Column({
     name: "locked_amount",
     type: "decimal",
     precision: 12,
