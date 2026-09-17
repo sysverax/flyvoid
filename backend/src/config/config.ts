@@ -106,6 +106,12 @@ export const config = {
       process.env.AI_API_URL ??
       "https://api.groq.com/openai/v1/chat/completions",
     temperature: parseFloat(process.env.AI_TEMPERATURE ?? "0.2"),
+    // Token budget (rough char/4 estimate) for one hotel-allocation AI
+    // call's input; larger flights are split into multiple calls.
+    maxInputTokensPerCall: parseInt(
+      process.env.AI_MAX_INPUT_TOKENS_PER_CALL ?? "6000",
+      10,
+    ),
   },
 
   hotelbeds: {

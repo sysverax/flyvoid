@@ -8,6 +8,7 @@ import { BookingEntity } from "./entities/booking.entity";
 import { HotelAllocationEntity } from "./entities/hotel-allocation.entity";
 import { CancelledFlightsController } from "./cancelled-flights.controller";
 import { CancelledFlightsService } from "./cancelled-flights.service";
+import { HotelAllocationService } from "./hotel-allocation.service";
 import { CancelledFlightsRepository } from "./cancelled-flights.repository";
 import { AiService } from "../common/ai/ai.service";
 import { HotelPartnerService } from "./hotel-partner.service";
@@ -26,10 +27,16 @@ import { HotelPartnerService } from "./hotel-partner.service";
   controllers: [CancelledFlightsController],
   providers: [
     CancelledFlightsService,
+    HotelAllocationService,
     CancelledFlightsRepository,
     AiService,
     HotelPartnerService,
   ],
-  exports: [CancelledFlightsService, AiService, HotelPartnerService],
+  exports: [
+    CancelledFlightsService,
+    HotelAllocationService,
+    AiService,
+    HotelPartnerService,
+  ],
 })
 export class CancelledFlightsModule {}

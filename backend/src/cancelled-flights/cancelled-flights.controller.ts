@@ -56,6 +56,7 @@ import {
   createUnauthorizedErrorSchema,
 } from "../common/constants/swagger.constants";
 import { CancelledFlightsService } from "./cancelled-flights.service";
+import { HotelAllocationService } from "./hotel-allocation.service";
 import {
   CreateCancelledFlightDto,
   CancelledFlightResponseDto,
@@ -98,7 +99,10 @@ import { GetCancelledFlightsQueryDto } from "./dto/get-cancelled-flights-query.d
   HotelBookingDetailResponseDto,
 )
 export class CancelledFlightsController {
-  constructor(private readonly service: CancelledFlightsService) {}
+  constructor(
+    private readonly service: CancelledFlightsService,
+    private readonly hotelAllocationService: HotelAllocationService,
+  ) {}
 
   // ── GET /cancelled-flights ───────────────────────────────────────────────
   @Get("/")
@@ -766,7 +770,7 @@ export class CancelledFlightsController {
     requestLogger.info(
       `Fetching hotel recommendations for cancelled flight ${id}`,
     );
-    const data = await this.service.getHotelRecommendationsForFlight(
+    const data = await this.hotelAllocationService.getHotelRecommendationsForFlight(
       id,
       requestId,
       requestLogger,
@@ -811,7 +815,7 @@ export class CancelledFlightsController {
     @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<HotelAllocationsDto>> {
     requestLogger.info(`Fetching hotel allocations for cancelled flight ${id}`);
-    const data = await this.service.hotelAllocationsForFlight(
+    const data = await this.hotelAllocationService.hotelAllocationsForFlight(
       id,
       request.user,
       requestId,
@@ -852,7 +856,7 @@ export class CancelledFlightsController {
     @Param("bookingId", ParseIntPipe) bookingId: number,
     @RequestId() requestId: string,
   ): Promise<BaseResponseDto<object>> {
-    const data = await this.service.getHotelRecommendations(
+    const data = await this.hotelAllocationService.getHotelRecommendations(
       id,
       bookingId,
       requestId,
