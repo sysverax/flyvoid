@@ -39,6 +39,7 @@ import { Dropdown } from "@/src/components/ui/Dropdown";
 import { TruncatedTooltip } from "@/src/components/ui/TruncatedTooltip";
 import { Pagination } from "@/src/components/ui/pagination";
 import { BookingDetailsDrawer } from "@/src/components/ui/BookingDetailsDrawer";
+import { PLATFORM_FEE_PERCENT } from "@/src/lib/constants";
 import CancellationWizard from "./CancellationWizard";
 import {
   cancellationService,
@@ -76,7 +77,6 @@ const STATUS_OPTIONS = [
   { value: "Draft", label: "Draft" },
   { value: "In Progress", label: "In Progress" },
   { value: "Confirmed", label: "Confirmed" },
-  { value: "HA In Progress", label: "HA In Progress" },
   { value: "Allocated", label: "Allocated" },
   { value: "Paid", label: "Paid" },
   { value: "Published", label: "Published" },
@@ -556,7 +556,7 @@ function PublishedDetailView({
             <div className="flex items-center gap-2 text-gray-500 mb-3">
               <Percent className="h-4 w-4" />
               <span className="text-[13px] font-semibold uppercase">
-                Platform Fee
+                Platform Fee ({PLATFORM_FEE_PERCENT}%)
               </span>
             </div>
             <div className="text-[24px] font-bold text-gray-900">
@@ -961,10 +961,46 @@ export default function CancellationPage() {
     }
   };
 
+  // Status Rank Map for workflow sorting
+  const STATUS_RANK: Record<string, number> = {
+    "Draft": 1,
+    "In Progress": 2,
+    "Confirmed": 3,
+    "Verified": 3,
+    "HA In Progress": 4,
+    "Allocated": 5,
+    "Paid": 6,
+    "Published": 7,
+  };
+
   // Sorting Logic
   const sortedCancellations = useMemo(() => {
     if (!sortField) return cancellations;
     return [...cancellations].sort((a, b) => {
+      if (sortField === "status") {
+        const statusA = a.displayStatus || a.status || "";
+        const statusB = b.displayStatus || b.status || "";
+        const rankA = STATUS_RANK[statusA] || STATUS_RANK[a.status] || 99;
+        const rankB = STATUS_RANK[statusB] || STATUS_RANK[b.status] || 99;
+
+        if (rankA !== rankB) {
+          return sortOrder === "asc" ? rankA - rankB : rankB - rankA;
+        }
+        const strA = statusA.toLowerCase();
+        const strB = statusB.toLowerCase();
+        if (strA < strB) return sortOrder === "asc" ? -1 : 1;
+        if (strA > strB) return sortOrder === "asc" ? 1 : -1;
+        return 0;
+      }
+
+      if (sortField === "cancellationDate") {
+        const timeA = new Date(a.cancellationDate).getTime() || 0;
+        const timeB = new Date(b.cancellationDate).getTime() || 0;
+        if (timeA !== timeB) {
+          return sortOrder === "asc" ? timeA - timeB : timeB - timeA;
+        }
+      }
+
       const valA = a[sortField];
       const valB = b[sortField];
 
@@ -972,8 +1008,8 @@ export default function CancellationPage() {
         return sortOrder === "asc" ? valA - valB : valB - valA;
       }
 
-      const strA = String(valA).toLowerCase();
-      const strB = String(valB).toLowerCase();
+      const strA = String(valA ?? "").toLowerCase();
+      const strB = String(valB ?? "").toLowerCase();
 
       if (strA < strB) return sortOrder === "asc" ? -1 : 1;
       if (strA > strB) return sortOrder === "asc" ? 1 : -1;
@@ -1045,6 +1081,7 @@ export default function CancellationPage() {
 
           {/* Filters Card */}
           <FiltersCard
+            singleRow
             searchQuery={searchQuery}
             setSearchQuery={(q) => {
               setSearchQuery(q);

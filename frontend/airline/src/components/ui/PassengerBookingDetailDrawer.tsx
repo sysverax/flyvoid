@@ -148,13 +148,17 @@ export function PassengerBookingDetailDrawer({
                 <div className="text-lg font-bold text-[#111827] leading-none">
                   {adults}
                 </div>
-                <div className="text-xs text-gray-500 mt-1">Adults</div>
+                <div className="text-xs text-gray-500 mt-1">
+                  {adults === 1 ? "Adult" : "Adults"}
+                </div>
               </div>
               <div>
                 <div className="text-lg font-bold text-[#111827] leading-none">
                   {children}
                 </div>
-                <div className="text-xs text-gray-500 mt-1">Child</div>
+                <div className="text-xs text-gray-500 mt-1">
+                  {children === 1 ? "Child" : "Children"}
+                </div>
               </div>
             </div>
 

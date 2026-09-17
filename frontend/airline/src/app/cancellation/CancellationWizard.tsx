@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 import { BookingDetailsDrawer } from "@/src/components/ui/BookingDetailsDrawer";
 import { PassengerBookingDetailDrawer } from "@/src/components/ui/PassengerBookingDetailDrawer";
+import { PLATFORM_FEE_PERCENT } from "@/src/lib/constants";
 import {
   Table,
   TableBody,
@@ -129,6 +130,13 @@ function mapCancellationReason(tag: string, text: string): string | undefined {
     return "air_traffic_control";
   return undefined;
 }
+
+function formatCancellationReason(reason?: string | null): string {
+  if (!reason) return "N/A";
+  const s = reason.replace(/_/g, " ").trim();
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : "N/A";
+}
+
 
 const TRAVEL_CLASS_OPTIONS = [
   { value: "Economy", label: "Economy" },
@@ -456,7 +464,11 @@ export default function CancellationWizard({
         : [];
       setNewDepartureAirport(parts[0] || "");
       setNewArrivalAirport(parts[1] || "");
-      setNewReason(initialData.reason || "");
+      const reasonVal = formatCancellationReason(initialData.reason);
+      if (reasonVal !== "N/A") {
+        setNewReason(reasonVal);
+        setSelectedReasonTag(reasonVal);
+      }
     }
   }, [initialData]);
 
@@ -495,7 +507,8 @@ export default function CancellationWizard({
     | "email"
     | "phone"
     | "travelClass"
-    | "adults";
+    | "adults"
+    | "children";
   const [step2Errors, setStep2Errors] = useState<
     Partial<Record<Step2Field, string>>
   >({});
@@ -533,6 +546,10 @@ export default function CancellationWizard({
         if (isNaN(Number(v)) || Number(v) < 1)
           return "Adults must be at least 1";
         return "";
+      case "children":
+        if (v !== "" && (isNaN(Number(v)) || Number(v) < 0))
+          return "Children count must be 0 or more";
+        return "";
       default:
         return "";
     }
@@ -547,7 +564,8 @@ export default function CancellationWizard({
             field === "email" ? bookingEmail :
               field === "travelClass" ? bookingClass :
                 field === "adults" ? bookingAdults :
-                  bookingPhone;
+                  field === "children" ? bookingChildren :
+                    bookingPhone;
     const msg = validateStep2(field, val);
     setStep2Errors((prev) => ({ ...prev, [field]: msg || undefined }));
   };
@@ -605,6 +623,14 @@ export default function CancellationWizard({
     if (step2Touched.adults) {
       const msg = validateStep2("adults", val);
       setStep2Errors((prev) => ({ ...prev, adults: msg || undefined }));
+    }
+  };
+
+  const handleBookingChildrenChange = (val: string) => {
+    setBookingChildren(val);
+    if (step2Touched.children) {
+      const msg = validateStep2("children", val);
+      setStep2Errors((prev) => ({ ...prev, children: msg || undefined }));
     }
   };
   const [addedBookings, setAddedBookings] = useState<ManualBooking[]>([]);
@@ -699,8 +725,12 @@ export default function CancellationWizard({
         if (data.flight.route?.arrivalAirport?.code) {
           setNewArrivalAirport(data.flight.route.arrivalAirport.code);
         }
-        if (data.flight.cancellationReason) {
-          setNewReason(data.flight.cancellationReason);
+        const reasonVal = formatCancellationReason(
+          data.flight.cancellationReasonText || data.flight.cancellationReason,
+        );
+        if (reasonVal !== "N/A") {
+          setNewReason(reasonVal);
+          setSelectedReasonTag(reasonVal);
         }
       }
     } catch (err: any) {
@@ -940,11 +970,7 @@ export default function CancellationWizard({
       setNewReason("");
     } else {
       setSelectedReasonTag(tag);
-      if (tag === "Other") {
-        setNewReason("");
-      } else {
-        setNewReason(tag);
-      }
+      setNewReason(tag);
     }
   };
 
@@ -1086,6 +1112,7 @@ export default function CancellationWizard({
       "phone",
       "travelClass",
       "adults",
+      "children",
     ];
     const values: Record<Step2Field, string> = {
       pnr: bookingPnr,
@@ -1095,6 +1122,7 @@ export default function CancellationWizard({
       phone: bookingPhone,
       travelClass: bookingClass,
       adults: bookingAdults,
+      children: bookingChildren,
     };
     const errs: Partial<Record<Step2Field, string>> = {};
     for (const f of fields) {
@@ -1111,6 +1139,7 @@ export default function CancellationWizard({
         phone: true,
         travelClass: true,
         adults: true,
+        children: true,
       });
       setTimeout(() => {
         const first = document.querySelector(".step2-field-error");
@@ -1338,7 +1367,7 @@ export default function CancellationWizard({
         passengers: totalPassengersCount,
         totalCost: totalPayment,
         status: "Published",
-        reason: newReason || selectedReasonTag || "N/A",
+        reason: formatCancellationReason(newReason || selectedReasonTag),
       };
       toast.success("Cancelled flight published successfully");
       onSave(added);
@@ -1363,7 +1392,7 @@ export default function CancellationWizard({
         passengers: totalPassengersCount,
         totalCost: totalPayment,
         status: "Published",
-        reason: newReason || selectedReasonTag || "N/A",
+        reason: formatCancellationReason(newReason || selectedReasonTag),
       };
       onSave(added);
     } catch (error: any) {
@@ -1571,7 +1600,7 @@ export default function CancellationWizard({
                       ? "border-red-500 focus:ring-red-500/20 focus:border-red-500"
                       : "border-[#D1D5DB] focus:ring-[#1B2B6B]/20 focus:border-[#1B2B6B]",
                   )}
-                  placeholder="Select date"
+                  placeholder="dd/mm/yyyy"
                 />
                 {step1Errors.cancellationDate &&
                   step1Touched.cancellationDate && (
@@ -2097,6 +2126,9 @@ export default function CancellationWizard({
                       onChange={(e) =>
                         handleBookingAdultsChange(e.target.value)
                       }
+                      onKeyDown={(e) => {
+                        if (e.key === "-" || e.key === "e" || e.key === "+") e.preventDefault();
+                      }}
                       onBlur={handleStep2Blur("adults")}
                       className={cn(
                         "block h-[42px] w-full rounded-lg border px-3 text-[15px] text-[#1F2937] bg-white focus:outline-none focus:ring-2 transition-all",
@@ -2120,9 +2152,23 @@ export default function CancellationWizard({
                       type="number"
                       min={0}
                       value={bookingChildren}
-                      onChange={(e) => setBookingChildren(e.target.value)}
-                      className="block h-[42px] w-full rounded-lg border border-[#D1D5DB] px-3 text-[15px] text-[#1F2937] bg-white focus:outline-none focus:ring-2 focus:ring-[#1B2B6B]/20 focus:border-[#1B2B6B] transition-all"
+                      onChange={(e) => handleBookingChildrenChange(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "-" || e.key === "e" || e.key === "+") e.preventDefault();
+                      }}
+                      onBlur={handleStep2Blur("children")}
+                      className={cn(
+                        "block h-[42px] w-full rounded-lg border px-3 text-[15px] text-[#1F2937] bg-white focus:outline-none focus:ring-2 transition-all",
+                        step2Errors.children && step2Touched.children
+                          ? "border-red-500 focus:ring-red-500/20 focus:border-red-500"
+                          : "border-[#D1D5DB] focus:ring-[#1B2B6B]/20 focus:border-[#1B2B6B]",
+                      )}
                     />
+                    {step2Errors.children && step2Touched.children && (
+                      <p className="step2-field-error mt-0.5 text-xs text-red-500">
+                        {step2Errors.children}
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -2477,9 +2523,12 @@ export default function CancellationWizard({
                 <div>
                   <p className="text-xs text-gray-500">Reason</p>
                   <p className="font-semibold text-gray-900 text-base">
-                    {reviewData?.flight?.cancellationReason
-                      ? reviewData.flight.cancellationReason.replace(/_/g, " ")
-                      : newReason || selectedReasonTag || "N/A"}
+                    {formatCancellationReason(
+                      reviewData?.flight?.cancellationReasonText ||
+                        reviewData?.flight?.cancellationReason ||
+                        newReason ||
+                        selectedReasonTag,
+                    )}
                   </p>
                 </div>
               </div>
@@ -2586,6 +2635,7 @@ export default function CancellationWizard({
                       Contact Name
                     </TableHead>
                     <TableHead className="min-w-[160px]">Email</TableHead>
+                    <TableHead className="min-w-[130px]">Phone</TableHead>
                     <TableHead className="min-w-[80px]">Adults</TableHead>
                     <TableHead className="min-w-[80px]">Children</TableHead>
                     <TableHead className="min-w-[100px]">Class</TableHead>
@@ -2622,6 +2672,9 @@ export default function CancellationWizard({
                         </TableCell>
                         <TableCell className="text-gray-550">
                           {b.email}
+                        </TableCell>
+                        <TableCell className="text-gray-550">
+                          {b.phone || "—"}
                         </TableCell>
                         <TableCell>{b.adults}</TableCell>
                         <TableCell>{b.children}</TableCell>
@@ -2923,7 +2976,7 @@ export default function CancellationWizard({
                 <div className="flex items-center gap-2 text-gray-500 mb-3">
                   <Percent className="h-4 w-4" />
                   <span className="text-[13px] font-semibold uppercase">
-                    Platform Fee
+                    Platform Fee ({PLATFORM_FEE_PERCENT}%)
                   </span>
                 </div>
                 <div className="text-[24px] font-bold text-gray-900">
@@ -3280,7 +3333,7 @@ export default function CancellationWizard({
                   </span>
                 </div>
                 <div className="flex justify-between items-center text-gray-500">
-                  <span>Platform Fee</span>
+                  <span>Platform Fee ({PLATFORM_FEE_PERCENT}%)</span>
                   <span className="font-semibold text-gray-900">
                     {currencySymbol}
                     {platformFee.toLocaleString(undefined, {
@@ -3426,31 +3479,34 @@ export default function CancellationWizard({
         );
       case 7:
         return (
-          <div className="space-y-6 animate-in fade-in duration-300">
-            <div className="flex items-center gap-3 pb-4">
-              <div className="size-11 p-2.5 bg-slate-100 text-slate-700 rounded-xl flex justify-center items-center shrink-0">
-                <Send className="h-6 w-6 text-[#0F2757]" />
-              </div>
-              <div className="text-left">
-                <h3 className="text-xl font-semibold text-gray-900 font-figtree">
-                  Notify Passengers
-                </h3>
-                <p className="text-sm text-gray-500 mt-0.5">
-                  Payment is complete. Publishing will send the hotel booking
-                  confirmation email, including the booking confirmation PDF, to
-                  every booking contact address.
-                </p>
-              </div>
+          <div className="max-w-[560px] mx-auto py-4 space-y-6 animate-in fade-in duration-300 flex flex-col items-center">
+            {/* Top Centered Icon */}
+            <div className="size-14 rounded-2xl bg-[#F1F5F9] flex items-center justify-center text-[#1E2B4D]">
+              <Send className="w-6 h-6 rotate-[-12deg]" />
             </div>
 
-            <div className="w-full bg-[#F3F8ED] border border-[#D1E5CA] p-4 rounded-xl text-sm flex items-center justify-start gap-2 text-[#4CAF50]">
-              <CheckCircle2 className="h-4 w-4 shrink-0" />
-              <span>
+            {/* Header Text */}
+            <div className="text-center space-y-2">
+              <h3 className="text-[22px] font-bold text-[#111827] tracking-tight font-figtree">
+                Notify Passengers
+              </h3>
+              <p className="text-sm text-gray-500 max-w-[480px] mx-auto leading-relaxed">
+                Payment is complete. Publishing will send the hotel booking
+                confirmation email, including the booking confirmation PDF, to
+                every booking contact address.
+              </p>
+            </div>
+
+            {/* Success Alert */}
+            <div className="w-full bg-[#EBF7EE] border border-[#C8E6C9] px-4 py-3.5 rounded-xl text-sm flex items-center justify-start gap-2.5 text-[#2E7D32]">
+              <CheckCircle2 className="w-4.5 h-4.5 text-[#2E7D32] shrink-0" />
+              <span className="font-medium">
                 Payment successfully processed for this cancelled flight.
               </span>
             </div>
 
-            <div className="w-full bg-[#FFF7E8] border border-[#FBE0C3] p-4 rounded-xl text-sm text-[#F59E0B] text-left">
+            {/* Warning / Note Alert */}
+            <div className="w-full bg-[#FFF8E1] border border-[#FFE082] px-4 py-3.5 rounded-xl text-sm text-[#B76E00] text-center">
               <p>
                 <span className="font-bold">Note:</span> This action cannot be
                 undone. Passengers will receive their hotel booking
@@ -3458,36 +3514,38 @@ export default function CancellationWizard({
               </p>
             </div>
 
-            <div className="w-full bg-[#F8F9FA] rounded-xl p-5 space-y-4 text-left text-sm">
-              <div className="flex justify-between items-center text-gray-800">
-                <span>Confirmation Emails:</span>
-                <span className="font-semibold text-gray-900">
+            {/* Summary Box */}
+            <div className="w-full bg-[#F8FAFC] rounded-xl p-5 space-y-3.5 text-sm border border-gray-100/80">
+              <div className="flex justify-between items-center text-gray-600">
+                <span className="font-medium">Confirmation Emails:</span>
+                <span className="font-bold text-gray-900 text-base">
                   {totalBookingsCount}
                 </span>
               </div>
-              <div className="flex justify-between items-center text-gray-800">
-                <span>Total Passengers:</span>
-                <span className="font-semibold text-gray-900">
+              <div className="flex justify-between items-center text-gray-600">
+                <span className="font-medium">Total Passengers:</span>
+                <span className="font-bold text-gray-900 text-base">
                   {totalPassengersCount}
                 </span>
               </div>
             </div>
 
-            <div className="flex justify-end pt-2">
+            {/* Centered Publish Button */}
+            <div className="pt-2">
               <button
                 type="button"
                 onClick={handlePublishFlight}
                 disabled={isPublishingFlight}
-                className="bg-[#2B3B67] hover:bg-[#1E2B4D] disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-medium py-2.5 px-6 rounded-lg transition-colors cursor-pointer text-sm inline-flex items-center gap-2"
+                className="bg-[#1E2B4D] hover:bg-[#15203A] disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-3 px-7 rounded-xl transition-all duration-150 text-sm inline-flex items-center justify-center gap-2.5 shadow-sm cursor-pointer"
               >
                 {isPublishingFlight ? (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Loader2 className="w-4 h-4 animate-spin" />
                     <span>Publishing...</span>
                   </>
                 ) : (
                   <>
-                    <Send className="h-4 w-4" />
+                    <Send className="w-4 h-4" />
                     <span>Send Confirmations & Publish</span>
                   </>
                 )}

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { cn } from "@/src/lib/utils";
+import { authService } from "@/src/services/auth.service";
 
 interface TfaVerificationProps {
   tfaMethod: "email" | "authenticator";
@@ -99,37 +100,36 @@ export function TfaVerification({
     }
     setError(null);
     setHasError(false);
-    
+
     setIsVerifying(true);
-    
-    // Mocking the API response
-    setTimeout(() => {
-      setIsVerifying(false);
-      
-      if (tfaMethod === "email") {
-        onCompleteSetup();
-      } else {
-        const mockCodes = Array.from({ length: 12 }, () => 
-          Math.random().toString(36).substring(2, 6).toUpperCase() + "-" + 
-          Math.random().toString(36).substring(2, 6).toUpperCase()
-        );
-        
+    try {
+      if (tfaMethod === "authenticator") {
+        const res = await authService.enableTfa(code);
         const today = new Date();
-        const day = String(today.getDate()).padStart(2, "0");
-        const month = String(today.getMonth() + 1).padStart(2, "0");
-        const year = today.getFullYear();
-        const dateStr = `${day}/${month}/${year}`;
+        const dateStr = `${String(today.getDate()).padStart(2, "0")}/${String(today.getMonth() + 1).padStart(2, "0")}/${today.getFullYear()}`;
 
-        sessionStorage.setItem(`tfa_enabled_${email}`, "true");
-        sessionStorage.setItem(`tfa_method_${email}`, tfaMethod);
-        sessionStorage.setItem(`tfa_date_${email}`, dateStr);
+        if (email && typeof window !== "undefined") {
+          sessionStorage.setItem(`airline_tfa_enabled_${email}`, "true");
+          sessionStorage.setItem(`airline_tfa_method_${email}`, tfaMethod);
+          sessionStorage.setItem(`airline_tfa_date_${email}`, dateStr);
+        }
 
-        setRecoveryCodes(mockCodes);
-        showToast("Two-Factor Authentication successfully enabled.", "success");
+        setRecoveryCodes(res.recoveryCodes || []);
+        showToast(res.message || "Two-Factor Authentication successfully enabled.", "success");
         setIsShowingRecoveryCodes(true);
         setIsRecoveryCodesChecked(false);
+      } else {
+        showToast("Two-Factor Authentication successfully enabled.", "success");
+        onCompleteSetup();
       }
-    }, 1500);
+    } catch (err: any) {
+      const msg = err.message || "Failed to verify 2FA code.";
+      setError(msg);
+      setHasError(true);
+      showToast(msg, "warning");
+    } finally {
+      setIsVerifying(false);
+    }
   };
 
   const handleCompleteSetupClick = () => {
