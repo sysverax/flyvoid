@@ -9,6 +9,9 @@ import {
   Eye,
   AlertTriangle,
   Loader2,
+  Plus,
+  Minus,
+  Wallet,
 } from "lucide-react";
 import {
   Table,
@@ -28,9 +31,15 @@ import { StatusBadge } from "@/src/components/ui/StatusBadge";
 import { Dropdown } from "@/src/components/ui/Dropdown";
 import { EditAirlineModal } from "@/src/components/airlines/EditAirlineModal";
 import { SuspendAirlineDialog } from "@/src/components/airlines/SuspendAirlineDialog";
+import { WalletBalanceModal } from "@/src/components/airlines/WalletBalanceModal";
 import { useAuth } from "@/src/hooks/useAuth";
 import { toast } from "react-toastify";
-import { airlinesService, UpdateAirlineRequest, mapAirlineDTOToAirline } from "@/src/services/airlines.service";
+import {
+  airlinesService,
+  UpdateAirlineRequest,
+  mapAirlineDTOToAirline,
+  WalletSummaryDTO,
+} from "@/src/services/airlines.service";
 import { getCountryCode } from "@/src/lib/utils";
 import { useRouter } from "next/navigation";
 
@@ -61,8 +70,86 @@ export default function AirlinesPage() {
   // Modals & Confirmation States
   const [editTarget, setEditTarget] = useState<Airline | null>(null);
   const [suspendTarget, setSuspendTarget] = useState<Airline | null>(null);
+  const [addWalletTarget, setAddWalletTarget] = useState<Airline | null>(null);
+  const [deductWalletTarget, setDeductWalletTarget] = useState<Airline | null>(null);
   const [isSuspending, setIsSuspending] = useState(false);
   const [togglingAirlineId, setTogglingAirlineId] = useState<string | null>(null);
+
+  // Wallet Summary State
+  const [walletSummary, setWalletSummary] = useState<WalletSummaryDTO | null>(null);
+
+  const fetchWalletSummary = async () => {
+    try {
+      const data = await airlinesService.getWalletsSummary();
+      setWalletSummary(data);
+    } catch (err: any) {
+      console.error("Failed to fetch wallets summary:", err);
+    }
+  };
+
+  const handleAddWalletSuccess = async (airlineId: string, addedAmount: number, remarks: string) => {
+    try {
+      const result = await airlinesService.adjustWalletBalance({
+        airlineId: Number(airlineId),
+        type: "CREDIT",
+        amount: addedAmount,
+        reason: remarks || undefined,
+      });
+
+      const updatedSpend =
+        result?.closingBalance ??
+        (airlines.find((a) => a.id === airlineId)?.spend ?? 0) + addedAmount;
+
+      setAirlines((prev) =>
+        prev.map((item) => {
+          if (item.id === airlineId) {
+            return { ...item, spend: updatedSpend };
+          }
+          return item;
+        })
+      );
+      toast.success(
+        `Successfully added $${addedAmount.toLocaleString("en-US", { minimumFractionDigits: 2 })} to wallet balance`
+      );
+      fetchAirlines(false);
+      fetchWalletSummary();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to increase wallet balance");
+      throw err;
+    }
+  };
+
+  const handleDeductWalletSuccess = async (airlineId: string, deductedAmount: number, remarks: string) => {
+    try {
+      const result = await airlinesService.adjustWalletBalance({
+        airlineId: Number(airlineId),
+        type: "DEBIT",
+        amount: deductedAmount,
+        reason: remarks,
+      });
+
+      const updatedSpend =
+        result?.closingBalance ??
+        Math.max(0, (airlines.find((a) => a.id === airlineId)?.spend ?? 0) - deductedAmount);
+
+      setAirlines((prev) =>
+        prev.map((item) => {
+          if (item.id === airlineId) {
+            return { ...item, spend: updatedSpend };
+          }
+          return item;
+        })
+      );
+      toast.success(
+        `Successfully deducted $${deductedAmount.toLocaleString("en-US", { minimumFractionDigits: 2 })} from wallet balance`
+      );
+      fetchAirlines(false);
+      fetchWalletSummary();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to deduct wallet balance");
+      throw err;
+    }
+  };
 
   const statusOptions = [
     { value: "All Status", label: "All Status" },
@@ -115,6 +202,7 @@ export default function AirlinesPage() {
 
   useEffect(() => {
     fetchAirlines();
+    fetchWalletSummary();
   }, [searchQuery, selectedStatus, selectedCountry, currentPage, resultsPerPage]);
 
   const filteredAirlines = useMemo(() => {
@@ -260,7 +348,7 @@ export default function AirlinesPage() {
       };
 
       const response = await airlinesService.updateAirline(Number(editTarget.id), payload);
-      
+
       if (assignAirportIds.length > 0 || disableAirportIds.length > 0) {
         await airlinesService.updateAirlineAirportAssignments(Number(editTarget.id), {
           assignAirportIds,
@@ -283,8 +371,9 @@ export default function AirlinesPage() {
 
   return (
     <div className="flex min-h-screen flex-1 flex-col pb-16 lg:w-full lg:max-w-[calc(100vw-304px)]">
-        <div className="space-y-7">
-          {/* Header */}
+      <div className="space-y-7">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-2xl sm:text-[24px] font-semibold text-[#1F2937] leading-[100%] tracking-[0%]">
               Airlines Management
@@ -294,200 +383,257 @@ export default function AirlinesPage() {
             </p>
           </div>
 
-          {/* Filters card */}
-          <FiltersCard
-            searchQuery={searchQuery}
-            setSearchQuery={(q) => {
-              setSearchQuery(q);
+          <div className="flex items-center rounded-[10px] border border-[#E5E7EB] bg-white px-4 py-2 shadow-2xs divide-x divide-[#E5E7EB] shrink-0">
+            <div className="pr-4">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-[#6B7280]">
+                TOTAL WALLET BALANCE
+              </div>
+              <div className="text-[18px] font-bold text-[#203663]">
+                $
+                {(walletSummary?.totalWalletBalance ?? 0).toLocaleString(
+                  "en-US",
+                  {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  }
+                )}
+              </div>
+            </div>
+            <div className="pl-4">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-[#6B7280]">
+                TOTAL CREDIT LIMIT
+              </div>
+              <div className="text-[18px] font-bold text-[#203663]">
+                $
+                {(walletSummary?.totalCreditIssued ?? 0).toLocaleString(
+                  "en-US",
+                  {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  }
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Filters card */}
+        <FiltersCard
+          searchQuery={searchQuery}
+          setSearchQuery={(q) => {
+            setSearchQuery(q);
+            setCurrentPage(1);
+          }}
+          searchPlaceholder="Search airlines..."
+          onClearFilters={handleClearAll}
+        >
+          {/* Status Selector */}
+          <Dropdown
+            value={selectedStatus}
+            onChange={(val) => {
+              setSelectedStatus(val);
               setCurrentPage(1);
             }}
-            searchPlaceholder="Search airlines..."
-            onClearFilters={handleClearAll}
-          >
-            {/* Status Selector */}
-            <Dropdown
-              value={selectedStatus}
-              onChange={(val) => {
-                setSelectedStatus(val);
-                setCurrentPage(1);
-              }}
-              options={statusOptions}
-              widthClass="w-44"
-              triggerWidthClass="w-[180px]"
-            />
+            options={statusOptions}
+            widthClass="w-44"
+            triggerWidthClass="w-[180px]"
+          />
 
-            {/* Country Selector */}
-            <Dropdown
-              value={selectedCountry}
-              onChange={(val) => {
-                setSelectedCountry(val);
-                setCurrentPage(1);
-              }}
-              options={countryOptions}
-              widthClass="w-full sm:w-44"
-              triggerWidthClass="w-full sm:w-44"
-              maxListHeightClass="max-h-[296px]"
-              searchable
-            />
-          </FiltersCard>
+          {/* Country Selector */}
+          <Dropdown
+            value={selectedCountry}
+            onChange={(val) => {
+              setSelectedCountry(val);
+              setCurrentPage(1);
+            }}
+            options={countryOptions}
+            widthClass="w-full sm:w-44"
+            triggerWidthClass="w-full sm:w-44"
+            maxListHeightClass="max-h-[296px]"
+            searchable
+          />
+        </FiltersCard>
 
-          {/* Airlines Table */}
-          <div className="overflow-hidden rounded-[12px] border border-[#E5E7EB] bg-white mb-6">
-            <Table>
-              <TableHeader className="pt-1">
+        {/* Airlines Table */}
+        <div className="overflow-hidden rounded-[12px] border border-[#E5E7EB] bg-white mb-6">
+          <Table>
+            <TableHeader className="pt-1">
+              <TableRow>
+                <TableHead className="min-w-[150px]">
+                  <SortHeader label="AIRLINE" field="airlineName" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                </TableHead>
+                <TableHead className="min-w-[75px]">
+                  <SortHeader label="IATA" field="airlineCode" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                </TableHead>
+                <TableHead className="min-w-[130px]">
+                  <SortHeader label="COUNTRY" field="country" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                </TableHead>
+                <TableHead className="min-w-[130px]">
+                  <SortHeader label="CREDIT LIMIT($)" field="creditLimit" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                </TableHead>
+                <TableHead className="min-w-[145px]">
+                  <SortHeader label="PLATFORM FEE (%)" field="platformFeePercentage" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                </TableHead>
+                <TableHead className="min-w-[185px]">
+                  <SortHeader label="WALLET BALANCE" field="spend" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                </TableHead>
+                <TableHead className="min-w-[100px]">
+                  <SortHeader label="STATUS" field="status" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                </TableHead>
+                {hasPermission("edit") && (
+                  <TableHead className="whitespace-nowrap min-w-[120px]">
+                    Enable/Disable
+                  </TableHead>
+                )}
+                <TableHead className="min-w-[100px]">ACTIONS</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
                 <TableRow>
-                  <TableHead className="min-w-[130px]">
-                    <SortHeader label="Airline" field="airlineName" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
-                  </TableHead>
-                  <TableHead className="min-w-[68px]">
-                    <SortHeader label="Iata" field="airlineCode" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
-                  </TableHead>
-                  <TableHead className="min-w-[126px]">
-                    <SortHeader label="Status" field="status" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
-                  </TableHead>
-                  <TableHead className="min-w-[90px]">
-                    <SortHeader label="Flights" field="flightsCount" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
-                  </TableHead>
-                  <TableHead className="min-w-[121px] -translate-x-1">
-                    <SortHeader label="Passengers" field="passengersCount" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
-                  </TableHead>
-                  <TableHead className="min-w-[124px] -translate-x-1">
-                    <SortHeader label="Spend" field="spend" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
-                  </TableHead>
-                  <TableHead className="min-w-[115px] -translate-x-1.5">
-                    <SortHeader label="Revenue" field="revenue" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
-                  </TableHead>
-                  <TableHead className="min-w-[110px] -translate-x-1.5">
-                    <SortHeader label="Platform Fee (%)" field="platformFeePercentage" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
-                  </TableHead>
-                  {hasPermission("edit") && (
-                    <TableHead className="whitespace-nowrap min-w-[143px] -translate-x-1">
-                      <SortHeader label="Enable/Disable" field="status" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
-                    </TableHead>
-                  )}
-                  <TableHead>Action</TableHead>
+                  <TableCell colSpan={9} className="px-6 py-12 text-center text-gray-500 font-figtree">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <svg className="animate-spin h-8 w-8 text-primary" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      <span>Loading airlines...</span>
+                    </div>
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={10} className="px-6 py-12 text-center text-gray-500 font-figtree">
-                      <div className="flex flex-col items-center justify-center gap-2">
-                        <svg className="animate-spin h-8 w-8 text-primary" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                        </svg>
-                        <span>Loading airlines...</span>
+              ) : sortedAirlines.length === 0 ? (
+                <TableEmptyState
+                  colSpan={9}
+                  icon={Search}
+                  title="No airlines found"
+                  message="Try adjusting your filters or search query."
+                />
+              ) : (
+                sortedAirlines.map((airline) => (
+                  <TableRow key={airline.id}>
+                    <TableCell>
+                      <AirlineNameCell name={airline.airlineName} />
+                    </TableCell>
+                    <TableCell>
+                      <span className="rounded-[4px] bg-[#E5E7EB] text-[#1F2937] font-inter text-[12px] px-2.5 py-1.5 font-medium h-[28px]">
+                        {airline.airlineCode}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-[#1F2937]">
+                      {airline.country}
+                    </TableCell>
+                    <TableCell className="text-[#1F2937]">
+                      ${airline.creditLimit ? (airline.creditLimit >= 1000 ? `${airline.creditLimit / 1000}K` : airline.creditLimit) : "100K"}
+                    </TableCell>
+                    <TableCell className="text-[#1F2937]">
+                      {airline.platformFeePercentage}%
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      <div className="flex items-center gap-2.5">
+                        <button
+                          type="button"
+                          onClick={() => setAddWalletTarget(airline)}
+                          className="flex h-7 w-7 items-center justify-center rounded-full bg-[#E4E9F1] text-[#203663] hover:bg-[#E0E7FF] transition-colors cursor-pointer"
+                          title="Add to Wallet Balance"
+                        >
+                          <Plus className="h-3.5 w-3.5 stroke-[2px]" />
+                        </button>
+                        <span className="font-semibold text-[#1F2937] text-[14px]">
+                          ${(airline.spend ?? 27868.75).toLocaleString("en-US", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setDeductWalletTarget(airline)}
+                          className="flex h-7 w-7 items-center justify-center rounded-full bg-[#E4E9F1] text-[#203663] hover:bg-[#E0E7FF] transition-colors cursor-pointer"
+                          title="Deduct from Wallet Balance"
+                        >
+                          <Minus className="h-3.5 w-3.5 stroke-[2px]" />
+                        </button>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={airline.status} />
+                    </TableCell>
+                    {hasPermission("edit") && (
+                      <TableCell>
+                        {/* Enable/Disable Toggle Switch */}
+                        <button
+                          type="button"
+                          disabled={!hasPermission("edit") || togglingAirlineId === airline.id}
+                          onClick={() => handleToggleStatus(airline)}
+                          className={cn(
+                            "relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
+                            hasPermission("edit") && togglingAirlineId !== airline.id ? "cursor-pointer" : "cursor-not-allowed opacity-70",
+                            airline.isActive ? "bg-emerald-500" : "bg-gray-200"
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out flex items-center justify-center",
+                              airline.isActive ? "translate-x-5" : "translate-x-0"
+                            )}
+                          >
+                            {togglingAirlineId === airline.id && (
+                              <Loader2 className="h-3 w-3 animate-spin text-gray-500" />
+                            )}
+                          </span>
+                        </button>
+                      </TableCell>
+                    )}
+                    <TableCell>
+                      <div className="flex items-center justify-start gap-2.5">
+                        <button
+                          type="button"
+                          onClick={() => router.push(`/airlines/${airline.id}/wallet`)}
+                          className="p-1 text-[#6B7280] hover:text-primary transition-colors cursor-pointer"
+                          title="Wallet Transactions"
+                        >
+                          <Wallet className="h-[18px] w-[18px]" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleViewDetails(airline.id)}
+                          className="p-1 text-[#6B7280] hover:text-primary transition-colors cursor-pointer"
+                          disabled={isViewingDetail === airline.id}
+                          title="View Details"
+                        >
+                          {isViewingDetail === airline.id ? (
+                            <Loader2 className="h-[18px] w-[18px] animate-spin text-[#6B7280]" />
+                          ) : (
+                            <Eye className="h-[18px] w-[18px]" />
+                          )}
+                        </button>
+                        {hasPermission("edit") && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenSuspendConfirm(airline)}
+                            className="p-1 text-[#EF4444] hover:text-[#DC2626] cursor-pointer transition-colors"
+                            title="Suspend Airline"
+                          >
+                            <AlertTriangle className="h-[18px] w-[18px]" />
+                          </button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
-                ) : sortedAirlines.length === 0 ? (
-                  <TableEmptyState
-                    colSpan={10}
-                    icon={Search}
-                    title="No airlines found"
-                    message="Try adjusting your filters or search query."
-                  />
-                ) : (
-                  sortedAirlines.map((airline) => (
-                    <TableRow key={airline.id}>
-                      <TableCell>
-                        <AirlineNameCell name={airline.airlineName} />
-                      </TableCell>
-                      <TableCell>
-                        <span className="rounded-[4px] bg-[#E5E7EB] text-[#1F2937] font-inter text-[12px] px-2.5 py-1.5 font-medium h-[28px]">
-                          {airline.airlineCode}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <StatusBadge status={airline.status} />
-                      </TableCell>
-                      <TableCell>
-                        <MetricTooltip value={airline.flightsCount} />
-                      </TableCell>
-                      <TableCell className="text-[#1F2937]">
-                        <MetricTooltip value={airline.passengersCount} />
-                      </TableCell>
-                      <TableCell className="text-[#6B7280] relative -left-1">
-                        <MetricTooltip value={airline.spend} isCurrency />
-                      </TableCell>
-                      <TableCell className="text-[#6B7280] -translate-x-1.5">
-                        <MetricTooltip value={airline.revenue} isCurrency />
-                      </TableCell>
-                      <TableCell className="text-[#1F2937] -translate-x-1.5">
-                        {airline.platformFeePercentage}%
-                      </TableCell>
-                      {hasPermission("edit") && (
-                        <TableCell>
-                          {/* Enable/Disable Toggle Switch */}
-                          <button
-                            type="button"
-                            disabled={!hasPermission("edit") || togglingAirlineId === airline.id}
-                            onClick={() => handleToggleStatus(airline)}
-                            className={cn(
-                              "relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none -translate-x-1",
-                              hasPermission("edit") && togglingAirlineId !== airline.id ? "cursor-pointer" : "cursor-not-allowed opacity-70",
-                              airline.isActive ? "bg-emerald-500" : "bg-gray-200"
-                            )}
-                          >
-                            <span
-                              className={cn(
-                                "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out flex items-center justify-center",
-                                airline.isActive ? "translate-x-5" : "translate-x-0"
-                              )}
-                            >
-                              {togglingAirlineId === airline.id && (
-                                <Loader2 className="h-3 w-3 animate-spin text-gray-500" />
-                              )}
-                            </span>
-                          </button>
-                        </TableCell>
-                      )}
-                      <TableCell>
-                        <div className="flex items-center justify-start gap-2.5">
-                          <button
-                            onClick={() => handleViewDetails(airline.id)}
-                            className="p-1 text-[#6B7280] hover:text-primary transition-colors cursor-pointer"
-                            disabled={isViewingDetail === airline.id}
-                          >
-                            {isViewingDetail === airline.id ? (
-                              <Loader2 className="h-[20px] w-[20px] animate-spin text-[#6B7280]" />
-                            ) : (
-                              <Eye className="h-[20px] w-[20px]" />
-                            )}
-                          </button>
-                          {hasPermission("edit") && (
-                            <button
-                              onClick={() => handleOpenSuspendConfirm(airline)}
-                              className="p-1 cursor-pointer transition-colors"
-                            >
-                              <img
-                                src="/icons/spam.svg"
-                                alt="Spam"
-                                width={20}
-                                height={20}
-                              // className={airline.status === "Active" ? "opacity-100 hover:brightness-75" : "opacity-50"}
-                              />
-                            </button>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-
-          <Pagination
-            totalResults={totalResults}
-            currentPage={currentPage}
-            setCurrentPage={setCurrentPage}
-            resultsPerPage={resultsPerPage}
-            setResultsPerPage={setResultsPerPage}
-            totalPages={totalPages}
-          />
+                ))
+              )}
+            </TableBody>
+          </Table>
         </div>
+
+        <Pagination
+          totalResults={totalResults}
+          currentPage={currentPage}
+          setCurrentPage={setCurrentPage}
+          resultsPerPage={resultsPerPage}
+          setResultsPerPage={setResultsPerPage}
+          totalPages={totalPages}
+        />
+      </div>
 
       <EditAirlineModal
         isOpen={!!editTarget}
@@ -501,8 +647,24 @@ export default function AirlinesPage() {
         isOpen={!!suspendTarget}
         airline={suspendTarget}
         isSuspending={isSuspending}
-        onClose={() => !isSuspending && setSuspendTarget(null)}
+        onClose={() => setSuspendTarget(null)}
         onConfirm={handleConfirmSuspend}
+      />
+
+      <WalletBalanceModal
+        isOpen={!!addWalletTarget}
+        mode="add"
+        airline={addWalletTarget}
+        onClose={() => setAddWalletTarget(null)}
+        onSuccess={handleAddWalletSuccess}
+      />
+
+      <WalletBalanceModal
+        isOpen={!!deductWalletTarget}
+        mode="deduct"
+        airline={deductWalletTarget}
+        onClose={() => setDeductWalletTarget(null)}
+        onSuccess={handleDeductWalletSuccess}
       />
     </div>
   );

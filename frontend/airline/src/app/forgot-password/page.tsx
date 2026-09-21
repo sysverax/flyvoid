@@ -319,7 +319,7 @@ export default function ForgotPasswordPage() {
           <img
             src="/icons/plane1.svg"
             alt="FlyVoid Logo"
-            className="h-8 w-8"
+            className="h-8 w-8 brightness-0 invert"
           />
         </div>
         <h1 className="text-gray-800 text-[24px] font-bold tracking-tight leading-[100%] py-1">

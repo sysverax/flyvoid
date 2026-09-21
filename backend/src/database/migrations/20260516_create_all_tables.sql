@@ -393,6 +393,7 @@ CREATE TABLE IF NOT EXISTS public.airline_access_controls (
     CHECK (
       asset IN (
         'DASHBOARD',
+        'WALLET',
         'AIRPORTS',
         'CANCELLED_FLIGHTS',
         'BOOKINGS',

@@ -650,7 +650,7 @@ function PublishedDetailView({
               ) : (
                 hotelBookings.map((hb) => {
                   const pb = hb.passengerBooking;
-                  const hotelBookingId = `HB-${String(hb.id).padStart(6, "0")}`;
+                  const hotelBookingId = String(hb.id);
                   const pnr = pb?.pnr || "-";
                   const contactName =
                     `${pb?.firstName || ""} ${pb?.lastName || ""}`.trim() || "-";
@@ -728,7 +728,7 @@ function PublishedDetailView({
                               disabled={loadingEyeBookingId === hb.id}
                               onClick={async () => {
                                 const pb = hb.passengerBooking;
-                                const hotelBookingIdStr = `HB-${String(hb.id).padStart(6, "0")}`;
+                                const hotelBookingIdStr = String(hb.id);
                                 setSelectedBookingForDrawer({
                                   ...pb,
                                   hotelBookingId: hotelBookingIdStr,
