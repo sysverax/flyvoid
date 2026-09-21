@@ -140,8 +140,8 @@ export function BookingDetailsDrawer({
   const pBooking = activeDetailData?.booking || booking;
   const hotel = activeDetailData?.hotel || booking?.hotel;
   const displayBookingId = activeDetailData?.id
-    ? `HB-${String(activeDetailData.id).padStart(3, "0")}`
-    : "N/A";
+    ? String(activeDetailData.id)
+    : booking?.id ? String(booking.id) : "N/A";
 
   const pnr = pBooking?.pnr || "N/A";
 

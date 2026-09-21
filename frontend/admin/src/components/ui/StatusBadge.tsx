@@ -58,6 +58,18 @@ const statusStyles: Record<string, { bg: string; text: string }> = {
     bg: "bg-[#D1FAE5]",
     text: "text-[#065F46]",
   },
+  Success: {
+    bg: "bg-[#D1FAE5]",
+    text: "text-[#065F46]",
+  },
+  success: {
+    bg: "bg-[#D1FAE5]",
+    text: "text-[#065F46]",
+  },
+  SUCCESS: {
+    bg: "bg-[#D1FAE5]",
+    text: "text-[#065F46]",
+  },
   Failed: {
     bg: "bg-[#FEE2E2]",
     text: "text-[#991B1B]",

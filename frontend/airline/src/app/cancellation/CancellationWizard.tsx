@@ -3054,7 +3054,7 @@ export default function CancellationWizard({
                   ) : hotelBookings.length > 0 ? (
                     hotelBookings.map((hb) => {
                       const pb = hb.passengerBooking;
-                      const hotelBookingId = `HB-${String(hb.id).padStart(6, "0")}`;
+                      const hotelBookingId = String(hb.id);
                       const pnr = pb?.pnr || "-";
                       const contactName = `${pb?.firstName || ""} ${pb?.lastName || ""}`.trim() || "-";
                       const email = pb?.email || "";
