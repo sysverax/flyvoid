@@ -78,7 +78,97 @@ export interface AirlineAirportsResponse {
   limit: number;
 }
 
+export interface AdjustWalletBalanceRequest {
+  airlineId: number;
+  type: "CREDIT" | "DEBIT";
+  amount: number;
+  reason?: string;
+}
+
+export interface WalletAdjustmentDTO {
+  adjustmentId: number;
+  transactionId: number;
+  airlineId: number;
+  walletId: number;
+  type: "CREDIT" | "DEBIT";
+  amount: number;
+  openingBalance: number;
+  closingBalance: number;
+  creditLimit: number;
+  reason?: string | null;
+  createdAt: string;
+}
+
+export interface WalletTransactionItemDTO {
+  id: number;
+  airline: {
+    id: number;
+    name: string;
+    code: string;
+  };
+  openingBalance: number;
+  transactionAmount: number;
+  closingBalance: number;
+  transactionType: "CREDIT" | "DEBIT";
+  type: string;
+  creditLimit: number;
+  reason: string | null;
+  status: string;
+  createdAt: string;
+}
+
+export interface WalletTransactionsResponse {
+  transactions: WalletTransactionItemDTO[];
+  pagination: {
+    currentPage: number;
+    limit: number;
+    totalCount: number;
+  };
+}
+
+export interface WalletSummaryDTO {
+  totalWalletBalance: number;
+  totalCreditIssued: number;
+  totalCreditUsed: number;
+}
+
 export const airlinesService = {
+  async getWalletsSummary(): Promise<WalletSummaryDTO> {
+    try {
+      const { data } = await apiClient.get("/wallets/summary");
+      return data.data;
+    } catch (error: any) {
+      throw new Error(extractErrorMessage(error, "Failed to fetch wallets summary."));
+    }
+  },
+
+  async adjustWalletBalance(
+    payload: AdjustWalletBalanceRequest
+  ): Promise<WalletAdjustmentDTO> {
+    try {
+      const { data } = await apiClient.post("/wallets/adjustments", payload);
+      return data.data;
+    } catch (error: any) {
+      throw new Error(extractErrorMessage(error, "Failed to adjust wallet balance."));
+    }
+  },
+
+  async getWalletTransactions(params: {
+    airlineId?: number;
+    type?: string;
+    status?: string;
+    startDate?: string;
+    endDate?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<WalletTransactionsResponse> {
+    try {
+      const { data } = await apiClient.get("/wallets/transactions", { params });
+      return data.data;
+    } catch (error: any) {
+      throw new Error(extractErrorMessage(error, "Failed to fetch wallet transactions."));
+    }
+  },
   async getAirlines(params: {
     search?: string;
     isActive?: boolean;
