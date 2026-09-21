@@ -961,33 +961,13 @@ export default function CancellationPage() {
     }
   };
 
-  // Status Rank Map for workflow sorting
-  const STATUS_RANK: Record<string, number> = {
-    "Draft": 1,
-    "In Progress": 2,
-    "Confirmed": 3,
-    "Verified": 3,
-    "HA In Progress": 4,
-    "Allocated": 5,
-    "Paid": 6,
-    "Published": 7,
-  };
-
   // Sorting Logic
   const sortedCancellations = useMemo(() => {
     if (!sortField) return cancellations;
     return [...cancellations].sort((a, b) => {
       if (sortField === "status") {
-        const statusA = a.displayStatus || a.status || "";
-        const statusB = b.displayStatus || b.status || "";
-        const rankA = STATUS_RANK[statusA] || STATUS_RANK[a.status] || 99;
-        const rankB = STATUS_RANK[statusB] || STATUS_RANK[b.status] || 99;
-
-        if (rankA !== rankB) {
-          return sortOrder === "asc" ? rankA - rankB : rankB - rankA;
-        }
-        const strA = statusA.toLowerCase();
-        const strB = statusB.toLowerCase();
+        const strA = (a.displayStatus || a.status || "").toLowerCase();
+        const strB = (b.displayStatus || b.status || "").toLowerCase();
         if (strA < strB) return sortOrder === "asc" ? -1 : 1;
         if (strA > strB) return sortOrder === "asc" ? 1 : -1;
         return 0;

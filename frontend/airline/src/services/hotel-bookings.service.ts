@@ -133,6 +133,15 @@ export interface HotelBookingDetailDTO {
   hotel: HotelBookingDetailHotelDTO;
 }
 
+export interface HotelBookingsSummaryDTO {
+  totalCancelFlights: number;
+  totalBookings: number;
+  totalPassengers: number;
+  totalRooms: number;
+  totalCost: number;
+  totalPlatformFee: number;
+}
+
 export const hotelBookingsService = {
   async getHotelBookings(params: {
     page: number;
@@ -179,7 +188,7 @@ export const hotelBookingsService = {
       const { data } = await apiClient.get("/cancelled-flights", {
         params: {
           page: params?.page || 1,
-          limit: params?.limit || 100,
+          limit: params?.limit || 200,
           search: params?.search,
         },
       });
@@ -221,6 +230,22 @@ export const hotelBookingsService = {
       return data;
     } catch (error: any) {
       throw new Error(extractErrorMessage(error, "Failed to send hotel booking confirmation email."));
+    }
+  },
+
+  async getHotelBookingsSummary(params?: {
+    destinationAirportId?: number;
+    cancelledFlightId?: number;
+    search?: string;
+    airlineId?: number;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<HotelBookingsSummaryDTO> {
+    try {
+      const { data } = await apiClient.get("/hotel-bookings/summary", { params });
+      return data.data;
+    } catch (error: any) {
+      throw new Error(extractErrorMessage(error, "Failed to fetch hotel bookings summary."));
     }
   },
 };
