@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   HttpException,
+  Inject,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
@@ -13,10 +14,11 @@ import { FlightStatus, HotelAllocationStatus, TravelClass } from "./entities/enu
 import {
   AvailabilityHotel,
   AvailabilityRoomRate,
+  HOTEL_PROVIDER,
   HotelContentDetails,
-  HotelPartnerService,
+  HotelProvider,
   RoomOccupancy,
-} from "./hotel-partner.service";
+} from "./hotel-providers/hotel-provider.interface";
 import { AiService } from "../common/ai/ai.service";
 import { AuthenticatedRequest } from "../auth/interfaces/authenticated-request.interface";
 import { config } from "../config/config";
@@ -181,7 +183,7 @@ export class HotelAllocationService {
 
   constructor(
     private readonly cancelledFlightsRepository: CancelledFlightsRepository,
-    private readonly hotelPartnerService: HotelPartnerService,
+    @Inject(HOTEL_PROVIDER) private readonly hotelProvider: HotelProvider,
     private readonly aiService: AiService,
     private readonly logger: LoggerService,
   ) {}
@@ -613,7 +615,7 @@ export class HotelAllocationService {
       this.context,
       requestId,
     );
-    const candidateHotels = await this.hotelPartnerService.searchNearbyHotels(
+    const candidateHotels = await this.hotelProvider.searchNearbyHotels(
       {
         iataCode: departureAirport.iataCode,
         latitude: Number(departureAirport.latitude),
@@ -879,7 +881,7 @@ export class HotelAllocationService {
 
     let hotels: AvailabilityHotel[] = [];
     try {
-      hotels = await this.hotelPartnerService.searchNearbyHotelsWithOccupancies(
+      hotels = await this.hotelProvider.searchNearbyHotelsWithOccupancies(
         {
           iataCode: departureAirport.iataCode,
           latitude: Number(departureAirport.latitude),
@@ -890,7 +892,6 @@ export class HotelAllocationService {
         uniqueOccupancies,
         requestId,
         requestLogger,
-        config.hotelSearch.isAllowSearchAPI,
       );
     } catch (error: any) {
       this.logger.error(
@@ -1233,7 +1234,7 @@ export class HotelAllocationService {
 
     let hotels: AvailabilityHotel[] = [];
     try {
-      hotels = await this.hotelPartnerService.searchNearbyHotelsWithOccupancies(
+      hotels = await this.hotelProvider.searchNearbyHotelsWithOccupancies(
         {
           iataCode: departureAirport.iataCode,
           latitude: Number(departureAirport.latitude),
@@ -1244,7 +1245,6 @@ export class HotelAllocationService {
         uniqueOccupancies,
         requestId,
         requestLogger,
-        config.hotelSearch.isAllowSearchAPI,
       );
     } catch (error: any) {
       this.logger.error(
@@ -2134,11 +2134,10 @@ export class HotelAllocationService {
     const contentByHotelCode = new Map<string, HotelContentDetails>();
 
     for (const hotelCode of allocatedHotelCodes) {
-      const content = await this.hotelPartnerService.getHotelContentDetails(
+      const content = await this.hotelProvider.getHotelContentDetails(
         hotelCode,
         requestId,
         requestLogger,
-        config.hotelSearch.isAllowFetchHotelDetails,
       );
       if (content) {
         contentByHotelCode.set(hotelCode, content);
