@@ -76,6 +76,9 @@ function ProfileTab() {
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
 
+  const [initialFirstName, setInitialFirstName] = useState("");
+  const [initialLastName, setInitialLastName] = useState("");
+
   const [airlineName, setAirlineName] = useState("");
   const [iataCode, setIataCode] = useState("");
   const [primaryContact, setPrimaryContact] = useState("");
@@ -93,8 +96,12 @@ function ProfileTab() {
         if (isMounted) {
           if (userRes.status === "fulfilled" && userRes.value) {
             const u = userRes.value;
-            setFirstName(u.firstName || "");
-            setLastName(u.lastName || "");
+            const fName = u.firstName || "";
+            const lName = u.lastName || "";
+            setFirstName(fName);
+            setLastName(lName);
+            setInitialFirstName(fName);
+            setInitialLastName(lName);
             setEmail(u.email || "");
           }
 
@@ -120,8 +127,14 @@ function ProfileTab() {
     };
   }, []);
 
+  const isProfileChanged =
+    firstName.trim() !== initialFirstName.trim() ||
+    lastName.trim() !== initialLastName.trim();
+
   const handleSave = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (!isProfileChanged) return;
+
     if (!firstName.trim() || !lastName.trim()) {
       toast.error("First name and last name are required");
       return;
@@ -134,6 +147,8 @@ function ProfileTab() {
         lastName: lastName.trim(),
       });
 
+      setInitialFirstName(updated.firstName || firstName.trim());
+      setInitialLastName(updated.lastName || lastName.trim());
       toast.success("Profile updated successfully");
 
       if (typeof window !== "undefined") {
@@ -158,9 +173,27 @@ function ProfileTab() {
 
   if (isLoading) {
     return (
-      <div className="bg-white border border-gray-200 rounded-xl p-12 flex flex-col items-center justify-center gap-3 min-h-[300px]">
-        <Loader2 className="w-8 h-8 animate-spin text-[#0F2757]" />
-        <span className="text-gray-500 text-sm font-medium font-figtree">Loading profile details...</span>
+      <div className="overflow-hidden rounded-[12px] border border-[#E5E7EB] bg-white p-12 flex flex-col items-center justify-center gap-2 min-h-[300px]">
+        <svg
+          className="animate-spin h-8 w-8 text-[#0F2757]"
+          fill="none"
+          viewBox="0 0 24 24"
+        >
+          <circle
+            className="opacity-25"
+            cx="12"
+            cy="12"
+            r="10"
+            stroke="currentColor"
+            strokeWidth="4"
+          />
+          <path
+            className="opacity-75"
+            fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+          />
+        </svg>
+        <span className="text-gray-500 font-figtree text-sm">Loading profile details...</span>
       </div>
     );
   }
@@ -231,8 +264,8 @@ function ProfileTab() {
           <div className="pt-2 flex justify-end w-full">
             <button
               type="submit"
-              disabled={isSaving}
-              className="flex h-[44px] items-center justify-center gap-2 rounded-[10px] bg-[#0F2757] px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-[#162259] cursor-pointer disabled:opacity-60"
+              disabled={isSaving || !isProfileChanged}
+              className="flex h-[44px] items-center justify-center gap-2 rounded-[10px] bg-[#0F2757] px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-[#162259] cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {isSaving ? (
                 <>
@@ -503,8 +536,14 @@ function SecurityTab() {
     return "";
   };
 
+  const isPasswordChanged =
+    currentPassword.trim().length > 0 ||
+    newPassword.trim().length > 0 ||
+    confirmPassword.trim().length > 0;
+
   const handlePasswordChange = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (!isPasswordChanged) return;
     setPasswordTouched({
       currentPassword: true,
       newPassword: true,
@@ -825,8 +864,8 @@ function SecurityTab() {
               <div className="pt-2">
                 <button
                   type="submit"
-                  disabled={isUpdatingPassword}
-                  className="bg-[#0F2757] hover:bg-[#162259] active:scale-[0.98] transition-all text-white font-medium py-2.5 px-6 rounded-lg cursor-pointer text-sm disabled:opacity-60 flex items-center gap-2"
+                  disabled={isUpdatingPassword || !isPasswordChanged}
+                  className="bg-[#0F2757] hover:bg-[#162259] active:scale-[0.98] transition-all text-white font-medium py-2.5 px-6 rounded-lg cursor-pointer text-sm disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
                 >
                   {isUpdatingPassword ? (
                     <>

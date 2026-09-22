@@ -22,6 +22,7 @@ import { BookingDetailsDrawer } from "@/src/components/ui/BookingDetailsDrawer";
 import {
   hotelBookingsService,
   HotelBookingDTO,
+  HotelBookingsSummaryDTO,
 } from "@/src/services/hotel-bookings.service";
 import { airportsService } from "@/src/services/airports.service";
 import {
@@ -68,6 +69,7 @@ function mapHotelBookingDTOToBooking(dto: HotelBookingDTO): Booking {
 
 export default function BookingsPage() {
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [summaryData, setSummaryData] = useState<HotelBookingsSummaryDTO | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Search & Filters states
@@ -105,7 +107,7 @@ export default function BookingsPage() {
     let isMounted = true;
 
     airportsService
-      .getAirports({ page: 1, limit: 100 })
+      .getAirports({ page: 1, limit: 200 })
       .then((res) => {
         if (!isMounted) return;
         const opts = res.airports.map((a) => ({
@@ -120,7 +122,7 @@ export default function BookingsPage() {
       });
 
     hotelBookingsService
-      .getCancelledFlights({ page: 1, limit: 100 })
+      .getCancelledFlights({ page: 1, limit: 200 })
       .then((flights) => {
         if (!isMounted) return;
         const opts = flights.map((f: any) => ({
@@ -167,18 +169,28 @@ export default function BookingsPage() {
           cancelledFlightId = found?.cancelledFlightId;
         }
 
-        const res = await hotelBookingsService.getHotelBookings({
-          search: searchQuery.trim() || undefined,
-          destinationAirportId,
-          cancelledFlightId,
-          page: currentPage,
-          limit: resultsPerPage,
-        });
+        const searchFilter = searchQuery.trim() || undefined;
+
+        const [res, summaryRes] = await Promise.all([
+          hotelBookingsService.getHotelBookings({
+            search: searchFilter,
+            destinationAirportId,
+            cancelledFlightId,
+            page: currentPage,
+            limit: resultsPerPage,
+          }),
+          hotelBookingsService.getHotelBookingsSummary({
+            search: searchFilter,
+            destinationAirportId,
+            cancelledFlightId,
+          }),
+        ]);
 
         if (isMounted) {
           const mapped = res.hotelBookings.map(mapHotelBookingDTOToBooking);
           setBookings(mapped);
           setTotalResults(res.total);
+          setSummaryData(summaryRes);
 
           // Update flight options dynamically if new flights are received
           if (res.hotelBookings.length > 0) {
@@ -251,13 +263,13 @@ export default function BookingsPage() {
     setCurrentPage(1);
   };
 
-  // Computed Stats
+  // Computed Stats from API summary data
   const stats = useMemo(() => {
-    const totalBookings = totalResults;
-    const totalPassengers = bookings.reduce((sum, b) => sum + b.passengers, 0);
-    const totalCost = bookings.reduce((sum, b) => sum + b.totalCost, 0);
+    const totalBookings = summaryData ? summaryData.totalBookings : totalResults;
+    const totalPassengers = summaryData ? summaryData.totalPassengers : 0;
+    const totalCost = summaryData ? summaryData.totalCost : 0;
     return { totalBookings, totalPassengers, totalCost };
-  }, [bookings, totalResults]);
+  }, [summaryData, totalResults]);
 
   const [exportingId, setExportingId] = useState<number | string | null>(null);
 
@@ -331,6 +343,45 @@ export default function BookingsPage() {
           </p>
         </div>
 
+        {/* Filter panel card */}
+        <FiltersCard
+          searchQuery={searchQuery}
+          setSearchQuery={(q) => {
+            setSearchQuery(q);
+            setCurrentPage(1);
+          }}
+          searchPlaceholder="Search by Booking ID, flight number, hotel name, or email..."
+          onClearFilters={handleClearAll}
+        >
+          {/* Flight dropdown */}
+          <Dropdown
+            value={selectedFlight}
+            onChange={(val) => {
+              setSelectedFlight(val);
+              setCurrentPage(1);
+            }}
+            options={flightOptions}
+            widthClass="w-52"
+            triggerWidthClass="w-[195px]"
+            maxListHeightClass="max-h-60"
+            searchable
+          />
+
+          {/* Airport dropdown */}
+          <Dropdown
+            value={selectedAirport}
+            onChange={(val) => {
+              setSelectedAirport(val);
+              setCurrentPage(1);
+            }}
+            options={airportOptions}
+            widthClass="w-44"
+            triggerWidthClass="w-[180px]"
+            maxListHeightClass="max-h-60"
+            searchable
+          />
+        </FiltersCard>
+
         {/* 3 KPI Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Card 1: Total Bookings */}
@@ -400,45 +451,6 @@ export default function BookingsPage() {
             </div>
           </div>
         </div>
-
-        {/* Filter panel card */}
-        <FiltersCard
-          searchQuery={searchQuery}
-          setSearchQuery={(q) => {
-            setSearchQuery(q);
-            setCurrentPage(1);
-          }}
-          searchPlaceholder="Search by Booking ID, flight number, hotel name, or email..."
-          onClearFilters={handleClearAll}
-        >
-          {/* Flight dropdown */}
-          <Dropdown
-            value={selectedFlight}
-            onChange={(val) => {
-              setSelectedFlight(val);
-              setCurrentPage(1);
-            }}
-            options={flightOptions}
-            widthClass="w-52"
-            triggerWidthClass="w-[195px]"
-            maxListHeightClass="max-h-60"
-            searchable
-          />
-
-          {/* Airport dropdown */}
-          <Dropdown
-            value={selectedAirport}
-            onChange={(val) => {
-              setSelectedAirport(val);
-              setCurrentPage(1);
-            }}
-            options={airportOptions}
-            widthClass="w-44"
-            triggerWidthClass="w-[180px]"
-            maxListHeightClass="max-h-60"
-            searchable
-          />
-        </FiltersCard>
 
         {/* Bookings Table */}
         <div className="overflow-hidden rounded-[12px] border border-[#E5E7EB] bg-white mb-6">
@@ -710,6 +722,7 @@ export default function BookingsPage() {
         detailData={drawerDetailData}
         showSendConfirmation
         downloadType="csv"
+        isBookingsTab
       />
     </div>
   );
