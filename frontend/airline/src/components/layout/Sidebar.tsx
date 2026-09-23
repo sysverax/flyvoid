@@ -12,6 +12,7 @@ import {
   X,
   Settings,
   Wallet as WalletIcon,
+  Users,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { toast } from "react-toastify";
@@ -45,6 +46,7 @@ const navItems = [
     path: "/payments",
     key: "payments",
   },
+  { title: "Manage Users", icon: Users, path: "/manage-users", key: "manageUsers" },
   { title: "Settings", icon: Settings, path: "/settings", key: "settings" },
 ];
 
