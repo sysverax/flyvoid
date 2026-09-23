@@ -5,76 +5,23 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import * as crypto from "node:crypto";
-import { config } from "../config/config";
-import { LoggerService } from "../common/logger/logger.service";
-import { HotelAllocationStatus } from "./entities/enums";
+import { config } from "../../../config/config";
+import { LoggerService } from "../../../common/logger/logger.service";
+import { HotelAllocationStatus } from "../../entities/enums";
 import { Logger } from "winston";
 import path from "node:path";
 import fs from "node:fs/promises";
-
-export interface HotelCandidate {
-  id: string;
-  name: string;
-  address: string;
-  stars: number;
-  amenities: string[];
-  pricePerNight: number;
-  description: string;
-  rateKey?: string | null;
-}
-
-export interface RoomOccupancy {
-  adults: number;
-  children: number;
-  childrenAges?: number[];
-}
-
-export interface AvailabilityRoomRate {
-  hotelCode: string;
-  hotelName: string;
-  category: string;
-  roomCode: string | null;
-  roomName: string;
-  boardCode: string | null;
-  boardName: string;
-  rateKey: string;
-  rateType: string | null;
-  netPrice: number;
-  currency: string;
-  allotment: number | null;
-  adults: number;
-  children: number;
-  childrenAges: number[];
-  cancellationPolicies: Array<{ amount: number; from: string }>;
-  rateComments: string | null;
-  paymentType: string | null;
-}
-
-export interface AvailabilityHotel {
-  hotelCode: string;
-  hotelName: string;
-  category: string;
-  address: string;
-  stars: number;
-  rates: AvailabilityRoomRate[];
-}
-
-export interface HotelContentDetails {
-  address: string | null;
-  contact: {
-    phones: Array<{ phoneNumber: string; phoneType: string }>;
-    email: string | null;
-  };
-  latitude: number | null;
-  longitude: number | null;
-  distanceFromAirportKm: number | null;
-  imageUrl: string | null;
-  website: string | null;
-  amenities: string[];
-}
+import {
+  AvailabilityHotel,
+  AvailabilityRoomRate,
+  HotelCandidate,
+  HotelContentDetails,
+  HotelProvider,
+  RoomOccupancy,
+} from "../hotel-provider.interface";
 
 @Injectable()
-export class HotelPartnerService {
+export class HotelbedsProvider implements HotelProvider {
   private readonly apiKey = config.hotelbeds.apiKey;
   private readonly secret = config.hotelbeds.secret;
   private readonly useSandbox = config.hotelbeds.useSandbox;
@@ -110,7 +57,7 @@ export class HotelPartnerService {
       runDirNames = await fs.readdir(this.occupancyCacheDir);
     } catch (error: any) {
       requestLogger.warn("Hotelbeds cache directory not found", {
-        context: "HotelPartnerService",
+        context: "HotelbedsProvider",
         cacheDir: this.occupancyCacheDir,
         error: error?.message,
       });
@@ -147,7 +94,7 @@ export class HotelPartnerService {
     }
 
     requestLogger.warn("No cached Hotelbeds response found for occupancy", {
-      context: "HotelPartnerService",
+      context: "HotelbedsProvider",
       occupancyFile: fileName,
     });
     return [];
@@ -261,7 +208,7 @@ export class HotelPartnerService {
         `Hotelbeds API returned status ${response.status} for ${label}: ${errorText}`,
       );
 
-      const retryable = HotelPartnerService.RETRYABLE_STATUS.has(
+      const retryable = HotelbedsProvider.RETRYABLE_STATUS.has(
         response.status,
       );
       if (retryable && attempt < this.availabilityMaxAttempts) {
@@ -273,7 +220,7 @@ export class HotelPartnerService {
         requestLogger.warn(
           "Hotelbeds availability request failed, retrying occupancy",
           {
-            context: "HotelPartnerService",
+            context: "HotelbedsProvider",
             occupancy: label,
             status: response.status,
             attempt,
@@ -321,10 +268,14 @@ export class HotelPartnerService {
             `Near Airport (Zone: ${hotel.zoneName || "Transit"})`,
         );
 
+        // Prefer categoryCode's leading digit (e.g. "5EST") over scanning categoryName, which can grab a stray digit like a bedroom count.
         let stars = 3;
-        const starMatch = category.match(/(\d)/);
-        if (starMatch) {
-          stars = parseInt(starMatch[1], 10);
+        const codeMatch = String(hotel.categoryCode ?? "").match(/^(\d)/);
+        const nameMatch = category.match(/(\d)(?:\.\d)?\s*-?\s*(?:STARS?|\*)/i);
+        if (codeMatch) {
+          stars = parseInt(codeMatch[1], 10);
+        } else if (nameMatch) {
+          stars = parseInt(nameMatch[1], 10);
         }
 
         const rates: AvailabilityRoomRate[] = (hotel.rooms ?? []).flatMap(
@@ -380,139 +331,6 @@ export class HotelPartnerService {
       .filter((hotel) => hotel.rates.length > 0);
   }
 
-  // async searchNearbyHotelsWithOccupancies(
-  //   airport: { iataCode: string; latitude: number; longitude: number },
-  //   checkInDate: string,
-  //   checkOutDate: string,
-  //   occupancies: RoomOccupancy[],
-  //   requestId: string,
-  // ): Promise<AvailabilityHotel[]> {
-  //   if (!this.apiKey || !this.secret) {
-  //     this.logger.warn(
-  //       "Hotelbeds credentials not configured.",
-  //       "HotelPartnerService",
-  //       requestId,
-  //     );
-  //     throw new ServiceUnavailableException(
-  //       "Hotelbeds API credentials not configured",
-  //     );
-  //   }
-
-  //   const endpoint = this.useSandbox
-  //     ? "https://api.test.hotelbeds.com/hotel-api/1.0/hotels"
-  //     : "https://api.hotelbeds.com/hotel-api/1.0/hotels";
-
-  //   const timestamp = Math.floor(Date.now() / 1000);
-  //   const dataToHash = this.apiKey + this.secret + timestamp;
-  //   const signature = crypto
-  //     .createHash("sha256")
-  //     .update(dataToHash)
-  //     .digest("hex");
-
-  //   const dedupedOccupancies = Array.from(
-  //     new Map(
-  //       occupancies.map((occupancy) => [
-  //         this.occupancyKey(occupancy),
-  //         occupancy,
-  //       ]),
-  //     ).values(),
-  //   );
-
-  //   const payload = {
-  //     stay: {
-  //       checkIn: checkInDate,
-  //       checkOut: checkOutDate,
-  //     },
-  //     occupancies: dedupedOccupancies.map((occupancy) => ({
-  //       rooms: 1,
-  //       adults: occupancy.adults,
-  //       children: occupancy.children,
-  //       ...(occupancy.children > 0 && occupancy.childrenAges?.length
-  //         ? {
-  //             paxes: occupancy.childrenAges.map((age) => ({ type: "CH", age })),
-  //           }
-  //         : {}),
-  //     })),
-  //     geolocation: {
-  //       latitude: Number(airport.latitude),
-  //       longitude: Number(airport.longitude),
-  //       radius: 20,
-  //       unit: "km",
-  //     },
-  //   };
-
-  //   console.log("Payload for Hotelbeds API:", JSON.stringify(payload, null, 2));
-
-  //   try {
-  //     this.logger.info(
-  //       "Fetching hotel availability from Hotelbeds API",
-  //       "HotelPartnerService",
-  //       requestId,
-  //       {
-  //         airportCode: airport.iataCode,
-  //         occupancyCount: dedupedOccupancies.length,
-  //         useSandbox: this.useSandbox,
-  //       },
-  //     );
-
-  //     const response = await fetch(endpoint, {
-  //       method: "POST",
-  //       headers: {
-  //         "Api-key": this.apiKey,
-  //         "X-Signature": signature,
-  //         Accept: "application/json",
-  //         "Content-Type": "application/json",
-  //       },
-  //       body: JSON.stringify(payload),
-  //     });
-
-  //     if (!response.ok) {
-  //       const errorText = await response.text();
-  //       throw new Error(
-  //         `Hotelbeds API returned status ${response.status}: ${errorText}`,
-  //       );
-  //     }
-
-  //     const responseData = await response.json();
-  //     const rawHotels = responseData?.hotels?.hotels || [];
-
-  //     this.logger.info(
-  //       `Successfully received ${rawHotels.length} hotels from Hotelbeds API`,
-  //       "HotelPartnerService",
-  //       requestId,
-  //     );
-
-  //     if (rawHotels.length === 0) {
-  //       this.logger.warn(
-  //         "Hotelbeds returned 0 hotels.",
-  //         "HotelPartnerService",
-  //         requestId,
-  //       );
-  //       throw new NotFoundException(
-  //         `No hotels found near airport ${airport.iataCode}`,
-  //       );
-  //     }
-
-  //     return this.normalizeAvailabilityHotels(rawHotels);
-  //   } catch (error: any) {
-  //     this.logger.error(
-  //       `Error querying Hotelbeds API: ${error.message}`,
-  //       "HotelPartnerService",
-  //       requestId,
-  //       { stack: error.stack },
-  //     );
-  //     if (
-  //       error instanceof NotFoundException ||
-  //       error instanceof ServiceUnavailableException
-  //     ) {
-  //       throw error;
-  //     }
-  //     throw new ServiceUnavailableException(
-  //       `Hotelbeds API query failed: ${error.message}`,
-  //     );
-  //   }
-  // }
-
   async searchNearbyHotelsWithOccupancies(
     airport: {
       iataCode: string;
@@ -524,9 +342,8 @@ export class HotelPartnerService {
     occupancies: RoomOccupancy[],
     requestId: string,
     requestLogger: Logger,
-    isAllowSearchAPI: boolean,
   ): Promise<AvailabilityHotel[]> {
-    if (!isAllowSearchAPI) {
+    if (!config.hotelSearch.isAllowSearchAPI) {
       return await this.searchNearbyHotelsWithOccupanciesFromJson(
         airport,
         checkInDate,
@@ -538,7 +355,7 @@ export class HotelPartnerService {
     }
     if (!this.apiKey || !this.secret) {
       requestLogger.warn("Hotelbeds credentials not configured.", {
-        context: "HotelPartnerService",
+        context: "HotelbedsProvider",
       });
 
       throw new ServiceUnavailableException(
@@ -554,7 +371,7 @@ export class HotelPartnerService {
       requestLogger.warn(
         "No occupancies provided for hotel availability search.",
         {
-          context: "HotelPartnerService",
+          context: "HotelbedsProvider",
         },
       );
       throw new BadRequestException(
@@ -571,8 +388,8 @@ export class HotelPartnerService {
       ).values(),
     );
 
-    const buildPayloads = (radius: number) =>
-      dedupedOccupancies.map((occupancy) => {
+    const buildPayloads = (radius: number, occupanciesToQuery: RoomOccupancy[]) =>
+      occupanciesToQuery.map((occupancy) => {
         const childrenCount = Number(occupancy.children ?? 0);
         const normalizedAges = (occupancy.childrenAges ?? []).filter(
           (age) => Number.isFinite(age) && age > 0,
@@ -615,66 +432,90 @@ export class HotelPartnerService {
         };
       });
 
-    const fetchMergedHotels = async (radius: number) => {
+    // Accumulates across widen rounds so a shape that already found hotels
+    // at a smaller radius is never re-merged or re-queried.
+    const mergedByHotelCode = new Map<string, any>();
+    const mergeHotel = (hotel: any) => {
+      const key = String(hotel?.code ?? "");
+      if (!key) {
+        return;
+      }
+      const existing = mergedByHotelCode.get(key);
+      if (!existing) {
+        mergedByHotelCode.set(key, {
+          ...hotel,
+          rooms: Array.isArray(hotel.rooms) ? [...hotel.rooms] : [],
+        });
+        return;
+      }
+      if (Array.isArray(hotel.rooms) && hotel.rooms.length > 0) {
+        existing.rooms = [...(existing.rooms ?? []), ...hotel.rooms];
+      }
+    };
+
+    // Queries only occupanciesToQuery (not every shape) and returns which of
+    // those are still empty, so subsequent widen rounds only re-query the
+    // shapes that actually need it instead of re-fetching everything.
+    const fetchAndMerge = async (
+      radius: number,
+      occupanciesToQuery: RoomOccupancy[],
+    ): Promise<RoomOccupancy[]> => {
       const responses = await this.mapWithConcurrency(
-        buildPayloads(radius),
+        buildPayloads(radius, occupanciesToQuery),
         this.availabilityMaxConcurrency,
         (group) =>
           this.fetchOccupancyAvailability(endpoint, group, requestLogger),
       );
 
-      const mergedByHotelCode = new Map<string, any>();
-      for (const { rawHotels } of responses) {
+      const stillMissing: RoomOccupancy[] = [];
+      for (const { occupancy, rawHotels } of responses) {
+        if (!Array.isArray(rawHotels) || rawHotels.length === 0) {
+          stillMissing.push(occupancy);
+          continue;
+        }
         for (const hotel of rawHotels) {
-          const key = String(hotel?.code ?? "");
-          if (!key) {
-            continue;
-          }
-
-          const existing = mergedByHotelCode.get(key);
-          if (!existing) {
-            mergedByHotelCode.set(key, {
-              ...hotel,
-              rooms: Array.isArray(hotel.rooms) ? [...hotel.rooms] : [],
-            });
-            continue;
-          }
-
-          if (Array.isArray(hotel.rooms) && hotel.rooms.length > 0) {
-            existing.rooms = [...(existing.rooms ?? []), ...hotel.rooms];
-          }
+          mergeHotel(hotel);
         }
       }
-
-      return Array.from(mergedByHotelCode.values());
+      return stillMissing;
     };
 
     requestLogger.info("Fetching hotel availability from Hotelbeds API", {
-      context: "HotelPartnerService",
+      context: "HotelbedsProvider",
       airportCode: airport.iataCode,
       occupancyCount: dedupedOccupancies.length,
       useSandbox: this.useSandbox,
     });
 
     try {
-      const { defaultRadius, maxRadius } = config.hotelSearch;
+      const { defaultRadius } = config.hotelSearch;
+      const maxRadius = Math.max(defaultRadius, config.hotelSearch.maxRadius);
 
-      let mergedRawHotels: any[] = [];
-      for (let radius = defaultRadius; radius <= maxRadius; radius += 10) {
-        mergedRawHotels = await fetchMergedHotels(radius);
-        if (mergedRawHotels.length > 0) {
+      // Widen while ANY shape has zero hits, not just when the total is
+      // zero - otherwise a rare shape can starve while common ones already
+      // found hotels. Each round only re-queries the shapes still missing.
+      let stillMissing = dedupedOccupancies;
+      for (
+        let radius = defaultRadius;
+        radius <= maxRadius && stillMissing.length > 0;
+        radius += 10
+      ) {
+        const missingBefore = stillMissing.length;
+        stillMissing = await fetchAndMerge(radius, stillMissing);
+        if (stillMissing.length === 0) {
           break;
         }
         requestLogger.info(
-          `No hotels within ${radius}${config.hotelSearch.unit} of ${airport.iataCode}, widening search`,
-          { context: "HotelPartnerService" },
+          `${stillMissing.length} occupancy shape(s) still had no hotels within ${radius}${config.hotelSearch.unit} of ${airport.iataCode}, widening search for just those`,
+          { context: "HotelbedsProvider", stillMissingCount: stillMissing.length, queriedCount: missingBefore },
         );
       }
+      const mergedRawHotels = Array.from(mergedByHotelCode.values());
 
       requestLogger.info(
         `Successfully received ${mergedRawHotels.length} merged hotels from Hotelbeds API`,
         {
-          context: "HotelPartnerService",
+          context: "HotelbedsProvider",
         },
       );
 
@@ -684,7 +525,7 @@ export class HotelPartnerService {
         );
       }
       requestLogger.info(`Merged raw hotels: ${mergedRawHotels.length}`, {
-        context: "HotelPartnerService",
+        context: "HotelbedsProvider",
         mergedRawHotels,
       });
 
@@ -692,7 +533,7 @@ export class HotelPartnerService {
     } catch (error: any) {
       this.logger.error(
         `Error querying Hotelbeds API: ${error.message}`,
-        "HotelPartnerService",
+        "HotelbedsProvider",
         requestId,
         { stack: error.stack },
       );
@@ -728,7 +569,7 @@ export class HotelPartnerService {
       requestLogger.warn(
         "No occupancies provided for hotel availability search.",
         {
-          context: "HotelPartnerService",
+          context: "HotelbedsProvider",
         },
       );
       throw new BadRequestException(
@@ -748,7 +589,7 @@ export class HotelPartnerService {
     requestLogger.info(
       "Loading hotel availability from cached Hotelbeds responses",
       {
-        context: "HotelPartnerService",
+        context: "HotelbedsProvider",
         airportCode: airport.iataCode,
         occupancyCount: dedupedOccupancies.length,
         cacheDir: this.occupancyCacheDir,
@@ -793,7 +634,7 @@ export class HotelPartnerService {
     requestLogger.info(
       `Loaded ${mergedRawHotels.length} merged hotels from cached Hotelbeds responses`,
       {
-        context: "HotelPartnerService",
+        context: "HotelbedsProvider",
       },
     );
 
@@ -819,7 +660,6 @@ export class HotelPartnerService {
       [{ adults: 1, children: 0 }],
       requestId,
       this.logger as unknown as Logger,
-      config.hotelSearch.isAllowSearchAPI,
     );
 
     return hotels.slice(0, 10).map((hotel) => {
@@ -858,9 +698,8 @@ export class HotelPartnerService {
     hotelCode: string,
     requestId: string,
     requestLogger: Logger,
-    isAllowFetchHotelDetails: boolean,
   ): Promise<HotelContentDetails | null> {
-    if (!isAllowFetchHotelDetails) {
+    if (!config.hotelSearch.isAllowFetchHotelDetails) {
       // Temporarily disabled (Content API call commented out below); returns empty placeholders.
       return {
         address: "",
@@ -896,7 +735,7 @@ export class HotelPartnerService {
       if (!response.ok) {
         requestLogger.warn(
           `Hotelbeds content lookup failed for hotel '${hotelCode}': status ${response.status}`,
-          { context: "HotelPartnerService" },
+          { context: "HotelbedsProvider" },
         );
         return null;
       }
@@ -932,7 +771,7 @@ export class HotelPartnerService {
                   (f: any) =>
                     f?.number === undefined &&
                     f?.description?.content &&
-                    !HotelPartnerService.NON_AMENITY_FACILITY_GROUPS.has(
+                    !HotelbedsProvider.NON_AMENITY_FACILITY_GROUPS.has(
                       f.facilityGroupCode,
                     ),
                 )
@@ -956,7 +795,7 @@ export class HotelPartnerService {
     } catch (error: any) {
       this.logger.error(
         `Error querying Hotelbeds Content API for hotel '${hotelCode}': ${error.message}`,
-        "HotelPartnerService",
+        "HotelbedsProvider",
         requestId,
         { stack: error.stack },
       );
@@ -964,11 +803,12 @@ export class HotelPartnerService {
     }
   }
 
+  // Hotelbeds-only: not part of HotelProvider (unwired, no controller uses it today).
   async checkRate(rateKey: string, requestId: string): Promise<any> {
     if (!this.apiKey || !this.secret) {
       this.logger.warn(
         "Hotelbeds credentials not configured.",
-        "HotelPartnerService",
+        "HotelbedsProvider",
         requestId,
       );
       throw new ServiceUnavailableException(
@@ -998,7 +838,7 @@ export class HotelPartnerService {
     try {
       this.logger.info(
         "Validating rate with Hotelbeds CheckRate API",
-        "HotelPartnerService",
+        "HotelbedsProvider",
         requestId,
         { rateKey },
       );
@@ -1024,14 +864,14 @@ export class HotelPartnerService {
       const responseData = await response.json();
       this.logger.info(
         "Successfully validated rate with Hotelbeds",
-        "HotelPartnerService",
+        "HotelbedsProvider",
         requestId,
       );
       return responseData;
     } catch (error: any) {
       this.logger.error(
         `Error calling Hotelbeds CheckRate API: ${error.message}`,
-        "HotelPartnerService",
+        "HotelbedsProvider",
         requestId,
         { stack: error.stack },
       );
@@ -1041,6 +881,7 @@ export class HotelPartnerService {
     }
   }
 
+  // Hotelbeds-only: not part of HotelProvider (unwired, no controller uses it today).
   async bookHotel(
     bookingData: {
       firstName: string;
@@ -1066,7 +907,7 @@ export class HotelPartnerService {
     if (!this.apiKey || !this.secret) {
       this.logger.warn(
         "Hotelbeds credentials not configured.",
-        "HotelPartnerService",
+        "HotelbedsProvider",
         requestId,
       );
       throw new ServiceUnavailableException(
@@ -1113,7 +954,7 @@ export class HotelPartnerService {
     try {
       this.logger.info(
         "Creating live reservation with Hotelbeds Bookings API",
-        "HotelPartnerService",
+        "HotelbedsProvider",
         requestId,
         { bookingId: bookingData.bookingId },
       );
@@ -1139,7 +980,7 @@ export class HotelPartnerService {
       const responseData = await response.json();
       this.logger.info(
         "Successfully created booking with Hotelbeds",
-        "HotelPartnerService",
+        "HotelbedsProvider",
         requestId,
       );
       return {
@@ -1157,7 +998,7 @@ export class HotelPartnerService {
     } catch (error: any) {
       this.logger.error(
         `Error calling Hotelbeds Bookings API: ${error.message}`,
-        "HotelPartnerService",
+        "HotelbedsProvider",
         requestId,
         { stack: error.stack },
       );
