@@ -11,6 +11,7 @@ import { authService } from "@/src/services/auth.service";
 export default function AdminProfilePage() {
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
+  const [initialFullName, setInitialFullName] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -37,7 +38,9 @@ export default function AdminProfilePage() {
     if (user?.email) {
       setEmail(user.email);
       const parts = user.email.split("@")[0].split(/[._-]/);
-      setFullName(parts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" "));
+      const formattedName = parts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
+      setFullName(formattedName);
+      setInitialFullName(formattedName);
 
       const enabled = sessionStorage.getItem(`tfa_enabled_${user.email}`) === "true";
       const method = sessionStorage.getItem(`tfa_method_${user.email}`) as "email" | "authenticator";
@@ -124,15 +127,26 @@ export default function AdminProfilePage() {
     }
   };
 
+  const isProfileChanged =
+    fullName.trim().length > 0 && fullName.trim() !== initialFullName.trim();
+
+  const isPasswordChanged =
+    currentPassword.trim().length > 0 &&
+    newPassword.trim().length > 0 &&
+    confirmPassword.trim().length > 0;
+
   const handleSaveChanges = () => {
+    if (!isProfileChanged) return;
     if (!fullName.trim()) {
       showToast("Full name cannot be empty.", "warning");
       return;
     }
+    setInitialFullName(fullName.trim());
     showToast("Profile changes saved successfully!", "success");
   };
 
   const handleChangePassword = () => {
+    if (!isPasswordChanged) return;
     if (!currentPassword || !newPassword || !confirmPassword) {
       showToast("Please fill in all password fields.", "warning");
       return;
@@ -188,7 +202,8 @@ export default function AdminProfilePage() {
         </div>
         <button
           onClick={handleSaveChanges}
-          className="group flex h-[50px] items-center justify-center gap-2 rounded-[10px] bg-primary px-4 py-[9px] text-[16px] font-medium text-white transition-colors duration-200 hover:bg-primary-hover cursor-pointer relative -top-0.5"
+          disabled={!isProfileChanged}
+          className="group flex h-[50px] items-center justify-center gap-2 rounded-[10px] bg-primary px-4 py-[9px] text-[16px] font-medium text-white transition-colors duration-200 hover:bg-primary-hover cursor-pointer relative -top-0.5 disabled:opacity-60 disabled:cursor-not-allowed"
         >
           <Save className="h-5 w-5" />
           <span>Save Changes</span>
@@ -327,7 +342,8 @@ export default function AdminProfilePage() {
             {/* Change Password Button */}
             <button
               onClick={handleChangePassword}
-              className="self-stretch h-11 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 text-base font-medium font-figtree rounded-[10px] border border-gray-300 inline-flex justify-center items-center cursor-pointer transition-colors"
+              disabled={!isPasswordChanged}
+              className="self-stretch h-11 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 text-base font-medium font-figtree rounded-[10px] border border-gray-300 inline-flex justify-center items-center cursor-pointer transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
               Change Password
             </button>

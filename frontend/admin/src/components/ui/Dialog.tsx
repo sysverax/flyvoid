@@ -31,30 +31,39 @@ function DialogRoot({
 
 function DialogHeader({
   title,
+  subtitle,
   onClose,
 }: {
   title: string;
+  subtitle?: React.ReactNode;
   onClose: () => void;
 }) {
   return (
     <div
-      className="flex flex-row justify-between items-center w-full"
+      className="flex flex-row justify-between items-start w-full"
       style={{
-        padding: "0px 24px 24px",
+        padding: "0px 24px 20px",
         borderBottom: "1px solid #D1D5DB",
       }}
     >
-      <h2
-        className="text-[#1F2937]"
-        style={{
-          fontFamily: "Figtree",
-          fontWeight: 600,
-          fontSize: 24,
-          lineHeight: "100%",
-        }}
-      >
-        {title}
-      </h2>
+      <div>
+        <h2
+          className="text-[#1F2937]"
+          style={{
+            fontFamily: "Figtree",
+            fontWeight: 600,
+            fontSize: 24,
+            lineHeight: "120%",
+          }}
+        >
+          {title}
+        </h2>
+        {subtitle && (
+          <div className="text-[14px] text-[#6B7280] font-normal mt-1 font-figtree">
+            {subtitle}
+          </div>
+        )}
+      </div>
       <button
         onClick={onClose}
         className="p-1.5 rounded-lg transition-colors cursor-pointer flex-shrink-0"

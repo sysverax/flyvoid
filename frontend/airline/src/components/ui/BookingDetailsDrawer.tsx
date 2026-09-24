@@ -37,6 +37,7 @@ interface BookingDetailsDrawerProps {
   detailData?: HotelBookingDetailDataDto | null;
   showSendConfirmation?: boolean;
   downloadType?: "pdf" | "csv";
+  isBookingsTab?: boolean;
 }
 
 export function BookingDetailsDrawer({
@@ -48,6 +49,7 @@ export function BookingDetailsDrawer({
   detailData: propDetailData,
   showSendConfirmation = false,
   downloadType = "pdf",
+  isBookingsTab = false,
 }: BookingDetailsDrawerProps) {
   const [mounted, setMounted] = useState(false);
   const [internalDetailData, setInternalDetailData] =
@@ -140,7 +142,17 @@ export function BookingDetailsDrawer({
   const pBooking = activeDetailData?.booking || booking;
   const hotel = activeDetailData?.hotel || booking?.hotel;
   const displayBookingId = activeDetailData?.id
-    ? `HB-${String(activeDetailData.id).padStart(3, "0")}`
+    ? String(activeDetailData.id)
+    : booking?.id ? String(booking.id) : "N/A";
+
+  const flightNumber = activeDetailData?.flight?.flightNumber || "N/A";
+  const dep = activeDetailData?.flight?.route?.departureAirport;
+  const bookingDateText = activeDetailData?.booking?.createdAt
+    ? new Date(activeDetailData.booking.createdAt).toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    })
     : "N/A";
 
   const pnr = pBooking?.pnr || "N/A";
@@ -175,12 +187,12 @@ export function BookingDetailsDrawer({
 
   const validChildAges: (number | string)[] = Array.isArray(rawChildAges)
     ? rawChildAges.filter(
-        (a) =>
-          a !== undefined &&
-          a !== null &&
-          String(a).trim() !== "" &&
-          a !== "N/A",
-      )
+      (a) =>
+        a !== undefined &&
+        a !== null &&
+        String(a).trim() !== "" &&
+        a !== "N/A",
+    )
     : [];
 
   const travelClass = pBooking?.travelClass || null;
@@ -230,9 +242,9 @@ export function BookingDetailsDrawer({
   const addressParts =
     hotelAddress && hotelAddress !== "N/A"
       ? hotelAddress
-          .split(",")
-          .map((s: string) => s.trim())
-          .filter(Boolean)
+        .split(",")
+        .map((s: string) => s.trim())
+        .filter(Boolean)
       : ["N/A"];
 
   const hotelWebsite = hotel?.website?.trim() || null;
@@ -293,9 +305,9 @@ export function BookingDetailsDrawer({
     ? rawAmenities.filter(Boolean).map(String)
     : typeof rawAmenities === "string"
       ? rawAmenities
-          .split(",")
-          .map((s: string) => s.trim())
-          .filter(Boolean)
+        .split(",")
+        .map((s: string) => s.trim())
+        .filter(Boolean)
       : [];
 
   const displayRoomCount =
@@ -332,7 +344,7 @@ export function BookingDetailsDrawer({
 
   const platformFeePercentage =
     hotel?.platformFeePercentage !== undefined &&
-    hotel?.platformFeePercentage !== null
+      hotel?.platformFeePercentage !== null
       ? Number(hotel.platformFeePercentage)
       : PLATFORM_FEE_PERCENT;
 
@@ -399,13 +411,46 @@ export function BookingDetailsDrawer({
                 Booking Information
               </h3>
             </div>
-            <div className="grid grid-cols-2 gap-6 pt-1">
+            <div className="grid grid-cols-2 gap-x-6 gap-y-4 pt-1">
               <div>
                 <div className="text-gray-500 text-sm mb-1">Booking ID</div>
                 <div className="font-semibold text-gray-900 text-sm">
                   {displayBookingId}
                 </div>
               </div>
+              {isBookingsTab && (
+                <>
+                  <div>
+                    <div className="text-gray-500 text-sm mb-1">Flight Number</div>
+                    <div className="font-semibold text-gray-900 text-sm">
+                      {flightNumber}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-gray-500 text-sm mb-1">Departure Airport</div>
+                    {dep ? (
+                      <div>
+                        <div className="text-gray-900 text-sm leading-snug">
+                          {dep.name || dep.code}
+                        </div>
+                        {dep.name && (
+                          <div className="text-xs text-gray-500 font-normal mt-0.5">
+                            ({dep.code})
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-gray-900 text-sm">N/A</div>
+                    )}
+                  </div>
+                  <div>
+                    <div className="text-gray-500 text-sm mb-1">Booking Date</div>
+                    <div className="text-gray-900 text-sm">
+                      {bookingDateText}
+                    </div>
+                  </div>
+                </>
+              )}
               <div>
                 <div className="text-gray-500 text-sm mb-1">Travel Class</div>
                 <div className="font-medium text-gray-900">

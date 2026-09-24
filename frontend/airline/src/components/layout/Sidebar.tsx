@@ -11,6 +11,7 @@ import {
   Menu,
   X,
   Settings,
+  Wallet as WalletIcon,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { toast } from "react-toastify";
@@ -24,6 +25,12 @@ const navItems = [
     icon: "/icons/plane1.svg",
     path: "/airports",
     key: "airports",
+  },
+  {
+    title: "Wallet",
+    icon: WalletIcon,
+    path: "/wallet",
+    key: "wallet",
   },
   {
     title: "Cancelled Flights",

@@ -76,6 +76,9 @@ function ProfileTab() {
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
 
+  const [initialFirstName, setInitialFirstName] = useState("");
+  const [initialLastName, setInitialLastName] = useState("");
+
   const [airlineName, setAirlineName] = useState("");
   const [iataCode, setIataCode] = useState("");
   const [primaryContact, setPrimaryContact] = useState("");
@@ -93,8 +96,12 @@ function ProfileTab() {
         if (isMounted) {
           if (userRes.status === "fulfilled" && userRes.value) {
             const u = userRes.value;
-            setFirstName(u.firstName || "");
-            setLastName(u.lastName || "");
+            const fName = u.firstName || "";
+            const lName = u.lastName || "";
+            setFirstName(fName);
+            setLastName(lName);
+            setInitialFirstName(fName);
+            setInitialLastName(lName);
             setEmail(u.email || "");
           }
 
@@ -120,8 +127,14 @@ function ProfileTab() {
     };
   }, []);
 
+  const isProfileChanged =
+    firstName.trim() !== initialFirstName.trim() ||
+    lastName.trim() !== initialLastName.trim();
+
   const handleSave = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (!isProfileChanged) return;
+
     if (!firstName.trim() || !lastName.trim()) {
       toast.error("First name and last name are required");
       return;
@@ -134,6 +147,8 @@ function ProfileTab() {
         lastName: lastName.trim(),
       });
 
+      setInitialFirstName(updated.firstName || firstName.trim());
+      setInitialLastName(updated.lastName || lastName.trim());
       toast.success("Profile updated successfully");
 
       if (typeof window !== "undefined") {
@@ -158,9 +173,27 @@ function ProfileTab() {
 
   if (isLoading) {
     return (
-      <div className="bg-white border border-gray-200 rounded-xl p-12 flex flex-col items-center justify-center gap-3 min-h-[300px]">
-        <Loader2 className="w-8 h-8 animate-spin text-[#0F2757]" />
-        <span className="text-gray-500 text-sm font-medium font-figtree">Loading profile details...</span>
+      <div className="overflow-hidden rounded-[12px] border border-[#E5E7EB] bg-white p-12 flex flex-col items-center justify-center gap-2 min-h-[300px]">
+        <svg
+          className="animate-spin h-8 w-8 text-[#0F2757]"
+          fill="none"
+          viewBox="0 0 24 24"
+        >
+          <circle
+            className="opacity-25"
+            cx="12"
+            cy="12"
+            r="10"
+            stroke="currentColor"
+            strokeWidth="4"
+          />
+          <path
+            className="opacity-75"
+            fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+          />
+        </svg>
+        <span className="text-gray-500 font-figtree text-sm">Loading profile details...</span>
       </div>
     );
   }
@@ -231,8 +264,8 @@ function ProfileTab() {
           <div className="pt-2 flex justify-end w-full">
             <button
               type="submit"
-              disabled={isSaving}
-              className="flex h-[44px] items-center justify-center gap-2 rounded-[10px] bg-[#0F2757] px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-[#162259] cursor-pointer disabled:opacity-60"
+              disabled={isSaving || !isProfileChanged}
+              className="flex h-[44px] items-center justify-center gap-2 rounded-[10px] bg-[#0F2757] px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-[#162259] cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {isSaving ? (
                 <>
@@ -465,21 +498,72 @@ function SecurityTab() {
     }
   }, []);
 
+  const [passwordTouched, setPasswordTouched] = useState<{
+    currentPassword?: boolean;
+    newPassword?: boolean;
+    confirmPassword?: boolean;
+  }>({});
+  const [passwordErrors, setPasswordErrors] = useState<{
+    currentPassword?: string;
+    newPassword?: string;
+    confirmPassword?: string;
+  }>({});
+
+  const validatePasswordRule = (value: string): string => {
+    if (!value) {
+      return "Password is required";
+    }
+    const hasMinLength = value.length >= 8;
+    const hasUppercase = /[A-Z]/.test(value);
+    const hasLowercase = /[a-z]/.test(value);
+    const hasNumber = /\d/.test(value);
+    const hasSpecial = /[!@#$%^&*?]/.test(value);
+    const hasForbidden = /[^a-zA-Z\d!@#$%^&*?]/.test(value);
+
+    if (!hasMinLength || !hasUppercase || !hasLowercase || !hasNumber || !hasSpecial || hasForbidden) {
+      return "Password must be at least 8 characters and include uppercase, lowercase, number, and special character (!@#$%^&*?)";
+    }
+    return "";
+  };
+
+  const validateConfirmPasswordRule = (confirmVal: string, passwordVal: string): string => {
+    if (!confirmVal) {
+      return "Please confirm your password";
+    }
+    if (confirmVal !== passwordVal) {
+      return "Passwords do not match";
+    }
+    return "";
+  };
+
+  const isPasswordChanged =
+    currentPassword.trim().length > 0 ||
+    newPassword.trim().length > 0 ||
+    confirmPassword.trim().length > 0;
+
   const handlePasswordChange = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!currentPassword || !newPassword || !confirmPassword) {
-      toast.error("Please fill in all password fields.");
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      toast.error("New password and confirm password do not match.");
-      return;
-    }
-    if (newPassword.length < 8) {
-      toast.error("New password must be at least 8 characters long.");
+    if (!isPasswordChanged) return;
+    setPasswordTouched({
+      currentPassword: true,
+      newPassword: true,
+      confirmPassword: true,
+    });
+
+    const currentErr = !currentPassword ? "Current password is required" : "";
+    const newErr = validatePasswordRule(newPassword);
+    const confirmErr = validateConfirmPasswordRule(confirmPassword, newPassword);
+
+    if (currentErr || newErr || confirmErr) {
+      setPasswordErrors({
+        currentPassword: currentErr || undefined,
+        newPassword: newErr || undefined,
+        confirmPassword: confirmErr || undefined,
+      });
       return;
     }
 
+    setPasswordErrors({});
     setIsUpdatingPassword(true);
     try {
       const msg = await authService.changePassword(currentPassword, newPassword);
@@ -487,6 +571,7 @@ function SecurityTab() {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
+      setPasswordTouched({});
     } catch (err: any) {
       toast.error(err.message || "Failed to update password.");
     } finally {
@@ -631,7 +716,7 @@ function SecurityTab() {
         <p className="text-sm text-gray-500 mt-0.5">Manage your account security</p>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4 items-start">
-          <form onSubmit={handlePasswordChange} className="w-full p-6 bg-white rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col justify-start items-start gap-5">
+          <form onSubmit={handlePasswordChange} className="w-full p-6 bg-white rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col justify-start items-start gap-5" noValidate>
             <h3 className="text-sm font-semibold text-gray-900">Update Password</h3>
 
             <div className="self-stretch flex flex-col gap-4 w-full">
@@ -642,8 +727,28 @@ function SecurityTab() {
                     type={showCurrent ? "text" : "password"}
                     placeholder="Enter current password"
                     value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                    className="w-full bg-white border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0F2757]/20 focus:border-[#0F2757] transition-all pr-10"
+                    onChange={(e) => {
+                      setCurrentPassword(e.target.value);
+                      if (passwordTouched.currentPassword) {
+                        setPasswordErrors((prev) => ({
+                          ...prev,
+                          currentPassword: !e.target.value ? "Current password is required" : undefined,
+                        }));
+                      }
+                    }}
+                    onBlur={() => {
+                      setPasswordTouched((prev) => ({ ...prev, currentPassword: true }));
+                      setPasswordErrors((prev) => ({
+                        ...prev,
+                        currentPassword: !currentPassword ? "Current password is required" : undefined,
+                      }));
+                    }}
+                    className={cn(
+                      "w-full bg-white border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 transition-all pr-10",
+                      passwordErrors.currentPassword
+                        ? "border-rose-300 focus:border-rose-400 focus:ring-rose-500/10"
+                        : "border-gray-200 focus:ring-[#0F2757]/20 focus:border-[#0F2757]"
+                    )}
                   />
                   <button
                     type="button"
@@ -653,6 +758,11 @@ function SecurityTab() {
                     {showCurrent ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
+                {passwordErrors.currentPassword && (
+                  <span className="text-rose-500 text-xs font-medium font-figtree mt-1 block">
+                    {passwordErrors.currentPassword}
+                  </span>
+                )}
               </div>
 
               <div>
@@ -662,8 +772,34 @@ function SecurityTab() {
                     type={showNew ? "text" : "password"}
                     placeholder="Enter new password"
                     value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-full bg-white border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0F2757]/20 focus:border-[#0F2757] transition-all pr-10"
+                    onChange={(e) => {
+                      setNewPassword(e.target.value);
+                      if (passwordTouched.newPassword) {
+                        setPasswordErrors((prev) => ({
+                          ...prev,
+                          newPassword: validatePasswordRule(e.target.value) || undefined,
+                        }));
+                      }
+                      if (passwordTouched.confirmPassword) {
+                        setPasswordErrors((prev) => ({
+                          ...prev,
+                          confirmPassword: validateConfirmPasswordRule(confirmPassword, e.target.value) || undefined,
+                        }));
+                      }
+                    }}
+                    onBlur={() => {
+                      setPasswordTouched((prev) => ({ ...prev, newPassword: true }));
+                      setPasswordErrors((prev) => ({
+                        ...prev,
+                        newPassword: validatePasswordRule(newPassword) || undefined,
+                      }));
+                    }}
+                    className={cn(
+                      "w-full bg-white border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 transition-all pr-10",
+                      passwordErrors.newPassword
+                        ? "border-rose-300 focus:border-rose-400 focus:ring-rose-500/10"
+                        : "border-gray-200 focus:ring-[#0F2757]/20 focus:border-[#0F2757]"
+                    )}
                   />
                   <button
                     type="button"
@@ -673,6 +809,11 @@ function SecurityTab() {
                     {showNew ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
+                {passwordErrors.newPassword && (
+                  <span className="text-rose-500 text-xs font-medium font-figtree mt-1 block">
+                    {passwordErrors.newPassword}
+                  </span>
+                )}
               </div>
 
               <div>
@@ -682,8 +823,28 @@ function SecurityTab() {
                     type={showConfirm ? "text" : "password"}
                     placeholder="Confirm new password"
                     value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="w-full bg-white border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0F2757]/20 focus:border-[#0F2757] transition-all pr-10"
+                    onChange={(e) => {
+                      setConfirmPassword(e.target.value);
+                      if (passwordTouched.confirmPassword) {
+                        setPasswordErrors((prev) => ({
+                          ...prev,
+                          confirmPassword: validateConfirmPasswordRule(e.target.value, newPassword) || undefined,
+                        }));
+                      }
+                    }}
+                    onBlur={() => {
+                      setPasswordTouched((prev) => ({ ...prev, confirmPassword: true }));
+                      setPasswordErrors((prev) => ({
+                        ...prev,
+                        confirmPassword: validateConfirmPasswordRule(confirmPassword, newPassword) || undefined,
+                      }));
+                    }}
+                    className={cn(
+                      "w-full bg-white border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 transition-all pr-10",
+                      passwordErrors.confirmPassword
+                        ? "border-rose-300 focus:border-rose-400 focus:ring-rose-500/10"
+                        : "border-gray-200 focus:ring-[#0F2757]/20 focus:border-[#0F2757]"
+                    )}
                   />
                   <button
                     type="button"
@@ -693,13 +854,18 @@ function SecurityTab() {
                     {showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
+                {passwordErrors.confirmPassword && (
+                  <span className="text-rose-500 text-xs font-medium font-figtree mt-1 block">
+                    {passwordErrors.confirmPassword}
+                  </span>
+                )}
               </div>
 
               <div className="pt-2">
                 <button
                   type="submit"
-                  disabled={isUpdatingPassword}
-                  className="bg-[#0F2757] hover:bg-[#162259] active:scale-[0.98] transition-all text-white font-medium py-2.5 px-6 rounded-lg cursor-pointer text-sm disabled:opacity-60 flex items-center gap-2"
+                  disabled={isUpdatingPassword || !isPasswordChanged}
+                  className="bg-[#0F2757] hover:bg-[#162259] active:scale-[0.98] transition-all text-white font-medium py-2.5 px-6 rounded-lg cursor-pointer text-sm disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
                 >
                   {isUpdatingPassword ? (
                     <>
