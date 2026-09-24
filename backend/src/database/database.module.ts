@@ -88,6 +88,9 @@ import { config } from "../config/config";
 
           synchronize: isAutomationTest ? true : config.db.synchronize,
           logging: config.db.logging,
+          // Independent of `logging` above — TypeORM always logs a warning
+          // for any query slower than this, with its SQL and execution time.
+          maxQueryExecutionTime: config.db.slowQueryThresholdMs,
           autoLoadEntities: true,
 
           ssl: config.db.ssl

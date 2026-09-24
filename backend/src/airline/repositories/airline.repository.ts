@@ -5,12 +5,29 @@ import { EntityManager, Repository } from "typeorm";
 import { LoggerService } from "../../common/logger/logger.service";
 import { AirlineEntity } from "../entities/airline.entity";
 import { AdminAirlineQueryDto } from "../dto/admin-airline-query.dto";
+import { CancelledFlightEntity } from "../../cancelled-flights/entities/cancelled-flight.entity";
+import { FlightStatus } from "../../cancelled-flights/entities/enums";
+
+const ONGOING_CANCELLED_FLIGHT_STATUSES = [
+  FlightStatus.DRAFT,
+  FlightStatus.IN_PROGRESS,
+  FlightStatus.PASSENGERS_BOOKING_CONFIRMED,
+  FlightStatus.HOTEL_ALLOCATION_IN_PROGRESS,
+];
+
+const FINALIZED_CANCELLED_FLIGHT_STATUSES = [
+  FlightStatus.ALLOCATED,
+  FlightStatus.PAID,
+  FlightStatus.PUBLISHED,
+];
 
 @Injectable()
 export class AirlineRepository {
   constructor(
     @InjectRepository(AirlineEntity)
     private readonly airlineRepository: Repository<AirlineEntity>,
+    @InjectRepository(CancelledFlightEntity)
+    private readonly cancelledFlightRepository: Repository<CancelledFlightEntity>,
     private readonly logger: LoggerService,
   ) {}
 
@@ -141,7 +158,9 @@ export class AirlineRepository {
       isSuspended: query.isSuspended,
     });
 
-    const qb = this.airlineRepository.createQueryBuilder("airline");
+    const qb = this.airlineRepository
+      .createQueryBuilder("airline")
+      .leftJoinAndSelect("airline.wallet", "wallet");
 
     if (query.search) {
       qb.where("(airline.name ILIKE :search OR airline.code ILIKE :search)", {
@@ -210,5 +229,130 @@ export class AirlineRepository {
       : this.airlineRepository;
 
     await repository.update({ id }, payload);
+  }
+
+  // ── Operational / financial summary ─────────────────────────────────────
+
+  /** Ongoing count is over cancelled flights still in progress; every other
+   * total here only considers flights that reached a final status
+   * (allocated, paid, published) — draft/in-progress flights haven't
+   * settled their passenger/room/price totals yet. */
+  async getOperationalAndFinancialTotals(
+    airlineId: number,
+    requestId: string,
+  ): Promise<{
+    totalOngoingCancelledFlights: number;
+    totalCancelledFlights: number;
+    totalChildren: number;
+    totalAdults: number;
+    totalBookings: number;
+    totalRooms: number;
+    totalActualPrice: number;
+    totalBuyingPrice: number;
+    totalSellingPrice: number;
+    totalDiscounts: number;
+    totalHotelTaxes: number;
+    totalPlatformFee: number;
+    totalPrice: number;
+    totalEarnings: number;
+  }> {
+    this.logger.debug(
+      "Querying airline operational and financial totals",
+      "AirlineRepository",
+      requestId,
+      { airlineId },
+    );
+
+    const [ongoingRaw, finalizedRaw] = await Promise.all([
+      this.cancelledFlightRepository
+        .createQueryBuilder("cancelledFlight")
+        .where("cancelledFlight.airlineId = :airlineId", { airlineId })
+        .andWhere("cancelledFlight.status IN (:...statuses)", {
+          statuses: ONGOING_CANCELLED_FLIGHT_STATUSES,
+        })
+        .select("COUNT(cancelledFlight.id)", "totalOngoingCancelledFlights")
+        .getRawOne<{ totalOngoingCancelledFlights: string }>(),
+      this.cancelledFlightRepository
+        .createQueryBuilder("cancelledFlight")
+        .where("cancelledFlight.airlineId = :airlineId", { airlineId })
+        .andWhere("cancelledFlight.status IN (:...statuses)", {
+          statuses: FINALIZED_CANCELLED_FLIGHT_STATUSES,
+        })
+        .select("COUNT(cancelledFlight.id)", "totalCancelledFlights")
+        .addSelect(
+          "COALESCE(SUM(cancelledFlight.totalChildren), 0)",
+          "totalChildren",
+        )
+        .addSelect(
+          "COALESCE(SUM(cancelledFlight.totalAdults), 0)",
+          "totalAdults",
+        )
+        .addSelect(
+          "COALESCE(SUM(cancelledFlight.totalBooking), 0)",
+          "totalBookings",
+        )
+        .addSelect(
+          "COALESCE(SUM(cancelledFlight.totalHotelRooms), 0)",
+          "totalRooms",
+        )
+        // COALESCE only guards against SUM(NULL) (no matching rows). Postgres
+        // numeric also has a distinct NaN value, which a bad upstream write
+        // can leave sitting in one row's price columns — SUM propagates it,
+        // silently poisoning the whole airline's total, and COALESCE can't
+        // catch it since NaN isn't NULL. Each CASE strips a NaN value down
+        // to 0 before it ever reaches SUM.
+        .addSelect(
+          "COALESCE(SUM(CASE WHEN cancelledFlight.totalActualPrice = 'NaN' THEN 0 ELSE cancelledFlight.totalActualPrice END), 0)",
+          "totalActualPrice",
+        )
+        .addSelect(
+          "COALESCE(SUM(CASE WHEN cancelledFlight.totalBuyingPrice = 'NaN' THEN 0 ELSE cancelledFlight.totalBuyingPrice END), 0)",
+          "totalBuyingPrice",
+        )
+        .addSelect(
+          "COALESCE(SUM(CASE WHEN cancelledFlight.totalSellingPrice = 'NaN' THEN 0 ELSE cancelledFlight.totalSellingPrice END), 0)",
+          "totalSellingPrice",
+        )
+        .addSelect(
+          "COALESCE(SUM(CASE WHEN cancelledFlight.totalDiscounts = 'NaN' THEN 0 ELSE cancelledFlight.totalDiscounts END), 0)",
+          "totalDiscounts",
+        )
+        .addSelect(
+          "COALESCE(SUM(CASE WHEN cancelledFlight.totalHotelTaxes = 'NaN' THEN 0 ELSE cancelledFlight.totalHotelTaxes END), 0)",
+          "totalHotelTaxes",
+        )
+        .addSelect(
+          "COALESCE(SUM(CASE WHEN cancelledFlight.totalPlatformFee = 'NaN' THEN 0 ELSE cancelledFlight.totalPlatformFee END), 0)",
+          "totalPlatformFee",
+        )
+        .addSelect(
+          "COALESCE(SUM(CASE WHEN cancelledFlight.totalPrice = 'NaN' THEN 0 ELSE cancelledFlight.totalPrice END), 0)",
+          "totalPrice",
+        )
+        .addSelect(
+          "COALESCE(SUM(CASE WHEN cancelledFlight.totalEarnings = 'NaN' THEN 0 ELSE cancelledFlight.totalEarnings END), 0)",
+          "totalEarnings",
+        )
+        .getRawOne<Record<string, string>>(),
+    ]);
+
+    return {
+      totalOngoingCancelledFlights: Number(
+        ongoingRaw?.totalOngoingCancelledFlights ?? 0,
+      ),
+      totalCancelledFlights: Number(finalizedRaw?.totalCancelledFlights ?? 0),
+      totalChildren: Number(finalizedRaw?.totalChildren ?? 0),
+      totalAdults: Number(finalizedRaw?.totalAdults ?? 0),
+      totalBookings: Number(finalizedRaw?.totalBookings ?? 0),
+      totalRooms: Number(finalizedRaw?.totalRooms ?? 0),
+      totalActualPrice: Number(finalizedRaw?.totalActualPrice ?? 0),
+      totalBuyingPrice: Number(finalizedRaw?.totalBuyingPrice ?? 0),
+      totalSellingPrice: Number(finalizedRaw?.totalSellingPrice ?? 0),
+      totalDiscounts: Number(finalizedRaw?.totalDiscounts ?? 0),
+      totalHotelTaxes: Number(finalizedRaw?.totalHotelTaxes ?? 0),
+      totalPlatformFee: Number(finalizedRaw?.totalPlatformFee ?? 0),
+      totalPrice: Number(finalizedRaw?.totalPrice ?? 0),
+      totalEarnings: Number(finalizedRaw?.totalEarnings ?? 0),
+    };
   }
 }

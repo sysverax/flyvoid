@@ -59,3 +59,17 @@ export const formatDate = (dateStr?: string) => {
   const year = date.getFullYear();
   return `${day}/${month}/${year}`;
 };
+
+export const formatDateTime = (dateStr?: string | null) => {
+  if (!dateStr) return "N/A";
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return "N/A";
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const year = date.getFullYear();
+  const hours24 = date.getHours();
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const meridiem = hours24 >= 12 ? "PM" : "AM";
+  const hours = String(hours24 % 12 || 12).padStart(2, "0");
+  return `${day}/${month}/${year}, ${hours}:${minutes} ${meridiem}`;
+};
