@@ -398,7 +398,7 @@ export class AirlineAuthService {
     const secret = this.decryptTwoFactorSecret(user.twoFactorSecretEncrypted);
     const isCodeValid = this.verifyTwoFactorCode(secret, dto.twoFactorCode);
     if (!isCodeValid) {
-      throw new UnauthorizedException("Invalid 2FA code");
+      throw new BadRequestException("Invalid 2FA code");
     }
 
     if (user.requirePasswordReset) {
@@ -565,8 +565,12 @@ export class AirlineAuthService {
     dto: AirlineTwoFactorRecoverRequestDto,
     requestId: string,
   ): Promise<void> {
-    const user = await this.authRepository.findAirlineUserByEmail(
-      dto.email.toLowerCase().trim(),
+    const payload = await this.verifyAirlineTwoFactorChallengeToken(
+      dto.twoFactorToken,
+    );
+
+    const user = await this.authRepository.findAirlineUserById(
+      payload.sub,
       requestId,
     );
 
@@ -577,15 +581,7 @@ export class AirlineAuthService {
       !user.twoFactorRecoveryCodeHashes ||
       user.twoFactorRecoveryCodeHashes.length === 0
     ) {
-      throw new UnauthorizedException("Invalid recovery credentials");
-    }
-
-    const isPasswordValid = await bcrypt.compare(
-      dto.password,
-      user.passwordHash,
-    );
-    if (!isPasswordValid) {
-      throw new UnauthorizedException("Invalid recovery credentials");
+      throw new BadRequestException("Invalid recovery code");
     }
 
     const matchedIndex = await this.findMatchingRecoveryCodeIndex(
@@ -594,7 +590,7 @@ export class AirlineAuthService {
     );
 
     if (matchedIndex === -1) {
-      throw new UnauthorizedException("Invalid recovery credentials");
+      throw new BadRequestException("Invalid recovery code");
     }
 
     await this.authRepository.disableAirlineTwoFactor(user.id, requestId);

@@ -161,17 +161,21 @@ export const authService = {
     }
   },
 
-  async recoverTfa(email: string, recoveryCode: string): Promise<{ message: string }> {
+  async recoverTfa(twoFactorToken: string, recoveryCode: string): Promise<{ message: string }> {
     try {
       const response = await apiClient.post("/auth/airline/2fa/recover", {
-        email,
+        twoFactorToken,
         recoveryCode,
       });
       return {
         message: response.data?.message || "2FA recovered and disabled successfully",
       };
     } catch (error: any) {
-      throw new Error(extractErrorMessage(error, "Failed to recover 2FA."));
+      const wrappedError = new Error(extractErrorMessage(error, "Failed to recover 2FA.")) as Error & {
+        status?: number;
+      };
+      wrappedError.status = error.response?.status;
+      throw wrappedError;
     }
   },
 
