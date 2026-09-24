@@ -38,18 +38,26 @@ export class AirlineService {
       requestId,
     );
 
-    // TODO: Add flightsCount, spendAmount, revenueAmount to the response. This may require additional queries or joins.
     return {
       total,
       currentPage: query.page,
       limit: query.limit,
       airlines: airlines.map((airline) => ({
-        ...this.toAirlineResponse(airline),
-        flightsCount: 0,
-        passengersCount: 0,
-        hotelBookingsCount: 0,
-        spendAmount: 0,
-        revenueAmount: 0,
+        id: airline.id,
+        name: airline.name,
+        code: airline.code,
+        countryCode: airline.countryCode,
+        platformFeePercentage: Number(airline.platformFeePercentage),
+        isActive: airline.isActive,
+        isSuspended: airline.isSuspended,
+        wallet: {
+          id: airline.wallet.id,
+          balance: Number(airline.wallet.balance),
+          creditLimit: Number(airline.wallet.creditLimit),
+          lockedAmount: Number(airline.wallet.lockedAmount),
+        },
+        createdAt: airline.createdAt.toISOString(),
+        updatedAt: airline.updatedAt.toISOString(),
       })),
     };
   }

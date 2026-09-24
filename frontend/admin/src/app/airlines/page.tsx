@@ -313,9 +313,16 @@ export default function AirlinesPage() {
     }
   };
 
-  // Trigger edit modal
-  const handleOpenEditModal = (airline: Airline) => {
-    setEditTarget(airline);
+  // Trigger edit modal — the list row no longer carries company/contact/admin
+  // details (GET /airline is a lean summary now), so fetch the full airline
+  // detail before opening the form.
+  const handleOpenEditModal = async (airline: Airline) => {
+    try {
+      const dto = await airlinesService.getAirlineDetail(Number(airline.id));
+      setEditTarget(mapAirlineDTOToAirline(dto));
+    } catch (err: any) {
+      toast.error(err.message || "Failed to load airline details");
+    }
   };
 
   const handleSaveEdit = async (updatedFields: Partial<Airline>, assignAirportIds: number[], disableAirportIds: number[]) => {
@@ -523,7 +530,7 @@ export default function AirlinesPage() {
                       {airline.country}
                     </TableCell>
                     <TableCell className="text-[#1F2937]">
-                      ${airline.creditLimit ? (airline.creditLimit >= 1000 ? `${airline.creditLimit / 1000}K` : airline.creditLimit) : "100K"}
+                      ${airline.creditLimit >= 1000 ? `${airline.creditLimit / 1000}K` : airline.creditLimit}
                     </TableCell>
                     <TableCell className="text-[#1F2937]">
                       {airline.platformFeePercentage}%
@@ -539,7 +546,7 @@ export default function AirlinesPage() {
                           <Plus className="h-3.5 w-3.5 stroke-[2px]" />
                         </button>
                         <span className="font-semibold text-[#1F2937] text-[14px]">
-                          ${(airline.spend ?? 27868.75).toLocaleString("en-US", {
+                          ${(airline.spend ?? 0).toLocaleString("en-US", {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2,
                           })}

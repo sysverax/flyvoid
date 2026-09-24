@@ -32,6 +32,29 @@ export interface AirlineDTO {
   updatedAt: string;
 }
 
+export interface AirlineWalletSummaryDTO {
+  id: number;
+  balance: number;
+  creditLimit: number;
+  lockedAmount: number;
+}
+
+// GET /airline (list) response shape — intentionally leaner than AirlineDTO
+// (no contact/admin/company details); credit limit and balance come from the
+// nested wallet instead of a flat creditLimit field.
+export interface AirlineListItemDTO {
+  id: number;
+  name: string;
+  code: string;
+  countryCode: string;
+  platformFeePercentage: number;
+  isActive: boolean;
+  isSuspended: boolean;
+  wallet: AirlineWalletSummaryDTO;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface UpdateAirlineRequest {
   name: string;
   code: string;
@@ -176,7 +199,7 @@ export const airlinesService = {
     countryCode?: string;
     page: number;
     limit: number;
-  }): Promise<{ airlines: AirlineDTO[]; total: number }> {
+  }): Promise<{ airlines: AirlineListItemDTO[]; total: number }> {
     try {
       const { data } = await apiClient.get("/airline", { params });
       return {
@@ -248,30 +271,35 @@ export function mapAirlineDTOToAirline(dto: any): Airline {
     status = "Disabled";
   }
 
+  // GET /airline (list) nests credit limit and balance under `wallet`; the
+  // detail/update endpoints still return a flat `creditLimit` and no balance
+  // at all. Support both shapes here.
+  const wallet = dto.wallet;
+
   return {
     id: String(dto.id),
     airlineName: dto.name,
     airlineCode: dto.code,
     country: countryName,
-    companyReg: dto.companyRegistrationNumber,
+    companyReg: dto.companyRegistrationNumber || "",
     website: dto.website || "",
-    contactEmail: dto.contactEmail,
-    contactPhone: dto.contactPhone,
-    timezone: dto.timezone,
-    currency: dto.currency,
-    address: dto.address,
+    contactEmail: dto.contactEmail || "",
+    contactPhone: dto.contactPhone || "",
+    timezone: dto.timezone || "",
+    currency: dto.currency || "",
+    address: dto.address || "",
     onboardingDate: formatDate(dto.createdAt),
     status,
     flightsCount: dto.flightsCount || 0,
     passengersCount: dto.passengersCount || 0,
-    spend: dto.spendAmount || 0,
+    spend: wallet?.balance ?? dto.spendAmount ?? 0,
     revenue: dto.revenueAmount || 0,
     stripeConnection: "Pending",
     adminFirstName: dto.adminUser?.firstName || "",
     adminLastName: dto.adminUser?.lastName || "",
     adminEmail: dto.adminUser?.email || "",
     adminJobTitle: dto.adminUser?.jobTitle || "",
-    creditLimit: dto.creditLimit || 0,
+    creditLimit: wallet?.creditLimit ?? dto.creditLimit ?? 0,
     platformFeePercentage: dto.platformFeePercentage || 0,
     totalCancelledFlights: 0,
     totalPassengersMetric: 0,

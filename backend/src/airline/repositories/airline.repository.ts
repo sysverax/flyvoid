@@ -141,7 +141,9 @@ export class AirlineRepository {
       isSuspended: query.isSuspended,
     });
 
-    const qb = this.airlineRepository.createQueryBuilder("airline");
+    const qb = this.airlineRepository
+      .createQueryBuilder("airline")
+      .leftJoinAndSelect("airline.wallet", "wallet");
 
     if (query.search) {
       qb.where("(airline.name ILIKE :search OR airline.code ILIKE :search)", {
