@@ -1,27 +1,14 @@
-import { Transform } from "class-transformer";
 import { ApiProperty } from "@nestjs/swagger";
-import { IsEmail, IsNotEmpty, IsString, MinLength } from "class-validator";
+import { IsNotEmpty, IsString } from "class-validator";
 
 export class AdminTwoFactorRecoverRequestDto {
   @ApiProperty({
-    description: "Admin email address",
-    example: "admin@example.com",
-    format: "email",
-  })
-  @Transform(({ value }: { value: string }) => value.toLowerCase().trim())
-  @IsEmail()
-  @IsNotEmpty()
-  email!: string;
-
-  @ApiProperty({
-    description: "Admin password",
-    example: "Password@123",
-    minLength: 8,
+    description: "2FA challenge token returned by signin API",
+    example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.2fa.challenge",
   })
   @IsString()
   @IsNotEmpty()
-  @MinLength(8)
-  password!: string;
+  twoFactorToken!: string;
 
   @ApiProperty({
     description: "Unused 2FA recovery code",

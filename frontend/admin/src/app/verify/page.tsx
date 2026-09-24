@@ -161,12 +161,10 @@ export default function VerificationPage() {
         sessionStorage.setItem("reset_password_token", result.resetPasswordToken || "");
         sessionStorage.removeItem("two_factor_token");
         sessionStorage.removeItem("two_factor_email");
-        sessionStorage.removeItem("two_factor_password");
         setStep("reset");
       } else {
         sessionStorage.removeItem("two_factor_token");
         sessionStorage.removeItem("two_factor_email");
-        sessionStorage.removeItem("two_factor_password");
         toast.success(result.message || "Successfully verified");
         router.push("/");
       }
@@ -194,9 +192,9 @@ export default function VerificationPage() {
     setIsLoading(true);
 
     try {
+      const token = sessionStorage.getItem("two_factor_token") || "";
       const email = sessionStorage.getItem("two_factor_email") || "";
-      const password = sessionStorage.getItem("two_factor_password") || "";
-      const result = await authService.recoverSigninTfa(email, password, cleanedCode);
+      const result = await authService.recoverSigninTfa(token, cleanedCode);
 
       if (email) {
         sessionStorage.removeItem(`tfa_enabled_${email}`);
@@ -206,7 +204,6 @@ export default function VerificationPage() {
 
       sessionStorage.removeItem("two_factor_token");
       sessionStorage.removeItem("two_factor_email");
-      sessionStorage.removeItem("two_factor_password");
 
       toast.success(result.message || "2FA recovered and disabled. Please sign in again.");
       router.push("/login");
@@ -215,7 +212,6 @@ export default function VerificationPage() {
       if (err.status === 401) {
         sessionStorage.removeItem("two_factor_token");
         sessionStorage.removeItem("two_factor_email");
-        sessionStorage.removeItem("two_factor_password");
         router.push("/login");
       }
     } finally {

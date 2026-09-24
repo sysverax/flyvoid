@@ -155,7 +155,8 @@ apiClient.interceptors.response.use(
       originalRequest.url?.includes("/auth/airline/onboard") ||
       originalRequest.url?.includes("/auth/airline/forgot-password") ||
       originalRequest.url?.includes("/auth/airline/refresh") ||
-      originalRequest.url?.includes("/auth/airline/signout");
+      originalRequest.url?.includes("/auth/airline/signout") ||
+      originalRequest.url?.includes("/auth/airline/2fa/recover");
 
     if (isPublicRoute) {
       if (originalRequest.url?.includes("/auth/airline/refresh")) {

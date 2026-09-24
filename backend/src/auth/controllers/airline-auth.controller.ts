@@ -224,8 +224,8 @@ export class AirlineAuthController {
     Completes the 2FA signin step using the challenge token from signin and the current TOTP code.
       Access: Public endpoint — challenge token from POST /auth/airline/signin required.
       Business logic validations:
-        1. Challenge token must be valid and unexpired (401 if invalid)
-        2. TOTP code must be correct (401 if invalid)`,
+        1. Challenge token must be valid and unexpired (401 if invalid/expired)
+        2. TOTP code must be correct (400 if invalid)`,
   })
   @ApiBody({ type: AirlineSigninTwoFactorVerifyRequestDto })
   @ApiOkResponse({
@@ -237,7 +237,7 @@ export class AirlineAuthController {
   @ApiUnauthorizedResponse({
     schema: createUnauthorizedErrorSchema(
       "/api/v1/auth/airline/signin/2fa/verify",
-      "Invalid challenge token or TOTP code",
+      "Invalid 2FA verification request",
     ),
   })
   @ApiBadRequestResponse({
@@ -511,11 +511,11 @@ export class AirlineAuthController {
     summary: "Airline 2FA recover",
     description: `
     Recovers account access when the authenticator app is unavailable.
-      Verifies email, password, and a one-time recovery code, then disables 2FA and revokes all active sessions.
+      Verifies the 2FA challenge token from signin and a one-time recovery code, then disables 2FA and revokes all active sessions.
       Access: Public endpoint — no authentication required.
       Business logic validations:
-        1. Email and password must be valid (401 if invalid)
-        2. Recovery code must be valid and unused (401 if invalid)`,
+        1. twoFactorToken must be a valid, unexpired 2FA challenge token issued by signin (401 if invalid/expired)
+        2. Recovery code must be valid and unused (400 if invalid)`,
   })
   @ApiBody({ type: AirlineTwoFactorRecoverRequestDto })
   @ApiOkResponse({
@@ -527,7 +527,7 @@ export class AirlineAuthController {
   @ApiUnauthorizedResponse({
     schema: createUnauthorizedErrorSchema(
       "/api/v1/auth/airline/2fa/recover",
-      "Invalid access token",
+      "Invalid 2FA verification request",
     ),
   })
   @ApiBadRequestResponse({
