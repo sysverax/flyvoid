@@ -38,6 +38,12 @@ export const config = {
     synchronize: process.env.DB_SYNCHRONIZE === "true",
     logging: process.env.DB_LOGGING === "true",
     ssl: process.env.DB_SSL === "true",
+    // Queries slower than this are logged as warnings, with their execution
+    // time and SQL, regardless of the `logging` flag above.
+    slowQueryThresholdMs: parseInt(
+      process.env.DB_SLOW_QUERY_THRESHOLD_MS ?? "200",
+      10,
+    ),
   },
   log: {
     logging: process.env.APP_LOGGING === "true",
@@ -57,8 +63,7 @@ export const config = {
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? "7d",
   },
   auth: {
-    forgotPasswordOtpStatic:
-      process.env.FORGOT_PASSWORD_OTP_STATIC ?? "444444",
+    forgotPasswordOtpStatic: process.env.FORGOT_PASSWORD_OTP_STATIC ?? "444444",
     forgotPasswordOtpExpiryMinutes: parseInt(
       process.env.FORGOT_PASSWORD_OTP_EXPIRY_MINUTES ?? "2",
       10,

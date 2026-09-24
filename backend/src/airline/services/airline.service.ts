@@ -10,7 +10,7 @@ import {
   AdminAirlineListResponseDto,
   AdminAirlineQueryDto,
   AdminAirlineResponseDto,
-  AirlineAdminUserDto,
+  AirlineAdminDetailsDto,
   UpdateAirlineRequestDto,
 } from "../dto";
 import { AirlineEntity } from "../entities/airline.entity";
@@ -66,10 +66,16 @@ export class AirlineService {
     airlineId: number,
     requestId: string,
   ): Promise<AdminAirlineResponseDto> {
-    const [airline, adminUser] = await Promise.all([
+    const [airline, adminUser, totals] = await Promise.all([
       this.airlineRepository.findByIdWithWallet(airlineId, requestId),
       this.airlineUserRepository.findAdminByAirlineId(airlineId, requestId),
+      this.airlineRepository.getOperationalAndFinancialTotals(
+        airlineId,
+        requestId,
+      ),
     ]);
+
+    console.log({ airline, adminUser, totals });
 
     if (!airline) {
       throw new NotFoundException("Airline not found");
@@ -84,7 +90,49 @@ export class AirlineService {
       );
     }
 
-    return this.toAirlineResponse(airline, adminUser);
+    return {
+      airlineDetails: {
+        id: airline.id,
+        name: airline.name,
+        code: airline.code,
+        countryCode: airline.countryCode,
+        companyRegistrationNumber: airline.companyRegistrationNumber,
+        website: airline.website ?? null,
+        contactEmail: airline.contactEmail,
+        contactPhone: airline.contactPhone,
+        timezone: airline.timezone,
+        currency: airline.currency,
+        address: airline.address,
+        createdAt: airline.createdAt.toISOString(),
+        updatedAt: airline.updatedAt.toISOString(),
+        isActive: airline.isActive,
+        isSuspended: airline.isSuspended,
+      },
+      adminDetails: this.toAdminDetailsDto(adminUser),
+      operationalMetrics: {
+        totalOngoingCancelledFlights: totals.totalOngoingCancelledFlights,
+        totalCancelledFlights: totals.totalCancelledFlights,
+        totalChildren: totals.totalChildren,
+        totalAdults: totals.totalAdults,
+        totalBookings: totals.totalBookings,
+        totalRooms: totals.totalRooms,
+      },
+      financialSummary: {
+        walletId: airline.wallet.id,
+        creditLimit: Number(airline.wallet.creditLimit),
+        balance: Number(airline.wallet.balance),
+        lockedAmount: Number(airline.wallet.lockedAmount),
+        platformFeePercentage: Number(airline.platformFeePercentage),
+        totalActualPrice: totals.totalActualPrice,
+        totalBuyingPrice: totals.totalBuyingPrice,
+        totalSellingPrice: totals.totalSellingPrice,
+        totalDiscounts: totals.totalDiscounts,
+        totalHotelTaxes: totals.totalHotelTaxes,
+        totalPlatformFee: totals.totalPlatformFee,
+        totalPrice: totals.totalPrice,
+        totalEarnings: totals.totalEarnings,
+      },
+    };
   }
 
   async updateAirline(
@@ -230,76 +278,15 @@ export class AirlineService {
     return this.getAirlineById(airlineId, requestId);
   }
 
-  private async batchFindAdminsByAirlineIds(
-    airlineIds: number[],
-    requestId: string,
-  ): Promise<Map<number, AirlineUserEntity>> {
-    if (airlineIds.length === 0) {
-      return new Map();
-    }
-
-    this.logger.debug(
-      "Batch finding airline admins by airline ids",
-      this.context,
-      requestId,
-      { count: airlineIds.length },
-    );
-
-    const admins = await Promise.all(
-      airlineIds.map((id) =>
-        this.airlineUserRepository.findAdminByAirlineId(id, requestId),
-      ),
-    );
-
-    const map = new Map<number, AirlineUserEntity>();
-    admins.forEach((admin, index) => {
-      if (admin) {
-        map.set(airlineIds[index], admin);
-      }
-    });
-
-    return map;
-  }
-
-  private toAdminUserDto(
-    user: AirlineUserEntity | null,
-  ): AirlineAdminUserDto | null {
-    if (!user) return null;
-
+  private toAdminDetailsDto(user: AirlineUserEntity): AirlineAdminDetailsDto {
     return {
       id: user.id,
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
       jobTitle: user.jobTitle,
+      lastLoginAt: user.lastLoginAt ? user.lastLoginAt.toISOString() : null,
       isActive: user.isActive,
-    };
-  }
-
-  private toAirlineResponse(
-    airline: AirlineEntity,
-    adminUser?: AirlineUserEntity | null,
-  ): AdminAirlineResponseDto {
-    return {
-      id: airline.id,
-      name: airline.name,
-      code: airline.code,
-      countryCode: airline.countryCode,
-      companyRegistrationNumber: airline.companyRegistrationNumber,
-      website: airline.website ?? null,
-      contactEmail: airline.contactEmail ?? null,
-      contactPhone: airline.contactPhone ?? null,
-      timezone: airline.timezone ?? null,
-      logo: airline.logo ?? undefined,
-      currency: airline.currency ?? null,
-      creditLimit: airline.wallet?.creditLimit ?? 0,
-      platformFeePercentage: Number(airline.platformFeePercentage),
-      address: airline.address ?? null,
-      isActive: airline.isActive,
-      isSuspended: airline.isSuspended,
-      adminUser: adminUser ? this.toAdminUserDto(adminUser) : null,
-      createdAt: airline.createdAt.toISOString(),
-      updatedAt: airline.updatedAt.toISOString(),
     };
   }
 }

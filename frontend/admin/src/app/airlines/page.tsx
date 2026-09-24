@@ -43,8 +43,6 @@ import {
 import { getCountryCode } from "@/src/lib/utils";
 import { useRouter } from "next/navigation";
 
-
-
 export default function AirlinesPage() {
   const router = useRouter();
   const [airlines, setAirlines] = useState<Airline[]>([]);
@@ -71,12 +69,18 @@ export default function AirlinesPage() {
   const [editTarget, setEditTarget] = useState<Airline | null>(null);
   const [suspendTarget, setSuspendTarget] = useState<Airline | null>(null);
   const [addWalletTarget, setAddWalletTarget] = useState<Airline | null>(null);
-  const [deductWalletTarget, setDeductWalletTarget] = useState<Airline | null>(null);
+  const [deductWalletTarget, setDeductWalletTarget] = useState<Airline | null>(
+    null,
+  );
   const [isSuspending, setIsSuspending] = useState(false);
-  const [togglingAirlineId, setTogglingAirlineId] = useState<string | null>(null);
+  const [togglingAirlineId, setTogglingAirlineId] = useState<string | null>(
+    null,
+  );
 
   // Wallet Summary State
-  const [walletSummary, setWalletSummary] = useState<WalletSummaryDTO | null>(null);
+  const [walletSummary, setWalletSummary] = useState<WalletSummaryDTO | null>(
+    null,
+  );
 
   const fetchWalletSummary = async () => {
     try {
@@ -87,7 +91,11 @@ export default function AirlinesPage() {
     }
   };
 
-  const handleAddWalletSuccess = async (airlineId: string, addedAmount: number, remarks: string) => {
+  const handleAddWalletSuccess = async (
+    airlineId: string,
+    addedAmount: number,
+    remarks: string,
+  ) => {
     try {
       const result = await airlinesService.adjustWalletBalance({
         airlineId: Number(airlineId),
@@ -106,10 +114,10 @@ export default function AirlinesPage() {
             return { ...item, spend: updatedSpend };
           }
           return item;
-        })
+        }),
       );
       toast.success(
-        `Successfully added $${addedAmount.toLocaleString("en-US", { minimumFractionDigits: 2 })} to wallet balance`
+        `Successfully added $${addedAmount.toLocaleString("en-US", { minimumFractionDigits: 2 })} to wallet balance`,
       );
       fetchAirlines(false);
       fetchWalletSummary();
@@ -119,7 +127,11 @@ export default function AirlinesPage() {
     }
   };
 
-  const handleDeductWalletSuccess = async (airlineId: string, deductedAmount: number, remarks: string) => {
+  const handleDeductWalletSuccess = async (
+    airlineId: string,
+    deductedAmount: number,
+    remarks: string,
+  ) => {
     try {
       const result = await airlinesService.adjustWalletBalance({
         airlineId: Number(airlineId),
@@ -130,7 +142,11 @@ export default function AirlinesPage() {
 
       const updatedSpend =
         result?.closingBalance ??
-        Math.max(0, (airlines.find((a) => a.id === airlineId)?.spend ?? 0) - deductedAmount);
+        Math.max(
+          0,
+          (airlines.find((a) => a.id === airlineId)?.spend ?? 0) -
+            deductedAmount,
+        );
 
       setAirlines((prev) =>
         prev.map((item) => {
@@ -138,10 +154,10 @@ export default function AirlinesPage() {
             return { ...item, spend: updatedSpend };
           }
           return item;
-        })
+        }),
       );
       toast.success(
-        `Successfully deducted $${deductedAmount.toLocaleString("en-US", { minimumFractionDigits: 2 })} from wallet balance`
+        `Successfully deducted $${deductedAmount.toLocaleString("en-US", { minimumFractionDigits: 2 })} from wallet balance`,
       );
       fetchAirlines(false);
       fetchWalletSummary();
@@ -185,7 +201,10 @@ export default function AirlinesPage() {
         search: searchQuery || undefined,
         isActive,
         isSuspended,
-        countryCode: selectedCountry !== "All Countries" ? getCountryCode(selectedCountry) : undefined,
+        countryCode:
+          selectedCountry !== "All Countries"
+            ? getCountryCode(selectedCountry)
+            : undefined,
         page: currentPage,
         limit: resultsPerPage,
       });
@@ -203,7 +222,13 @@ export default function AirlinesPage() {
   useEffect(() => {
     fetchAirlines();
     fetchWalletSummary();
-  }, [searchQuery, selectedStatus, selectedCountry, currentPage, resultsPerPage]);
+  }, [
+    searchQuery,
+    selectedStatus,
+    selectedCountry,
+    currentPage,
+    resultsPerPage,
+  ]);
 
   const filteredAirlines = useMemo(() => {
     return airlines;
@@ -215,10 +240,7 @@ export default function AirlinesPage() {
   }, [filteredAirlines, sortField, sortOrder]);
 
   // Paginated Data
-  const totalPages = Math.max(
-    1,
-    Math.ceil(totalResults / resultsPerPage)
-  );
+  const totalPages = Math.max(1, Math.ceil(totalResults / resultsPerPage));
 
   const handleClearAll = () => {
     setSearchQuery("");
@@ -259,24 +281,31 @@ export default function AirlinesPage() {
         isActive: targetIsActive,
       });
 
-      toast.success(response.message || `Successfully ${targetIsActive ? "enabled" : "disabled"} ${airline.airlineName}`);
+      toast.success(
+        response.message ||
+          `Successfully ${targetIsActive ? "enabled" : "disabled"} ${airline.airlineName}`,
+      );
 
       if (response?.data) {
         const updatedMapped = mapAirlineDTOToAirline(response.data);
         setAirlines((prev) =>
-          prev.map((item) => (item.id === airline.id ? updatedMapped : item))
+          prev.map((item) => (item.id === airline.id ? updatedMapped : item)),
         );
       } else {
         setAirlines((prev) =>
           prev.map((item) =>
             item.id === airline.id
               ? {
-                ...item,
-                isActive: targetIsActive,
-                status: item.isSuspended ? "Suspended" : targetIsActive ? "Active" : "Disabled",
-              }
-              : item
-          )
+                  ...item,
+                  isActive: targetIsActive,
+                  status: item.isSuspended
+                    ? "Suspended"
+                    : targetIsActive
+                      ? "Active"
+                      : "Disabled",
+                }
+              : item,
+          ),
         );
       }
 
@@ -298,12 +327,18 @@ export default function AirlinesPage() {
 
     setIsSuspending(true);
     try {
-      const response = await airlinesService.updateAirline(Number(suspendTarget.id), {
-        isActive: false,
-        isSuspended: true,
-      });
+      const response = await airlinesService.updateAirline(
+        Number(suspendTarget.id),
+        {
+          isActive: false,
+          isSuspended: true,
+        },
+      );
 
-      toast.success(response.message || `Successfully suspended ${suspendTarget.airlineName}`);
+      toast.success(
+        response.message ||
+          `Successfully suspended ${suspendTarget.airlineName}`,
+      );
       setSuspendTarget(null);
       fetchAirlines();
     } catch (err: any) {
@@ -325,7 +360,11 @@ export default function AirlinesPage() {
     }
   };
 
-  const handleSaveEdit = async (updatedFields: Partial<Airline>, assignAirportIds: number[], disableAirportIds: number[]) => {
+  const handleSaveEdit = async (
+    updatedFields: Partial<Airline>,
+    assignAirportIds: number[],
+    disableAirportIds: number[],
+  ) => {
     if (!editTarget) return;
 
     setIsSaving(true);
@@ -354,19 +393,23 @@ export default function AirlinesPage() {
         adminJobTitle: updatedFields.adminJobTitle,
       };
 
-      const response = await airlinesService.updateAirline(Number(editTarget.id), payload);
+      const response = await airlinesService.updateAirline(
+        Number(editTarget.id),
+        payload,
+      );
 
       if (assignAirportIds.length > 0 || disableAirportIds.length > 0) {
-        await airlinesService.updateAirlineAirportAssignments(Number(editTarget.id), {
-          assignAirportIds,
-          disableAirportIds,
-        });
+        await airlinesService.updateAirlineAirportAssignments(
+          Number(editTarget.id),
+          {
+            assignAirportIds,
+            disableAirportIds,
+          },
+        );
       }
 
       toast.success(response.message || "Airline updated successfully");
       setEditTarget(null);
-
-
 
       fetchAirlines(false);
     } catch (err: any) {
@@ -402,7 +445,7 @@ export default function AirlinesPage() {
                   {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
-                  }
+                  },
                 )}
               </div>
             </div>
@@ -417,7 +460,7 @@ export default function AirlinesPage() {
                   {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
-                  }
+                  },
                 )}
               </div>
             </div>
@@ -467,25 +510,67 @@ export default function AirlinesPage() {
             <TableHeader className="pt-1">
               <TableRow>
                 <TableHead className="min-w-[150px]">
-                  <SortHeader label="AIRLINE" field="airlineName" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                  <SortHeader
+                    label="AIRLINE"
+                    field="airlineName"
+                    sortField={sortField}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
                 </TableHead>
                 <TableHead className="min-w-[75px]">
-                  <SortHeader label="IATA" field="airlineCode" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                  <SortHeader
+                    label="IATA"
+                    field="airlineCode"
+                    sortField={sortField}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
                 </TableHead>
                 <TableHead className="min-w-[130px]">
-                  <SortHeader label="COUNTRY" field="country" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                  <SortHeader
+                    label="COUNTRY"
+                    field="country"
+                    sortField={sortField}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
                 </TableHead>
                 <TableHead className="min-w-[130px]">
-                  <SortHeader label="CREDIT LIMIT($)" field="creditLimit" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                  <SortHeader
+                    label="CREDIT LIMIT($)"
+                    field="creditLimit"
+                    sortField={sortField}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
                 </TableHead>
                 <TableHead className="min-w-[145px]">
-                  <SortHeader label="PLATFORM FEE (%)" field="platformFeePercentage" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                  <SortHeader
+                    label="PLATFORM FEE (%)"
+                    field="platformFeePercentage"
+                    sortField={sortField}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
                 </TableHead>
                 <TableHead className="min-w-[185px]">
-                  <SortHeader label="WALLET BALANCE" field="spend" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                  <SortHeader
+                    label="WALLET BALANCE"
+                    field="spend"
+                    sortField={sortField}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
                 </TableHead>
                 <TableHead className="min-w-[100px]">
-                  <SortHeader label="STATUS" field="status" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                  <SortHeader
+                    label="STATUS"
+                    field="status"
+                    sortField={sortField}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
                 </TableHead>
                 {hasPermission("edit") && (
                   <TableHead className="whitespace-nowrap min-w-[120px]">
@@ -498,11 +583,29 @@ export default function AirlinesPage() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="px-6 py-12 text-center text-gray-500 font-figtree">
+                  <TableCell
+                    colSpan={9}
+                    className="px-6 py-12 text-center text-gray-500 font-figtree"
+                  >
                     <div className="flex flex-col items-center justify-center gap-2">
-                      <svg className="animate-spin h-8 w-8 text-primary" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      <svg
+                        className="animate-spin h-8 w-8 text-primary"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        />
                       </svg>
                       <span>Loading airlines...</span>
                     </div>
@@ -530,7 +633,10 @@ export default function AirlinesPage() {
                       {airline.country}
                     </TableCell>
                     <TableCell className="text-[#1F2937]">
-                      ${airline.creditLimit >= 1000 ? `${airline.creditLimit / 1000}K` : airline.creditLimit}
+                      $
+                      {airline.creditLimit >= 1000
+                        ? `${airline.creditLimit / 1000}K`
+                        : airline.creditLimit}
                     </TableCell>
                     <TableCell className="text-[#1F2937]">
                       {airline.platformFeePercentage}%
@@ -546,7 +652,8 @@ export default function AirlinesPage() {
                           <Plus className="h-3.5 w-3.5 stroke-[2px]" />
                         </button>
                         <span className="font-semibold text-[#1F2937] text-[14px]">
-                          ${(airline.spend ?? 0).toLocaleString("en-US", {
+                          $
+                          {(airline.spend ?? 0).toLocaleString("en-US", {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2,
                           })}
@@ -569,18 +676,26 @@ export default function AirlinesPage() {
                         {/* Enable/Disable Toggle Switch */}
                         <button
                           type="button"
-                          disabled={!hasPermission("edit") || togglingAirlineId === airline.id}
+                          disabled={
+                            !hasPermission("edit") ||
+                            togglingAirlineId === airline.id
+                          }
                           onClick={() => handleToggleStatus(airline)}
                           className={cn(
                             "relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
-                            hasPermission("edit") && togglingAirlineId !== airline.id ? "cursor-pointer" : "cursor-not-allowed opacity-70",
-                            airline.isActive ? "bg-emerald-500" : "bg-gray-200"
+                            hasPermission("edit") &&
+                              togglingAirlineId !== airline.id
+                              ? "cursor-pointer"
+                              : "cursor-not-allowed opacity-70",
+                            airline.isActive ? "bg-emerald-500" : "bg-gray-200",
                           )}
                         >
                           <span
                             className={cn(
                               "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out flex items-center justify-center",
-                              airline.isActive ? "translate-x-5" : "translate-x-0"
+                              airline.isActive
+                                ? "translate-x-5"
+                                : "translate-x-0",
                             )}
                           >
                             {togglingAirlineId === airline.id && (
@@ -594,7 +709,9 @@ export default function AirlinesPage() {
                       <div className="flex items-center justify-start gap-2.5">
                         <button
                           type="button"
-                          onClick={() => router.push(`/airlines/${airline.id}/wallet`)}
+                          onClick={() =>
+                            router.push(`/airlines/${airline.id}/wallet`)
+                          }
                           className="p-1 text-[#6B7280] hover:text-primary transition-colors cursor-pointer"
                           title="Wallet Transactions"
                         >
@@ -697,7 +814,11 @@ function AirlineNameCell({ name }: { name: string }) {
         </Tooltip.Trigger>
         <Tooltip.Portal>
           {isTruncated && (
-            <Tooltip.Content side="top" sideOffset={5} className="bg-gray-100 border border-gray-200 text-gray-800 text-[13px] font-medium px-3 py-1.5 rounded-md shadow-lg max-w-xs break-words z-[100] animate-in fade-in-0 zoom-in-95 font-figtree">
+            <Tooltip.Content
+              side="top"
+              sideOffset={5}
+              className="bg-gray-100 border border-gray-200 text-gray-800 text-[13px] font-medium px-3 py-1.5 rounded-md shadow-lg max-w-xs break-words z-[100] animate-in fade-in-0 zoom-in-95 font-figtree"
+            >
               {name}
               <Tooltip.Arrow className="fill-gray-100" />
             </Tooltip.Content>
@@ -708,8 +829,17 @@ function AirlineNameCell({ name }: { name: string }) {
   );
 }
 
-function MetricTooltip({ value, isCurrency = false }: { value: number; isCurrency?: boolean }) {
-  const compactValue = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value);
+function MetricTooltip({
+  value,
+  isCurrency = false,
+}: {
+  value: number;
+  isCurrency?: boolean;
+}) {
+  const compactValue = new Intl.NumberFormat("en-US", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
   const exactValue = new Intl.NumberFormat("en-US").format(value);
   const exactStr = isCurrency ? `$${exactValue}` : exactValue;
   const compactStr = isCurrency ? `$${compactValue}` : compactValue;
@@ -718,12 +848,14 @@ function MetricTooltip({ value, isCurrency = false }: { value: number; isCurrenc
     <Tooltip.Provider delayDuration={300}>
       <Tooltip.Root>
         <Tooltip.Trigger asChild>
-          <span className="cursor-default">
-            {compactStr}
-          </span>
+          <span className="cursor-default">{compactStr}</span>
         </Tooltip.Trigger>
         <Tooltip.Portal>
-          <Tooltip.Content side="top" sideOffset={5} className="bg-gray-100 border border-gray-200 text-gray-800 text-[13px] font-medium px-3 py-1.5 rounded-md shadow-lg max-w-xs break-words z-[100] animate-in fade-in-0 zoom-in-95 font-figtree">
+          <Tooltip.Content
+            side="top"
+            sideOffset={5}
+            className="bg-gray-100 border border-gray-200 text-gray-800 text-[13px] font-medium px-3 py-1.5 rounded-md shadow-lg max-w-xs break-words z-[100] animate-in fade-in-0 zoom-in-95 font-figtree"
+          >
             {exactStr}
             <Tooltip.Arrow className="fill-gray-100" />
           </Tooltip.Content>
