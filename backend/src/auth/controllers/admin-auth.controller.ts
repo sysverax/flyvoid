@@ -235,8 +235,8 @@ export class AuthController {
     Completes the 2FA signin step using the challenge token from signin and the current TOTP code.
       Access: Public endpoint — challenge token from POST /auth/admin/signin required.
       Business logic validations:
-        1. Challenge token must be valid and unexpired (401 if invalid)
-        2. TOTP code must be correct (401 if invalid)`,
+        1. Challenge token must be valid and unexpired (401 if invalid/expired)
+        2. TOTP code must be correct (400 if invalid)`,
   })
   @ApiBody({
     description: "Admin signin 2FA verify payload",
@@ -273,10 +273,10 @@ export class AuthController {
     schema: createBadRequestErrorSchema("/api/v1/auth/admin/signin/2fa/verify"),
   })
   @ApiUnauthorizedResponse({
-    description: "Invalid 2FA challenge or code",
+    description: "Invalid or expired 2FA challenge token",
     schema: createUnauthorizedErrorSchema(
       "/api/v1/auth/admin/signin/2fa/verify",
-      "Invalid 2FA code",
+      "Invalid 2FA verification request",
     ),
   })
   async adminSigninTwoFactorVerify(
@@ -579,11 +579,11 @@ export class AuthController {
     summary: "Admin 2FA recover",
     description: `
     Recovers account access when the authenticator app is unavailable.
-      Verifies email, password, and a one-time recovery code, then disables 2FA and revokes all active sessions.
+      Verifies the 2FA challenge token from signin and a one-time recovery code, then disables 2FA and revokes all active sessions.
       Access: Public endpoint — no authentication required.
       Business logic validations:
-        1. Email and password must be valid (401 if invalid)
-        2. Recovery code must be valid and unused (401 if invalid)`,
+        1. twoFactorToken must be a valid, unexpired 2FA challenge token issued by signin (401 if invalid/expired)
+        2. Recovery code must be valid and unused (400 if invalid)`,
   })
   @ApiBody({
     description: "2FA recovery request payload",
@@ -611,10 +611,10 @@ export class AuthController {
     schema: createBadRequestErrorSchema("/api/v1/auth/admin/2fa/recover"),
   })
   @ApiUnauthorizedResponse({
-    description: "Invalid recovery credentials",
+    description: "Invalid or expired 2FA challenge token",
     schema: createUnauthorizedErrorSchema(
       "/api/v1/auth/admin/2fa/recover",
-      "Invalid recovery credentials",
+      "Invalid 2FA verification request",
     ),
   })
   async recoverAdminTwoFactor(
@@ -624,7 +624,6 @@ export class AuthController {
   ): Promise<BaseResponseDto<null>> {
     logger.debug("Recovering admin 2FA", {
       context: "AdminAuthController",
-      email: dto.email,
     });
     await this.authService.recoverAdminTwoFactor(dto, logger);
     return BaseResponseDto.success(

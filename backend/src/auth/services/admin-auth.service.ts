@@ -235,7 +235,7 @@ export class AuthService {
     const isCodeValid = this.verifyTwoFactorCode(secret, dto.twoFactorCode);
 
     if (!isCodeValid) {
-      throw new UnauthorizedException("Invalid 2FA code");
+      throw new BadRequestException("Invalid 2FA code");
     }
 
     if (admin.requirePasswordReset) {
@@ -400,51 +400,25 @@ export class AuthService {
   ): Promise<void> {
     logger.info("Admin 2FA recovery attempt", {
       context: this.context,
-      email: dto.email,
     });
 
-    const normalizedEmail = dto.email.toLowerCase().trim();
-    const admin = await this.authRepository.findAdminByEmail(
-      normalizedEmail,
-      logger,
+    const payload = await this.verifyAdminTwoFactorChallengeToken(
+      dto.twoFactorToken,
     );
+    const admin = await this.authRepository.findAdminById(payload.sub, logger);
 
-    if (!admin) {
-      logger.error("Admin not found", {
-        context: this.context,
-        email: dto.email,
-      });
-      throw new UnauthorizedException("Admin not found");
-    }
-    if (!admin.isActive) {
-      logger.error("Admin account is inactive", {
-        context: this.context,
-        email: dto.email,
-      });
-      throw new ForbiddenException("Admin account is inactive");
-    }
     if (
+      !admin ||
+      !admin.isActive ||
       !admin.twoFactorEnabled ||
       !admin.twoFactorRecoveryCodeHashes ||
       admin.twoFactorRecoveryCodeHashes.length === 0
     ) {
-      logger.error("Invalid recovery credentials", {
+      logger.error("Invalid recovery code", {
         context: this.context,
-        email: dto.email,
+        adminId: payload.sub,
       });
-      throw new UnauthorizedException("Invalid recovery credentials");
-    }
-
-    const isPasswordValid = await bcrypt.compare(
-      dto.password,
-      admin.passwordHash,
-    );
-    if (!isPasswordValid) {
-      logger.error("Invalid recovery credentials", {
-        context: this.context,
-        email: dto.email,
-      });
-      throw new UnauthorizedException("Invalid recovery credentials");
+      throw new BadRequestException("Invalid recovery code");
     }
 
     const matchedIndex = await this.findMatchingRecoveryCodeIndex(
@@ -453,11 +427,11 @@ export class AuthService {
     );
 
     if (matchedIndex === -1) {
-      logger.error("Invalid recovery credentials", {
+      logger.error("Invalid recovery code", {
         context: this.context,
-        email: dto.email,
+        adminId: admin.id,
       });
-      throw new UnauthorizedException("Invalid recovery credentials");
+      throw new BadRequestException("Invalid recovery code");
     }
 
     await this.authRepository.disableAdminTwoFactor(admin.id, logger);

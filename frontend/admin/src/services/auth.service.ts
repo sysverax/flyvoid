@@ -163,11 +163,10 @@ export const authService = {
     }
   },
 
-  async recoverSigninTfa(email: string, password?: string, recoveryCode?: string): Promise<{ message: string }> {
+  async recoverSigninTfa(twoFactorToken: string, recoveryCode: string): Promise<{ message: string }> {
     try {
       const response = await apiClient.post("/auth/admin/2fa/recover", {
-        email,
-        password,
+        twoFactorToken,
         recoveryCode,
       });
       return { message: response.data.message || "2FA successfully recovered and disabled. Please sign in again." };
