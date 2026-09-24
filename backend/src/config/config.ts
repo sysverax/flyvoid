@@ -57,28 +57,28 @@ export const config = {
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? "7d",
   },
   auth: {
-    adminForgotPasswordOtpStatic:
-      process.env.ADMIN_FORGOT_PASSWORD_OTP_STATIC ?? "444444",
-    adminForgotPasswordOtpExpiryMinutes: parseInt(
-      process.env.ADMIN_FORGOT_PASSWORD_OTP_EXPIRY_MINUTES ?? "2",
+    forgotPasswordOtpStatic:
+      process.env.FORGOT_PASSWORD_OTP_STATIC ?? "444444",
+    forgotPasswordOtpExpiryMinutes: parseInt(
+      process.env.FORGOT_PASSWORD_OTP_EXPIRY_MINUTES ?? "2",
       10,
     ),
-    adminForgotPasswordOtpMaxAttempts: parseInt(
-      process.env.ADMIN_FORGOT_PASSWORD_OTP_MAX_ATTEMPTS ?? "5",
+    forgotPasswordOtpMaxAttempts: parseInt(
+      process.env.FORGOT_PASSWORD_OTP_MAX_ATTEMPTS ?? "5",
       10,
     ),
-    adminForgotPasswordOtpSendLimit: parseInt(
-      process.env.ADMIN_FORGOT_PASSWORD_OTP_SEND_LIMIT ?? "3",
+    forgotPasswordOtpSendLimit: parseInt(
+      process.env.FORGOT_PASSWORD_OTP_SEND_LIMIT ?? "3",
       10,
     ),
-    adminForgotPasswordOtpSendWindowMinutes: parseInt(
-      process.env.ADMIN_FORGOT_PASSWORD_OTP_SEND_WINDOW_MINUTES ?? "10",
+    forgotPasswordOtpSendWindowMinutes: parseInt(
+      process.env.FORGOT_PASSWORD_OTP_SEND_WINDOW_MINUTES ?? "10",
       10,
     ),
-    adminForgotPasswordResetTokenExpiresIn:
-      process.env.ADMIN_FORGOT_PASSWORD_RESET_TOKEN_EXPIRES_IN ?? "1h",
-    adminInitialPasswordResetTokenExpiresIn:
-      process.env.ADMIN_INITIAL_PASSWORD_RESET_TOKEN_EXPIRES_IN ?? "15m",
+    forgotPasswordResetTokenExpiresIn:
+      process.env.FORGOT_PASSWORD_RESET_TOKEN_EXPIRES_IN ?? "1h",
+    initialPasswordResetTokenExpiresIn:
+      process.env.INITIAL_PASSWORD_RESET_TOKEN_EXPIRES_IN ?? "15m",
     twoFactorIssuer: process.env.TWO_FACTOR_ISSUER ?? "Flyvoid Admin",
     twoFactorChallengeTokenExpiresIn:
       process.env.TWO_FACTOR_CHALLENGE_TOKEN_EXPIRES_IN ?? "5m",

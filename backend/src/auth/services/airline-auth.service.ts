@@ -618,22 +618,22 @@ export class AirlineAuthService {
         user.id,
         new Date(
           Date.now() -
-            config.auth.adminForgotPasswordOtpSendWindowMinutes * 60 * 1000,
+            config.auth.forgotPasswordOtpSendWindowMinutes * 60 * 1000,
         ),
         requestId,
       );
 
-    if (recentOtpCount >= config.auth.adminForgotPasswordOtpSendLimit) {
+    if (recentOtpCount >= config.auth.forgotPasswordOtpSendLimit) {
       return;
     }
 
     const otp = this.isOtpRestrictedEnvironment()
-      ? config.auth.adminForgotPasswordOtpStatic
+      ? config.auth.forgotPasswordOtpStatic
       : this.generateSixDigitOtp();
 
     const otpHash = await bcrypt.hash(otp, 10);
     const expiresAt = new Date(
-      Date.now() + config.auth.adminForgotPasswordOtpExpiryMinutes * 60 * 1000,
+      Date.now() + config.auth.forgotPasswordOtpExpiryMinutes * 60 * 1000,
     );
 
     await this.authRepository.invalidateActiveAirlineForgotPasswordOtpsByAirlineUserId(
@@ -686,9 +686,7 @@ export class AirlineAuthService {
       throw new UnauthorizedException("Invalid or expired OTP");
     }
 
-    if (
-      activeOtp.attemptCount >= config.auth.adminForgotPasswordOtpMaxAttempts
-    ) {
+    if (activeOtp.attemptCount >= config.auth.forgotPasswordOtpMaxAttempts) {
       await this.authRepository.markAirlineForgotPasswordOtpUsed(
         activeOtp.id,
         requestId,
@@ -721,7 +719,7 @@ export class AirlineAuthService {
       {
         secret: config.jwt.accessSecret,
         expiresIn: this.getJwtDuration(
-          config.auth.adminForgotPasswordResetTokenExpiresIn,
+          config.auth.forgotPasswordResetTokenExpiresIn,
         ),
       },
     );
@@ -729,7 +727,7 @@ export class AirlineAuthService {
     return {
       resetPasswordToken,
       resetPasswordTokenExpiresIn:
-        config.auth.adminForgotPasswordResetTokenExpiresIn,
+        config.auth.forgotPasswordResetTokenExpiresIn,
     };
   }
 
@@ -1204,7 +1202,7 @@ export class AirlineAuthService {
             },
             Body: {
               Text: {
-                Data: `Your airline password reset OTP is ${otp}. It expires in ${config.auth.adminForgotPasswordOtpExpiryMinutes} minutes.`,
+                Data: `Your airline password reset OTP is ${otp}. It expires in ${config.auth.forgotPasswordOtpExpiryMinutes} minutes.`,
               },
             },
           },
@@ -1292,7 +1290,7 @@ export class AirlineAuthService {
       {
         secret: config.jwt.accessSecret,
         expiresIn: this.getJwtDuration(
-          config.auth.adminInitialPasswordResetTokenExpiresIn,
+          config.auth.initialPasswordResetTokenExpiresIn,
         ),
       },
     );
@@ -1301,7 +1299,7 @@ export class AirlineAuthService {
       requiresPasswordReset: true,
       resetPasswordToken,
       resetPasswordTokenExpiresIn:
-        config.auth.adminInitialPasswordResetTokenExpiresIn,
+        config.auth.initialPasswordResetTokenExpiresIn,
       user: this.toAirlineUserProfile(user),
     };
   }

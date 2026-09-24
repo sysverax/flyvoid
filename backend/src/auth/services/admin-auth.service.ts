@@ -711,16 +711,16 @@ export class AuthService {
         admin.id,
         new Date(
           Date.now() -
-            config.auth.adminForgotPasswordOtpSendWindowMinutes * 60 * 1000,
+            config.auth.forgotPasswordOtpSendWindowMinutes * 60 * 1000,
         ),
         logger,
       );
 
-    if (recentOtpCount >= config.auth.adminForgotPasswordOtpSendLimit) {
+    if (recentOtpCount >= config.auth.forgotPasswordOtpSendLimit) {
       logger.warn("Admin forgot password OTP send limit reached", {
         context: this.context,
         adminId: admin.id,
-        sendLimit: config.auth.adminForgotPasswordOtpSendLimit,
+        sendLimit: config.auth.forgotPasswordOtpSendLimit,
       });
       throw new HttpException(
         "Too many OTP requests. Please try again later.",
@@ -729,11 +729,11 @@ export class AuthService {
     }
 
     const otp = this.isOtpRestrictedEnvironment()
-      ? config.auth.adminForgotPasswordOtpStatic
+      ? config.auth.forgotPasswordOtpStatic
       : this.generateSixDigitOtp();
     const otpHash = await bcrypt.hash(otp, 10);
     const expiresAt = new Date(
-      Date.now() + config.auth.adminForgotPasswordOtpExpiryMinutes * 60 * 1000,
+      Date.now() + config.auth.forgotPasswordOtpExpiryMinutes * 60 * 1000,
     );
 
     await this.authRepository.invalidateActiveAdminForgotPasswordOtpsByAdminId(
@@ -799,9 +799,7 @@ export class AuthService {
       throw new UnauthorizedException("Invalid or expired OTP");
     }
 
-    if (
-      activeOtp.attemptCount >= config.auth.adminForgotPasswordOtpMaxAttempts
-    ) {
+    if (activeOtp.attemptCount >= config.auth.forgotPasswordOtpMaxAttempts) {
       await this.authRepository.markAdminForgotPasswordOtpUsed(
         activeOtp.id,
         logger,
@@ -845,7 +843,7 @@ export class AuthService {
       {
         secret: config.jwt.accessSecret,
         expiresIn: this.getJwtDuration(
-          config.auth.adminForgotPasswordResetTokenExpiresIn,
+          config.auth.forgotPasswordResetTokenExpiresIn,
         ),
       },
     );
@@ -853,7 +851,7 @@ export class AuthService {
     return {
       resetPasswordToken,
       resetPasswordTokenExpiresIn:
-        config.auth.adminForgotPasswordResetTokenExpiresIn,
+        config.auth.forgotPasswordResetTokenExpiresIn,
     };
   }
 
@@ -1113,7 +1111,7 @@ export class AuthService {
       {
         secret: config.jwt.accessSecret,
         expiresIn: this.getJwtDuration(
-          config.auth.adminInitialPasswordResetTokenExpiresIn,
+          config.auth.initialPasswordResetTokenExpiresIn,
         ),
       },
     );
@@ -1122,7 +1120,7 @@ export class AuthService {
       requiresPasswordReset: true,
       resetPasswordToken,
       resetPasswordTokenExpiresIn:
-        config.auth.adminInitialPasswordResetTokenExpiresIn,
+        config.auth.initialPasswordResetTokenExpiresIn,
       admin: this.toAdminProfile(admin),
     };
   }
@@ -1213,7 +1211,7 @@ export class AuthService {
             },
             Body: {
               Text: {
-                Data: `Your admin password reset OTP is ${otp}. It expires in ${config.auth.adminForgotPasswordOtpExpiryMinutes} minutes.`,
+                Data: `Your admin password reset OTP is ${otp}. It expires in ${config.auth.forgotPasswordOtpExpiryMinutes} minutes.`,
               },
             },
           },

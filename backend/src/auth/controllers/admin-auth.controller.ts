@@ -640,11 +640,11 @@ export class AuthController {
     description: `
     Sends a one-time password (OTP) to the admin's registered email for the forgot-password flow.
       Returns success regardless of whether the email exists to prevent user enumeration.
-      In local/dev/test environments, OTP is ${config.auth.adminForgotPasswordOtpStatic} and no email is sent.
-      In production, a 6-digit OTP is delivered via AWS SES. OTP expires in ${config.auth.adminForgotPasswordOtpExpiryMinutes} minutes.
+      In local/dev/test environments, OTP is ${config.auth.forgotPasswordOtpStatic} and no email is sent.
+      In production, a 6-digit OTP is delivered via AWS SES. OTP expires in ${config.auth.forgotPasswordOtpExpiryMinutes} minutes.
       Access: Public endpoint — no authentication required.
       Business logic validations:
-        1. Maximum ${config.auth.adminForgotPasswordOtpSendLimit} send requests allowed per ${config.auth.adminForgotPasswordOtpSendWindowMinutes}-minute window (429 Too Many Requests)`,
+        1. Maximum ${config.auth.forgotPasswordOtpSendLimit} send requests allowed per ${config.auth.forgotPasswordOtpSendWindowMinutes}-minute window (429 Too Many Requests)`,
   })
   @ApiBody({
     description: "Admin forgot password send OTP request",
@@ -703,8 +703,8 @@ export class AuthController {
     Verifies the OTP submitted for the forgot-password flow and returns a password reset token.
       Access: Public endpoint — no authentication required.
       Business logic validations:
-        1. OTP must be valid and unexpired — expires after ${config.auth.adminForgotPasswordOtpExpiryMinutes} minutes (401 if invalid)
-        2. Maximum ${config.auth.adminForgotPasswordOtpMaxAttempts} failed attempts allowed before the OTP is permanently invalidated (403 Forbidden)`,
+        1. OTP must be valid and unexpired — expires after ${config.auth.forgotPasswordOtpExpiryMinutes} minutes (401 if invalid)
+        2. Maximum ${config.auth.forgotPasswordOtpMaxAttempts} failed attempts allowed before the OTP is permanently invalidated (403 Forbidden)`,
   })
   @ApiBody({
     description: "Admin forgot password verify OTP request",
@@ -778,7 +778,7 @@ export class AuthController {
     Resets the admin's password using the resetPasswordToken issued by POST /auth/admin/forgot-password/verify-otp.
       Access: Public endpoint — resetPasswordToken from POST /auth/admin/forgot-password/verify-otp required.
       Business logic validations:
-        1. resetPasswordToken must be valid and unexpired — expires in ${config.auth.adminForgotPasswordResetTokenExpiresIn} (401 if invalid)`,
+        1. resetPasswordToken must be valid and unexpired — expires in ${config.auth.forgotPasswordResetTokenExpiresIn} (401 if invalid)`,
   })
   @ApiBody({
     description: "Admin forgot password reset request",
