@@ -80,6 +80,7 @@ export interface HotelProvider {
     checkInDate: string,
     checkOutDate: string,
     requestId: string,
+    requestLogger: Logger,
   ): Promise<HotelCandidate[]>;
 
   getHotelContentDetails(

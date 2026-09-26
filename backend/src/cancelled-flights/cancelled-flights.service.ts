@@ -6,9 +6,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { Readable } from "stream";
 import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
-import { LoggerService } from "../common/logger/logger.service";
 import { CancelledFlightsRepository } from "./cancelled-flights.repository";
 import { BookingEntity } from "./entities/booking.entity";
 import {
@@ -57,7 +55,6 @@ export class CancelledFlightsService {
 
   constructor(
     private readonly cancelledFlightsRepository: CancelledFlightsRepository,
-    private readonly logger: LoggerService,
   ) {}
 
   private toCancelledFlightResponse(
@@ -103,8 +100,13 @@ export class CancelledFlightsService {
     airlineId: number,
     dto: CreateCancelledFlightDto,
     requestId: string,
+    requestLogger: Logger,
   ): Promise<CancelledFlightResponseDto> {
     if (dto.departureAirportId === dto.arrivalAirportId) {
+      requestLogger.warn(
+        "Rejected cancelled flight creation: departure and arrival airports match",
+        { context: this.context, airlineId, airportId: dto.departureAirportId },
+      );
       throw new BadRequestException(
         "Departure and arrival airports must be different",
       );
@@ -122,10 +124,11 @@ export class CancelledFlightsService {
         cancellationReasonText: dto.cancellationReasonText ?? null,
         status: FlightStatus.DRAFT,
       },
-      requestId,
+      requestLogger,
     );
 
-    this.logger.info("Cancelled flight created", this.context, requestId, {
+    requestLogger.info("Cancelled flight created", {
+      context: this.context,
       flightId: flight.id,
       flightNumber: flight.flightNumber,
     });
@@ -138,10 +141,20 @@ export class CancelledFlightsService {
     airlineId: number,
     dto: UpdateCancelledFlightDto,
     requestId: string,
+    requestLogger: Logger,
   ): Promise<CancelledFlightResponseDto> {
-    const flight = await this.requireFlight(flightId, requestId);
+    const flight = await this.requireFlight(flightId, requestLogger);
 
     if (flight.airlineId !== airlineId) {
+      requestLogger.warn(
+        "Rejected cancelled flight update: flight belongs to a different airline",
+        {
+          context: this.context,
+          flightId,
+          airlineId,
+          ownerAirlineId: flight.airlineId,
+        },
+      );
       throw new NotFoundException(`Cancelled flight '${flightId}' not found`);
     }
 
@@ -149,6 +162,10 @@ export class CancelledFlightsService {
       flight.status !== FlightStatus.DRAFT &&
       flight.status !== FlightStatus.IN_PROGRESS
     ) {
+      requestLogger.warn(
+        "Rejected cancelled flight update: flight not in an editable status",
+        { context: this.context, flightId, status: flight.status },
+      );
       throw new BadRequestException(
         `Cancelled flight '${flightId}' cannot be modified in status '${flight.status}'. Only 'draft' and 'in_progress' are allowed.`,
       );
@@ -163,6 +180,10 @@ export class CancelledFlightsService {
       dto.cancellationReasonText !== undefined;
 
     if (!hasAnyUpdate) {
+      requestLogger.warn(
+        "Rejected cancelled flight update: no fields provided",
+        { context: this.context, flightId },
+      );
       throw new BadRequestException("At least one field must be provided");
     }
 
@@ -172,6 +193,10 @@ export class CancelledFlightsService {
       dto.arrivalAirportId ?? flight.arrivalAirportId;
 
     if (nextDepartureAirportId === nextArrivalAirportId) {
+      requestLogger.warn(
+        "Rejected cancelled flight update: departure and arrival airports match",
+        { context: this.context, flightId, airportId: nextDepartureAirportId },
+      );
       throw new BadRequestException(
         "Departure and arrival airports must be different",
       );
@@ -199,8 +224,13 @@ export class CancelledFlightsService {
     const updatedFlight =
       await this.cancelledFlightsRepository.updateFlightEntity(
         flight,
-        requestId,
+        requestLogger,
       );
+
+    requestLogger.info("Cancelled flight updated", {
+      context: this.context,
+      flightId,
+    });
 
     return this.toCancelledFlightResponse(updatedFlight);
   }
@@ -211,16 +241,22 @@ export class CancelledFlightsService {
     flightId: number,
     dto: CreateBookingDto,
     requestId: string,
+    requestLogger: Logger,
   ): Promise<BookingResponseDto> {
-    const flight = await this.requireFlight(flightId, requestId);
+    const flight = await this.requireFlight(flightId, requestLogger);
 
     const duplicate =
       await this.cancelledFlightsRepository.findBookingByPnrAndFlight(
         dto.pnr,
         flightId,
-        requestId,
+        requestLogger,
       );
     if (duplicate) {
+      requestLogger.warn("Rejected booking: PNR already exists for flight", {
+        context: this.context,
+        flightId,
+        pnr: dto.pnr,
+      });
       throw new ConflictException(
         `Booking with PNR '${dto.pnr}' already exists for this flight`,
       );
@@ -240,12 +276,13 @@ export class CancelledFlightsService {
         specialNotes: dto.specialNotes ?? [],
         additionalNotes: dto.additionalNotes ?? null,
       },
-      requestId,
+      requestLogger,
     );
 
-    await this.markFlightInProgressIfDraft(flight, requestId);
+    await this.markFlightInProgressIfDraft(flight, requestLogger);
 
-    this.logger.info("Booking added", this.context, requestId, {
+    requestLogger.info("Booking added", {
+      context: this.context,
       flightId,
       bookingId: booking.id,
       pnr: booking.pnr,
@@ -307,8 +344,15 @@ export class CancelledFlightsService {
     flightId: number,
     file: { buffer: Buffer; originalname: string; mimetype: string },
     requestId: string,
+    requestLogger: Logger,
   ): Promise<ImportBookingResponseDto> {
-    const flight = await this.requireFlight(flightId, requestId);
+    const flight = await this.requireFlight(flightId, requestLogger);
+    requestLogger.info("Parsing booking import CSV", {
+      context: this.context,
+      flightId,
+      originalname: file.originalname,
+      sizeBytes: file.buffer.length,
+    });
     // Parse the CSV file
     const csv = file.buffer.toString("utf-8");
     const rows = this.parseCsvRows(csv);
@@ -423,7 +467,7 @@ export class CancelledFlightsService {
       await this.cancelledFlightsRepository.findBookingsByFlightIdAndPnrs(
         flightId,
         Array.from(pnrSet),
-        requestId,
+        requestLogger,
       );
 
     existingBookings.forEach((bookingEntity: BookingEntity) => {
@@ -436,6 +480,16 @@ export class CancelledFlightsService {
         errorCount++;
       }
     });
+
+    if (errorCount > 0) {
+      requestLogger.warn("Booking import has rows with validation errors", {
+        context: this.context,
+        flightId,
+        totalRows: bookings.length,
+        errorCount,
+        validCount,
+      });
+    }
 
     const toSave: {
       cancelledFlightId: number;
@@ -465,12 +519,21 @@ export class CancelledFlightsService {
 
     const bookingFlights = await this.cancelledFlightsRepository.saveBookings(
       toSave,
-      requestId,
+      requestLogger,
     );
 
     if (bookingFlights.length > 0) {
-      await this.markFlightInProgressIfDraft(flight, requestId);
+      await this.markFlightInProgressIfDraft(flight, requestLogger);
     }
+
+    requestLogger.info("Booking import completed", {
+      context: this.context,
+      flightId,
+      totalRows: bookings.length,
+      validBookings: validCount,
+      errorBookings: errorCount,
+      savedBookings: bookingFlights.length,
+    });
 
     return {
       bookings: bookingFlights.map((b) => this.toBookingResponse(b)),
@@ -490,12 +553,13 @@ export class CancelledFlightsService {
     bookingId: number,
     dto: UpdateBookingDto,
     requestId: string,
+    requestLogger: Logger,
   ): Promise<BookingResponseDto> {
-    await this.requireFlight(flightId, requestId);
+    await this.requireFlight(flightId, requestLogger);
     const booking = await this.requireBookingForFlight(
       bookingId,
       flightId,
-      requestId,
+      requestLogger,
     );
 
     if (dto.pnr && dto.pnr !== booking.pnr) {
@@ -503,9 +567,13 @@ export class CancelledFlightsService {
         await this.cancelledFlightsRepository.findBookingByPnrAndFlight(
           dto.pnr,
           flightId,
-          requestId,
+          requestLogger,
         );
       if (conflict) {
+        requestLogger.warn(
+          "Rejected booking update: PNR already exists for flight",
+          { context: this.context, flightId, bookingId, pnr: dto.pnr },
+        );
         throw new ConflictException(
           `Booking with PNR '${dto.pnr}' already exists for this flight`,
         );
@@ -532,22 +600,38 @@ export class CancelledFlightsService {
           additionalNotes: dto.additionalNotes,
         }),
       },
-      requestId,
+      requestLogger,
     );
+
+    requestLogger.info("Booking updated", {
+      context: this.context,
+      flightId,
+      bookingId,
+    });
 
     return this.toBookingResponse(updated);
   }
 
   // ── Delete booking ───────────────────────────────────────────────────────
 
-  async deleteBooking(flightId: number, bookingId: number, requestId: string) {
-    await this.requireFlight(flightId, requestId);
+  async deleteBooking(
+    flightId: number,
+    bookingId: number,
+    requestId: string,
+    requestLogger: Logger,
+  ) {
+    await this.requireFlight(flightId, requestLogger);
     const booking = await this.requireBookingForFlight(
       bookingId,
       flightId,
-      requestId,
+      requestLogger,
     );
-    await this.cancelledFlightsRepository.deleteBooking(booking, requestId);
+    await this.cancelledFlightsRepository.deleteBooking(booking, requestLogger);
+    requestLogger.info("Booking deleted", {
+      context: this.context,
+      flightId,
+      bookingId,
+    });
     return { message: "Booking deleted successfully" };
   }
 
@@ -564,6 +648,10 @@ export class CancelledFlightsService {
     const endDate = query.endDate;
 
     if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
+      requestLogger.warn(
+        "Rejected cancelled flights query: startDate after endDate",
+        { context: this.context, startDate, endDate },
+      );
       throw new BadRequestException("startDate cannot be later than endDate");
     }
 
@@ -573,11 +661,12 @@ export class CancelledFlightsService {
       airlineScopeId = user.airlineId;
 
       if (!airlineScopeId) {
+        // Not a normal validation rejection — an authenticated airline user
+        // should always have an airlineId, so this points at a data
+        // integrity problem with the user's account, not bad input.
         requestLogger.error(
           "Authenticated airline user does not have an associated airlineId",
-          {
-            user,
-          },
+          { context: this.context, userId: user.sub },
         );
         throw new BadRequestException(
           "Authenticated airline user does not have an associated airlineId",
@@ -585,6 +674,14 @@ export class CancelledFlightsService {
       }
 
       if (query.airlineId && query.airlineId !== airlineScopeId) {
+        requestLogger.warn(
+          "Rejected cancelled flights query: airlineId filter for another airline",
+          {
+            context: this.context,
+            requestedAirlineId: query.airlineId,
+            ownAirlineId: airlineScopeId,
+          },
+        );
         throw new BadRequestException(
           "airlineId filter is not allowed for other airlines",
         );
@@ -596,6 +693,7 @@ export class CancelledFlightsService {
     requestLogger.info(
       "Fetching cancelled flights with pagination and filters",
       {
+        context: this.context,
         page,
         limit,
         status: query.status,
@@ -617,8 +715,14 @@ export class CancelledFlightsService {
           startDate,
           endDate,
         },
-        requestId,
+        requestLogger,
       );
+
+    requestLogger.info("Cancelled flights fetched", {
+      context: this.context,
+      returnedCount: flights.length,
+      totalCount,
+    });
 
     return {
       cancelledFlights: flights.map((flight) => ({
@@ -654,21 +758,39 @@ export class CancelledFlightsService {
     flightId: number,
     pagination: PaginationQueryDto,
     requestId: string,
+    requestLogger: Logger,
   ): Promise<CancelledFlightBookingsListResponseDto> {
-    await this.requireFlight(flightId, requestId);
+    const page = pagination.page || 1;
+    const limit = pagination.limit || 10;
+
+    await this.requireFlight(flightId, requestLogger);
+    requestLogger.info("Fetching bookings for cancelled flight", {
+      context: this.context,
+      flightId,
+      page,
+      limit,
+    });
+
     const { bookings, totalBookings } =
       await this.cancelledFlightsRepository.findBookingsByFlightIdWithPagination(
         flightId,
-        pagination.page || 1,
-        pagination.limit || 10,
-        requestId,
+        page,
+        limit,
+        requestLogger,
       );
+
+    if (totalBookings === 0) {
+      requestLogger.info("No bookings found for cancelled flight", {
+        context: this.context,
+        flightId,
+      });
+    }
 
     return {
       bookings: bookings.map((b) => this.toBookingResponse(b)),
       totalBookings,
-      currentPage: pagination.page || 1,
-      limit: pagination.limit || 10,
+      currentPage: page,
+      limit,
     };
   }
 
@@ -676,21 +798,41 @@ export class CancelledFlightsService {
   async reviewFlight(
     flightId: number,
     requestId: string,
+    requestLogger: Logger,
   ): Promise<ReviewCancelledFlightResponseDto> {
     const [flight, bookingStats] = await Promise.all([
       this.cancelledFlightsRepository.findFlightWithRelations(
         flightId,
-        requestId,
+        requestLogger,
       ),
       this.cancelledFlightsRepository.findBookingStatsByFlightId(
         flightId,
-        requestId,
+        requestLogger,
       ),
     ]);
 
     if (!flight) {
+      requestLogger.warn("Cancelled flight not found for review", {
+        context: this.context,
+        flightId,
+      });
       throw new NotFoundException(`Cancelled flight '${flightId}' not found`);
     }
+
+    if (bookingStats.totalBookings === 0) {
+      requestLogger.warn("Reviewing cancelled flight with no bookings yet", {
+        context: this.context,
+        flightId,
+        status: flight.status,
+      });
+    }
+
+    requestLogger.info("Cancelled flight review fetched", {
+      context: this.context,
+      flightId,
+      status: flight.status,
+      totalBookings: bookingStats.totalBookings,
+    });
 
     return {
       flight: {
@@ -729,27 +871,36 @@ export class CancelledFlightsService {
 
   private async markFlightInProgressIfDraft(
     flight: CancelledFlightEntity,
-    requestId: string,
+    requestLogger: Logger,
   ): Promise<void> {
     if (flight.status !== FlightStatus.DRAFT) {
       return;
     }
+
+    requestLogger.info("Marking cancelled flight in_progress", {
+      context: this.context,
+      flightId: flight.id,
+    });
 
     await this.cancelledFlightsRepository.updateFlightStatus({
       cancelledFlightEntity: flight,
       status: FlightStatus.IN_PROGRESS,
       passengerBookingStats: null,
       hotelBookingStats: null,
-      requestId,
+      requestLogger,
     });
   }
 
-  private async requireFlight(flightId: number, requestId: string) {
+  private async requireFlight(flightId: number, requestLogger: Logger) {
     const flight = await this.cancelledFlightsRepository.findFlightById(
       flightId,
-      requestId,
+      requestLogger,
     );
     if (!flight) {
+      requestLogger.warn("Cancelled flight not found", {
+        context: this.context,
+        flightId,
+      });
       throw new NotFoundException(`Cancelled flight '${flightId}' not found`);
     }
     return flight;
@@ -758,13 +909,18 @@ export class CancelledFlightsService {
   private async requireBookingForFlight(
     bookingId: number,
     flightId: number,
-    requestId: string,
+    requestLogger: Logger,
   ): Promise<BookingEntity> {
     const booking = await this.cancelledFlightsRepository.findBookingById(
       bookingId,
-      requestId,
+      requestLogger,
     );
     if (!booking || booking.cancelledFlightId !== flightId) {
+      requestLogger.warn("Booking not found for flight", {
+        context: this.context,
+        bookingId,
+        flightId,
+      });
       throw new NotFoundException(
         `Booking '${bookingId}' not found for flight '${flightId}'`,
       );
@@ -775,28 +931,44 @@ export class CancelledFlightsService {
   async confirmPassengerBookingDetails(
     flightId: number,
     requestId: string,
+    requestLogger: Logger,
   ): Promise<CancelledFlightResponseDto> {
     const [flight, bookingStats] = await Promise.all([
       this.cancelledFlightsRepository.findFlightWithRelations(
         flightId,
-        requestId,
+        requestLogger,
       ),
       this.cancelledFlightsRepository.findBookingStatsByFlightId(
         flightId,
-        requestId,
+        requestLogger,
       ),
     ]);
     if (!flight) {
+      requestLogger.warn(
+        "Cancelled flight not found for booking confirmation",
+        {
+          context: this.context,
+          flightId,
+        },
+      );
       throw new NotFoundException(`Cancelled flight '${flightId}' not found`);
     }
 
     if (flight.status !== FlightStatus.IN_PROGRESS) {
+      requestLogger.warn(
+        "Rejected passenger booking confirmation: flight not in_progress",
+        { context: this.context, flightId, status: flight.status },
+      );
       throw new BadRequestException(
         `Cannot confirm passenger booking details for flight '${flightId}' with status '${flight.status}'`,
       );
     }
 
     if (bookingStats.totalBookings === 0) {
+      requestLogger.warn(
+        "Rejected passenger booking confirmation: no bookings on flight",
+        { context: this.context, flightId },
+      );
       throw new BadRequestException(
         `Cannot confirm passenger booking details for flight '${flightId}' with no bookings`,
       );
@@ -812,8 +984,13 @@ export class CancelledFlightsService {
           totalChildren: bookingStats.totalChildren,
         },
         hotelBookingStats: null, // No hotel booking stats at this point
-        requestId,
+        requestLogger,
       });
+
+    requestLogger.info("Passenger booking details confirmed", {
+      context: this.context,
+      flightId,
+    });
 
     return this.toCancelledFlightResponse(updatedFlight);
   }
@@ -825,14 +1002,31 @@ export class CancelledFlightsService {
     requestId: string,
     requestLogger: Logger,
   ): Promise<CancelledFlightHotelBookingListResponseDto> {
-    await this.requireFlight(flightId, requestId);
+    const page = pagination.page || 1;
+    const limit = pagination.limit || 10;
+
+    await this.requireFlight(flightId, requestLogger);
+    requestLogger.info("Fetching hotel bookings for cancelled flight", {
+      context: this.context,
+      flightId,
+      page,
+      limit,
+    });
+
     const { hotelBookings, totalHotelBookings } =
       await this.cancelledFlightsRepository.findHotelBookingsByFlightIdWithPagination(
         flightId,
-        pagination.page || 1,
-        pagination.limit || 10,
-        requestId,
+        page,
+        limit,
+        requestLogger,
       );
+
+    if (totalHotelBookings === 0) {
+      requestLogger.info("No hotel bookings found for cancelled flight", {
+        context: this.context,
+        flightId,
+      });
+    }
 
     return {
       hotelBookings: hotelBookings.map((h) => ({
@@ -870,14 +1064,20 @@ export class CancelledFlightsService {
     hotelBookingId: number,
     user: AuthenticatedUser,
     requestId: string,
+    requestLogger: Logger,
   ): Promise<HotelBookingDetailResponseDto> {
     const hotelBooking =
       await this.cancelledFlightsRepository.findHotelBookingById(
         hotelBookingId,
-        requestId,
+        requestLogger,
       );
 
     if (!hotelBooking || hotelBooking.cancelledFlightId !== flightId) {
+      requestLogger.warn("Hotel booking not found for flight", {
+        context: this.context,
+        hotelBookingId,
+        flightId,
+      });
       throw new NotFoundException(
         `Hotel booking '${hotelBookingId}' not found for flight '${flightId}'`,
       );
@@ -887,6 +1087,15 @@ export class CancelledFlightsService {
       user.userType === UserType.AIRLINE &&
       hotelBooking.cancelledFlight.airlineId !== user.airlineId
     ) {
+      requestLogger.warn(
+        "Rejected hotel booking detail access: airline mismatch",
+        {
+          context: this.context,
+          hotelBookingId,
+          flightId,
+          userAirlineId: user.airlineId,
+        },
+      );
       throw new NotFoundException(
         `Hotel booking '${hotelBookingId}' not found for flight '${flightId}'`,
       );
@@ -894,6 +1103,13 @@ export class CancelledFlightsService {
 
     const flight = hotelBooking.cancelledFlight;
     const includeMarginFields = user.userType !== UserType.AIRLINE;
+
+    requestLogger.info("Hotel booking detail fetched", {
+      context: this.context,
+      hotelBookingId,
+      flightId,
+      includeMarginFields,
+    });
 
     return {
       id: hotelBooking.id,
@@ -964,15 +1180,27 @@ export class CancelledFlightsService {
   async hotelSummaryByFlight(
     flightId: number,
     requestId: string,
+    requestLogger: Logger,
   ): Promise<HotelSummaryCancelledFlightResponseDto> {
     const hotelSummary =
       await this.cancelledFlightsRepository.findHotelSummaryByFlightId(
         flightId,
-        requestId,
+        requestLogger,
       );
 
     if (!hotelSummary) {
+      requestLogger.warn("Cancelled flight not found for hotel summary", {
+        context: this.context,
+        flightId,
+      });
       throw new NotFoundException(`Cancelled flight '${flightId}' not found`);
+    }
+
+    if (hotelSummary.totalRooms === 0) {
+      requestLogger.info(
+        "Hotel summary has no rooms allocated yet for flight",
+        { context: this.context, flightId },
+      );
     }
 
     return {
@@ -995,10 +1223,15 @@ export class CancelledFlightsService {
   async processPayment(
     flightId: number,
     requestId: string,
+    requestLogger: Logger,
   ): Promise<CancelledFlightResponseDto> {
-    const flight = await this.requireFlight(flightId, requestId);
+    const flight = await this.requireFlight(flightId, requestLogger);
 
     if (flight.status !== FlightStatus.ALLOCATED) {
+      requestLogger.warn(
+        "Rejected payment processing: flight not in allocated status",
+        { context: this.context, flightId, status: flight.status },
+      );
       throw new BadRequestException(
         `Cannot process payment for flight '${flightId}' from status '${flight.status}'. Flight must be in 'allocated' status.`,
       );
@@ -1014,8 +1247,13 @@ export class CancelledFlightsService {
           totalChildren: null,
         },
         hotelBookingStats: null,
-        requestId,
+        requestLogger,
       });
+
+    requestLogger.info("Payment processed for cancelled flight", {
+      context: this.context,
+      flightId,
+    });
 
     return this.toCancelledFlightResponse(updatedFlight);
   }
@@ -1027,9 +1265,14 @@ export class CancelledFlightsService {
     requestId: string,
     requestLogger: Logger,
   ): Promise<CancelledFlightResponseDto> {
-    const flight = await this.requireFlight(flightId, requestId);
+    const flight = await this.requireFlight(flightId, requestLogger);
 
     if (flight.status !== FlightStatus.PAID) {
+      requestLogger.warn("Rejected flight publish: flight not in paid status", {
+        context: this.context,
+        flightId,
+        status: flight.status,
+      });
       throw new BadRequestException(
         `Cannot publish flight '${flightId}' from status '${flight.status}'. Flight must be in 'paid' status.`,
       );
@@ -1045,8 +1288,13 @@ export class CancelledFlightsService {
           totalChildren: null,
         },
         hotelBookingStats: null,
-        requestId,
+        requestLogger,
       });
+
+    requestLogger.info("Cancelled flight published", {
+      context: this.context,
+      flightId,
+    });
 
     // const bookings =
     //   await this.cancelledFlightsRepository.findBookingsByFlightId(
@@ -1159,7 +1407,7 @@ export class CancelledFlightsService {
   //   rateKey: string,
   //   requestId: string,
   // ) {
-  //   this.logger.debug(
+  //   this.logger.info(
   //     `Checking rate for flight: ${flightId}, booking: ${bookingId}`,
   //     this.context,
   //     requestId,
@@ -1177,7 +1425,7 @@ export class CancelledFlightsService {
   //   dto: BookHotelRequestDto,
   //   requestId: string,
   // ) {
-  //   this.logger.debug(
+  //   this.logger.info(
   //     `Booking hotel for flight: ${flightId}, booking: ${bookingId}`,
   //     this.context,
   //     requestId,
@@ -1313,5 +1561,4 @@ export class CancelledFlightsService {
   //     },
   //   };
   // }
-
 }

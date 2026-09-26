@@ -7,7 +7,6 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { Logger } from "winston";
-import { LoggerService } from "../common/logger/logger.service";
 import { CancelledFlightsRepository } from "./cancelled-flights.repository";
 import { BookingEntity } from "./entities/booking.entity";
 import { FlightStatus, HotelAllocationStatus, TravelClass } from "./entities/enums";
@@ -185,7 +184,6 @@ export class HotelAllocationService {
     private readonly cancelledFlightsRepository: CancelledFlightsRepository,
     @Inject(HOTEL_PROVIDER) private readonly hotelProvider: HotelProvider,
     private readonly aiService: AiService,
-    private readonly logger: LoggerService,
   ) {}
 
   // Duplicated from CancelledFlightsService (kept tiny and independent so
@@ -193,13 +191,18 @@ export class HotelAllocationService {
   private async requireBookingForFlight(
     bookingId: number,
     flightId: number,
-    requestId: string,
+    requestLogger: Logger,
   ): Promise<BookingEntity> {
     const booking = await this.cancelledFlightsRepository.findBookingById(
       bookingId,
-      requestId,
+      requestLogger,
     );
     if (!booking || booking.cancelledFlightId !== flightId) {
+      requestLogger.warn("Booking not found for flight", {
+        context: this.context,
+        bookingId,
+        flightId,
+      });
       throw new NotFoundException(
         `Booking '${bookingId}' not found for flight '${flightId}'`,
       );
@@ -305,7 +308,7 @@ export class HotelAllocationService {
     reason?: string;
   } {
     if (booking.adults < 1) {
-      requestLogger.error(
+      requestLogger.warn(
         `Invalid passenger data for booking '${booking.id}': adults must be at least 1`,
         {
           context: this.context,
@@ -315,7 +318,7 @@ export class HotelAllocationService {
       return { reason: "Adults must be at least 1" };
     }
     if (booking.children < 0) {
-      requestLogger.error(
+      requestLogger.warn(
         `Invalid passenger data for booking '${booking.id}': children cannot be negative`,
         {
           context: this.context,
@@ -325,7 +328,7 @@ export class HotelAllocationService {
       return { reason: "Children cannot be negative" };
     }
     if (booking.children > 0 && booking.adults === 0) {
-      requestLogger.error(
+      requestLogger.warn(
         `Invalid passenger data for booking '${booking.id}': children cannot be allocated without an adult`,
         {
           context: this.context,
@@ -419,6 +422,7 @@ export class HotelAllocationService {
     groupedBookings: Map<string, BookingEntity[]>,
     hotels: AvailabilityHotel[],
     requestId: string,
+    requestLogger: Logger,
   ): Promise<Map<string, string[]>> {
     const aiHotels = this.toAiHotelCandidates(hotels);
     const fallbackOrder = aiHotels
@@ -465,12 +469,16 @@ export class HotelAllocationService {
           new Set([...aiRanked, ...fallbackOrder]),
         );
         rankingByGroup.set(groupKey, mergedOrder);
+        requestLogger.debug("AI hotel ranking received for group", {
+          context: this.context,
+          groupKey,
+          aiRankedCount: aiRanked.length,
+          topHotelIds: mergedOrder.slice(0, 3),
+        });
       } catch (error: any) {
-        this.logger.warn(
+        requestLogger.warn(
           `AI ranking failed for group ${groupKey}, using deterministic fallback order`,
-          this.context,
-          requestId,
-          { error: error.message },
+          { context: this.context, error: error.message },
         );
         rankingByGroup.set(groupKey, fallbackOrder);
       }
@@ -542,48 +550,53 @@ export class HotelAllocationService {
     flightId: number,
     bookingId: number,
     requestId: string,
+    requestLogger: Logger,
   ) {
-    this.logger.debug(
+    requestLogger.info(
       `Starting hotel recommendations process for flight: ${flightId}, booking: ${bookingId}`,
-      this.context,
-      requestId,
+      { context: this.context },
     );
 
     const flight =
       await this.cancelledFlightsRepository.findFlightWithRelations(
         flightId,
-        requestId,
+        requestLogger,
       );
     if (!flight) {
+      requestLogger.warn("Cancelled flight not found for hotel recommendations", {
+        context: this.context,
+        flightId,
+      });
       throw new NotFoundException(`Cancelled flight '${flightId}' not found`);
     }
-    this.logger.debug(
+    requestLogger.info(
       `Successfully fetched flight record: ${flight.flightNumber}`,
-      this.context,
-      requestId,
+      { context: this.context },
     );
 
     const booking = await this.requireBookingForFlight(
       bookingId,
       flightId,
-      requestId,
+      requestLogger,
     );
-    this.logger.debug(
+    requestLogger.info(
       `Successfully fetched booking record for PNR: ${booking.pnr}`,
-      this.context,
-      requestId,
+      { context: this.context },
     );
 
     const departureAirport = flight.departureAirport;
     if (!departureAirport) {
+      requestLogger.warn("Departure airport not found for flight", {
+        context: this.context,
+        flightId,
+      });
       throw new NotFoundException(
         `Departure airport not found for flight '${flightId}'`,
       );
     }
-    this.logger.debug(
+    requestLogger.info(
       `Resolved departure airport: ${departureAirport.iataCode} (${departureAirport.latitude}, ${departureAirport.longitude})`,
-      this.context,
-      requestId,
+      { context: this.context },
     );
 
     // Calculate stay dates: check-in is flight cancellation date, check-out is check-in + 1 day
@@ -604,17 +617,14 @@ export class HotelAllocationService {
     const finalCheckOutDateObj = new Date(checkInDateObj);
     finalCheckOutDateObj.setDate(finalCheckOutDateObj.getDate() + 1);
     const finalCheckOut = finalCheckOutDateObj.toISOString().split("T")[0];
-    this.logger.debug(
+    requestLogger.info(
       `Resolved stay dates - check-in: ${checkIn}, check-out: ${finalCheckOut}`,
-      this.context,
-      requestId,
+      { context: this.context },
     );
 
-    this.logger.debug(
-      `Querying Hotelbeds API for nearby hotels...`,
-      this.context,
-      requestId,
-    );
+    requestLogger.info(`Querying Hotelbeds API for nearby hotels...`, {
+      context: this.context,
+    });
     const candidateHotels = await this.hotelProvider.searchNearbyHotels(
       {
         iataCode: departureAirport.iataCode,
@@ -624,18 +634,16 @@ export class HotelAllocationService {
       checkIn,
       finalCheckOut,
       requestId,
+      requestLogger,
     );
-    this.logger.debug(
+    requestLogger.info(
       `Received ${candidateHotels.length} candidate hotels from Hotelbeds`,
-      this.context,
-      requestId,
-      { candidateHotels },
+      { context: this.context, candidateHotelCount: candidateHotels.length },
     );
 
-    this.logger.debug(
+    requestLogger.info(
       `Calling AI API for AI-based scoring and recommendation matching...`,
-      this.context,
-      requestId,
+      { context: this.context },
     );
     const aiResult = await this.aiService.getHotelRecommendations(
       {
@@ -650,18 +658,15 @@ export class HotelAllocationService {
       candidateHotels,
       requestId,
     );
-    this.logger.debug(
+    requestLogger.info(
       `Received AI recommendations: ${JSON.stringify(aiResult)}`,
-      this.context,
-      requestId,
+      { context: this.context },
     );
 
     // Map recommendation scores and reasoning to hotel objects
-    this.logger.debug(
-      `Mapping AI scores and reasons to candidate hotels...`,
-      this.context,
-      requestId,
-    );
+    requestLogger.info(`Mapping AI scores and reasons to candidate hotels...`, {
+      context: this.context,
+    });
     const recommendedHotels = candidateHotels
       .map((hotel) => {
         const recommendation = aiResult.recommendations?.find(
@@ -675,11 +680,14 @@ export class HotelAllocationService {
         };
       })
       .sort((a, b) => b.score - a.score);
-    this.logger.debug(
-      `Sorted recommended hotels count: ${recommendedHotels.length}`,
-      this.context,
-      requestId,
-      { recommendedHotels },
+    requestLogger.info(
+      `Hotel recommendations generated: ${recommendedHotels.length}`,
+      {
+        context: this.context,
+        flightId,
+        bookingId,
+        recommendedCount: recommendedHotels.length,
+      },
     );
 
     return {
@@ -704,10 +712,10 @@ export class HotelAllocationService {
     const flight =
       await this.cancelledFlightsRepository.findFlightWithRelations(
         flightId,
-        requestId,
+        requestLogger,
       );
     if (!flight) {
-      requestLogger.error(`Cancelled flight '${flightId}' not found`, {
+      requestLogger.warn(`Cancelled flight '${flightId}' not found`, {
         context: this.context,
         flightId,
       });
@@ -715,7 +723,7 @@ export class HotelAllocationService {
     }
 
     if (flight.status !== FlightStatus.PASSENGERS_BOOKING_CONFIRMED) {
-      requestLogger.error(
+      requestLogger.warn(
         `Flight '${flightId}' is not eligible for hotel recommendation in status '${flight.status}'`,
         {
           context: this.context,
@@ -730,7 +738,7 @@ export class HotelAllocationService {
 
     const checkIn = flight.cancellationDate;
     if (!checkIn) {
-      requestLogger.error(
+      requestLogger.warn(
         `Cancellation date not found for flight '${flightId}'`,
         {
           context: this.context,
@@ -744,7 +752,7 @@ export class HotelAllocationService {
 
     const checkInDateObj = new Date(checkIn);
     if (Number.isNaN(checkInDateObj.getTime())) {
-      requestLogger.error(
+      requestLogger.warn(
         `Invalid cancellation date '${checkIn}' for flight '${flightId}'`,
         {
           context: this.context,
@@ -769,7 +777,7 @@ export class HotelAllocationService {
 
     const departureAirport = flight.departureAirport;
     if (!departureAirport) {
-      requestLogger.error(
+      requestLogger.warn(
         `Departure airport not found for flight '${flightId}'`,
         {
           context: this.context,
@@ -784,10 +792,10 @@ export class HotelAllocationService {
     const bookings =
       await this.cancelledFlightsRepository.findBookingsByFlightId(
         flightId,
-        requestId,
+        requestLogger,
       );
     if (bookings.length === 0) {
-      requestLogger.error(
+      requestLogger.warn(
         `No eligible bookings found for flight '${flightId}'`,
         {
           context: this.context,
@@ -839,7 +847,7 @@ export class HotelAllocationService {
     );
 
     if (eligibleBookings.length === 0) {
-      requestLogger.error(
+      requestLogger.warn(
         `No eligible bookings with valid room split plans found for flight '${flightId}'`,
         {
           context: this.context,
@@ -894,12 +902,11 @@ export class HotelAllocationService {
         requestLogger,
       );
     } catch (error: any) {
-      this.logger.error(
-        "Hotel availability search failed",
-        this.context,
-        requestId,
-        { error: error.message },
-      );
+      requestLogger.error("Hotel availability search failed", {
+        context: this.context,
+        flightId,
+        error: error.message,
+      });
 
       // fail with the real error rather than masking it as "no availability"
       if (error instanceof HttpException) {
@@ -910,17 +917,35 @@ export class HotelAllocationService {
       );
     }
 
-    this.logger.info("Hotel availability loaded", this.context, requestId, {
+    requestLogger.info("Hotel availability loaded", {
+      context: this.context,
       flightId,
       hotelCount: hotels.length,
       rateCount: hotels.reduce((sum, hotel) => sum + hotel.rates.length, 0),
     });
+    requestLogger.debug(
+      "Hotels found for flight",
+      {
+        context: this.context,
+        flightId,
+        hotels: hotels.map((hotel) => ({
+          hotelName: hotel.hotelName,
+          category: hotel.category,
+          stars: hotel.stars,
+          rateCount: hotel.rates.length,
+          minPrice: hotel.rates.length
+            ? Math.min(...hotel.rates.map((rate) => rate.netPrice))
+            : null,
+        })),
+      },
+    );
 
     const groupedBookings = this.groupBookings(eligibleBookings);
     const rankingByGroup = await this.rankHotelsByGroup(
       groupedBookings,
       hotels,
       requestId,
+      requestLogger,
     );
 
     const hotelByAiId = new Map<string, AvailabilityHotel>(
@@ -991,8 +1016,21 @@ export class HotelAllocationService {
       }
 
       if (allocation) {
+        requestLogger.debug("Booking recommendation chosen", {
+          context: this.context,
+          flightId,
+          bookingId: booking.id,
+          pnr: booking.pnr,
+          hotelName: allocation.hotel?.hotelName,
+          splitTried: allocation.splitTried,
+          totalPrice: allocation.totalPrice,
+        });
         results.push(allocation);
       } else {
+        requestLogger.warn(
+          "No suitable hotel found for booking during recommendation",
+          { context: this.context, flightId, bookingId: booking.id, pnr: booking.pnr },
+        );
         results.push({
           bookingId: booking.id,
           pnr: booking.pnr,
@@ -1023,16 +1061,15 @@ export class HotelAllocationService {
       allocated.find((item) => item.rooms?.[0]?.currency)?.rooms?.[0]
         ?.currency ?? "EUR";
 
-    this.logger.info(
-      "Completed flight-level hotel recommendation process",
-      this.context,
-      requestId,
-      {
-        flightId,
-        allocatedBookings: allocated.length,
-        failedBookings: failed,
-      },
-    );
+    const summaryLog =
+      failed > 0
+        ? requestLogger.warn.bind(requestLogger)
+        : requestLogger.info.bind(requestLogger);
+    summaryLog("Completed flight-level hotel recommendation process", {
+      flightId,
+      allocatedBookings: allocated.length,
+      failedBookings: failed,
+    });
 
     return {
       cancelledFlightId: flight.id,
@@ -1067,10 +1104,10 @@ export class HotelAllocationService {
     const flight =
       await this.cancelledFlightsRepository.findFlightWithRelations(
         flightId,
-        requestId,
+        requestLogger,
       );
     if (!flight) {
-      requestLogger.error(`Cancelled flight '${flightId}' not found`, {
+      requestLogger.warn(`Cancelled flight '${flightId}' not found`, {
         context: this.context,
         flightId,
       });
@@ -1078,7 +1115,7 @@ export class HotelAllocationService {
     }
 
     if (flight.status !== FlightStatus.PASSENGERS_BOOKING_CONFIRMED) {
-      requestLogger.error(
+      requestLogger.warn(
         `Flight '${flightId}' is not eligible for hotel allocation in status '${flight.status}'`,
         {
           context: this.context,
@@ -1093,7 +1130,7 @@ export class HotelAllocationService {
 
     const checkIn = flight.cancellationDate;
     if (!checkIn) {
-      requestLogger.error(
+      requestLogger.warn(
         `Cancellation date not found for flight '${flightId}'`,
         {
           context: this.context,
@@ -1107,7 +1144,7 @@ export class HotelAllocationService {
 
     const checkInDateObj = new Date(checkIn);
     if (Number.isNaN(checkInDateObj.getTime())) {
-      requestLogger.error(
+      requestLogger.warn(
         `Invalid cancellation date '${checkIn}' for flight '${flightId}'`,
         {
           context: this.context,
@@ -1132,7 +1169,7 @@ export class HotelAllocationService {
 
     const departureAirport = flight.departureAirport;
     if (!departureAirport) {
-      requestLogger.error(
+      requestLogger.warn(
         `Departure airport not found for flight '${flightId}'`,
         {
           context: this.context,
@@ -1147,10 +1184,10 @@ export class HotelAllocationService {
     const bookings =
       await this.cancelledFlightsRepository.findBookingsByFlightId(
         flightId,
-        requestId,
+        requestLogger,
       );
     if (bookings.length === 0) {
-      requestLogger.error(
+      requestLogger.warn(
         `No eligible bookings found for flight '${flightId}'`,
         {
           context: this.context,
@@ -1202,7 +1239,7 @@ export class HotelAllocationService {
     );
 
     if (eligibleBookings.length === 0) {
-      requestLogger.error(
+      requestLogger.warn(
         `No eligible bookings with valid room split plans found for flight '${flightId}'`,
         {
           context: this.context,
@@ -1247,12 +1284,11 @@ export class HotelAllocationService {
         requestLogger,
       );
     } catch (error: any) {
-      this.logger.error(
-        "Hotel availability search failed",
-        this.context,
-        requestId,
-        { error: error.message },
-      );
+      requestLogger.error("Hotel availability search failed", {
+        context: this.context,
+        flightId,
+        error: error.message,
+      });
 
       // surface the real error rather than masking it
       if (error instanceof HttpException) {
@@ -1268,6 +1304,19 @@ export class HotelAllocationService {
       flightId,
       hotelCount: hotels.length,
       rateCount: hotels.reduce((sum, hotel) => sum + hotel.rates.length, 0),
+    });
+    requestLogger.debug("Hotels found for flight", {
+      context: this.context,
+      flightId,
+      hotels: hotels.map((hotel) => ({
+        hotelName: hotel.hotelName,
+        category: hotel.category,
+        stars: hotel.stars,
+        rateCount: hotel.rates.length,
+        minPrice: hotel.rates.length
+          ? Math.min(...hotel.rates.map((rate) => rate.netPrice))
+          : null,
+      })),
     });
 
     // AI places every occupancy group; the code below re-verifies each hard rule.
@@ -1554,7 +1603,7 @@ export class HotelAllocationService {
         roomsNeeded: shortage.roomsNeeded,
         roomsAvailable: shortage.roomsAvailable,
       }));
-      requestLogger.error(
+      requestLogger.warn(
         `Insufficient hotel room supply for flight '${flightId}' - aborting before the AI allocation call`,
         {
           context: this.context,
@@ -1704,6 +1753,21 @@ export class HotelAllocationService {
       unresolved: batchResults.flatMap((result) => result.unresolved),
     };
 
+    requestLogger.debug("AI hotel allocation response received", {
+      context: this.context,
+      flightId,
+      assignmentCount: aiAllocation.assignments.length,
+      unresolvedCount: aiAllocation.unresolved.length,
+      assignments: aiAllocation.assignments,
+    });
+    if (aiAllocation.unresolved.length > 0) {
+      requestLogger.warn("AI allocator left some passenger groups unresolved", {
+        context: this.context,
+        flightId,
+        unresolved: aiAllocation.unresolved,
+      });
+    }
+
     // passengerGroupId -> real rateKey (translated from the alias sent to the AI)
     const rateKeyByPg = new Map<string, string>();
     for (const assignment of aiAllocation.assignments) {
@@ -1846,6 +1910,16 @@ export class HotelAllocationService {
       }
 
       if (failReason || !hotelRef || bookingRooms.length === 0) {
+        requestLogger.warn(
+          "Booking failed hard-rule verification after AI allocation",
+          {
+            context: this.context,
+            flightId,
+            bookingId: booking.id,
+            pnr: booking.pnr,
+            reason: failReason ?? "No hotel assignment produced by allocator",
+          },
+        );
         results.push({
           bookingId: booking.id,
           pnr: booking.pnr,
@@ -1871,6 +1945,19 @@ export class HotelAllocationService {
               )}) recorded but not verifiable from hotel data - confirm with the hotel directly.`
             : ".");
 
+        const bookingTotalPrice = this.roundCurrency(
+          bookingRooms.reduce((sum, room) => sum + room.price, 0),
+        );
+        requestLogger.debug("Booking allocated to hotel", {
+          context: this.context,
+          flightId,
+          bookingId: booking.id,
+          pnr: booking.pnr,
+          hotelName: hotelRef.hotelName,
+          hotelCategory: hotelRef.category,
+          roomCount: bookingRooms.length,
+          totalPrice: bookingTotalPrice,
+        });
         results.push({
           bookingId: booking.id,
           pnr: booking.pnr,
@@ -1881,9 +1968,7 @@ export class HotelAllocationService {
           },
           hotel: hotelRef,
           rooms: bookingRooms,
-          totalPrice: this.roundCurrency(
-            bookingRooms.reduce((sum, room) => sum + room.price, 0),
-          ),
+          totalPrice: bookingTotalPrice,
           allocationStatus: "RECOMMENDED",
           reason,
         });
@@ -2087,7 +2172,7 @@ export class HotelAllocationService {
           status: item.allocationStatus,
           reason: item.reason ?? null,
         }));
-      requestLogger.error(
+      requestLogger.warn(
         `Hotel allocation incomplete for flight '${flightId}': ${failed}/${results.length} bookings unallocated - nothing saved`,
         { context: this.context, flightId, failures },
       );
@@ -2257,7 +2342,6 @@ export class HotelAllocationService {
         totalEarnings,
         status: FlightStatus.ALLOCATED,
       },
-      requestId,
       requestLogger,
     );
 

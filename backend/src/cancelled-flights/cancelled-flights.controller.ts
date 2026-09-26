@@ -99,6 +99,8 @@ import { GetCancelledFlightsQueryDto } from "./dto/get-cancelled-flights-query.d
   HotelBookingDetailResponseDto,
 )
 export class CancelledFlightsController {
+  private readonly context = "CancelledFlightsController";
+
   constructor(
     private readonly service: CancelledFlightsService,
     private readonly hotelAllocationService: HotelAllocationService,
@@ -152,6 +154,7 @@ export class CancelledFlightsController {
     @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<CancelledFlightListResponseDto>> {
     requestLogger.info("Listing cancelled flights", {
+      context: this.context,
       query,
       user: req.user,
     });
@@ -211,10 +214,15 @@ export class CancelledFlightsController {
     @Req() req: AuthenticatedRequest,
     @Body() dto: CreateCancelledFlightDto,
     @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<CancelledFlightResponseDto>> {
     const user = req.user;
     const airlineId = user.airlineId;
     if (!airlineId) {
+      requestLogger.warn(
+        "Authenticated user does not have an associated airlineId",
+        { context: this.context, userId: user.sub },
+      );
       throw new BadRequestException(
         "Authenticated user does not have an associated airlineId",
       );
@@ -223,6 +231,7 @@ export class CancelledFlightsController {
       airlineId,
       dto,
       requestId,
+      requestLogger,
     );
     return BaseResponseDto.success(data, requestId, "Cancelled flight created");
   }
@@ -255,9 +264,14 @@ export class CancelledFlightsController {
     @Req() req: AuthenticatedRequest,
     @Body() dto: UpdateCancelledFlightDto,
     @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<CancelledFlightResponseDto>> {
     const airlineId = req.user.airlineId;
     if (!airlineId) {
+      requestLogger.warn(
+        "Authenticated user does not have an associated airlineId",
+        { context: this.context, userId: req.user.sub },
+      );
       throw new BadRequestException(
         "Authenticated user does not have an associated airlineId",
       );
@@ -268,6 +282,7 @@ export class CancelledFlightsController {
       airlineId,
       dto,
       requestId,
+      requestLogger,
     );
 
     return BaseResponseDto.success(data, requestId, "Cancelled flight updated");
@@ -314,8 +329,14 @@ export class CancelledFlightsController {
     @Param("id", ParseIntPipe) id: number,
     @Body() dto: CreateBookingDto,
     @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<BookingResponseDto>> {
-    const data = await this.service.addBooking(id, dto, requestId);
+    const data = await this.service.addBooking(
+      id,
+      dto,
+      requestId,
+      requestLogger,
+    );
     return BaseResponseDto.success(data, requestId, "Booking added");
   }
 
@@ -365,16 +386,32 @@ export class CancelledFlightsController {
     @UploadedFile()
     file: { buffer: Buffer; originalname: string; mimetype: string },
     @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<ImportBookingResponseDto>> {
     if (!file) {
+      requestLogger.warn("Booking import attempted without a file", {
+        context: this.context,
+        cancelledFlightId: id,
+      });
       throw new BadRequestException("File is required");
     }
     const ext = file.originalname?.split(".").pop()?.toLowerCase();
     const allowedMimes = ["text/csv", "application/csv"];
     if (ext !== "csv" && !allowedMimes.includes(file.mimetype)) {
+      requestLogger.warn("Booking import rejected: unsupported file type", {
+        context: this.context,
+        cancelledFlightId: id,
+        originalname: file.originalname,
+        mimetype: file.mimetype,
+      });
       throw new BadRequestException("Only .csv files are accepted");
     }
-    const data = await this.service.importBookings(id, file, requestId);
+    const data = await this.service.importBookings(
+      id,
+      file,
+      requestId,
+      requestLogger,
+    );
     return BaseResponseDto.success(
       data,
       requestId,
@@ -414,12 +451,14 @@ export class CancelledFlightsController {
     @Param("bookingId", ParseIntPipe) bookingId: number,
     @Body() dto: UpdateBookingDto,
     @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<object>> {
     const data = await this.service.updateBooking(
       id,
       bookingId,
       dto,
       requestId,
+      requestLogger,
     );
     return BaseResponseDto.success(data, requestId, "Booking updated");
   }
@@ -464,8 +503,14 @@ export class CancelledFlightsController {
     @Param("id", ParseIntPipe) id: number,
     @Param("bookingId", ParseIntPipe) bookingId: number,
     @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<object>> {
-    const data = await this.service.deleteBooking(id, bookingId, requestId);
+    const data = await this.service.deleteBooking(
+      id,
+      bookingId,
+      requestId,
+      requestLogger,
+    );
     return BaseResponseDto.success(data, requestId);
   }
 
@@ -503,8 +548,14 @@ export class CancelledFlightsController {
     @Param("id", ParseIntPipe) id: number,
     @Query() pagination: PaginationQueryDto,
     @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<CancelledFlightBookingsListResponseDto>> {
-    const data = await this.service.listBookings(id, pagination, requestId);
+    const data = await this.service.listBookings(
+      id,
+      pagination,
+      requestId,
+      requestLogger,
+    );
     return BaseResponseDto.success(
       data,
       requestId,
@@ -544,8 +595,9 @@ export class CancelledFlightsController {
   async reviewFlight(
     @Param("id", ParseIntPipe) id: number,
     @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<ReviewCancelledFlightResponseDto>> {
-    const data = await this.service.reviewFlight(id, requestId);
+    const data = await this.service.reviewFlight(id, requestId, requestLogger);
     return BaseResponseDto.success(
       data,
       requestId,
@@ -577,10 +629,12 @@ export class CancelledFlightsController {
   async confirmPassengerBookingDetails(
     @Param("id", ParseIntPipe) id: number,
     @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<CancelledFlightResponseDto>> {
     const data = await this.service.confirmPassengerBookingDetails(
       id,
       requestId,
+      requestLogger,
     );
     return BaseResponseDto.success(
       data,
@@ -622,8 +676,13 @@ export class CancelledFlightsController {
   async getHotelSummary(
     @Param("id", ParseIntPipe) id: number,
     @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<HotelSummaryCancelledFlightResponseDto>> {
-    const data = await this.service.hotelSummaryByFlight(id, requestId);
+    const data = await this.service.hotelSummaryByFlight(
+      id,
+      requestId,
+      requestLogger,
+    );
     return BaseResponseDto.success(
       data,
       requestId,
@@ -667,7 +726,9 @@ export class CancelledFlightsController {
     @RequestId() requestId: string,
     @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<CancelledFlightHotelBookingListResponseDto>> {
-    requestLogger.info(`Listing hotel bookings for cancelled flight ${id}`);
+    requestLogger.info(`Listing hotel bookings for cancelled flight ${id}`, {
+      context: this.context,
+    });
     const data = await this.service.listHotelBookings(
       id,
       pagination,
@@ -722,12 +783,14 @@ export class CancelledFlightsController {
     @Param("hotelBookingId", ParseIntPipe) hotelBookingId: number,
     @Req() req: AuthenticatedRequest,
     @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<HotelBookingDetailResponseDto>> {
     const data = await this.service.getHotelBookingDetail(
       id,
       hotelBookingId,
       req.user,
       requestId,
+      requestLogger,
     );
     return BaseResponseDto.success(
       data,
@@ -769,12 +832,14 @@ export class CancelledFlightsController {
   ): Promise<BaseResponseDto<object>> {
     requestLogger.info(
       `Fetching hotel recommendations for cancelled flight ${id}`,
+      { context: this.context },
     );
-    const data = await this.hotelAllocationService.getHotelRecommendationsForFlight(
-      id,
-      requestId,
-      requestLogger,
-    );
+    const data =
+      await this.hotelAllocationService.getHotelRecommendationsForFlight(
+        id,
+        requestId,
+        requestLogger,
+      );
     return BaseResponseDto.success(
       data,
       requestId,
@@ -814,7 +879,10 @@ export class CancelledFlightsController {
     @RequestId() requestId: string,
     @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<HotelAllocationsDto>> {
-    requestLogger.info(`Fetching hotel allocations for cancelled flight ${id}`);
+    requestLogger.info(
+      `Fetching hotel allocations for cancelled flight ${id}`,
+      { context: this.context },
+    );
     const data = await this.hotelAllocationService.hotelAllocationsForFlight(
       id,
       request.user,
@@ -855,11 +923,13 @@ export class CancelledFlightsController {
     @Param("id", ParseIntPipe) id: number,
     @Param("bookingId", ParseIntPipe) bookingId: number,
     @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<object>> {
     const data = await this.hotelAllocationService.getHotelRecommendations(
       id,
       bookingId,
       requestId,
+      requestLogger,
     );
     return BaseResponseDto.success(
       data,
@@ -896,8 +966,13 @@ export class CancelledFlightsController {
   async processPayment(
     @Param("id", ParseIntPipe) id: number,
     @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<CancelledFlightResponseDto>> {
-    const data = await this.service.processPayment(id, requestId);
+    const data = await this.service.processPayment(
+      id,
+      requestId,
+      requestLogger,
+    );
     return BaseResponseDto.success(
       data,
       requestId,
