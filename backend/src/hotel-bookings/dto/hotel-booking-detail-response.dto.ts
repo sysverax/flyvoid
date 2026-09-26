@@ -55,7 +55,7 @@ export class HotelBookingHotelDetailDto {
   distanceFromAirportKm?: number | null;
 
   @ApiProperty({
-    example: "https://photos.hotelbeds.com/giata/bigger/10/101080/101080a.jpg",
+    example: "https://example.com/hotel-image.jpg",
     nullable: true,
   })
   imageUrl?: string | null;

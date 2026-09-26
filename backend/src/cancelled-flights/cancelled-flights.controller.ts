@@ -99,6 +99,8 @@ import { GetCancelledFlightsQueryDto } from "./dto/get-cancelled-flights-query.d
   HotelBookingDetailResponseDto,
 )
 export class CancelledFlightsController {
+  private readonly context = "CancelledFlightsController";
+
   constructor(
     private readonly service: CancelledFlightsService,
     private readonly hotelAllocationService: HotelAllocationService,
@@ -152,6 +154,7 @@ export class CancelledFlightsController {
     @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<CancelledFlightListResponseDto>> {
     requestLogger.info("Listing cancelled flights", {
+      context: this.context,
       query,
       user: req.user,
     });
@@ -211,10 +214,15 @@ export class CancelledFlightsController {
     @Req() req: AuthenticatedRequest,
     @Body() dto: CreateCancelledFlightDto,
     @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<CancelledFlightResponseDto>> {
     const user = req.user;
     const airlineId = user.airlineId;
     if (!airlineId) {
+      requestLogger.warn(
+        "Authenticated user does not have an associated airlineId",
+        { context: this.context, userId: user.sub },
+      );
       throw new BadRequestException(
         "Authenticated user does not have an associated airlineId",
       );
@@ -223,6 +231,7 @@ export class CancelledFlightsController {
       airlineId,
       dto,
       requestId,
+      requestLogger,
     );
     return BaseResponseDto.success(data, requestId, "Cancelled flight created");
   }
@@ -255,9 +264,14 @@ export class CancelledFlightsController {
     @Req() req: AuthenticatedRequest,
     @Body() dto: UpdateCancelledFlightDto,
     @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<CancelledFlightResponseDto>> {
     const airlineId = req.user.airlineId;
     if (!airlineId) {
+      requestLogger.warn(
+        "Authenticated user does not have an associated airlineId",
+        { context: this.context, userId: req.user.sub },
+      );
       throw new BadRequestException(
         "Authenticated user does not have an associated airlineId",
       );
@@ -268,6 +282,7 @@ export class CancelledFlightsController {
       airlineId,
       dto,
       requestId,
+      requestLogger,
     );
 
     return BaseResponseDto.success(data, requestId, "Cancelled flight updated");
@@ -314,8 +329,14 @@ export class CancelledFlightsController {
     @Param("id", ParseIntPipe) id: number,
     @Body() dto: CreateBookingDto,
     @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<BookingResponseDto>> {
-    const data = await this.service.addBooking(id, dto, requestId);
+    const data = await this.service.addBooking(
+      id,
+      dto,
+      requestId,
+      requestLogger,
+    );
     return BaseResponseDto.success(data, requestId, "Booking added");
   }
 
@@ -365,16 +386,32 @@ export class CancelledFlightsController {
     @UploadedFile()
     file: { buffer: Buffer; originalname: string; mimetype: string },
     @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<ImportBookingResponseDto>> {
     if (!file) {
+      requestLogger.warn("Booking import attempted without a file", {
+        context: this.context,
+        cancelledFlightId: id,
+      });
       throw new BadRequestException("File is required");
     }
     const ext = file.originalname?.split(".").pop()?.toLowerCase();
     const allowedMimes = ["text/csv", "application/csv"];
     if (ext !== "csv" && !allowedMimes.includes(file.mimetype)) {
+      requestLogger.warn("Booking import rejected: unsupported file type", {
+        context: this.context,
+        cancelledFlightId: id,
+        originalname: file.originalname,
+        mimetype: file.mimetype,
+      });
       throw new BadRequestException("Only .csv files are accepted");
     }
-    const data = await this.service.importBookings(id, file, requestId);
+    const data = await this.service.importBookings(
+      id,
+      file,
+      requestId,
+      requestLogger,
+    );
     return BaseResponseDto.success(
       data,
       requestId,
@@ -414,12 +451,14 @@ export class CancelledFlightsController {
     @Param("bookingId", ParseIntPipe) bookingId: number,
     @Body() dto: UpdateBookingDto,
     @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<object>> {
     const data = await this.service.updateBooking(
       id,
       bookingId,
       dto,
       requestId,
+      requestLogger,
     );
     return BaseResponseDto.success(data, requestId, "Booking updated");
   }
@@ -464,8 +503,14 @@ export class CancelledFlightsController {
     @Param("id", ParseIntPipe) id: number,
     @Param("bookingId", ParseIntPipe) bookingId: number,
     @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<object>> {
-    const data = await this.service.deleteBooking(id, bookingId, requestId);
+    const data = await this.service.deleteBooking(
+      id,
+      bookingId,
+      requestId,
+      requestLogger,
+    );
     return BaseResponseDto.success(data, requestId);
   }
 
@@ -503,8 +548,14 @@ export class CancelledFlightsController {
     @Param("id", ParseIntPipe) id: number,
     @Query() pagination: PaginationQueryDto,
     @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<CancelledFlightBookingsListResponseDto>> {
-    const data = await this.service.listBookings(id, pagination, requestId);
+    const data = await this.service.listBookings(
+      id,
+      pagination,
+      requestId,
+      requestLogger,
+    );
     return BaseResponseDto.success(
       data,
       requestId,
@@ -544,8 +595,9 @@ export class CancelledFlightsController {
   async reviewFlight(
     @Param("id", ParseIntPipe) id: number,
     @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<ReviewCancelledFlightResponseDto>> {
-    const data = await this.service.reviewFlight(id, requestId);
+    const data = await this.service.reviewFlight(id, requestId, requestLogger);
     return BaseResponseDto.success(
       data,
       requestId,
@@ -577,10 +629,12 @@ export class CancelledFlightsController {
   async confirmPassengerBookingDetails(
     @Param("id", ParseIntPipe) id: number,
     @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<CancelledFlightResponseDto>> {
     const data = await this.service.confirmPassengerBookingDetails(
       id,
       requestId,
+      requestLogger,
     );
     return BaseResponseDto.success(
       data,
@@ -622,8 +676,13 @@ export class CancelledFlightsController {
   async getHotelSummary(
     @Param("id", ParseIntPipe) id: number,
     @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<HotelSummaryCancelledFlightResponseDto>> {
-    const data = await this.service.hotelSummaryByFlight(id, requestId);
+    const data = await this.service.hotelSummaryByFlight(
+      id,
+      requestId,
+      requestLogger,
+    );
     return BaseResponseDto.success(
       data,
       requestId,
@@ -667,7 +726,9 @@ export class CancelledFlightsController {
     @RequestId() requestId: string,
     @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<CancelledFlightHotelBookingListResponseDto>> {
-    requestLogger.info(`Listing hotel bookings for cancelled flight ${id}`);
+    requestLogger.info(`Listing hotel bookings for cancelled flight ${id}`, {
+      context: this.context,
+    });
     const data = await this.service.listHotelBookings(
       id,
       pagination,
@@ -722,12 +783,14 @@ export class CancelledFlightsController {
     @Param("hotelBookingId", ParseIntPipe) hotelBookingId: number,
     @Req() req: AuthenticatedRequest,
     @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<HotelBookingDetailResponseDto>> {
     const data = await this.service.getHotelBookingDetail(
       id,
       hotelBookingId,
       req.user,
       requestId,
+      requestLogger,
     );
     return BaseResponseDto.success(
       data,
@@ -748,7 +811,7 @@ export class CancelledFlightsController {
     summary:
       "Generate hotel recommendations for all bookings of a cancelled flight",
     description:
-      "Builds preferred/fallback room occupancies per booking, performs a single Hotelbeds availability search across deduplicated occupancies, and returns recommendation allocations without creating live hotel bookings.",
+      "Builds preferred/fallback room occupancies per booking, performs a single hotel supplier availability search across deduplicated occupancies, and returns recommendation allocations without creating live hotel bookings.",
   })
   @ApiParam({ name: "id", description: "Cancelled flight id" })
   @ApiNotFoundResponse({
@@ -769,12 +832,14 @@ export class CancelledFlightsController {
   ): Promise<BaseResponseDto<object>> {
     requestLogger.info(
       `Fetching hotel recommendations for cancelled flight ${id}`,
+      { context: this.context },
     );
-    const data = await this.hotelAllocationService.getHotelRecommendationsForFlight(
-      id,
-      requestId,
-      requestLogger,
-    );
+    const data =
+      await this.hotelAllocationService.getHotelRecommendationsForFlight(
+        id,
+        requestId,
+        requestLogger,
+      );
     return BaseResponseDto.success(
       data,
       requestId,
@@ -794,7 +859,7 @@ export class CancelledFlightsController {
     summary:
       "Generate hotel allocations for all bookings of a cancelled flight",
     description:
-      "Builds preferred/fallback room occupancies per booking, performs a single Hotelbeds availability search across deduplicated occupancies, and returns hotel allocations without creating live hotel bookings.",
+      "Builds preferred/fallback room occupancies per booking, performs a single hotel supplier availability search across deduplicated occupancies, and returns hotel allocations without creating live hotel bookings.",
   })
   @ApiParam({ name: "id", description: "Cancelled flight id" })
   @ApiNotFoundResponse({
@@ -814,7 +879,10 @@ export class CancelledFlightsController {
     @RequestId() requestId: string,
     @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<HotelAllocationsDto>> {
-    requestLogger.info(`Fetching hotel allocations for cancelled flight ${id}`);
+    requestLogger.info(
+      `Fetching hotel allocations for cancelled flight ${id}`,
+      { context: this.context },
+    );
     const data = await this.hotelAllocationService.hotelAllocationsForFlight(
       id,
       request.user,
@@ -855,11 +923,13 @@ export class CancelledFlightsController {
     @Param("id", ParseIntPipe) id: number,
     @Param("bookingId", ParseIntPipe) bookingId: number,
     @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<object>> {
     const data = await this.hotelAllocationService.getHotelRecommendations(
       id,
       bookingId,
       requestId,
+      requestLogger,
     );
     return BaseResponseDto.success(
       data,
@@ -896,8 +966,13 @@ export class CancelledFlightsController {
   async processPayment(
     @Param("id", ParseIntPipe) id: number,
     @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<CancelledFlightResponseDto>> {
-    const data = await this.service.processPayment(id, requestId);
+    const data = await this.service.processPayment(
+      id,
+      requestId,
+      requestLogger,
+    );
     return BaseResponseDto.success(
       data,
       requestId,
@@ -982,68 +1057,102 @@ export class CancelledFlightsController {
   //   );
   // }
 
-  // // ── POST /cancelled-flights/:id/bookings/:bookingId/check-rate ────────────
+  // ── POST /cancelled-flights/:id/bookings/:bookingId/check-rate ────────────
+  @Post(":id/bookings/:bookingId/check-rate")
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.EDIT],
+    },
+  })
+  @ApiOperation({
+    summary: "Check rate key availability and pricing details",
+    description:
+      "Re-validates a rate with the active hotel supplier (availability, price, cancellation policies) before booking.",
+  })
+  @ApiParam({ name: "id", description: "Cancelled flight id" })
+  @ApiParam({ name: "bookingId", description: "Booking id" })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/cancelled-flights/:id/bookings/:bookingId/check-rate",
+      "Cancelled flight or booking not found",
+    ),
+  })
+  async checkRate(
+    @Req() request: AuthenticatedRequest,
+    @Param("id", ParseIntPipe) id: number,
+    @Param("bookingId", ParseIntPipe) bookingId: number,
+    @Body() dto: CheckRateRequestDto,
+    @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
+  ): Promise<BaseResponseDto<object>> {
+    const data = await this.hotelAllocationService.checkRate(
+      id,
+      bookingId,
+      dto.rateKey,
+      request.user,
+      requestId,
+      requestLogger,
+    );
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Room rate details retrieved successfully",
+    );
+  }
 
-  // @Post(":id/bookings/:bookingId/check-rate")
-  // @RequireAccessControl({
-  //   airline: {
-  //     asset: AirlineAsset.CANCELLED_FLIGHTS,
-  //     access: [AccessAction.EDIT],
-  //   },
-  // })
-  // @ApiOperation({
-  //   summary: "Check rate key availability and pricing details",
-  //   description:
-  //     "Queries Hotelbeds CheckRate API to verify room rate availability, cancellation policies, and cost details.",
-  // })
-  // @ApiParam({ name: "id", description: "Cancelled flight UUID" })
-  // @ApiParam({ name: "bookingId", description: "Booking UUID" })
-  // async checkRate(
-  //   @Param("id", ParseIntPipe) id: number,
-  //   @Param("bookingId", ParseIntPipe) bookingId: number,
-  //   @Body() dto: CheckRateRequestDto,
-  //   @RequestId() requestId: string,
-  // ): Promise<BaseResponseDto<object>> {
-  //   const data = await this.service.checkRate(
-  //     id,
-  //     bookingId,
-  //     dto.rateKey,
-  //     requestId,
-  //   );
-  //   return BaseResponseDto.success(
-  //     data,
-  //     requestId,
-  //     "Room rate details retrieved successfully",
-  //   );
-  // }
-
-  // // ── POST /cancelled-flights/:id/bookings/:bookingId/book-hotel ────────────
-
-  // @Post(":id/bookings/:bookingId/book-hotel")
-  // @RequireAccessControl({
-  //   airline: {
-  //     asset: AirlineAsset.CANCELLED_FLIGHTS,
-  //     access: [AccessAction.EDIT],
-  //   },
-  // })
-  // @ApiOperation({
-  //   summary: "Perform live hotel reservation and allocate it to the booking",
-  //   description:
-  //     "Queries Hotelbeds Bookings API to confirm reservation, then stores allocation details in the database.",
-  // })
-  // @ApiParam({ name: "id", description: "Cancelled flight UUID" })
-  // @ApiParam({ name: "bookingId", description: "Booking UUID" })
-  // async bookHotel(
-  //   @Param("id", ParseIntPipe) id: number,
-  //   @Param("bookingId", ParseIntPipe) bookingId: number,
-  //   @Body() dto: BookHotelRequestDto,
-  //   @RequestId() requestId: string,
-  // ): Promise<BaseResponseDto<object>> {
-  //   const data = await this.service.bookHotel(id, bookingId, dto, requestId);
-  //   return BaseResponseDto.success(
-  //     data,
-  //     requestId,
-  //     "Hotel booked and allocated successfully",
-  //   );
-  // }
+  // ── POST /cancelled-flights/:id/bookings/:bookingId/book-hotel ────────────
+  @Post(":id/bookings/:bookingId/book-hotel")
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.EDIT],
+    },
+  })
+  @ApiOperation({
+    summary: "Perform live hotel reservation and allocate it to the booking",
+    description:
+      "Re-validates every room's rate, books them with the active hotel supplier, then stores the confirmed reservation on the booking's hotel allocation. Only for flights that are allocated, paid or published.",
+  })
+  @ApiParam({ name: "id", description: "Cancelled flight id" })
+  @ApiParam({ name: "bookingId", description: "Booking id" })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/cancelled-flights/:id/bookings/:bookingId/book-hotel",
+      "Cancelled flight or booking not found",
+    ),
+  })
+  @ApiConflictResponse({
+    schema: createConflictErrorSchema(
+      "/api/v1/cancelled-flights/:id/bookings/:bookingId/book-hotel",
+      "Booking already has a confirmed hotel reservation, or a booking attempt is in progress or needs checking",
+    ),
+  })
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema(
+      "/api/v1/cancelled-flights/:id/bookings/:bookingId/book-hotel",
+    ),
+  })
+  async bookHotel(
+    @Req() request: AuthenticatedRequest,
+    @Param("id", ParseIntPipe) id: number,
+    @Param("bookingId", ParseIntPipe) bookingId: number,
+    @Body() dto: BookHotelRequestDto,
+    @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
+  ): Promise<BaseResponseDto<object>> {
+    const data = await this.hotelAllocationService.bookHotel(
+      id,
+      bookingId,
+      dto,
+      request.user,
+      requestId,
+      requestLogger,
+    );
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Hotel booked and allocated successfully",
+    );
+  }
 }

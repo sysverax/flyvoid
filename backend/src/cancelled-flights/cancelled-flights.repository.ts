@@ -1,7 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { In, Repository } from "typeorm";
-import { LoggerService } from "../common/logger/logger.service";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
 import { BookingEntity } from "./entities/booking.entity";
 import { FlightStatus } from "./entities/enums";
@@ -10,6 +9,8 @@ import { Logger } from "winston";
 
 @Injectable()
 export class CancelledFlightsRepository {
+  private readonly context = "CancelledFlightsRepository";
+
   constructor(
     @InjectRepository(CancelledFlightEntity)
     private readonly flightRepo: Repository<CancelledFlightEntity>,
@@ -17,48 +18,41 @@ export class CancelledFlightsRepository {
     private readonly bookingRepo: Repository<BookingEntity>,
     @InjectRepository(HotelAllocationEntity)
     private readonly allocationRepo: Repository<HotelAllocationEntity>,
-    private readonly logger: LoggerService,
   ) {}
 
   // ── CancelledFlight ──────────────────────────────────────────────────────
 
   async createFlight(
     payload: Partial<CancelledFlightEntity>,
-    requestId: string,
+    requestLogger: Logger,
   ): Promise<CancelledFlightEntity> {
-    this.logger.debug(
-      "Creating cancelled flight",
-      "CancelledFlightsRepository",
-      requestId,
-      { flightNumber: payload.flightNumber },
-    );
+    requestLogger.info("Creating cancelled flight", {
+      context: this.context,
+      flightNumber: payload.flightNumber,
+    });
     const entity = this.flightRepo.create(payload);
     return this.flightRepo.save(entity);
   }
 
   async findFlightById(
     id: number,
-    requestId: string,
+    requestLogger: Logger,
   ): Promise<CancelledFlightEntity | null> {
-    this.logger.debug(
-      "Finding cancelled flight by id",
-      "CancelledFlightsRepository",
-      requestId,
-      { id },
-    );
+    requestLogger.info("Finding cancelled flight by id", {
+      context: this.context,
+      id,
+    });
     return this.flightRepo.findOne({ where: { id } });
   }
 
   async findFlightWithRelations(
     id: number,
-    requestId: string,
+    requestLogger: Logger,
   ): Promise<CancelledFlightEntity | null> {
-    this.logger.debug(
-      "Finding cancelled flight with relations",
-      "CancelledFlightsRepository",
-      requestId,
-      { id },
-    );
+    requestLogger.info("Finding cancelled flight with relations", {
+      context: this.context,
+      id,
+    });
     return this.flightRepo.findOne({
       where: { id },
       relations: ["airline", "departureAirport", "arrivalAirport"],
@@ -67,14 +61,12 @@ export class CancelledFlightsRepository {
 
   async updateFlightEntity(
     entity: CancelledFlightEntity,
-    requestId: string,
+    requestLogger: Logger,
   ): Promise<CancelledFlightEntity> {
-    this.logger.debug(
-      "Updating cancelled flight",
-      "CancelledFlightsRepository",
-      requestId,
-      { id: entity.id },
-    );
+    requestLogger.info("Updating cancelled flight", {
+      context: this.context,
+      id: entity.id,
+    });
     return this.flightRepo.save(entity);
   }
 
@@ -96,13 +88,20 @@ export class CancelledFlightsRepository {
       startDate?: string;
       endDate?: string;
     },
-    requestId: string,
+    requestLogger: Logger,
   ): Promise<{ flights: CancelledFlightEntity[]; totalCount: number }> {
-    this.logger.debug(
+    requestLogger.info(
       "Finding cancelled flights with pagination and filters",
-      "CancelledFlightsRepository",
-      requestId,
-      { page, limit, status, search, airlineId, startDate, endDate },
+      {
+        context: this.context,
+        page,
+        limit,
+        status,
+        search,
+        airlineId,
+        startDate,
+        endDate,
+      },
     );
 
     const skip = (page - 1) * limit;
@@ -146,7 +145,7 @@ export class CancelledFlightsRepository {
     status,
     passengerBookingStats,
     hotelBookingStats,
-    requestId,
+    requestLogger,
   }: {
     cancelledFlightEntity: CancelledFlightEntity;
     status: FlightStatus;
@@ -165,14 +164,13 @@ export class CancelledFlightsRepository {
       totalPlatformFee: number | null;
       totalEarnings: number | null;
     } | null;
-    requestId: string;
+    requestLogger: Logger;
   }): Promise<CancelledFlightEntity> {
-    this.logger.debug(
-      "Updating cancelled flight status",
-      "CancelledFlightsRepository",
-      requestId,
-      { flightId: cancelledFlightEntity.id, status },
-    );
+    requestLogger.info("Updating cancelled flight status", {
+      context: this.context,
+      flightId: cancelledFlightEntity.id,
+      status,
+    });
 
     cancelledFlightEntity.status = status;
     if (passengerBookingStats && passengerBookingStats.totalBookings !== null) {
@@ -218,41 +216,36 @@ export class CancelledFlightsRepository {
 
   async createBooking(
     payload: Partial<BookingEntity>,
-    requestId: string,
+    requestLogger: Logger,
   ): Promise<BookingEntity> {
-    this.logger.debug(
-      "Creating booking",
-      "CancelledFlightsRepository",
-      requestId,
-      { cancelledFlightId: payload.cancelledFlightId, pnr: payload.pnr },
-    );
+    requestLogger.info("Creating booking", {
+      context: this.context,
+      cancelledFlightId: payload.cancelledFlightId,
+      pnr: payload.pnr,
+    });
     const entity = this.bookingRepo.create(payload);
     return this.bookingRepo.save(entity);
   }
 
   async findBookingById(
     id: number,
-    requestId: string,
+    requestLogger: Logger,
   ): Promise<BookingEntity | null> {
-    this.logger.debug(
-      "Finding booking by id",
-      "CancelledFlightsRepository",
-      requestId,
-      { id },
-    );
+    requestLogger.info("Finding booking by id", {
+      context: this.context,
+      id,
+    });
     return this.bookingRepo.findOne({ where: { id } });
   }
 
   async findBookingsByFlightId(
     cancelledFlightId: number,
-    requestId: string,
+    requestLogger: Logger,
   ): Promise<BookingEntity[]> {
-    this.logger.debug(
-      "Finding bookings by flight id",
-      "CancelledFlightsRepository",
-      requestId,
-      { cancelledFlightId },
-    );
+    requestLogger.info("Finding bookings by flight id", {
+      context: this.context,
+      cancelledFlightId,
+    });
     return this.bookingRepo.find({
       where: { cancelledFlightId },
       order: { createdAt: "ASC" },
@@ -262,28 +255,26 @@ export class CancelledFlightsRepository {
   async findBookingByPnrAndFlight(
     pnr: string,
     cancelledFlightId: number,
-    requestId: string,
+    requestLogger: Logger,
   ): Promise<BookingEntity | null> {
-    this.logger.debug(
-      "Finding booking by PNR and flight",
-      "CancelledFlightsRepository",
-      requestId,
-      { pnr, cancelledFlightId },
-    );
+    requestLogger.info("Finding booking by PNR and flight", {
+      context: this.context,
+      pnr,
+      cancelledFlightId,
+    });
     return this.bookingRepo.findOne({ where: { pnr, cancelledFlightId } });
   }
 
   async findBookingsByFlightIdAndPnrs(
     cancelledFlightId: number,
     pnrs: string[],
-    requestId: string,
+    requestLogger: Logger,
   ): Promise<BookingEntity[]> {
-    this.logger.debug(
-      "Finding bookings by flight id and PNRs",
-      "CancelledFlightsRepository",
-      requestId,
-      { cancelledFlightId, pnrs },
-    );
+    requestLogger.info("Finding bookings by flight id and PNRs", {
+      context: this.context,
+      cancelledFlightId,
+      pnrs,
+    });
     return this.bookingRepo.find({
       where: { cancelledFlightId, pnr: In(pnrs) },
     });
@@ -292,39 +283,36 @@ export class CancelledFlightsRepository {
   async updateBooking(
     entity: BookingEntity,
     payload: Partial<BookingEntity>,
-    requestId: string,
+    requestLogger: Logger,
   ): Promise<BookingEntity> {
-    this.logger.debug(
-      "Updating booking",
-      "CancelledFlightsRepository",
-      requestId,
-      { bookingId: entity.id },
-    );
+    requestLogger.info("Updating booking", {
+      context: this.context,
+      bookingId: entity.id,
+    });
     Object.assign(entity, payload);
     return this.bookingRepo.save(entity);
   }
 
-  async deleteBooking(entity: BookingEntity, requestId: string): Promise<void> {
-    this.logger.debug(
-      "Deleting booking",
-      "CancelledFlightsRepository",
-      requestId,
-      { bookingId: entity.id },
-    );
+  async deleteBooking(
+    entity: BookingEntity,
+    requestLogger: Logger,
+  ): Promise<void> {
+    requestLogger.info("Deleting booking", {
+      context: this.context,
+      bookingId: entity.id,
+    });
     await this.bookingRepo.remove(entity);
   }
 
   // Bulk creation of bookings, used for CSV import
   async saveBookings(
     payloads: Partial<BookingEntity>[],
-    requestId: string,
+    requestLogger: Logger,
   ): Promise<BookingEntity[]> {
-    this.logger.debug(
-      "Bulk saving bookings",
-      "CancelledFlightsRepository",
-      requestId,
-      { count: payloads.length },
-    );
+    requestLogger.info("Bulk saving bookings", {
+      context: this.context,
+      count: payloads.length,
+    });
     const entities = payloads.map((p) => this.bookingRepo.create(p));
     return this.bookingRepo.save(entities);
   }
@@ -333,14 +321,12 @@ export class CancelledFlightsRepository {
     cancelledFlightId: number,
     page: number,
     limit: number,
-    requestId: string,
+    requestLogger: Logger,
   ): Promise<{ bookings: BookingEntity[]; totalBookings: number }> {
-    this.logger.debug(
-      "Finding all bookings by flight id with pagination",
-      "CancelledFlightsRepository",
-      requestId,
-      { cancelledFlightId },
-    );
+    requestLogger.info("Finding all bookings by flight id with pagination", {
+      context: this.context,
+      cancelledFlightId,
+    });
 
     const skip = (page - 1) * limit;
 
@@ -359,18 +345,16 @@ export class CancelledFlightsRepository {
 
   async findBookingStatsByFlightId(
     cancelledFlightId: number,
-    requestId: string,
+    requestLogger: Logger,
   ): Promise<{
     totalBookings: number;
     totalAdults: number;
     totalChildren: number;
   }> {
-    this.logger.debug(
-      "Finding booking stats by flight id",
-      "CancelledFlightsRepository",
-      requestId,
-      { cancelledFlightId },
-    );
+    requestLogger.info("Finding booking stats by flight id", {
+      context: this.context,
+      cancelledFlightId,
+    });
 
     const stats = await this.bookingRepo
       .createQueryBuilder("booking")
@@ -392,20 +376,75 @@ export class CancelledFlightsRepository {
   // ── HotelAllocation ──────────────────────────────────────────────────────
   async saveHotelAllocation(
     payload: Partial<HotelAllocationEntity>,
-    requestId: string,
+    requestLogger: Logger,
   ): Promise<HotelAllocationEntity> {
-    this.logger.debug(
-      "Saving hotel allocation",
-      "CancelledFlightsRepository",
-      requestId,
-      {
-        cancelledFlightId: payload.cancelledFlightId,
-        bookingId: payload.bookingId,
-        hotelName: payload.hotelName,
-      },
-    );
+    requestLogger.info("Saving hotel allocation", {
+      context: this.context,
+      cancelledFlightId: payload.cancelledFlightId,
+      bookingId: payload.bookingId,
+      hotelName: payload.hotelName,
+    });
     const entity = this.allocationRepo.create(payload);
     return this.allocationRepo.save(entity);
+  }
+
+  /**
+   * Claims one booking's hotel reservation atomically. The booking row is
+   * locked (SELECT ... FOR UPDATE) so concurrent claims run one at a time;
+   * `prepare` sees the current allocation and either throws to refuse or
+   * returns the in-progress row to save. One short transaction, so it also
+   * works behind a connection pooler.
+   */
+  async claimHotelReservation(
+    bookingId: number,
+    prepare: (
+      existing: HotelAllocationEntity | null,
+    ) => Partial<HotelAllocationEntity>,
+    requestLogger: Logger,
+  ): Promise<{
+    existing: HotelAllocationEntity | null;
+    attempt: HotelAllocationEntity;
+  }> {
+    requestLogger.info("Claiming hotel reservation for booking", {
+      context: this.context,
+      bookingId,
+    });
+    return this.allocationRepo.manager.transaction(async (manager) => {
+      await manager
+        .getRepository(BookingEntity)
+        .createQueryBuilder("booking")
+        .setLock("pessimistic_write")
+        .where("booking.id = :bookingId", { bookingId })
+        .getOne();
+      const allocations = manager.getRepository(HotelAllocationEntity);
+      const existing = await allocations.findOne({ where: { bookingId } });
+      const attempt = await allocations.save(
+        allocations.create(prepare(existing)),
+      );
+      return { existing, attempt };
+    });
+  }
+
+  async deleteHotelAllocation(
+    id: number,
+    requestLogger: Logger,
+  ): Promise<void> {
+    requestLogger.info("Deleting hotel allocation", {
+      context: this.context,
+      id,
+    });
+    await this.allocationRepo.delete({ id });
+  }
+
+  async findAllocationByBookingId(
+    bookingId: number,
+    requestLogger: Logger,
+  ): Promise<HotelAllocationEntity | null> {
+    requestLogger.info("Finding hotel allocation by booking", {
+      context: this.context,
+      bookingId,
+    });
+    return this.allocationRepo.findOne({ where: { bookingId } });
   }
 
   async saveHotelAllocations(
@@ -424,7 +463,6 @@ export class CancelledFlightsRepository {
       totalHotelRooms: number;
       status: FlightStatus;
     },
-    requestId: string,
     requestLogger: Logger,
   ): Promise<void> {
     // transactionally save all hotel allocations, updated cancel flight
@@ -441,6 +479,7 @@ export class CancelledFlightsRepository {
         );
         await transactionalEntityManager.save(entities);
         requestLogger.info(`Saved ${entities.length} hotel allocations`, {
+          context: this.context,
           cancelledFlightId,
         });
 
@@ -470,16 +509,14 @@ export class CancelledFlightsRepository {
     cancelledFlightId: number,
     page: number,
     limit: number,
-    requestId: string,
+    requestLogger: Logger,
   ): Promise<{
     hotelBookings: HotelAllocationEntity[];
     totalHotelBookings: number;
   }> {
-    this.logger.debug(
+    requestLogger.info(
       "Finding all hotel bookings by flight id with pagination",
-      "CancelledFlightsRepository",
-      requestId,
-      { cancelledFlightId },
+      { context: this.context, cancelledFlightId },
     );
 
     const skip = (page - 1) * limit;
@@ -500,14 +537,12 @@ export class CancelledFlightsRepository {
 
   async findHotelBookingById(
     id: number,
-    requestId: string,
+    requestLogger: Logger,
   ): Promise<HotelAllocationEntity | null> {
-    this.logger.debug(
-      "Finding hotel booking by id",
-      "CancelledFlightsRepository",
-      requestId,
-      { id },
-    );
+    requestLogger.info("Finding hotel booking by id", {
+      context: this.context,
+      id,
+    });
 
     return this.allocationRepo.findOne({
       where: { id },
@@ -522,7 +557,7 @@ export class CancelledFlightsRepository {
 
   async findHotelSummaryByFlightId(
     cancelledFlightId: number,
-    requestId: string,
+    requestLogger: Logger,
   ): Promise<{
     totalBookings: number;
     totalAdults: number;
@@ -534,12 +569,10 @@ export class CancelledFlightsRepository {
     totalPlatformFee: number;
     totalCost: number;
   }> {
-    this.logger.debug(
-      "Finding hotel summary by flight id",
-      "CancelledFlightsRepository",
-      requestId,
-      { cancelledFlightId },
-    );
+    requestLogger.info("Finding hotel summary by flight id", {
+      context: this.context,
+      cancelledFlightId,
+    });
 
     const flight = await this.flightRepo.findOne({
       where: { id: cancelledFlightId },

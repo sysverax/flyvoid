@@ -14,17 +14,21 @@ import fs from "node:fs/promises";
 import {
   AvailabilityHotel,
   AvailabilityRoomRate,
+  HotelBookingOutcomeUnknownError,
   HotelCandidate,
   HotelContentDetails,
   HotelProvider,
+  HotelRateCheck,
   RoomOccupancy,
 } from "../hotel-provider.interface";
 
 @Injectable()
 export class HotelbedsProvider implements HotelProvider {
-  private readonly apiKey = config.hotelbeds.apiKey;
-  private readonly secret = config.hotelbeds.secret;
-  private readonly useSandbox = config.hotelbeds.useSandbox;
+  private readonly context = "HotelbedsProvider";
+  // Hotelbeds uses HOTELBEDS_API_KEY + HOTELBEDS_SECRET.
+  private readonly apiKey = config.hotelProvider.hotelbeds.apiKey;
+  private readonly secret = config.hotelProvider.hotelbeds.secret;
+  private readonly useSandbox = config.hotelProvider.useSandbox;
 
   // Availability fans out one request per unique occupancy; throttle + retry so
   // Hotelbeds rate limits (429) don't fail the whole batch.
@@ -57,7 +61,7 @@ export class HotelbedsProvider implements HotelProvider {
       runDirNames = await fs.readdir(this.occupancyCacheDir);
     } catch (error: any) {
       requestLogger.warn("Hotelbeds cache directory not found", {
-        context: "HotelbedsProvider",
+        context: this.context,
         cacheDir: this.occupancyCacheDir,
         error: error?.message,
       });
@@ -94,7 +98,7 @@ export class HotelbedsProvider implements HotelProvider {
     }
 
     requestLogger.warn("No cached Hotelbeds response found for occupancy", {
-      context: "HotelbedsProvider",
+      context: this.context,
       occupancyFile: fileName,
     });
     return [];
@@ -171,6 +175,16 @@ export class HotelbedsProvider implements HotelProvider {
     ) {
       attemptsMade = attempt;
       let response: Awaited<ReturnType<typeof fetch>>;
+
+      requestLogger.debug("Calling Hotelbeds availability API", {
+        context: this.context,
+        endpoint,
+        method: "POST",
+        occupancy: label,
+        attempt,
+        payload,
+      });
+
       try {
         response = await fetch(endpoint, {
           method: "POST",
@@ -185,6 +199,13 @@ export class HotelbedsProvider implements HotelProvider {
         });
       } catch (networkError: any) {
         // connection error or the timeout above — both transient, so retry
+        requestLogger.error("Hotelbeds availability API call failed", {
+          context: this.context,
+          endpoint,
+          occupancy: label,
+          attempt,
+          error: networkError?.message ?? String(networkError),
+        });
         lastError = new Error(
           `Hotelbeds request error for ${label}: ${networkError?.message ?? networkError}`,
         );
@@ -196,6 +217,16 @@ export class HotelbedsProvider implements HotelProvider {
       }
 
       if (response.ok) {
+        requestLogger.info(
+          `Hotelbeds availability request succeeded for ${label}`,
+          {
+            context: this.context,
+            endpoint,
+            occupancy: label,
+            attempt,
+            status: response.status,
+          },
+        );
         const responseData = await response.json();
         return {
           occupancy,
@@ -208,25 +239,29 @@ export class HotelbedsProvider implements HotelProvider {
         `Hotelbeds API returned status ${response.status} for ${label}: ${errorText}`,
       );
 
-      const retryable = HotelbedsProvider.RETRYABLE_STATUS.has(
-        response.status,
-      );
-      if (retryable && attempt < this.availabilityMaxAttempts) {
+      const retryable = HotelbedsProvider.RETRYABLE_STATUS.has(response.status);
+      const willRetry = retryable && attempt < this.availabilityMaxAttempts;
+
+      // Full status + response body here is the only place this ever gets
+      // logged — the final thrown error further up just wraps the message,
+      // so without this an admin has no way to see what Hotelbeds actually
+      // rejected the request for.
+      requestLogger.error("Hotelbeds availability API returned an error response", {
+        context: this.context,
+        endpoint,
+        occupancy: label,
+        status: response.status,
+        attempt,
+        body: errorText,
+        willRetry,
+      });
+
+      if (willRetry) {
         const retryAfter = Number(response.headers.get("retry-after"));
         const waitMs =
           Number.isFinite(retryAfter) && retryAfter > 0
             ? retryAfter * 1000
             : this.availabilityBackoffMs(attempt);
-        requestLogger.warn(
-          "Hotelbeds availability request failed, retrying occupancy",
-          {
-            context: "HotelbedsProvider",
-            occupancy: label,
-            status: response.status,
-            attempt,
-            nextAttemptInMs: waitMs,
-          },
-        );
         await this.sleep(waitMs);
         continue;
       }
@@ -355,7 +390,7 @@ export class HotelbedsProvider implements HotelProvider {
     }
     if (!this.apiKey || !this.secret) {
       requestLogger.warn("Hotelbeds credentials not configured.", {
-        context: "HotelbedsProvider",
+        context: this.context,
       });
 
       throw new ServiceUnavailableException(
@@ -371,7 +406,7 @@ export class HotelbedsProvider implements HotelProvider {
       requestLogger.warn(
         "No occupancies provided for hotel availability search.",
         {
-          context: "HotelbedsProvider",
+          context: this.context,
         },
       );
       throw new BadRequestException(
@@ -388,7 +423,10 @@ export class HotelbedsProvider implements HotelProvider {
       ).values(),
     );
 
-    const buildPayloads = (radius: number, occupanciesToQuery: RoomOccupancy[]) =>
+    const buildPayloads = (
+      radius: number,
+      occupanciesToQuery: RoomOccupancy[],
+    ) =>
       occupanciesToQuery.map((occupancy) => {
         const childrenCount = Number(occupancy.children ?? 0);
         const normalizedAges = (occupancy.childrenAges ?? []).filter(
@@ -481,7 +519,7 @@ export class HotelbedsProvider implements HotelProvider {
     };
 
     requestLogger.info("Fetching hotel availability from Hotelbeds API", {
-      context: "HotelbedsProvider",
+      context: this.context,
       airportCode: airport.iataCode,
       occupancyCount: dedupedOccupancies.length,
       useSandbox: this.useSandbox,
@@ -507,7 +545,11 @@ export class HotelbedsProvider implements HotelProvider {
         }
         requestLogger.info(
           `${stillMissing.length} occupancy shape(s) still had no hotels within ${radius}${config.hotelSearch.unit} of ${airport.iataCode}, widening search for just those`,
-          { context: "HotelbedsProvider", stillMissingCount: stillMissing.length, queriedCount: missingBefore },
+          {
+            context: this.context,
+            stillMissingCount: stillMissing.length,
+            queriedCount: missingBefore,
+          },
         );
       }
       const mergedRawHotels = Array.from(mergedByHotelCode.values());
@@ -515,7 +557,7 @@ export class HotelbedsProvider implements HotelProvider {
       requestLogger.info(
         `Successfully received ${mergedRawHotels.length} merged hotels from Hotelbeds API`,
         {
-          context: "HotelbedsProvider",
+          context: this.context,
         },
       );
 
@@ -525,18 +567,16 @@ export class HotelbedsProvider implements HotelProvider {
         );
       }
       requestLogger.info(`Merged raw hotels: ${mergedRawHotels.length}`, {
-        context: "HotelbedsProvider",
+        context: this.context,
         mergedRawHotels,
       });
 
       return this.normalizeAvailabilityHotels(mergedRawHotels);
     } catch (error: any) {
-      this.logger.error(
-        `Error querying Hotelbeds API: ${error.message}`,
-        "HotelbedsProvider",
-        requestId,
-        { stack: error.stack },
-      );
+      requestLogger.error(`Error querying Hotelbeds API: ${error.message}`, {
+        context: this.context,
+        stack: error.stack,
+      });
 
       if (
         error instanceof NotFoundException ||
@@ -569,7 +609,7 @@ export class HotelbedsProvider implements HotelProvider {
       requestLogger.warn(
         "No occupancies provided for hotel availability search.",
         {
-          context: "HotelbedsProvider",
+          context: this.context,
         },
       );
       throw new BadRequestException(
@@ -589,7 +629,7 @@ export class HotelbedsProvider implements HotelProvider {
     requestLogger.info(
       "Loading hotel availability from cached Hotelbeds responses",
       {
-        context: "HotelbedsProvider",
+        context: this.context,
         airportCode: airport.iataCode,
         occupancyCount: dedupedOccupancies.length,
         cacheDir: this.occupancyCacheDir,
@@ -634,7 +674,7 @@ export class HotelbedsProvider implements HotelProvider {
     requestLogger.info(
       `Loaded ${mergedRawHotels.length} merged hotels from cached Hotelbeds responses`,
       {
-        context: "HotelbedsProvider",
+        context: this.context,
       },
     );
 
@@ -652,6 +692,7 @@ export class HotelbedsProvider implements HotelProvider {
     checkInDate: string,
     checkOutDate: string,
     requestId: string,
+    requestLogger: Logger,
   ): Promise<HotelCandidate[]> {
     const hotels = await this.searchNearbyHotelsWithOccupancies(
       airport,
@@ -659,7 +700,7 @@ export class HotelbedsProvider implements HotelProvider {
       checkOutDate,
       [{ adults: 1, children: 0 }],
       requestId,
-      this.logger as unknown as Logger,
+      requestLogger,
     );
 
     return hotels.slice(0, 10).map((hotel) => {
@@ -722,6 +763,13 @@ export class HotelbedsProvider implements HotelProvider {
       : `https://api.hotelbeds.com/hotel-content-api/1.0/hotels/${hotelCode}/details`;
 
     try {
+      requestLogger.debug("Calling Hotelbeds content API", {
+        context: this.context,
+        endpoint,
+        method: "GET",
+        hotelCode,
+      });
+
       const response = await fetch(`${endpoint}?language=ENG`, {
         method: "GET",
         headers: {
@@ -733,10 +781,14 @@ export class HotelbedsProvider implements HotelProvider {
       });
 
       if (!response.ok) {
-        requestLogger.warn(
-          `Hotelbeds content lookup failed for hotel '${hotelCode}': status ${response.status}`,
-          { context: "HotelbedsProvider" },
-        );
+        const errorText = await response.text().catch(() => "");
+        requestLogger.error("Hotelbeds content API returned an error response", {
+          context: this.context,
+          endpoint,
+          hotelCode,
+          status: response.status,
+          body: errorText,
+        });
         return null;
       }
 
@@ -780,6 +832,13 @@ export class HotelbedsProvider implements HotelProvider {
           ).slice(0, 15)
         : [];
 
+      requestLogger.debug("Hotelbeds content API call succeeded", {
+        context: this.context,
+        endpoint,
+        hotelCode,
+        status: response.status,
+      });
+
       return {
         address: address || null,
         contact: { phones, email: hotel.email ? String(hotel.email) : null },
@@ -793,18 +852,48 @@ export class HotelbedsProvider implements HotelProvider {
         amenities,
       };
     } catch (error: any) {
-      this.logger.error(
+      requestLogger.error(
         `Error querying Hotelbeds Content API for hotel '${hotelCode}': ${error.message}`,
-        "HotelbedsProvider",
-        requestId,
-        { stack: error.stack },
+        { context: this.context, stack: error.stack },
       );
       return null;
     }
   }
 
-  // Hotelbeds-only: not part of HotelProvider (unwired, no controller uses it today).
-  async checkRate(rateKey: string, requestId: string): Promise<any> {
+  /** Maps a Hotelbeds CheckRate response to the supplier-neutral HotelRateCheck. */
+  private toRateCheck(responseData: any): HotelRateCheck {
+    const hotel = responseData?.hotel;
+    if (!hotel) {
+      throw new Error("Hotelbeds CheckRate returned no hotel");
+    }
+    const room = hotel.rooms?.[0];
+    const rate = room?.rates?.[0];
+    return {
+      hotelCode: String(hotel.code ?? ""),
+      hotelName: String(hotel.name ?? ""),
+      category: String(hotel.categoryName ?? ""),
+      address: null, // not in CheckRate; comes from the Content API
+      checkInDate: String(hotel.checkIn ?? ""),
+      checkOutDate: String(hotel.checkOut ?? ""),
+      roomName: String(room?.name ?? ""),
+      boardName: String(rate?.boardName ?? ""),
+      adults: Number(rate?.adults ?? 0),
+      children: Number(rate?.children ?? 0),
+      netPrice: Number(rate?.net ?? hotel.totalNet ?? 0),
+      currency: String(hotel.currency ?? "EUR"),
+      cancellationPolicies: Array.isArray(rate?.cancellationPolicies)
+        ? rate.cancellationPolicies.map((policy: any) => ({
+            amount: Number(policy.amount ?? 0),
+            from: String(policy.from ?? ""),
+          }))
+        : [],
+      rateComments: rate?.rateComments ? String(rate.rateComments) : null,
+      priceChanged: false,
+    };
+  }
+
+  // HotelProvider.checkRate — re-validates a rate before booking.
+  async checkRate(rateKey: string, requestId: string): Promise<HotelRateCheck> {
     if (!this.apiKey || !this.secret) {
       this.logger.warn(
         "Hotelbeds credentials not configured.",
@@ -867,7 +956,7 @@ export class HotelbedsProvider implements HotelProvider {
         "HotelbedsProvider",
         requestId,
       );
-      return responseData;
+      return this.toRateCheck(responseData);
     } catch (error: any) {
       this.logger.error(
         `Error calling Hotelbeds CheckRate API: ${error.message}`,
@@ -881,7 +970,7 @@ export class HotelbedsProvider implements HotelProvider {
     }
   }
 
-  // Hotelbeds-only: not part of HotelProvider (unwired, no controller uses it today).
+  // HotelProvider.bookHotel — live reservation of a checked rate.
   async bookHotel(
     bookingData: {
       firstName: string;
@@ -959,25 +1048,46 @@ export class HotelbedsProvider implements HotelProvider {
         { bookingId: bookingData.bookingId },
       );
 
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Api-key": this.apiKey,
-          "X-Signature": signature,
-          Accept: "application/json",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
+      // A lost response or a 5xx after the request went out may still have
+      // created the booking; look it up by clientReference (the PNR).
+      const outcomeUnknown = (detail: string) =>
+        new HotelBookingOutcomeUnknownError(
+          `Hotelbeds booking outcome unknown for clientReference '${bookingData.pnr}': ${detail}`,
+          bookingData.pnr,
+        );
+
+      let response: Awaited<ReturnType<typeof fetch>>;
+      try {
+        response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Api-key": this.apiKey,
+            "X-Signature": signature,
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+      } catch (networkError: any) {
+        throw outcomeUnknown(networkError?.message ?? String(networkError));
+      }
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const errorText = await response.text().catch(() => "");
+        if (response.status >= 500) {
+          throw outcomeUnknown(`status ${response.status}: ${errorText}`);
+        }
         throw new Error(
           `Hotelbeds Bookings API returned status ${response.status}: ${errorText}`,
         );
       }
 
-      const responseData = await response.json();
+      let responseData: any;
+      try {
+        responseData = await response.json();
+      } catch (parseError: any) {
+        throw outcomeUnknown(`unreadable response: ${parseError?.message}`);
+      }
       this.logger.info(
         "Successfully created booking with Hotelbeds",
         "HotelbedsProvider",
@@ -1002,6 +1112,9 @@ export class HotelbedsProvider implements HotelProvider {
         requestId,
         { stack: error.stack },
       );
+      if (error instanceof HotelBookingOutcomeUnknownError) {
+        throw error;
+      }
       throw new ServiceUnavailableException(
         `Hotelbeds Bookings API failed: ${error.message}`,
       );
