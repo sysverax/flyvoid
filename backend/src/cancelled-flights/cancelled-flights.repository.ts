@@ -388,6 +388,65 @@ export class CancelledFlightsRepository {
     return this.allocationRepo.save(entity);
   }
 
+  /**
+   * Claims one booking's hotel reservation atomically. The booking row is
+   * locked (SELECT ... FOR UPDATE) so concurrent claims run one at a time;
+   * `prepare` sees the current allocation and either throws to refuse or
+   * returns the in-progress row to save. One short transaction, so it also
+   * works behind a connection pooler.
+   */
+  async claimHotelReservation(
+    bookingId: number,
+    prepare: (
+      existing: HotelAllocationEntity | null,
+    ) => Partial<HotelAllocationEntity>,
+    requestLogger: Logger,
+  ): Promise<{
+    existing: HotelAllocationEntity | null;
+    attempt: HotelAllocationEntity;
+  }> {
+    requestLogger.info("Claiming hotel reservation for booking", {
+      context: this.context,
+      bookingId,
+    });
+    return this.allocationRepo.manager.transaction(async (manager) => {
+      await manager
+        .getRepository(BookingEntity)
+        .createQueryBuilder("booking")
+        .setLock("pessimistic_write")
+        .where("booking.id = :bookingId", { bookingId })
+        .getOne();
+      const allocations = manager.getRepository(HotelAllocationEntity);
+      const existing = await allocations.findOne({ where: { bookingId } });
+      const attempt = await allocations.save(
+        allocations.create(prepare(existing)),
+      );
+      return { existing, attempt };
+    });
+  }
+
+  async deleteHotelAllocation(
+    id: number,
+    requestLogger: Logger,
+  ): Promise<void> {
+    requestLogger.info("Deleting hotel allocation", {
+      context: this.context,
+      id,
+    });
+    await this.allocationRepo.delete({ id });
+  }
+
+  async findAllocationByBookingId(
+    bookingId: number,
+    requestLogger: Logger,
+  ): Promise<HotelAllocationEntity | null> {
+    requestLogger.info("Finding hotel allocation by booking", {
+      context: this.context,
+      bookingId,
+    });
+    return this.allocationRepo.findOne({ where: { bookingId } });
+  }
+
   async saveHotelAllocations(
     cancelledFlightId: number,
     payload: {

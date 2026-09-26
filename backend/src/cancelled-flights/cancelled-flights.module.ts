@@ -11,8 +11,8 @@ import { CancelledFlightsService } from "./cancelled-flights.service";
 import { HotelAllocationService } from "./hotel-allocation.service";
 import { CancelledFlightsRepository } from "./cancelled-flights.repository";
 import { AiService } from "../common/ai/ai.service";
-import { HotelbedsProvider } from "./hotel-providers/hotelbeds/hotelbeds.provider";
 import { HOTEL_PROVIDER } from "./hotel-providers/hotel-provider.interface";
+import { hotelProviderRegistration } from "./hotel-providers/hotel-provider.registry";
 
 @Module({
   imports: [
@@ -31,7 +31,7 @@ import { HOTEL_PROVIDER } from "./hotel-providers/hotel-provider.interface";
     HotelAllocationService,
     CancelledFlightsRepository,
     AiService,
-    { provide: HOTEL_PROVIDER, useClass: HotelbedsProvider },
+    hotelProviderRegistration,
   ],
   exports: [
     CancelledFlightsService,

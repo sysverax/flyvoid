@@ -811,7 +811,7 @@ export class CancelledFlightsController {
     summary:
       "Generate hotel recommendations for all bookings of a cancelled flight",
     description:
-      "Builds preferred/fallback room occupancies per booking, performs a single Hotelbeds availability search across deduplicated occupancies, and returns recommendation allocations without creating live hotel bookings.",
+      "Builds preferred/fallback room occupancies per booking, performs a single hotel supplier availability search across deduplicated occupancies, and returns recommendation allocations without creating live hotel bookings.",
   })
   @ApiParam({ name: "id", description: "Cancelled flight id" })
   @ApiNotFoundResponse({
@@ -859,7 +859,7 @@ export class CancelledFlightsController {
     summary:
       "Generate hotel allocations for all bookings of a cancelled flight",
     description:
-      "Builds preferred/fallback room occupancies per booking, performs a single Hotelbeds availability search across deduplicated occupancies, and returns hotel allocations without creating live hotel bookings.",
+      "Builds preferred/fallback room occupancies per booking, performs a single hotel supplier availability search across deduplicated occupancies, and returns hotel allocations without creating live hotel bookings.",
   })
   @ApiParam({ name: "id", description: "Cancelled flight id" })
   @ApiNotFoundResponse({
@@ -1057,68 +1057,102 @@ export class CancelledFlightsController {
   //   );
   // }
 
-  // // ── POST /cancelled-flights/:id/bookings/:bookingId/check-rate ────────────
+  // ── POST /cancelled-flights/:id/bookings/:bookingId/check-rate ────────────
+  @Post(":id/bookings/:bookingId/check-rate")
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.EDIT],
+    },
+  })
+  @ApiOperation({
+    summary: "Check rate key availability and pricing details",
+    description:
+      "Re-validates a rate with the active hotel supplier (availability, price, cancellation policies) before booking.",
+  })
+  @ApiParam({ name: "id", description: "Cancelled flight id" })
+  @ApiParam({ name: "bookingId", description: "Booking id" })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/cancelled-flights/:id/bookings/:bookingId/check-rate",
+      "Cancelled flight or booking not found",
+    ),
+  })
+  async checkRate(
+    @Req() request: AuthenticatedRequest,
+    @Param("id", ParseIntPipe) id: number,
+    @Param("bookingId", ParseIntPipe) bookingId: number,
+    @Body() dto: CheckRateRequestDto,
+    @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
+  ): Promise<BaseResponseDto<object>> {
+    const data = await this.hotelAllocationService.checkRate(
+      id,
+      bookingId,
+      dto.rateKey,
+      request.user,
+      requestId,
+      requestLogger,
+    );
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Room rate details retrieved successfully",
+    );
+  }
 
-  // @Post(":id/bookings/:bookingId/check-rate")
-  // @RequireAccessControl({
-  //   airline: {
-  //     asset: AirlineAsset.CANCELLED_FLIGHTS,
-  //     access: [AccessAction.EDIT],
-  //   },
-  // })
-  // @ApiOperation({
-  //   summary: "Check rate key availability and pricing details",
-  //   description:
-  //     "Queries Hotelbeds CheckRate API to verify room rate availability, cancellation policies, and cost details.",
-  // })
-  // @ApiParam({ name: "id", description: "Cancelled flight UUID" })
-  // @ApiParam({ name: "bookingId", description: "Booking UUID" })
-  // async checkRate(
-  //   @Param("id", ParseIntPipe) id: number,
-  //   @Param("bookingId", ParseIntPipe) bookingId: number,
-  //   @Body() dto: CheckRateRequestDto,
-  //   @RequestId() requestId: string,
-  // ): Promise<BaseResponseDto<object>> {
-  //   const data = await this.service.checkRate(
-  //     id,
-  //     bookingId,
-  //     dto.rateKey,
-  //     requestId,
-  //   );
-  //   return BaseResponseDto.success(
-  //     data,
-  //     requestId,
-  //     "Room rate details retrieved successfully",
-  //   );
-  // }
-
-  // // ── POST /cancelled-flights/:id/bookings/:bookingId/book-hotel ────────────
-
-  // @Post(":id/bookings/:bookingId/book-hotel")
-  // @RequireAccessControl({
-  //   airline: {
-  //     asset: AirlineAsset.CANCELLED_FLIGHTS,
-  //     access: [AccessAction.EDIT],
-  //   },
-  // })
-  // @ApiOperation({
-  //   summary: "Perform live hotel reservation and allocate it to the booking",
-  //   description:
-  //     "Queries Hotelbeds Bookings API to confirm reservation, then stores allocation details in the database.",
-  // })
-  // @ApiParam({ name: "id", description: "Cancelled flight UUID" })
-  // @ApiParam({ name: "bookingId", description: "Booking UUID" })
-  // async bookHotel(
-  //   @Param("id", ParseIntPipe) id: number,
-  //   @Param("bookingId", ParseIntPipe) bookingId: number,
-  //   @Body() dto: BookHotelRequestDto,
-  //   @RequestId() requestId: string,
-  // ): Promise<BaseResponseDto<object>> {
-  //   const data = await this.service.bookHotel(id, bookingId, dto, requestId);
-  //   return BaseResponseDto.success(
-  //     data,
-  //     requestId,
-  //     "Hotel booked and allocated successfully",
-  //   );
-  // }
+  // ── POST /cancelled-flights/:id/bookings/:bookingId/book-hotel ────────────
+  @Post(":id/bookings/:bookingId/book-hotel")
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.EDIT],
+    },
+  })
+  @ApiOperation({
+    summary: "Perform live hotel reservation and allocate it to the booking",
+    description:
+      "Re-validates every room's rate, books them with the active hotel supplier, then stores the confirmed reservation on the booking's hotel allocation. Only for flights that are allocated, paid or published.",
+  })
+  @ApiParam({ name: "id", description: "Cancelled flight id" })
+  @ApiParam({ name: "bookingId", description: "Booking id" })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/cancelled-flights/:id/bookings/:bookingId/book-hotel",
+      "Cancelled flight or booking not found",
+    ),
+  })
+  @ApiConflictResponse({
+    schema: createConflictErrorSchema(
+      "/api/v1/cancelled-flights/:id/bookings/:bookingId/book-hotel",
+      "Booking already has a confirmed hotel reservation, or a booking attempt is in progress or needs checking",
+    ),
+  })
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema(
+      "/api/v1/cancelled-flights/:id/bookings/:bookingId/book-hotel",
+    ),
+  })
+  async bookHotel(
+    @Req() request: AuthenticatedRequest,
+    @Param("id", ParseIntPipe) id: number,
+    @Param("bookingId", ParseIntPipe) bookingId: number,
+    @Body() dto: BookHotelRequestDto,
+    @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
+  ): Promise<BaseResponseDto<object>> {
+    const data = await this.hotelAllocationService.bookHotel(
+      id,
+      bookingId,
+      dto,
+      request.user,
+      requestId,
+      requestLogger,
+    );
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Hotel booked and allocated successfully",
+    );
+  }
 }
