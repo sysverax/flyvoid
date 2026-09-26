@@ -1,4 +1,14 @@
-import { IsNotEmpty, IsString, IsOptional, ValidateNested, IsEmail, IsObject } from "class-validator";
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsNotEmpty,
+  IsString,
+  IsOptional,
+  ValidateNested,
+  IsEmail,
+  IsObject,
+} from "class-validator";
 import { Type } from "class-transformer";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 
@@ -56,13 +66,29 @@ export class PaymentDataDto {
 }
 
 export class BookHotelRequestDto {
-  @ApiProperty({
-    description: "The validated unique rate key to book",
-    example: "hb-12345-rate-key-xyz",
+  @ApiPropertyOptional({
+    description:
+      "Rate key for a single-room booking. Use rateKeys for several rooms; omit both to book the rooms saved on the booking's hotel allocation.",
+    example: "rate-key-from-hotel-search",
   })
+  @IsOptional()
   @IsNotEmpty()
   @IsString()
-  rateKey!: string;
+  rateKey?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "One rate key per room (must match the number of allocated rooms when the booking already has an allocation).",
+    type: [String],
+    example: ["rate-key-room-1", "rate-key-room-2"],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(6)
+  @IsString({ each: true })
+  @IsNotEmpty({ each: true })
+  rateKeys?: string[];
 
   @ApiPropertyOptional({ type: PaymentDataDto })
   @IsOptional()

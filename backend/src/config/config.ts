@@ -119,18 +119,22 @@ export const config = {
     ),
   },
 
-  hotelbeds: {
-    apiKey: process.env.HOTELBEDS_API_KEY ?? "",
-    secret: process.env.HOTELBEDS_SECRET ?? "",
-    useSandbox: process.env.HOTELBEDS_USE_SANDBOX !== "false",
+  // Active hotel supplier and its credentials; each provider reads the
+  // fields it needs (see its provider file).
+  hotelProvider: {
+    name: (process.env.HOTEL_PROVIDER || "hotelbeds").toLowerCase(),
+    apiKey: process.env.HOTEL_API_KEY ?? "",
+    secret: process.env.HOTEL_SECRET ?? "",
+    userId: process.env.HOTEL_USER_ID ?? "",
+    useSandbox: process.env.HOTEL_USE_SANDBOX !== "false",
   },
   hotelSearch: {
     defaultRadius: parseInt(process.env.HOTEL_SEARCH_RADIUS ?? "10", 10),
     unit: process.env.HOTEL_SEARCH_RADIUS_UNIT ?? "km",
     maxRadius: parseInt(process.env.HOTEL_SEARCH_MAX_RADIUS ?? "50", 10),
     minRate: parseFloat(process.env.HOTEL_SEARCH_MIN_RATE ?? "3"), // 3 stars
-    isAllowSearchAPI: false,
-    isAllowFetchHotelDetails: false,
+    isAllowSearchAPI: true,
+    isAllowFetchHotelDetails: true,
   },
   platformFeePercentage: parseFloat(
     process.env.PLATFORM_FEE_PERCENTAGE ?? "10",
