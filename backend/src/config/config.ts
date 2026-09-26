@@ -119,14 +119,19 @@ export const config = {
     ),
   },
 
-  // Active hotel supplier and its credentials; each provider reads the
-  // fields it needs (see its provider file).
+  // Active hotel supplier (HOTEL_PROVIDER) and each supplier's credentials;
+  // HOTEL_USE_SANDBOX applies to whichever supplier is active.
   hotelProvider: {
-    name: (process.env.HOTEL_PROVIDER || "hotelbeds").toLowerCase(),
-    apiKey: process.env.HOTEL_API_KEY ?? "",
-    secret: process.env.HOTEL_SECRET ?? "",
-    userId: process.env.HOTEL_USER_ID ?? "",
+    name: (process.env.HOTEL_PROVIDER || "hotelbeds").trim().toLowerCase(),
     useSandbox: process.env.HOTEL_USE_SANDBOX !== "false",
+    hotelbeds: {
+      apiKey: process.env.HOTELBEDS_API_KEY ?? "",
+      secret: process.env.HOTELBEDS_SECRET ?? "",
+    },
+    ratehawk: {
+      apiKey: process.env.RATEHAWK_API_KEY ?? "",
+      userId: process.env.RATEHAWK_USER_ID ?? "",
+    },
   },
   hotelSearch: {
     defaultRadius: parseInt(process.env.HOTEL_SEARCH_RADIUS ?? "10", 10),

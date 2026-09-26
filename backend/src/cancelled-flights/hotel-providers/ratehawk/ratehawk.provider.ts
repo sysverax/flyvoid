@@ -144,9 +144,9 @@ const MEAL_NAMES: Record<string, string> = {
 @Injectable()
 export class RatehawkProvider implements HotelProvider, OnModuleInit {
   private readonly context = "RatehawkProvider";
-  // RateHawk uses HOTEL_USER_ID (API key ID) + HOTEL_API_KEY (access token).
-  private readonly keyId = config.hotelProvider.userId;
-  private readonly apiKey = config.hotelProvider.apiKey;
+  // RateHawk uses RATEHAWK_USER_ID (API key ID) + RATEHAWK_API_KEY (access token).
+  private readonly keyId = config.hotelProvider.ratehawk.userId;
+  private readonly apiKey = config.hotelProvider.ratehawk.apiKey;
   private readonly useSandbox = config.hotelProvider.useSandbox;
   private readonly baseUrl = config.hotelProvider.useSandbox
     ? "https://api-sandbox.ratehawk.com/api/b2b/v3/"

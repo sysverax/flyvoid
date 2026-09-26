@@ -25,9 +25,9 @@ import {
 @Injectable()
 export class HotelbedsProvider implements HotelProvider {
   private readonly context = "HotelbedsProvider";
-  // Hotelbeds uses HOTEL_API_KEY + HOTEL_SECRET.
-  private readonly apiKey = config.hotelProvider.apiKey;
-  private readonly secret = config.hotelProvider.secret;
+  // Hotelbeds uses HOTELBEDS_API_KEY + HOTELBEDS_SECRET.
+  private readonly apiKey = config.hotelProvider.hotelbeds.apiKey;
+  private readonly secret = config.hotelProvider.hotelbeds.secret;
   private readonly useSandbox = config.hotelProvider.useSandbox;
 
   // Availability fans out one request per unique occupancy; throttle + retry so
