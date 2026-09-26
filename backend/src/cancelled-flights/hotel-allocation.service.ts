@@ -2240,11 +2240,27 @@ export class HotelAllocationService {
 
     // create hotel bookings in db
     // step 1 - Format the data for hotel bookings in the database
+    // What the supplier charges us per rate (buyingPrice); rooms carry only
+    // the price we calculate with, so our cost stays out of the response.
+    const buyingPriceByRateKey = new Map<string, number>(
+      hotels.flatMap((hotel) =>
+        hotel.rates.map(
+          (rate) => [rate.rateKey, rate.buyingPrice ?? rate.netPrice] as const,
+        ),
+      ),
+    );
     const hotelBookings = results.map((item, index) => {
       const price = item?.totalPrice || 0;
+      const buyingPrice = item.rooms?.length
+        ? item.rooms.reduce(
+            (sum, room) =>
+              sum + (buyingPriceByRateKey.get(room.rateKey) ?? room.price),
+            0,
+          )
+        : price;
       const pricing = this.calculatePricing(
         price,
-        price,
+        buyingPrice,
         platformFeePercentage,
         0,
         0,
@@ -2414,7 +2430,7 @@ export class HotelAllocationService {
     user: AuthenticatedRequest["user"],
     requestId: string,
     requestLogger: Logger,
-  ): Promise<HotelRateCheck> {
+  ): Promise<Omit<HotelRateCheck, "buyingPrice">> {
     await this.requireAirlineFlight(flightId, user, requestLogger);
     await this.requireBookingForFlight(bookingId, flightId, requestLogger);
     requestLogger.info("Checking rate with hotel supplier", {
@@ -2422,7 +2438,12 @@ export class HotelAllocationService {
       flightId,
       bookingId,
     });
-    return this.hotelProvider.checkRate(rateKey, requestId);
+    // buyingPrice is our cost; airlines don't see it (as in hotel-bookings).
+    const { buyingPrice, ...check } = await this.hotelProvider.checkRate(
+      rateKey,
+      requestId,
+    );
+    return check;
   }
 
   /**
@@ -2636,7 +2657,7 @@ export class HotelAllocationService {
                 check,
                 rateKey: rateKeys[index],
                 price: check.netPrice,
-                buyingPrice: check.netPrice,
+                buyingPrice: check.buyingPrice ?? check.netPrice,
               })),
               platformFeePercentage,
               latest ? undefined : null,

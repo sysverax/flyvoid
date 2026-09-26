@@ -29,6 +29,8 @@ export interface AvailabilityRoomRate {
   rateKey: string;
   rateType: string | null;
   netPrice: number;
+  /** What the supplier actually charges us, when it differs from netPrice. */
+  buyingPrice?: number;
   currency: string;
   allotment: number | null;
   adults: number;
@@ -85,6 +87,8 @@ export interface HotelRateCheck {
   adults: number;
   children: number;
   netPrice: number;
+  /** What the supplier actually charges us, when it differs from netPrice. */
+  buyingPrice?: number;
   currency: string;
   cancellationPolicies: Array<{ amount: number; from: string }>;
   rateComments: string | null;

@@ -517,6 +517,24 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     return paymentTypes.find((p) => p?.type === "deposit") ?? paymentTypes[0];
   }
 
+  /**
+   * ETG prices each payment type twice (commission_info): `show` is what we
+   * calculate and display with, `charge` is what ETG takes from our deposit.
+   * Net = without ETG's commission. Falls back to `amount` when absent.
+   */
+  private netAmounts(payment: any): { shown: number; charged: number } {
+    const fallback = Number(payment?.amount ?? 0);
+    const pick = (value: unknown) =>
+      value === undefined || value === null || value === "" ||
+      !Number.isFinite(Number(value))
+        ? fallback
+        : Number(value);
+    return {
+      shown: pick(payment?.commission_info?.show?.amount_net),
+      charged: pick(payment?.commission_info?.charge?.amount_net),
+    };
+  }
+
   private categoryFor(stars: number): string {
     return stars > 0 ? `${stars} STARS` : "Unrated";
   }
@@ -628,9 +646,12 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
               }),
               // ETG rates always need a hotelpage + prebook before booking.
               rateType: "RECHECK",
-              // No `currency` is sent, so ETG prices in the contract currency (USD) - the amount we are charged.
-              netPrice: Number(payment.amount ?? 0),
-              currency: String(payment.currency_code ?? "USD"),
+              // Calculations use the show net; the charge net is our cost (buyingPrice).
+              netPrice: this.netAmounts(payment).shown,
+              buyingPrice: this.netAmounts(payment).charged,
+              currency: String(
+                payment.show_currency_code ?? payment.currency_code ?? "USD",
+              ),
               allotment:
                 rate.allotment !== undefined && rate.allotment !== null
                   ? Number(rate.allotment)
@@ -639,9 +660,14 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
               children: childrenAges.length,
               childrenAges,
               cancellationPolicies: policies
-                .filter((policy: any) => Number(policy.amount_charge ?? 0) > 0)
+                .filter(
+                  (policy: any) =>
+                    Number(policy.amount_show ?? policy.amount_charge ?? 0) > 0,
+                )
                 .map((policy: any) => ({
-                  amount: Number(policy.amount_charge ?? 0),
+                  amount: Number(
+                    policy.amount_show ?? policy.amount_charge ?? 0,
+                  ),
                   from: String(policy.start_at ?? new Date().toISOString()),
                 })),
               rateComments: this.taxComments(payment),
@@ -1226,12 +1252,15 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         boardName: this.mealName(rate.meal),
         adults: key.adults,
         children: key.childrenAges.length,
-        netPrice: Number(payment?.amount ?? 0),
-        currency: String(payment?.currency_code ?? "USD"),
+        netPrice: this.netAmounts(payment).shown,
+        buyingPrice: this.netAmounts(payment).charged,
+        currency: String(
+          payment?.show_currency_code ?? payment?.currency_code ?? "USD",
+        ),
         cancellationPolicies: (payment?.cancellation_penalties?.policies ?? [])
-          .filter((p: any) => Number(p.amount_charge ?? 0) > 0)
+          .filter((p: any) => Number(p.amount_show ?? p.amount_charge ?? 0) > 0)
           .map((p: any) => ({
-            amount: Number(p.amount_charge),
+            amount: Number(p.amount_show ?? p.amount_charge),
             from: String(p.start_at ?? new Date().toISOString()),
           })),
         rateComments: this.taxComments(payment),
@@ -1421,7 +1450,10 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
       const content = await this.fetchHotelContent(key.hid, log).catch(
         () => null,
       );
-      const amount = Number(payment.amount ?? 0);
+      // finish is paid with the form's `amount`; we record the show net as the
+      // price and the charge net as our cost. booking/form carries no
+      // commission_info, so read them from the prebook rate.
+      const { shown, charged } = this.netAmounts(checked.payment ?? payment);
 
       this.logger.info(
         "Successfully created booking with RateHawk",
@@ -1439,9 +1471,9 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         checkInDate: key.checkin,
         checkOutDate: key.checkout,
         totalRooms: 1,
-        costPerRoom: amount,
-        price: amount,
-        buyingPrice: amount,
+        costPerRoom: shown,
+        price: shown,
+        buyingPrice: charged,
       };
     } catch (error: any) {
       this.logger.error(
