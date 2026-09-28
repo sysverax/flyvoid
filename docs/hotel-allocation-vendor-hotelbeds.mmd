@@ -1,0 +1,64 @@
+%% FlyVoid — Hotel vendor: Hotelbeds (src/cancelled-flights/hotel-providers/hotelbeds/hotelbeds.provider.ts)
+%% Called from hotel-allocation-api-flow.mmd at two points:
+%%   1) availability search, before the AI call
+%%   2) content lookup, best-effort, after allocation succeeds
+%% Credentials (Api-key / X-Signature) are never logged; inputs and error bodies are.
+
+flowchart TD
+    subgraph SEARCH[" 1. searchNearbyHotelsWithOccupancies "]
+        A1(["Called with: airport, checkIn/checkOut,<br/>deduped occupancies"]) --> A2{"config.hotelSearch<br/>.isAllowSearchAPI?"}
+        A2 -->|"false"| A3["searchNearbyHotelsWithOccupanciesFromJson:<br/>read cached response from disk<br/>(dev/test mode)"]
+        A3 --> RETA["Return AvailabilityHotel[]"]
+
+        A2 -->|"true"| B1{"Api-key + Secret<br/>configured?"}
+        B1 -->|"no"| ERRA["throw (surfaces as<br/>503 Service Unavailable)"]
+        B1 -->|"yes"| B2["Dedupe occupancies by shape"]
+        B2 --> B3["Build one search payload per occupancy:<br/>stay dates, occupancy, geolocation + radius<br/>(no credentials in body)"]
+
+        B3 --> C0["fetchAndMerge(radius, occupancies)"]
+        subgraph PERCALL[" fetchOccupancyAvailability (concurrency-limited) "]
+            C0 --> C1["debug log: Calling Hotelbeds<br/>availability API<br/>{endpoint, occupancy, attempt, payload}"]
+            C1 --> C2["POST hotel-api/1.0/hotels<br/>headers: Api-key, X-Signature"]
+            C2 --> C3{"Network / timeout<br/>error?"}
+            C3 -->|"yes"| C4{"Retries left?"}
+            C4 -->|"yes"| C5["backoff, retry"] --> C2
+            C4 -->|"no"| C6["throw request-failed error"]
+            C3 -->|"no"| C7{"response.ok?"}
+            C7 -->|"yes"| C8["return rawHotels for occupancy"]
+            C7 -->|"no"| C9["error log: full status + body<br/>{status, body, willRetry}"]
+            C9 --> C10{"Retryable status<br/>(429/500/502/503/504)<br/>&amp; retries left?"}
+            C10 -->|"yes"| C5
+            C10 -->|"no"| C11["throw real Hotelbeds<br/>status + body"]
+        end
+
+        C8 --> D1["Merge hotels into<br/>mergedByHotelCode map<br/>(accumulates across widen rounds)"]
+        D1 --> D2["stillMissing = occupancy shapes<br/>with zero hits this round"]
+        D2 --> D3{"stillMissing.length &gt; 0<br/>AND radius ≤ maxRadius?"}
+        D3 -->|"yes"| D4["info log: widening radius<br/>(+10 units), re-query only<br/>the still-missing shapes"]
+        D4 --> C0
+        D3 -->|"no"| D5{"Any hotels<br/>merged at all?"}
+        D5 -->|"no"| ERRB["throw NotFoundException<br/>404 — no hotels near airport"]
+        D5 -->|"yes"| D6["normalizeAvailabilityHotels"]
+        D6 --> RETB["Return AvailabilityHotel[]<br/>to hotel-allocation-api-flow.mmd"]
+
+        C6 --> ERRC["catch: error log with stack,<br/>rethrow as ServiceUnavailableException<br/>(passes through real vendor status/body)"]
+        C11 --> ERRC
+    end
+
+    subgraph CONTENT[" 2. getHotelContentDetails (best-effort, per allocated hotel) "]
+        E1(["Called with: hotelCode"]) --> E2{"config.hotelSearch<br/>.isAllowFetchHotelDetails?"}
+        E2 -->|"false"| E3["Return empty placeholder<br/>(feature temporarily disabled)"]
+        E2 -->|"true"| E4{"Api-key + Secret<br/>configured?"}
+        E4 -->|"no"| E5["Return null"]
+        E4 -->|"yes"| E6["debug log: Calling Hotelbeds<br/>content API {endpoint, hotelCode}"]
+        E6 --> E7["GET hotel-content-api/1.0/hotels<br/>/:hotelCode/details?language=ENG"]
+        E7 --> E8{"response.ok?"}
+        E8 -->|"no"| E9["error log: status + body<br/>Return null<br/>(never aborts allocation)"]
+        E8 -->|"yes"| E10["Parse: address, phones,<br/>first image, distance from<br/>terminal, facilities/amenities"]
+        E10 --> E11{"hotel present<br/>in response?"}
+        E11 -->|"no"| E5
+        E11 -->|"yes"| RETC["Return HotelContentDetails<br/>to hotel-allocation-api-flow.mmd"]
+    end
+
+    style SEARCH fill:transparent,stroke:#2b7ac9,stroke-width:1.5px,stroke-dasharray: 4 3
+    style CONTENT fill:transparent,stroke:#2b7ac9,stroke-width:1.5px,stroke-dasharray: 4 3
