@@ -4,7 +4,6 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { X } from "lucide-react";
 import { useLockBodyScroll } from "@/src/hooks/useLockBodyScroll";
 import { cn } from "@/src/lib/utils";
-
 import { User } from "@/src/services/users.service";
 
 interface UserPermissions {
@@ -38,39 +37,30 @@ interface PermissionRow {
 
 const PERMISSION_ROWS: PermissionRow[] = [
   { key: "dashboard", label: "Dashboard" },
-  { key: "airlines", label: "Airlines" },
+  { key: "airports", label: "Airports" },
+  { key: "wallet", label: "Wallet" },
   { key: "cancelledFlights", label: "Cancelled Flights" },
-  { key: "platformOverview", label: "Platform Overview", category: "PAYMENTS & REVENUE" },
-  { key: "detailedAnalysis", label: "Detailed Analysis", category: "PAYMENTS & REVENUE" },
-  { key: "platformTreasury", label: "Platform Treasury", category: "PAYMENTS & REVENUE" },
-  { key: "invitesOnboarding", label: "Invites & Onboarding" },
-  { key: "systemSettings", label: "System Settings" },
-  { key: "auditLogs", label: "Audit Logs" },
+  { key: "bookings", label: "Bookings" },
+  { key: "payments", label: "Payments" },
 ];
 
 const emptyPermissions = (): UserPermissions => ({
   dashboard: { view: false, edit: false, export: false, all: false },
-  airlines: { view: false, edit: false, export: false, all: false },
+  airports: { view: false, edit: false, export: false, all: false },
+  wallet: { view: false, edit: false, export: false, all: false },
   cancelledFlights: { view: false, edit: false, export: false, all: false },
-  platformOverview: { view: false, edit: false, export: false, all: false },
-  detailedAnalysis: { view: false, edit: false, export: false, all: false },
-  platformTreasury: { view: false, edit: false, export: false, all: false },
-  invitesOnboarding: { view: false, edit: false, export: false, all: false },
-  systemSettings: { view: false, edit: false, export: false, all: false },
-  auditLogs: { view: false, edit: false, export: false, all: false },
+  bookings: { view: false, edit: false, export: false, all: false },
+  payments: { view: false, edit: false, export: false, all: false },
 });
 
 function superAdminPermissions(): UserPermissions {
   return {
     dashboard: { view: true, edit: true, export: true, all: true },
-    airlines: { view: true, edit: true, export: true, all: true },
+    airports: { view: true, edit: true, export: true, all: true },
+    wallet: { view: true, edit: true, export: true, all: true },
     cancelledFlights: { view: true, edit: true, export: true, all: true },
-    platformOverview: { view: true, edit: true, export: true, all: true },
-    detailedAnalysis: { view: true, edit: true, export: true, all: true },
-    platformTreasury: { view: true, edit: true, export: true, all: true },
-    invitesOnboarding: { view: true, edit: true, export: true, all: true },
-    systemSettings: { view: true, edit: true, export: true, all: true },
-    auditLogs: { view: true, edit: true, export: true, all: true },
+    bookings: { view: true, edit: true, export: true, all: true },
+    payments: { view: true, edit: true, export: true, all: true },
   };
 }
 
@@ -78,7 +68,7 @@ function mapBackendAccessControlsToFrontend(
   backendAccessControls?: Array<{ asset: string; access: string[] }>,
   role?: string
 ): UserPermissions {
-  if (role === "SUPER_ADMIN") {
+  if (role === "AIRLINE_ADMIN" || role === "SUPER_ADMIN") {
     return superAdminPermissions();
   }
 
@@ -94,16 +84,11 @@ function mapBackendAccessControlsToFrontend(
     };
 
     if (ac.asset === "DASHBOARD") permissions.dashboard = access;
-    else if (ac.asset === "AIRLINES") permissions.airlines = access;
+    else if (ac.asset === "AIRPORTS") permissions.airports = access;
+    else if (ac.asset === "WALLET") permissions.wallet = access;
     else if (ac.asset === "CANCELLED_FLIGHTS") permissions.cancelledFlights = access;
-    else if (ac.asset === "INVITES_ONBOARDING") permissions.invitesOnboarding = access;
-    else if (ac.asset === "SYSTEM_SETTINGS") permissions.systemSettings = access;
-    else if (ac.asset === "AUDIT_LOGS") permissions.auditLogs = access;
-    else if (ac.asset === "PAYMENTS" || ac.asset === "REVENUE") {
-      permissions.platformOverview = { ...access };
-      permissions.detailedAnalysis = { ...access };
-      permissions.platformTreasury = { ...access };
-    }
+    else if (ac.asset === "BOOKINGS") permissions.bookings = access;
+    else if (ac.asset === "PAYMENTS") permissions.payments = access;
   });
 
   return permissions;
@@ -125,26 +110,11 @@ function mapFrontendPermissionsToBackend(
   };
 
   if (frontendPerms.dashboard) addAsset("DASHBOARD", frontendPerms.dashboard);
-  if (frontendPerms.airlines) addAsset("AIRLINES", frontendPerms.airlines);
+  if (frontendPerms.airports) addAsset("AIRPORTS", frontendPerms.airports);
+  if (frontendPerms.wallet) addAsset("WALLET", frontendPerms.wallet);
   if (frontendPerms.cancelledFlights) addAsset("CANCELLED_FLIGHTS", frontendPerms.cancelledFlights);
-  if (frontendPerms.invitesOnboarding) addAsset("INVITES_ONBOARDING", frontendPerms.invitesOnboarding);
-  if (frontendPerms.systemSettings) addAsset("SYSTEM_SETTINGS", frontendPerms.systemSettings);
-  if (frontendPerms.auditLogs) addAsset("AUDIT_LOGS", frontendPerms.auditLogs);
-
-  // Merge platformOverview, detailedAnalysis, platformTreasury into PAYMENTS
-  const paymentsView = frontendPerms.platformOverview?.view || frontendPerms.detailedAnalysis?.view || frontendPerms.platformTreasury?.view;
-  const paymentsEdit = frontendPerms.platformOverview?.edit || frontendPerms.detailedAnalysis?.edit || frontendPerms.platformTreasury?.edit;
-  const paymentsExport = frontendPerms.platformOverview?.export || frontendPerms.detailedAnalysis?.export || frontendPerms.platformTreasury?.export;
-
-  const paymentsAccess: string[] = [];
-  if (paymentsView) paymentsAccess.push("VIEW");
-  if (paymentsEdit) paymentsAccess.push("EDIT");
-  if (paymentsExport) paymentsAccess.push("EXPORT");
-
-  if (paymentsAccess.length > 0) {
-    accessControls.push({ asset: "PAYMENTS", access: paymentsAccess });
-    accessControls.push({ asset: "REVENUE", access: paymentsAccess });
-  }
+  if (frontendPerms.bookings) addAsset("BOOKINGS", frontendPerms.bookings);
+  if (frontendPerms.payments) addAsset("PAYMENTS", frontendPerms.payments);
 
   return accessControls;
 }

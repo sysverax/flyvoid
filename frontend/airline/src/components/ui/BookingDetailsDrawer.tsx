@@ -27,6 +27,7 @@ import {
 } from "@/src/services/cancellation.service";
 import { hotelBookingsService } from "@/src/services/hotel-bookings.service";
 import { PLATFORM_FEE_PERCENT } from "@/src/lib/constants";
+import { useAuth } from "@/src/hooks/useAuth";
 
 interface BookingDetailsDrawerProps {
   isOpen: boolean;
@@ -51,12 +52,17 @@ export function BookingDetailsDrawer({
   downloadType = "pdf",
   isBookingsTab = false,
 }: BookingDetailsDrawerProps) {
+  const { hasPermission } = useAuth();
   const [mounted, setMounted] = useState(false);
   const [internalDetailData, setInternalDetailData] =
     useState<HotelBookingDetailDataDto | null>(null);
   const [hotelImageError, setHotelImageError] = useState(false);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+
+  const modulePath = isBookingsTab ? "/bookings" : "/cancellation";
+  const canExport = hasPermission("export", modulePath);
+  const canEdit = hasPermission("edit", modulePath);
 
   useEffect(() => {
     setMounted(true);
@@ -811,67 +817,75 @@ export function BookingDetailsDrawer({
         </div>
 
         {/* Footer with Download button (CSV or PDF) and optionally Send Confirmation button */}
-        <div className="p-4 border-t border-gray-200 bg-white">
-          {showSendConfirmation ? (
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={downloadType === "csv" ? handleDownloadCsv : () => window.print()}
-                disabled={downloadType === "csv" && isExporting}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-semibold rounded-xl shadow-sm transition-colors cursor-pointer disabled:opacity-60"
-              >
-                {downloadType === "csv" && isExporting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 shrink-0 animate-spin text-gray-500" />
-                    <span>Downloading...</span>
-                  </>
-                ) : (
-                  <>
-                    <Download className="w-4 h-4 shrink-0 text-gray-500" />
-                    <span>{downloadType === "csv" ? "Download CSV" : "Download PDF"}</span>
-                  </>
+        {(canExport || (showSendConfirmation && canEdit)) && (
+          <div className="p-4 border-t border-gray-200 bg-white">
+            {showSendConfirmation ? (
+              <div className="flex items-center gap-3">
+                {canExport && (
+                  <button
+                    type="button"
+                    onClick={downloadType === "csv" ? handleDownloadCsv : () => window.print()}
+                    disabled={downloadType === "csv" && isExporting}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-semibold rounded-xl shadow-sm transition-colors cursor-pointer disabled:opacity-60"
+                  >
+                    {downloadType === "csv" && isExporting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 shrink-0 animate-spin text-gray-500" />
+                        <span>Downloading...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-4 h-4 shrink-0 text-gray-500" />
+                        <span>{downloadType === "csv" ? "Download CSV" : "Download PDF"}</span>
+                      </>
+                    )}
+                  </button>
                 )}
-              </button>
-              <button
-                type="button"
-                onClick={handleSendConfirmation}
-                disabled={isSendingEmail}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-[#0F2757] hover:bg-[#162259] text-white text-sm font-semibold rounded-xl shadow-sm transition-colors cursor-pointer disabled:opacity-60"
-              >
-                {isSendingEmail ? (
-                  <>
-                    <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
-                    <span>Sending...</span>
-                  </>
-                ) : (
-                  <>
-                    <Mail className="w-4 h-4 shrink-0" />
-                    <span>Send Confirmation</span>
-                  </>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={handleSendConfirmation}
+                    disabled={isSendingEmail}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-[#0F2757] hover:bg-[#162259] text-white text-sm font-semibold rounded-xl shadow-sm transition-colors cursor-pointer disabled:opacity-60"
+                  >
+                    {isSendingEmail ? (
+                      <>
+                        <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
+                        <span>Sending...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Mail className="w-4 h-4 shrink-0" />
+                        <span>Send Confirmation</span>
+                      </>
+                    )}
+                  </button>
                 )}
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={downloadType === "csv" ? handleDownloadCsv : () => window.print()}
-              disabled={downloadType === "csv" && isExporting}
-              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-[#0F2757] hover:bg-[#162259] text-white text-sm font-semibold rounded-xl shadow-sm transition-colors cursor-pointer disabled:opacity-60"
-            >
-              {downloadType === "csv" && isExporting ? (
-                <>
-                  <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
-                  <span>Downloading...</span>
-                </>
-              ) : (
-                <>
-                  <Download className="w-4 h-4 shrink-0" />
-                  <span>{downloadType === "csv" ? "Download CSV" : "Download PDF"}</span>
-                </>
-              )}
-            </button>
-          )}
-        </div>
+              </div>
+            ) : (
+              canExport && (
+                <button
+                  type="button"
+                  onClick={downloadType === "csv" ? handleDownloadCsv : () => window.print()}
+                  disabled={downloadType === "csv" && isExporting}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-[#0F2757] hover:bg-[#162259] text-white text-sm font-semibold rounded-xl shadow-sm transition-colors cursor-pointer disabled:opacity-60"
+                >
+                  {downloadType === "csv" && isExporting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
+                      <span>Downloading...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4 shrink-0" />
+                      <span>{downloadType === "csv" ? "Download CSV" : "Download PDF"}</span>
+                    </>
+                  )}
+                </button>
+              )
+            )}
+          </div>
+        )}
       </div>
     </>
   );
