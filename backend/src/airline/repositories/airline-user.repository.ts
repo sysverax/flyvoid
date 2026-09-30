@@ -167,6 +167,7 @@ export class AirlineUserRepository {
 
   async findAllByAirlineId(
     airlineId: number,
+    excludeUserId: number,
     query: ListAirlineUsersQueryDto,
     requestId: string,
   ): Promise<{ users: AirlineUserEntity[]; total: number }> {
@@ -176,6 +177,7 @@ export class AirlineUserRepository {
       requestId,
       {
         airlineId,
+        excludeUserId,
         page: query.page,
         limit: query.limit,
         search: query.search,
@@ -186,7 +188,11 @@ export class AirlineUserRepository {
 
     const queryBuilder = this.airlineUserRepository
       .createQueryBuilder("airlineUser")
-      .where("airlineUser.airlineId = :airlineId", { airlineId });
+      .where("airlineUser.airlineId = :airlineId", { airlineId })
+      .andWhere("airlineUser.role = :role", {
+        role: AirlineRole.AIRLINE_STAFF,
+      })
+      .andWhere("airlineUser.id != :excludeUserId", { excludeUserId });
 
     if (query.search) {
       queryBuilder.andWhere(
