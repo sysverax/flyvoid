@@ -15,7 +15,6 @@ import {
   AirlineAsset,
   UserAccessControlEntry,
 } from "../../common/constants/access-control.constants";
-import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
 import { AirlineRole, UserType } from "../../common/constants/user.constants";
 import { LoggerService } from "../../common/logger/logger.service";
 import {
@@ -25,6 +24,7 @@ import {
   AirlineUserProfileResponseDto,
   InviteAirlineUserRequestDto,
   InviteAirlineUserResponseDto,
+  ListAirlineUsersQueryDto,
   UpdateAirlineUserRequestDto,
   UpdateAirlineUserProfileRequestDto,
 } from "../dto";
@@ -183,7 +183,7 @@ export class AirlineUserService {
 
   async listAirlineUsers(
     authenticatedUser: AuthenticatedUser,
-    pagination: PaginationQueryDto,
+    query: ListAirlineUsersQueryDto,
     requestId: string,
   ): Promise<AirlineUserListResponseDto> {
     const actor = await this.ensureAirlineAdmin(authenticatedUser, requestId);
@@ -191,14 +191,14 @@ export class AirlineUserService {
     const { users, total } =
       await this.airlineUserRepository.findAllByAirlineId(
         actor.airlineId,
-        pagination,
+        query,
         requestId,
       );
 
     return {
       total,
-      currentPage: pagination.page,
-      limit: pagination.limit,
+      currentPage: query.page,
+      limit: query.limit,
       users: users.map((user) => this.toAirlineUserResponse(user)),
     };
   }

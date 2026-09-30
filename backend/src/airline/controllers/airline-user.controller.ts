@@ -59,11 +59,11 @@ import {
   AirlineUserProfileResponseDto,
   InviteAirlineUserRequestDto,
   InviteAirlineUserResponseDto,
+  ListAirlineUsersQueryDto,
   UpdateAirlineUserRequestDto,
   UpdateAirlineUserProfileRequestDto,
 } from "../dto";
 import { AirlineUserService } from "../services/airline-user.service";
-import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
 
 @ApiTags("Airline &  Airline Users")
 @ApiExtraModels(
@@ -523,7 +523,8 @@ export class AirlineUserController {
       Access: AIRLINE_ADMIN and AIRLINE_STAFF with VIEW access on the AIRLINE_USERS asset. Requires userType=AIRLINE.
       Filters:
         1. page (pagination, min 1)
-        2. limit (items per page)`,
+        2. limit (items per page)
+        3. search (matches first name, last name, or email)`,
   })
   @ApiOkResponse({
     description: "Airline users fetched successfully",
@@ -558,12 +559,12 @@ export class AirlineUserController {
   })
   async listAirlineUsers(
     @Req() req: AuthenticatedRequest,
-    @Query() pagination: PaginationQueryDto,
+    @Query() query: ListAirlineUsersQueryDto,
     @RequestId() requestId: string,
   ): Promise<BaseResponseDto<AirlineUserListResponseDto>> {
     const response = await this.airlineUserService.listAirlineUsers(
       req.user,
-      pagination,
+      query,
       requestId,
     );
 
