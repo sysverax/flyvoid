@@ -519,8 +519,9 @@ export class AirlineUserController {
   @ApiOperation({
     summary: "View all airline users",
     description: `
-    Returns a paginated list of all users in the authenticated airline.
+    Returns a paginated list of AIRLINE_STAFF users in the authenticated airline.
       Access: AIRLINE_ADMIN and AIRLINE_STAFF with VIEW access on the AIRLINE_USERS asset. Requires userType=AIRLINE.
+      The requesting user's own record and AIRLINE_ADMIN users are never included.
       Filters:
         1. page (pagination, min 1)
         2. limit (items per page)

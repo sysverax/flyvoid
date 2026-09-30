@@ -191,6 +191,7 @@ export class AirlineUserService {
     const { users, total } =
       await this.airlineUserRepository.findAllByAirlineId(
         actor.airlineId,
+        actor.id,
         query,
         requestId,
       );
