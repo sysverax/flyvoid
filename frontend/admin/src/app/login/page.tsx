@@ -97,7 +97,6 @@ export default function LoginPage() {
         sessionStorage.setItem("reset_password_token", result.resetPasswordToken || "");
         sessionStorage.removeItem("two_factor_token");
         sessionStorage.removeItem("two_factor_email");
-        sessionStorage.removeItem("two_factor_password");
         toast.info(result.message);
         router.push("/verify");
         return;
@@ -105,7 +104,6 @@ export default function LoginPage() {
       if (result?.requiresTwoFactor) {
         sessionStorage.setItem("two_factor_token", result.twoFactorToken || "");
         sessionStorage.setItem("two_factor_email", email);
-        sessionStorage.setItem("two_factor_password", password);
         sessionStorage.removeItem("reset_password_token");
         toast.info(result.message);
         router.push("/verify");

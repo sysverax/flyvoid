@@ -1,0 +1,26 @@
+%% FlyVoid — cancelled flight to confirmed hotel room
+%% Dashed box = stages a hotel partner's system needs to support
+
+flowchart TD
+    A["Airline reports<br/>a cancelled flight"] --> B["Passenger details captured<br/>PNR, contact, travel class,<br/>party size, special notes"]
+    B --> C["Passengers grouped<br/>by travel class, party size &amp; room needs"]
+    C --> D{"Search hotels<br/>near the airport"}
+    D -->|"No availability"| D2["Widen search radius"]
+    D2 --> D
+    D -->|"Hotels found"| E["Rooms &amp; live rates returned"]
+    E --> F{"Match each group<br/>to a hotel &amp; room"}
+    F -->|"Match found"| G["Re-confirm live rate"]
+    G --> I["Book the room<br/>with the hotel"]
+    F -->|"No suitable room"| H["Flagged for manual review"]
+    I --> J["Allocation confirmed —<br/>airline &amp; guest notified"]
+    H --> J
+
+    subgraph PARTNER[" Hotel partner's system "]
+        D
+        D2
+        E
+        G
+        I
+    end
+
+    style PARTNER fill:transparent,stroke:#c97a2b,stroke-width:1.5px,stroke-dasharray: 4 3

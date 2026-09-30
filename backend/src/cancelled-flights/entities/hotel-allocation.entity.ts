@@ -150,7 +150,7 @@ export class HotelAllocationEntity {
   @Column({ name: "amenities", type: "jsonb", nullable: true })
   amenities?: string[] | null;
 
-  // adults, children, roomName, boardName, price
+  // adults, children, roomName, boardName, price, rateKey (the supplier rate to book)
   @Column({ name: "rooms", type: "jsonb", nullable: true })
   rooms!: {
     adults: number;
@@ -158,6 +158,7 @@ export class HotelAllocationEntity {
     roomName: string;
     boardName: string;
     price: number;
+    rateKey?: string;
   }[];
 
   @Column({ name: "total_rooms", type: "integer", nullable: true })

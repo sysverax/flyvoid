@@ -37,7 +37,7 @@ export function WalletBalanceModal({
   if (!isOpen || !airline) return null;
 
   const isAdd = mode === "add";
-  const currentBalance = airline.spend ?? 27868.75;
+  const currentBalance = airline.spend ?? 0;
   const currentK = (currentBalance / 1000).toFixed(1);
 
   const handleSubmit = async (e: React.FormEvent) => {

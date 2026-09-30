@@ -199,6 +199,7 @@ export default function VerifyPage() {
     setIsLoading(true);
 
     try {
+      const token = sessionStorage.getItem("two_factor_token") || "";
       const email = sessionStorage.getItem("two_factor_email") || "";
       const result = await authService.recoverTfa(email, cleanCode);
 
@@ -213,6 +214,16 @@ export default function VerifyPage() {
       toast.success(result.message || "2FA recovered and disabled. Please sign in again.");
       router.push("/auth/login");
     } catch (err: any) {
+      // 401 means the 2FA challenge token itself is invalid/expired — there's
+      // no session left to retry against, so send the user back to sign in.
+      // 400 means the recovery code was wrong; let them retry it in place.
+      if (err.status === 401) {
+        sessionStorage.removeItem("two_factor_token");
+        sessionStorage.removeItem("two_factor_email");
+        toast.error(err.message || "Your session has expired. Please sign in again.");
+        router.push("/auth/login");
+        return;
+      }
       toast.error(err.message || "Failed to recover 2FA.");
       if (err.status === 401 || err.response?.status === 401) {
         sessionStorage.removeItem("two_factor_token");

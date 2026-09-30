@@ -3,7 +3,6 @@
 import { ArrowLeft, Edit3, AlertTriangle, PencilIcon } from "lucide-react";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import React, { useState, useRef } from "react";
-import { cn } from "@/src/lib/utils";
 import { Airline } from "@/src/types/airlines";
 import { StatusBadge } from "@/src/components/ui/StatusBadge";
 import { useAuth } from "@/src/hooks/useAuth";
@@ -205,7 +204,7 @@ export function AirlineDetailsView({
           <div className="self-stretch flex flex-col justify-start items-start gap-4 -mt-0.5">
             <div className="self-stretch flex justify-between items-center h-[22px]">
               <div className="text-gray-500 text-lg font-normal font-figtree shrink-0">
-                Admin First Name
+                First Name
               </div>
               <TruncatedTooltip text={airline.adminFirstName} side="top">
                 <div className="text-gray-800 text-lg font-medium font-figtree text-right max-w-[200px] truncate cursor-default">
@@ -215,7 +214,7 @@ export function AirlineDetailsView({
             </div>
             <div className="self-stretch flex justify-between items-center h-[22px]">
               <div className="text-gray-500 text-lg font-normal font-figtree shrink-0">
-                Admin Last Name
+                Last Name
               </div>
               <TruncatedTooltip text={airline.adminLastName} side="top">
                 <div className="text-gray-800 text-lg font-medium font-figtree text-right max-w-[200px] truncate cursor-default">
@@ -225,7 +224,7 @@ export function AirlineDetailsView({
             </div>
             <div className="self-stretch flex justify-between items-center h-[22px]">
               <div className="text-gray-500 text-lg font-normal font-figtree shrink-0">
-                Admin Email
+                Email
               </div>
               <TruncatedTooltip text={airline.adminEmail} side="top">
                 <div className="text-gray-800 text-lg font-medium font-figtree text-right max-w-[200px] truncate cursor-default">
@@ -235,7 +234,7 @@ export function AirlineDetailsView({
             </div>
             <div className="self-stretch flex justify-between items-center h-[22px]">
               <div className="text-gray-500 text-lg font-normal font-figtree shrink-0">
-                Job Title
+                Title
               </div>
               <TruncatedTooltip text={airline.adminJobTitle} side="top">
                 <div className="text-gray-800 text-lg font-medium font-figtree text-right max-w-[200px] truncate cursor-default">
@@ -245,10 +244,10 @@ export function AirlineDetailsView({
             </div>
             <div className="self-stretch flex justify-between items-center h-[22px]">
               <div className="text-gray-500 text-lg font-normal font-figtree shrink-0">
-                Credit Limit
+                Last Login
               </div>
-              <div className="text-gray-800 text-lg font-medium font-figtree text-right cursor-default">
-                ${(airline.creditLimit ?? 100000).toLocaleString()}
+              <div className="text-gray-800 text-lg font-medium font-figtree text-right max-w-[200px] truncate cursor-default">
+                {airline.adminLastLoginAt || "Never"}
               </div>
             </div>
           </div>
@@ -265,26 +264,60 @@ export function AirlineDetailsView({
           <div className="self-stretch flex flex-col justify-start items-start gap-4 -mt-0.5">
             <div className="self-stretch flex justify-between items-center h-[22px]">
               <div className="text-gray-500 text-lg font-normal font-figtree">
+                Ongoing Cancelled Flights
+              </div>
+              <div className="text-gray-800 text-lg font-semibold font-figtree">
+                {(
+                  airline.operationalMetrics?.totalOngoingCancelledFlights ?? 0
+                ).toLocaleString()}
+              </div>
+            </div>
+            <div className="self-stretch flex justify-between items-center h-[22px]">
+              <div className="text-gray-500 text-lg font-normal font-figtree">
                 Total Cancelled Flights
               </div>
               <div className="text-gray-800 text-lg font-semibold font-figtree">
-                {airline.totalCancelledFlights}
+                {(
+                  airline.operationalMetrics?.totalCancelledFlights ?? 0
+                ).toLocaleString()}
               </div>
             </div>
             <div className="self-stretch flex justify-between items-center h-[22px]">
               <div className="text-gray-500 text-lg font-normal font-figtree">
-                Total Passengers
+                Total Adults
               </div>
               <div className="text-gray-800 text-lg font-semibold font-figtree">
-                {airline.totalPassengersMetric.toLocaleString()}
+                {(
+                  airline.operationalMetrics?.totalAdults ?? 0
+                ).toLocaleString()}
               </div>
             </div>
             <div className="self-stretch flex justify-between items-center h-[22px]">
               <div className="text-gray-500 text-lg font-normal font-figtree">
-                Avg Cost per Passenger
+                Total Children
               </div>
               <div className="text-gray-800 text-lg font-semibold font-figtree">
-                ${airline.avgCostPerPassenger}
+                {(
+                  airline.operationalMetrics?.totalChildren ?? 0
+                ).toLocaleString()}
+              </div>
+            </div>
+            <div className="self-stretch flex justify-between items-center h-[22px]">
+              <div className="text-gray-500 text-lg font-normal font-figtree">
+                Total Bookings
+              </div>
+              <div className="text-gray-800 text-lg font-semibold font-figtree">
+                {(
+                  airline.operationalMetrics?.totalBookings ?? 0
+                ).toLocaleString()}
+              </div>
+            </div>
+            <div className="self-stretch flex justify-between items-center h-[22px]">
+              <div className="text-gray-500 text-lg font-normal font-figtree">
+                Total Rooms
+              </div>
+              <div className="text-gray-800 text-lg font-semibold font-figtree">
+                {(airline.operationalMetrics?.totalRooms ?? 0).toLocaleString()}
               </div>
             </div>
           </div>
@@ -298,10 +331,27 @@ export function AirlineDetailsView({
           <div className="self-stretch flex flex-col justify-start items-start gap-4">
             <div className="self-stretch flex justify-between items-center h-[22px]">
               <div className="text-gray-500 text-lg font-normal font-figtree">
-                Total Booking Value
+                Credit Limit
               </div>
               <div className="text-gray-800 text-lg font-semibold font-figtree">
-                ${(airline.totalSpendMetric || airline.spend || 2450000).toLocaleString()}
+                ${(airline.financialSummary?.creditLimit ?? 0).toLocaleString()}
+              </div>
+            </div>
+            <div className="self-stretch flex justify-between items-center h-[22px]">
+              <div className="text-gray-500 text-lg font-normal font-figtree">
+                Balance
+              </div>
+              <div className="text-gray-800 text-lg font-semibold font-figtree">
+                ${(airline.financialSummary?.balance ?? 0).toLocaleString()}
+              </div>
+            </div>
+            <div className="self-stretch flex justify-between items-center h-[22px]">
+              <div className="text-gray-500 text-lg font-normal font-figtree">
+                Locked Amount
+              </div>
+              <div className="text-gray-800 text-lg font-semibold font-figtree">
+                $
+                {(airline.financialSummary?.lockedAmount ?? 0).toLocaleString()}
               </div>
             </div>
             <div className="self-stretch flex justify-between items-center h-[22px]">
@@ -309,98 +359,93 @@ export function AirlineDetailsView({
                 Platform Fee Percentage
               </div>
               <div className="text-gray-800 text-lg font-semibold font-figtree">
-                {airline.platformFeePercentage ?? 5}%
+                {airline.financialSummary?.platformFeePercentage ?? 0}%
               </div>
             </div>
             <div className="self-stretch flex justify-between items-center h-[22px]">
               <div className="text-gray-500 text-lg font-normal font-figtree">
-                Total Platform Fees
+                Total Actual Price
               </div>
               <div className="text-gray-800 text-lg font-semibold font-figtree">
-                ${(airline.platformFeesMetric || Math.round(((airline.totalSpendMetric || airline.spend || 2450000) * (airline.platformFeePercentage ?? 5)) / 100)).toLocaleString()}
+                $
+                {(
+                  airline.financialSummary?.totalActualPrice ?? 0
+                ).toLocaleString()}
               </div>
             </div>
             <div className="self-stretch flex justify-between items-center h-[22px]">
               <div className="text-gray-500 text-lg font-normal font-figtree">
-                Payments Received
+                Total Buying Price
               </div>
               <div className="text-gray-800 text-lg font-semibold font-figtree">
-                ${(airline.platformFeesMetric || Math.round(((airline.totalSpendMetric || airline.spend || 2450000) * (airline.platformFeePercentage ?? 5)) / 100)).toLocaleString()}
+                $
+                {(
+                  airline.financialSummary?.totalBuyingPrice ?? 0
+                ).toLocaleString()}
               </div>
             </div>
             <div className="self-stretch flex justify-between items-center h-[22px]">
               <div className="text-gray-500 text-lg font-normal font-figtree">
-                Outstanding Platform Balance
+                Total Selling Price
               </div>
               <div className="text-gray-800 text-lg font-semibold font-figtree">
-                $0
+                $
+                {(
+                  airline.financialSummary?.totalSellingPrice ?? 0
+                ).toLocaleString()}
               </div>
             </div>
             <div className="self-stretch flex justify-between items-center h-[22px]">
               <div className="text-gray-500 text-lg font-normal font-figtree">
-                Credit Limit
+                Total Discounts
               </div>
               <div className="text-gray-800 text-lg font-semibold font-figtree">
-                ${(airline.creditLimit ?? 100000).toLocaleString()}
+                $
+                {(
+                  airline.financialSummary?.totalDiscounts ?? 0
+                ).toLocaleString()}
               </div>
             </div>
             <div className="self-stretch flex justify-between items-center h-[22px]">
               <div className="text-gray-500 text-lg font-normal font-figtree">
-                Remaining Credit
+                Total Hotel Taxes
               </div>
               <div className="text-gray-800 text-lg font-semibold font-figtree">
-                ${((airline.creditLimit ?? 100000) - (airline.spend ?? 0) > 0 ? (airline.creditLimit ?? 100000) - (airline.spend ?? 0) : (airline.creditLimit ?? 100000)).toLocaleString()}
+                $
+                {(
+                  airline.financialSummary?.totalHotelTaxes ?? 0
+                ).toLocaleString()}
               </div>
             </div>
             <div className="self-stretch flex justify-between items-center h-[22px]">
               <div className="text-gray-500 text-lg font-normal font-figtree">
-                Total Platform Revenue
+                Total Platform Fee
               </div>
               <div className="text-gray-800 text-lg font-semibold font-figtree">
-                ${(airline.revenue || airline.platformFeesMetric || Math.round(((airline.totalSpendMetric || airline.spend || 2450000) * (airline.platformFeePercentage ?? 5)) / 100)).toLocaleString()}
+                $
+                {(
+                  airline.financialSummary?.totalPlatformFee ?? 0
+                ).toLocaleString()}
               </div>
             </div>
             <div className="self-stretch flex justify-between items-center h-[22px]">
               <div className="text-gray-500 text-lg font-normal font-figtree">
-                Stripe Connection
+                Total Price
               </div>
-              <span
-                className={cn(
-                  "inline-flex items-center rounded-full px-3 py-0.5 text-sm font-semibold font-figtree",
-                  airline.stripeConnection === "Connected" || !airline.stripeConnection
-                    ? "bg-[#DCFCE7] text-[#166534]"
-                    : "",
-                  airline.stripeConnection === "Pending" ? "bg-amber-50 text-amber-700" : "",
-                  airline.stripeConnection === "Failed" ? "bg-rose-50 text-rose-700" : ""
-                )}
-              >
-                {airline.stripeConnection ?? "Connected"}
-              </span>
+              <div className="text-gray-800 text-lg font-semibold font-figtree">
+                ${(airline.financialSummary?.totalPrice ?? 0).toLocaleString()}
+              </div>
             </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Risk Indicators Card */}
-      <div className="self-stretch p-6 bg-white rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col justify-start items-start gap-6">
-        <div className="self-stretch justify-start text-gray-800 text-xl font-semibold font-figtree">
-          Risk Indicators
-        </div>
-        <div className="self-stretch flex flex-col justify-start items-start gap-4">
-          <div className="self-stretch flex justify-between items-center h-[22px]">
-            <div className="text-gray-500 text-lg font-normal font-figtree">
-              Failed Payments
-            </div>
-            <div className="text-gray-800 text-lg font-semibold font-figtree">
-              {airline.failedPaymentsCount}
-            </div>
-          </div>
-          <div className="self-stretch flex justify-between items-center h-[22px]">
-            <div className="text-gray-500 text-lg font-normal font-figtree">
-              Allocation Failures
-            </div>
-            <div className="text-gray-800 text-lg font-semibold font-figtree">
-              {airline.allocationFailuresCount}
+            <div className="self-stretch flex justify-between items-center h-[22px]">
+              <div className="text-gray-500 text-lg font-normal font-figtree">
+                Total Earnings
+              </div>
+              <div className="text-gray-800 text-lg font-semibold font-figtree">
+                $
+                {(
+                  airline.financialSummary?.totalEarnings ?? 0
+                ).toLocaleString()}
+              </div>
             </div>
           </div>
         </div>

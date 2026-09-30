@@ -408,7 +408,8 @@ export class HotelBookingsService {
       amenities: hotelBooking.amenities ?? null,
       checkInDate: hotelBooking.checkInDate,
       checkOutDate: hotelBooking.checkOutDate,
-      rooms: hotelBooking.rooms ?? [],
+      // rateKey is the supplier rate used to book; not part of this API.
+      rooms: (hotelBooking.rooms ?? []).map(({ rateKey, ...room }) => room),
       totalRooms: hotelBooking.totalRooms,
       actualPrice: Number(hotelBooking.actualPrice),
       ...(includeMarginFields && {

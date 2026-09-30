@@ -269,10 +269,10 @@ export const authService = {
     }
   },
 
-  async recoverTfa(email: string, recoveryCode: string): Promise<{ message: string }> {
+  async recoverTfa(twoFactorToken: string, recoveryCode: string): Promise<{ message: string }> {
     try {
       const response = await apiClient.post("/auth/airline/2fa/recover", {
-        email,
+        twoFactorToken,
         recoveryCode,
       });
       return {

@@ -78,7 +78,7 @@ export class AirlineController {
   @ApiOperation({
     summary: "List all airlines",
     description: `
-    Returns a paginated list of all airlines.
+    Returns a paginated list of all airlines, each with its wallet summary (id, balance, credit limit, locked amount).
       Access: SUPER_ADMIN and STAFF with VIEW access on the AIRLINES asset. Requires userType=PLATFORM.
       Filters:
         1. search — match on airline name or code (case-insensitive)

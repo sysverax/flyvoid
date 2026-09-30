@@ -1,7 +1,15 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { Search, Eye, Download, Mail, CalendarCheck, Users, DollarSign } from "lucide-react";
+import {
+  Search,
+  Eye,
+  Download,
+  Mail,
+  CalendarCheck,
+  Users,
+  DollarSign,
+} from "lucide-react";
 import { toast } from "react-toastify";
 import {
   Table,
@@ -71,7 +79,8 @@ function mapHotelBookingDTOToBooking(dto: HotelBookingDTO): Booking {
 export default function BookingsPage() {
   const { hasPermission } = useAuth();
   const [bookings, setBookings] = useState<Booking[]>([]);
-  const [summaryData, setSummaryData] = useState<HotelBookingsSummaryDTO | null>(null);
+  const [summaryData, setSummaryData] =
+    useState<HotelBookingsSummaryDTO | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Search & Filters states
@@ -99,10 +108,13 @@ export default function BookingsPage() {
 
   // Drawer modal states
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [selectedDrawerBooking, setSelectedDrawerBooking] = useState<Booking | null>(null);
+  const [selectedDrawerBooking, setSelectedDrawerBooking] =
+    useState<Booking | null>(null);
   const [viewingId, setViewingId] = useState<number | string | null>(null);
   const [drawerDetailData, setDrawerDetailData] = useState<any>(null);
-  const [sendingEmailId, setSendingEmailId] = useState<number | string | null>(null);
+  const [sendingEmailId, setSendingEmailId] = useState<number | string | null>(
+    null,
+  );
 
   // Load airport and cancelled flight options on mount
   useEffect(() => {
@@ -117,7 +129,10 @@ export default function BookingsPage() {
           label: `${a.iataCode} - ${a.name}`,
           id: a.id,
         }));
-        setAirportOptions([{ value: "All Airports", label: "All Airports" }, ...opts]);
+        setAirportOptions([
+          { value: "All Airports", label: "All Airports" },
+          ...opts,
+        ]);
       })
       .catch((err: any) => {
         console.error("Failed to load airports for filters:", err);
@@ -132,7 +147,10 @@ export default function BookingsPage() {
           label: f.flightNumber,
           cancelledFlightId: f.id,
         }));
-        const uniqueMap = new Map<string, { value: string; label: string; cancelledFlightId?: number }>();
+        const uniqueMap = new Map<
+          string,
+          { value: string; label: string; cancelledFlightId?: number }
+        >();
         opts.forEach((opt: any) => {
           if (!uniqueMap.has(opt.value)) {
             uniqueMap.set(opt.value, opt);
@@ -197,7 +215,10 @@ export default function BookingsPage() {
           // Update flight options dynamically if new flights are received
           if (res.hotelBookings.length > 0) {
             setFlightOptions((prev) => {
-              const map = new Map<string, { value: string; label: string; cancelledFlightId?: number }>();
+              const map = new Map<
+                string,
+                { value: string; label: string; cancelledFlightId?: number }
+              >();
               prev.forEach((opt) => map.set(opt.value, opt));
               let added = false;
               res.hotelBookings.forEach((b) => {
@@ -233,7 +254,13 @@ export default function BookingsPage() {
       isMounted = false;
       clearTimeout(timeoutId);
     };
-  }, [searchQuery, selectedAirport, selectedFlight, currentPage, resultsPerPage]);
+  }, [
+    searchQuery,
+    selectedAirport,
+    selectedFlight,
+    currentPage,
+    resultsPerPage,
+  ]);
 
   // Sorting logic matching airports tab
   const sortedBookings = useMemo(() => {
@@ -267,7 +294,9 @@ export default function BookingsPage() {
 
   // Computed Stats from API summary data
   const stats = useMemo(() => {
-    const totalBookings = summaryData ? summaryData.totalBookings : totalResults;
+    const totalBookings = summaryData
+      ? summaryData.totalBookings
+      : totalResults;
     const totalPassengers = summaryData ? summaryData.totalPassengers : 0;
     const totalCost = summaryData ? summaryData.totalCost : 0;
     return { totalBookings, totalPassengers, totalCost };
@@ -324,9 +353,13 @@ export default function BookingsPage() {
     setSendingEmailId(targetId);
     try {
       const res = await hotelBookingsService.sendHotelBookingEmail(targetId);
-      toast.success(res?.message || "Hotel booking confirmation email sent successfully.");
+      toast.success(
+        res?.message || "Hotel booking confirmation email sent successfully.",
+      );
     } catch (err: any) {
-      toast.error(err.message || "Failed to send hotel booking confirmation email.");
+      toast.error(
+        err.message || "Failed to send hotel booking confirmation email.",
+      );
     } finally {
       setSendingEmailId(null);
     }
@@ -615,11 +648,15 @@ export default function BookingsPage() {
                       <div className="flex items-center justify-start gap-1 -translate-x-1">
                         <button
                           onClick={() => handleViewDetail(b)}
-                          disabled={viewingId === (b.numericId || b.id.replace(/\D/g, ""))}
+                          disabled={
+                            viewingId ===
+                            (b.numericId || b.id.replace(/\D/g, ""))
+                          }
                           className="p-1 text-[#6B7280] hover:text-[#0F2757] transition-colors cursor-pointer disabled:opacity-75"
                           title="View"
                         >
-                          {viewingId === (b.numericId || b.id.replace(/\D/g, "")) ? (
+                          {viewingId ===
+                          (b.numericId || b.id.replace(/\D/g, "")) ? (
                             <svg
                               className="animate-spin h-[20px] w-[20px] text-[#0F2757]"
                               fill="none"
@@ -723,7 +760,10 @@ export default function BookingsPage() {
           setDrawerDetailData(null);
         }}
         booking={selectedDrawerBooking?.raw || selectedDrawerBooking}
-        hotelBookingId={selectedDrawerBooking?.numericId || selectedDrawerBooking?.id.replace(/\D/g, "")}
+        hotelBookingId={
+          selectedDrawerBooking?.numericId ||
+          selectedDrawerBooking?.id.replace(/\D/g, "")
+        }
         flightId={selectedDrawerBooking?.raw?.cancelledFlightId}
         detailData={drawerDetailData}
         showSendConfirmation

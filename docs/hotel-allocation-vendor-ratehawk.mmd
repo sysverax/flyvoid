@@ -1,0 +1,91 @@
+%% FlyVoid — Hotel vendor: RateHawk / ETG (src/cancelled-flights/hotel-providers/ratehawk/ratehawk.provider.ts)
+%% Called from hotel-allocation-api-flow.mmd at the same two points as Hotelbeds:
+%%   1) availability search, before the AI call
+%%   2) content lookup, best-effort, after allocation succeeds
+%% Only shows the calls the allocation flow actually uses — checkRate / bookHotel /
+%% cancelBooking belong to the separate post-allocation booking flow, not this endpoint.
+%% Per-endpoint sliding-window rate limiters (from ETG's /overview/) throttle every
+%% call below; the Authorization header (Basic keyId:apiKey) is never logged.
+
+flowchart TD
+    subgraph SEARCH[" 1. searchNearbyHotelsWithOccupancies "]
+        A1(["Called with: airport, checkIn/checkOut,<br/>deduped occupancies"]) --> A2{"config.hotelSearch<br/>.isAllowSearchAPI?"}
+        A2 -->|"false"| A3["searchNearbyHotelsWithOccupanciesFromJson:<br/>read ratehawk-cache/&lt;runId&gt;/&lt;occupancyKey&gt;.json<br/>(newest run dir first, dev/test mode)<br/>no star ratings in cached data"]
+        A3 --> RETA["Return AvailabilityHotel[]"]
+
+        A2 -->|"true"| B1{"keyId + apiKey<br/>configured?"}
+        B1 -->|"no"| ERRA["throw ServiceUnavailableException"]
+        B1 -->|"yes"| B2["Dedupe occupancies by shape"]
+
+        B2 --> C0["Round: probe = first still-missing<br/>occupancy, others = the rest"]
+        subgraph GEOSTEP[" Per round "]
+            C0 --> C1["searchGeo(probe):<br/>POST search/serp/geo/<br/>(rate-limited 10/min)"]
+            C1 --> C2{"Hotels found?"}
+            C2 -->|"no"| C3["probe → nextMissing"]
+            C2 -->|"yes"| C4["Merge probe's hotels + rates<br/>Collect discovered hids"]
+            C4 --> C5["resolveStars(hids):<br/>one search/serp/hotels/ call per<br/>star value 1-5 (150/min) to tag<br/>each hid's star rating<br/>(geo/hids results carry no stars)"]
+            C5 --> C6{"others non-empty<br/>AND hids found?"}
+            C6 -->|"yes"| C7["searchByHids(others, hids):<br/>POST search/serp/hotels/ per occupancy<br/>chunked ≤100 hids, concurrency 3<br/>re-prices same hotel set for each<br/>still-missing occupancy shape"]
+            C7 --> C8["Hotels found → merge;<br/>empty results → nextMissing"]
+            C6 -->|"no"| C9["others → nextMissing unchanged"]
+        end
+
+        C3 --> D1
+        C8 --> D1
+        C9 --> D1["stillMissing = nextMissing"]
+        D1 --> D2{"stillMissing.length &gt; 0<br/>AND radius ≤ maxRadius?"}
+        D2 -->|"yes"| D3["info log: widening radius<br/>(+10 units), next round"]
+        D3 --> C0
+        D2 -->|"no"| D4{"Any hotels<br/>merged at all?"}
+        D4 -->|"no"| ERRB["throw NotFoundException<br/>404 — no hotels near airport"]
+        D4 -->|"yes"| D5["normalizeAvailabilityHotels:<br/>encode rateKey (rh1.&lt;base64url JSON&gt;),<br/>netPrice = show net, buyingPrice = charge net"]
+        D5 --> RETB["Return AvailabilityHotel[]<br/>to hotel-allocation-api-flow.mmd"]
+
+        subgraph HTTPCORE[" Shared HTTP: request()/call() "]
+            H1["debug log: Calling RateHawk &lt;endpoint&gt;<br/>{method, attempt, payload}"] --> H2["Acquire sliding-window rate limiter slot<br/>for this endpoint"]
+            H2 --> H3["fetch baseUrl + endpoint<br/>Authorization: Basic keyId:apiKey"]
+            H3 --> H4{"Network error?"}
+            H4 -->|"yes"| H5{"Retries left<br/>(retry=true)?"}
+            H5 -->|"yes"| H6["backoff, retry"] --> H2
+            H5 -->|"no"| H7["throw RatehawkApiError<br/>(network)"]
+            H4 -->|"no"| H8{"response.ok<br/>AND envelope parses?"}
+            H8 -->|"yes"| H9["return {status, error, data}"]
+            H8 -->|"no"| H10["error log: full status + body<br/>{status, error code, body, willRetry}"]
+            H10 --> H11{"Retryable status<br/>(429/5xx) or code<br/>(timeout/unknown/<br/>endpoint_exceeded_limit)<br/>&amp; retries left?"}
+            H11 -->|"yes"| H6
+            H11 -->|"no"| H12["throw RatehawkApiError<br/>(status/body)"]
+            H9 --> H13{"call(): envelope.status<br/>== 'ok'?"}
+            H13 -->|"yes"| H14["return envelope.data"]
+            H13 -->|"no, transient code"| H15["one more retry pass<br/>through request()"]
+            H13 -->|"no, non-transient"| H16["throw RatehawkApiError"]
+        end
+
+        C1 -.uses.-> HTTPCORE
+        C5 -.uses.-> HTTPCORE
+        C7 -.uses.-> HTTPCORE
+
+        C7 --> ERRC["catch (outer): error log with stack,<br/>rethrow as ServiceUnavailableException<br/>unless already Not Found /<br/>Bad Request / Service Unavailable"]
+        H12 --> ERRC
+        H16 --> ERRC
+    end
+
+    subgraph CONTENT[" 2. getHotelContentDetails (best-effort, per allocated hotel) "]
+        E1(["Called with: hotelCode (= RateHawk hid)"]) --> E2{"config.hotelSearch<br/>.isAllowFetchHotelDetails?"}
+        E2 -->|"false"| E3["Return empty placeholder<br/>(feature temporarily disabled)"]
+        E2 -->|"true"| E4{"keyId + apiKey<br/>configured?"}
+        E4 -->|"no"| E5["Return null"]
+        E4 -->|"yes"| E6{"hid parses as<br/>a positive number?"}
+        E6 -->|"no"| E5
+        E6 -->|"yes"| E7["fetchHotelContent(hid):<br/>check in-memory contentCache first"]
+        E7 --> E8{"Cached?"}
+        E8 -->|"yes"| E11
+        E8 -->|"no"| E9["POST hotel/info/ {hid, language}<br/>(via shared request/call, rate-limited)"]
+        E9 --> E10{"Call succeeded?"}
+        E10 -->|"no"| E12["error log: message + stack<br/>Return null (never aborts allocation)"]
+        E10 -->|"yes"| E11["Cache result, parse:<br/>address, phone, email, lat/long,<br/>first image (size template filled),<br/>deduped amenity_groups (max 15)<br/>(no airport-distance data from ETG)"]
+        E11 --> RETC["Return HotelContentDetails<br/>to hotel-allocation-api-flow.mmd"]
+    end
+
+    style SEARCH fill:transparent,stroke:#2b9c6e,stroke-width:1.5px,stroke-dasharray: 4 3
+    style CONTENT fill:transparent,stroke:#2b9c6e,stroke-width:1.5px,stroke-dasharray: 4 3
+    style HTTPCORE fill:transparent,stroke:#999,stroke-width:1px,stroke-dasharray: 2 2

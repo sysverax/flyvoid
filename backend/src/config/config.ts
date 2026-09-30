@@ -38,6 +38,12 @@ export const config = {
     synchronize: process.env.DB_SYNCHRONIZE === "true",
     logging: process.env.DB_LOGGING === "true",
     ssl: process.env.DB_SSL === "true",
+    // Queries slower than this are logged as warnings, with their execution
+    // time and SQL, regardless of the `logging` flag above.
+    slowQueryThresholdMs: parseInt(
+      process.env.DB_SLOW_QUERY_THRESHOLD_MS ?? "200",
+      10,
+    ),
   },
   log: {
     logging: process.env.APP_LOGGING === "true",
@@ -57,28 +63,27 @@ export const config = {
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? "7d",
   },
   auth: {
-    adminForgotPasswordOtpStatic:
-      process.env.ADMIN_FORGOT_PASSWORD_OTP_STATIC ?? "444444",
-    adminForgotPasswordOtpExpiryMinutes: parseInt(
-      process.env.ADMIN_FORGOT_PASSWORD_OTP_EXPIRY_MINUTES ?? "2",
+    forgotPasswordOtpStatic: process.env.FORGOT_PASSWORD_OTP_STATIC ?? "444444",
+    forgotPasswordOtpExpiryMinutes: parseInt(
+      process.env.FORGOT_PASSWORD_OTP_EXPIRY_MINUTES ?? "2",
       10,
     ),
-    adminForgotPasswordOtpMaxAttempts: parseInt(
-      process.env.ADMIN_FORGOT_PASSWORD_OTP_MAX_ATTEMPTS ?? "5",
+    forgotPasswordOtpMaxAttempts: parseInt(
+      process.env.FORGOT_PASSWORD_OTP_MAX_ATTEMPTS ?? "5",
       10,
     ),
-    adminForgotPasswordOtpSendLimit: parseInt(
-      process.env.ADMIN_FORGOT_PASSWORD_OTP_SEND_LIMIT ?? "3",
+    forgotPasswordOtpSendLimit: parseInt(
+      process.env.FORGOT_PASSWORD_OTP_SEND_LIMIT ?? "3",
       10,
     ),
-    adminForgotPasswordOtpSendWindowMinutes: parseInt(
-      process.env.ADMIN_FORGOT_PASSWORD_OTP_SEND_WINDOW_MINUTES ?? "10",
+    forgotPasswordOtpSendWindowMinutes: parseInt(
+      process.env.FORGOT_PASSWORD_OTP_SEND_WINDOW_MINUTES ?? "10",
       10,
     ),
-    adminForgotPasswordResetTokenExpiresIn:
-      process.env.ADMIN_FORGOT_PASSWORD_RESET_TOKEN_EXPIRES_IN ?? "1h",
-    adminInitialPasswordResetTokenExpiresIn:
-      process.env.ADMIN_INITIAL_PASSWORD_RESET_TOKEN_EXPIRES_IN ?? "15m",
+    forgotPasswordResetTokenExpiresIn:
+      process.env.FORGOT_PASSWORD_RESET_TOKEN_EXPIRES_IN ?? "1h",
+    initialPasswordResetTokenExpiresIn:
+      process.env.INITIAL_PASSWORD_RESET_TOKEN_EXPIRES_IN ?? "15m",
     twoFactorIssuer: process.env.TWO_FACTOR_ISSUER ?? "Flyvoid Admin",
     twoFactorChallengeTokenExpiresIn:
       process.env.TWO_FACTOR_CHALLENGE_TOKEN_EXPIRES_IN ?? "5m",
@@ -114,18 +119,27 @@ export const config = {
     ),
   },
 
-  hotelbeds: {
-    apiKey: process.env.HOTELBEDS_API_KEY ?? "",
-    secret: process.env.HOTELBEDS_SECRET ?? "",
-    useSandbox: process.env.HOTELBEDS_USE_SANDBOX !== "false",
+  // Active hotel supplier (HOTEL_PROVIDER) and each supplier's credentials;
+  // HOTEL_USE_SANDBOX applies to whichever supplier is active.
+  hotelProvider: {
+    name: (process.env.HOTEL_PROVIDER || "hotelbeds").trim().toLowerCase(),
+    useSandbox: process.env.HOTEL_USE_SANDBOX !== "false",
+    hotelbeds: {
+      apiKey: process.env.HOTELBEDS_API_KEY ?? "",
+      secret: process.env.HOTELBEDS_SECRET ?? "",
+    },
+    ratehawk: {
+      apiKey: process.env.RATEHAWK_API_KEY ?? "",
+      userId: process.env.RATEHAWK_USER_ID ?? "",
+    },
   },
   hotelSearch: {
     defaultRadius: parseInt(process.env.HOTEL_SEARCH_RADIUS ?? "10", 10),
     unit: process.env.HOTEL_SEARCH_RADIUS_UNIT ?? "km",
     maxRadius: parseInt(process.env.HOTEL_SEARCH_MAX_RADIUS ?? "50", 10),
     minRate: parseFloat(process.env.HOTEL_SEARCH_MIN_RATE ?? "3"), // 3 stars
-    isAllowSearchAPI: false,
-    isAllowFetchHotelDetails: false,
+    isAllowSearchAPI: true,
+    isAllowFetchHotelDetails: true,
   },
   platformFeePercentage: parseFloat(
     process.env.PLATFORM_FEE_PERCENTAGE ?? "10",
