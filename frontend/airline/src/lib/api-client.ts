@@ -43,6 +43,12 @@ export function clearAuthStorage() {
 
   sessionStorage.clear();
   eraseCookie("airline_refresh_token");
+
+  Object.keys(localStorage).forEach((key) => {
+    if (key.startsWith("airline_user_access_controls_") || key.startsWith("airline_")) {
+      localStorage.removeItem(key);
+    }
+  });
 }
 
 function redirectToLoginWithCurrentPath() {

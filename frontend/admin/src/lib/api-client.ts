@@ -43,6 +43,12 @@ export function clearAuthStorage() {
 
   sessionStorage.clear();
   eraseCookie("flyvoid_refresh_token");
+
+  Object.keys(localStorage).forEach((key) => {
+    if (key.startsWith("user_access_controls_") || key.startsWith("admin_")) {
+      localStorage.removeItem(key);
+    }
+  });
 }
 
 // Request interceptor to attach JWT token
