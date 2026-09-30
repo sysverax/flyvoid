@@ -30,7 +30,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   const router = useRouter();
   const [authStatus, setAuthStatus] = useState<AuthStatus>("loading");
   const isClient = useSyncExternalStore(
-    () => () => {},
+    () => () => { },
     () => true,
     () => false,
   );

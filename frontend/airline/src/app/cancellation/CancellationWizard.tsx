@@ -40,6 +40,7 @@ import {
   Armchair,
   Ticket,
 } from "lucide-react";
+import { useAuth } from "@/src/hooks/useAuth";
 import { BookingDetailsDrawer } from "@/src/components/ui/BookingDetailsDrawer";
 import { PassengerBookingDetailDrawer } from "@/src/components/ui/PassengerBookingDetailDrawer";
 import { PLATFORM_FEE_PERCENT } from "@/src/lib/constants";
@@ -233,6 +234,7 @@ export default function CancellationWizard({
   onSave,
   initialData,
 }: CancellationWizardProps) {
+  const { hasPermission } = useAuth();
   const [activeStep, setActiveStep] = useState(() =>
     getInitialStepFromStatus(initialData?.status),
   );
@@ -2213,25 +2215,27 @@ export default function CancellationWizard({
                   />
                 </div>
 
-                <button
-                  type="button"
-                  disabled={isSavingBooking}
-                  onClick={handleAddBooking}
-                  className="bg-[#0F2757] hover:bg-[#162259] disabled:opacity-60 text-white font-medium py-2 px-4 rounded-lg transition-colors cursor-pointer text-sm inline-flex items-center gap-1.5"
-                >
-                  {isSavingBooking ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Plus className="h-4 w-4" />
-                  )}
-                  <span>
-                    {isSavingBooking
-                      ? "Saving..."
-                      : editingBookingId
-                        ? "Update Booking"
-                        : "Add Booking"}
-                  </span>
-                </button>
+                {hasPermission("edit") && (
+                  <button
+                    type="button"
+                    disabled={isSavingBooking}
+                    onClick={handleAddBooking}
+                    className="bg-[#0F2757] hover:bg-[#162259] disabled:opacity-60 text-white font-medium py-2 px-4 rounded-lg transition-colors cursor-pointer text-sm inline-flex items-center gap-1.5"
+                  >
+                    {isSavingBooking ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Plus className="h-4 w-4" />
+                    )}
+                    <span>
+                      {isSavingBooking
+                        ? "Saving..."
+                        : editingBookingId
+                          ? "Update Booking"
+                          : "Add Booking"}
+                    </span>
+                  </button>
+                )}
               </div>
             )}
 
@@ -2360,9 +2364,11 @@ export default function CancellationWizard({
                           <TableHead className="min-w-[100px] text-center">
                             Class
                           </TableHead>
-                          <TableHead className="min-w-[80px] text-center">
-                            Actions
-                          </TableHead>
+                          {hasPermission("edit") && (
+                            <TableHead className="min-w-[80px] text-center">
+                              Actions
+                            </TableHead>
+                          )}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -2400,26 +2406,28 @@ export default function CancellationWizard({
                                   {b.travelClass}
                                 </span>
                               </TableCell>
-                              <TableCell className="text-center">
-                                <div className="flex items-center justify-center gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleEditBooking(b)}
-                                    className="text-gray-400 hover:text-[#0F2757] transition-colors cursor-pointer"
-                                    title="Edit"
-                                  >
-                                    <Edit className="h-[18px] w-[18px]" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteBooking(b.id)}
-                                    className="text-gray-400 hover:text-red-600 transition-colors cursor-pointer"
-                                    title="Delete"
-                                  >
-                                    <Trash2 className="h-[18px] w-[18px]" />
-                                  </button>
-                                </div>
-                              </TableCell>
+                              {hasPermission("edit") && (
+                                <TableCell className="text-center">
+                                  <div className="flex items-center justify-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleEditBooking(b)}
+                                      className="text-gray-400 hover:text-[#0F2757] transition-colors cursor-pointer"
+                                      title="Edit"
+                                    >
+                                      <Edit className="h-[18px] w-[18px]" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteBooking(b.id)}
+                                      className="text-gray-400 hover:text-red-600 transition-colors cursor-pointer"
+                                      title="Delete"
+                                    >
+                                      <Trash2 className="h-[18px] w-[18px]" />
+                                    </button>
+                                  </div>
+                                </TableCell>
+                              )}
                             </TableRow>
                           ))}
                       </TableBody>
@@ -2861,17 +2869,19 @@ export default function CancellationWizard({
               </div>
             )}
 
-            <div className="flex items-center justify-end pt-2">
-              <button
-                type="button"
-                onClick={handleAllocateHotels}
-                disabled={isAllocating}
-                className="bg-[#2B3B67] hover:bg-[#1E2B4D] disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-medium py-2.5 px-6 rounded-lg transition-colors cursor-pointer text-sm inline-flex items-center gap-2"
-              >
-                <Building2 className="h-5 w-5" />
-                <span>Allocate Hotel Reservations</span>
-              </button>
-            </div>
+            {hasPermission("edit") && (
+              <div className="flex items-center justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={handleAllocateHotels}
+                  disabled={isAllocating}
+                  className="bg-[#2B3B67] hover:bg-[#1E2B4D] disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-medium py-2.5 px-6 rounded-lg transition-colors cursor-pointer text-sm inline-flex items-center gap-2"
+                >
+                  <Building2 className="h-5 w-5" />
+                  <span>Allocate Hotel Reservations</span>
+                </button>
+              </div>
+            )}
           </div>
         );
       case 5:
@@ -3432,16 +3442,18 @@ export default function CancellationWizard({
                 );
               })}
 
-              <div className="flex items-center gap-3 mt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsAddingCard(true)}
-                  className="flex items-center gap-1.5 py-2.5 px-4 border border-[#D1D5DB] text-sm font-semibold hover:bg-gray-50 cursor-pointer bg-white text-[#1F2937] shadow-2xs rounded-lg"
-                >
-                  <Plus className="h-4 w-4 text-gray-500" />
-                  Add New Card
-                </button>
-              </div>
+              {hasPermission("edit") && (
+                <div className="flex items-center gap-3 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddingCard(true)}
+                    className="flex items-center gap-1.5 py-2.5 px-4 border border-[#D1D5DB] text-sm font-semibold hover:bg-gray-50 cursor-pointer bg-white text-[#1F2937] shadow-2xs rounded-lg"
+                  >
+                    <Plus className="h-4 w-4 text-gray-500" />
+                    Add New Card
+                  </button>
+                </div>
+              )}
 
               <div className="pt-4">
                 <label className="flex items-center gap-3 p-4 border border-gray-200 rounded-xl cursor-pointer hover:bg-gray-50 transition-colors group">
@@ -3531,26 +3543,28 @@ export default function CancellationWizard({
             </div>
 
             {/* Centered Publish Button */}
-            <div className="pt-2">
-              <button
-                type="button"
-                onClick={handlePublishFlight}
-                disabled={isPublishingFlight}
-                className="bg-[#1E2B4D] hover:bg-[#15203A] disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-3 px-7 rounded-xl transition-all duration-150 text-sm inline-flex items-center justify-center gap-2.5 shadow-sm cursor-pointer"
-              >
-                {isPublishingFlight ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Publishing...</span>
-                  </>
-                ) : (
-                  <>
-                    <Send className="w-4 h-4" />
-                    <span>Send Confirmations & Publish</span>
-                  </>
-                )}
-              </button>
-            </div>
+            {hasPermission("edit") && (
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={handlePublishFlight}
+                  disabled={isPublishingFlight}
+                  className="bg-[#1E2B4D] hover:bg-[#15203A] disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-3 px-7 rounded-xl transition-all duration-150 text-sm inline-flex items-center justify-center gap-2.5 shadow-sm cursor-pointer"
+                >
+                  {isPublishingFlight ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Publishing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      <span>Send Confirmations & Publish</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         );
       default:
@@ -3602,7 +3616,7 @@ export default function CancellationWizard({
               </button>
             )}
 
-            {activeStep !== 7 && (
+            {activeStep !== 7 && hasPermission("edit") && (
               <div className="flex items-center gap-3">
                 <button
                   onClick={handleNextStep}

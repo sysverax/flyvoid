@@ -37,6 +37,7 @@ import { StatusBadge } from "@/src/components/ui/StatusBadge";
 import { FiltersCard } from "@/src/components/ui/FiltersCard";
 import { Dropdown } from "@/src/components/ui/Dropdown";
 import { TruncatedTooltip } from "@/src/components/ui/TruncatedTooltip";
+import { useAuth } from "@/src/hooks/useAuth";
 import { Pagination } from "@/src/components/ui/pagination";
 import { BookingDetailsDrawer } from "@/src/components/ui/BookingDetailsDrawer";
 import { PLATFORM_FEE_PERCENT } from "@/src/lib/constants";
@@ -183,6 +184,7 @@ function PublishedDetailView({
   cancellation: Cancellation;
   onClose: () => void;
 }) {
+  const { hasPermission } = useAuth();
   const [currentPage, setCurrentPage] = useState(1);
   const [resultsPerPage, setResultsPerPage] = useState(10);
 
@@ -462,10 +464,12 @@ function PublishedDetailView({
               </p>
             </div>
           </div>
-          <button className="flex items-center gap-2 border border-gray-300 hover:bg-gray-50 text-[#374151] px-4 py-2.5 rounded-lg font-medium transition-colors cursor-pointer text-sm">
-            <Download className="w-4 h-4" />
-            Export Report
-          </button>
+          {hasPermission("export") && (
+            <button className="flex items-center gap-2 border border-gray-300 hover:bg-gray-50 text-[#374151] px-4 py-2.5 rounded-lg font-medium transition-colors cursor-pointer text-sm">
+              <Download className="w-4 h-4" />
+              Export Report
+            </button>
+          )}
         </div>
 
         <div className="grid grid-cols-3 gap-4">
@@ -847,6 +851,7 @@ function PublishedDetailView({
 }
 
 export default function CancellationPage() {
+  const { hasPermission } = useAuth();
   const [cancellations, setCancellations] = useState<Cancellation[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("All Status");
@@ -1045,18 +1050,20 @@ export default function CancellationPage() {
                 Manage flight cancellations and hotel allocations
               </p>
             </div>
-            <button
-              onClick={() => {
-                setSelectedStatus("All Status");
-                setSearchQuery("");
-                setCurrentPage(1);
-                setIsAddingNew(true);
-              }}
-              className="h-[50px] rounded-[10px] bg-[#0F2757] hover:bg-[#162259] px-4.5 py-[9px] text-[16px] font-medium font-figtree transition-colors duration-200 cursor-pointer text-white flex items-center justify-center gap-1.5 -translate-y-0.5"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Create Cancelled Flight</span>
-            </button>
+            {hasPermission("edit") && (
+              <button
+                onClick={() => {
+                  setSelectedStatus("All Status");
+                  setSearchQuery("");
+                  setCurrentPage(1);
+                  setIsAddingNew(true);
+                }}
+                className="h-[50px] rounded-[10px] bg-[#0F2757] hover:bg-[#162259] px-4.5 py-[9px] text-[16px] font-medium font-figtree transition-colors duration-200 cursor-pointer text-white flex items-center justify-center gap-1.5 -translate-y-0.5"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Create Cancelled Flight</span>
+              </button>
+            )}
           </div>
 
           {/* Filters Card */}
@@ -1233,7 +1240,7 @@ export default function CancellationPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center justify-start gap-1 -translate-x-1">
-                          {(c.status === "Paid" || c.displayStatus === "Paid") && (
+                          {(c.status === "Paid" || c.displayStatus === "Paid") && hasPermission("edit") && (
                             <button
                               onClick={() => setPublishTarget(c)}
                               className="p-1 text-[#6B7280] hover:text-emerald-600 transition-colors cursor-pointer"

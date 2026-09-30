@@ -116,14 +116,16 @@ export default function AdminProfilePage() {
 
   const showToast = (
     message: string,
-    type: "success" | "warning" | "info" = "success",
+    type: "success" | "error" | "warning" | "info" = "info",
   ) => {
-    if (type === "success") {
-      toast.success(message);
-    } else if (type === "warning") {
+    if (type === "error") {
       toast.error(message);
+    } else if (type === "warning") {
+      toast.warning(message);
+    } else if (type === "success") {
+      toast.success(message);
     } else {
-      toast(message);
+      toast.info(message);
     }
   };
 
