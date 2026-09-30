@@ -1,6 +1,108 @@
-import { apiClient, extractErrorMessage, setCookie, getCookie, eraseCookie } from "@/src/lib/api-client";
+import { apiClient, extractErrorMessage, setCookie, getCookie, eraseCookie, clearAuthStorage } from "@/src/lib/api-client";
+
+export interface User {
+  id?: number;
+  email: string;
+  role?: string;
+  firstName?: string;
+  lastName?: string;
+  accessControl?: Record<string, string[]>;
+  accessControls?: Array<{ asset: string; access: string[] }>;
+}
+
+const STORAGE_KEY = "airline_current_user";
+
+function mapAccessControls(user: any): Record<string, string[]> {
+  const assetMap: Record<string, string> = {
+    DASHBOARD: "dashboard",
+    AIRPORTS: "airports",
+    WALLET: "wallet",
+    CANCELLED_FLIGHTS: "cancelledFlights",
+    BOOKINGS: "bookings",
+    PAYMENTS: "payments",
+    AIRLINE_USERS: "manageUsers",
+    SETTINGS: "settings",
+    PROFILE: "settings",
+  };
+
+  const accessControl: Record<string, string[]> = {
+    dashboard: [],
+    airports: [],
+    wallet: [],
+    cancelledFlights: [],
+    bookings: [],
+    payments: [],
+    manageUsers: [],
+    settings: ["view", "edit", "export"],
+  };
+
+  if (!user) return accessControl;
+
+  if (user.role === "AIRLINE_ADMIN" || user.role === "SUPER_ADMIN") {
+    Object.keys(accessControl).forEach((key) => {
+      accessControl[key] = ["view", "edit", "export"];
+    });
+  } else if (user.accessControls && Array.isArray(user.accessControls)) {
+    user.accessControls.forEach((ac: any) => {
+      const frontKey = assetMap[ac.asset];
+      if (frontKey) {
+        const mappedActions = (ac.access || []).map((action: string) => action.toLowerCase());
+        accessControl[frontKey] = mappedActions;
+      }
+    });
+  }
+
+  return accessControl;
+}
+
+function getModuleKey(path: string): string {
+  const cleanPath = path.split("?")[0].replace(/\/$/, "");
+
+  if (cleanPath === "" || cleanPath === "/") return "dashboard";
+  if (cleanPath.startsWith("/airports")) return "airports";
+  if (cleanPath.startsWith("/wallet")) return "wallet";
+  if (cleanPath.startsWith("/cancellation")) return "cancelledFlights";
+  if (cleanPath.startsWith("/bookings")) return "bookings";
+  if (cleanPath.startsWith("/payments")) return "payments";
+  if (cleanPath.startsWith("/manage-users")) return "manageUsers";
+  if (cleanPath.startsWith("/settings")) return "settings";
+
+  return "";
+}
 
 export const authService = {
+  getCurrentUser(): User | null {
+    if (typeof window === "undefined") return null;
+    const item = sessionStorage.getItem(STORAGE_KEY);
+    if (!item) return null;
+    try {
+      const rawUser = JSON.parse(item);
+      const accessControl = mapAccessControls(rawUser);
+      return { ...rawUser, accessControl };
+    } catch {
+      return null;
+    }
+  },
+
+  hasPermission(permission: "view" | "edit" | "export", path: string): boolean {
+    const user = this.getCurrentUser();
+    if (!user) return false;
+
+    if (user.role === "AIRLINE_ADMIN" || user.role === "SUPER_ADMIN") {
+      return true;
+    }
+
+    const moduleKey = (user.accessControl && path in user.accessControl)
+      ? path
+      : getModuleKey(path);
+
+    if (!moduleKey) return false;
+    if (moduleKey === "settings") return true;
+
+    const access = user.accessControl?.[moduleKey] || [];
+    return access.includes(permission);
+  },
+
   async onboard(invitationToken: string, password: string) {
     try {
       const response = await apiClient.post("/auth/airline/onboard", {
@@ -91,7 +193,10 @@ export const authService = {
         message: response.data?.message || "Successfully verified 2FA code",
       };
     } catch (error: any) {
-      throw new Error(extractErrorMessage(error, "Invalid 2FA verification code"));
+      const errMsg = extractErrorMessage(error, "Invalid 2FA verification code");
+      const errObj = new Error(errMsg) as any;
+      errObj.status = error.response?.status;
+      throw errObj;
     }
   },
 
@@ -103,29 +208,32 @@ export const authService = {
       });
       return response.data?.message || "Password changed successfully";
     } catch (error: any) {
-      throw new Error(extractErrorMessage(error, "Failed to change password"));
+      throw new Error(extractErrorMessage(error, "Failed to change password."));
     }
   },
 
-  async resetInitialPassword(resetPasswordToken: string, newPassword: string) {
+  async resetInitialPassword(resetPasswordToken: string, newPassword: string): Promise<string> {
     try {
       const response = await apiClient.post("/auth/airline/signin/reset-password", {
         resetPasswordToken,
         newPassword,
       });
-      return response.data?.message || "Password updated successfully";
+      return response.data?.message || "Password updated successfully.";
     } catch (error: any) {
-      throw new Error(extractErrorMessage(error, "Failed to update password"));
+      throw new Error(extractErrorMessage(error, "Failed to update password."));
     }
   },
 
-  async setupTfa(): Promise<{ manualEntryKey: string; qrCodeDataUrl: string; message: string }> {
+  async setupTfa(): Promise<{ secret: string; otpauthUrl: string; qrCodeUrl: string; manualEntryKey: string; qrCodeDataUrl: string; message?: string }> {
     try {
       const response = await apiClient.post("/auth/airline/2fa/setup");
       const data = response.data?.data || response.data;
       return {
-        manualEntryKey: data?.manualEntryKey || "",
-        qrCodeDataUrl: data?.qrCodeDataUrl || "",
+        secret: data.secret || "",
+        otpauthUrl: data.otpauthUrl || "",
+        qrCodeUrl: data.qrCodeUrl || data.qrCodeDataUrl || "",
+        manualEntryKey: data.manualEntryKey || data.secret || "",
+        qrCodeDataUrl: data.qrCodeDataUrl || data.qrCodeUrl || "",
         message: response.data?.message || "2FA setup initialized",
       };
     } catch (error: any) {
@@ -133,14 +241,14 @@ export const authService = {
     }
   },
 
-  async enableTfa(twoFactorCode: string): Promise<{ recoveryCodes: string[]; message: string }> {
+  async enableTfa(twoFactorCode: string): Promise<{ recoveryCodes: string[]; message?: string }> {
     try {
       const response = await apiClient.post("/auth/airline/2fa/enable", {
         twoFactorCode,
       });
       const data = response.data?.data || response.data;
       return {
-        recoveryCodes: data?.recoveryCodes || [],
+        recoveryCodes: data.recoveryCodes || [],
         message: response.data?.message || "2FA enabled successfully",
       };
     } catch (error: any) {
@@ -171,11 +279,10 @@ export const authService = {
         message: response.data?.message || "2FA recovered and disabled successfully",
       };
     } catch (error: any) {
-      const wrappedError = new Error(extractErrorMessage(error, "Failed to recover 2FA.")) as Error & {
-        status?: number;
-      };
-      wrappedError.status = error.response?.status;
-      throw wrappedError;
+      const errMsg = extractErrorMessage(error, "Failed to recover 2FA.");
+      const errObj = new Error(errMsg) as any;
+      errObj.status = error.response?.status;
+      throw errObj;
     }
   },
 
@@ -230,8 +337,6 @@ export const authService = {
         console.error("Backend signout failed", err);
       }
     }
-    sessionStorage.removeItem("airline_access_token");
-    sessionStorage.removeItem("airline_current_user");
-    eraseCookie("airline_refresh_token");
+    clearAuthStorage();
   },
 };

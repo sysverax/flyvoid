@@ -9,7 +9,7 @@ interface TfaVerificationProps {
   email: string;
   onCompleteSetup: () => void;
   onCancel: () => void;
-  showToast: (message: string, type?: "success" | "warning" | "info") => void;
+  showToast: (message: string, type?: "success" | "error" | "warning" | "info") => void;
   isShowingRecoveryCodes: boolean;
   setIsShowingRecoveryCodes: (val: boolean) => void;
   manualEntryKey?: string;
@@ -96,8 +96,8 @@ export function TfaVerification({
   const handleVerify = async () => {
     const code = otpValues.join("");
     if (code.length < 6) {
-      setError("Please enter a valid 6-digit code.");
       setHasError(true);
+      showToast("Please enter a valid 6-digit code.", "error");
       return;
     }
     setError(null);
@@ -132,7 +132,7 @@ export function TfaVerification({
         const errMsg = err.message || "Failed to enable 2FA.";
         setError(null);
         setHasError(true);
-        showToast(errMsg, "warning");
+        showToast(errMsg, "error");
       } finally {
         setIsVerifying(false);
       }

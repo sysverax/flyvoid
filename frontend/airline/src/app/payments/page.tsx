@@ -19,6 +19,7 @@ import { Dropdown } from "@/src/components/ui/Dropdown";
 import { FiltersCard } from "@/src/components/ui/FiltersCard";
 import { DatePicker } from "@/src/components/ui/DatePicker";
 import { useLockBodyScroll } from "@/src/hooks/useLockBodyScroll";
+import { useAuth } from "@/src/hooks/useAuth";
 
 // Payment History Record Interface
 interface PaymentRecord {
@@ -179,6 +180,7 @@ function formatDateString(dateStr: string): string {
 }
 
 export default function PaymentsPage() {
+  const { hasPermission } = useAuth();
   const [balance, setBalance] = useState(6287);
   const [cards, setCards] = useState<SavedCard[]>(INITIAL_CARDS);
 
@@ -543,14 +545,16 @@ export default function PaymentsPage() {
                 Manage the cards used for hotel booking payments.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => setIsAddCardOpen(true)}
-              className="bg-[#0F2757] hover:bg-[#162259] text-white font-medium py-2 px-4 rounded-[10px] text-sm cursor-pointer transition-colors inline-flex items-center gap-1.5 font-figtree self-start sm:self-auto shadow-2xs"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Add Card</span>
-            </button>
+            {hasPermission("edit") && (
+              <button
+                type="button"
+                onClick={() => setIsAddCardOpen(true)}
+                className="bg-[#0F2757] hover:bg-[#162259] text-white font-medium py-2 px-4 rounded-[10px] text-sm cursor-pointer transition-colors inline-flex items-center gap-1.5 font-figtree self-start sm:self-auto shadow-2xs"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Add Card</span>
+              </button>
+            )}
           </div>
 
           {/* Cards List */}
@@ -587,26 +591,28 @@ export default function PaymentsPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3">
-                    {!c.isDefault && (
+                  {hasPermission("edit") && (
+                    <div className="flex items-center gap-3">
+                      {!c.isDefault && (
+                        <button
+                          type="button"
+                          onClick={() => handleSetDefaultCard(c.id)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-2xs cursor-pointer font-figtree"
+                        >
+                          <Star className="h-3.5 w-3.5 text-gray-500" />
+                          <span>Set Default</span>
+                        </button>
+                      )}
                       <button
                         type="button"
-                        onClick={() => handleSetDefaultCard(c.id)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-2xs cursor-pointer font-figtree"
+                        onClick={() => handleDeleteCard(c.id)}
+                        className="p-1.5 text-red-500 hover:text-red-700 transition-colors rounded-lg hover:bg-red-50 cursor-pointer"
+                        title="Remove card"
                       >
-                        <Star className="h-3.5 w-3.5 text-gray-500" />
-                        <span>Set Default</span>
+                        <Trash2 className="h-4.5 w-4.5 text-red-500" />
                       </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteCard(c.id)}
-                      className="p-1.5 text-red-500 hover:text-red-700 transition-colors rounded-lg hover:bg-red-50 cursor-pointer"
-                      title="Remove card"
-                    >
-                      <Trash2 className="h-4.5 w-4.5 text-red-500" />
-                    </button>
-                  </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -696,15 +702,17 @@ export default function PaymentsPage() {
                       onSort={handlePendingSort}
                     />
                   </TableHead>
-                  <TableHead className="min-w-[120px]">
-                    Action
-                  </TableHead>
+                  {hasPermission("edit") && (
+                    <TableHead className="min-w-[120px]">
+                      Action
+                    </TableHead>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {paginatedPendingPayments.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="px-6 py-12 text-center text-gray-500 font-figtree">
+                    <TableCell colSpan={hasPermission("edit") ? 7 : 6} className="px-6 py-12 text-center text-gray-500 font-figtree">
                       No pending payments found.
                     </TableCell>
                   </TableRow>
@@ -729,15 +737,17 @@ export default function PaymentsPage() {
                       <TableCell>
                         <StatusBadge status={p.status} />
                       </TableCell>
-                      <TableCell>
-                        <button
-                          type="button"
-                          onClick={() => handlePayPending(p)}
-                          className="bg-[#0F2757] hover:bg-[#162259] text-white font-medium py-1.5 px-3.5 rounded-[8px] text-[13px] cursor-pointer transition-colors inline-flex items-center justify-center font-figtree"
-                        >
-                          {p.status === "Payment Failed" ? "Retry Payment" : "Pay Now"}
-                        </button>
-                      </TableCell>
+                      {hasPermission("edit") && (
+                        <TableCell>
+                          <button
+                            type="button"
+                            onClick={() => handlePayPending(p)}
+                            className="bg-[#0F2757] hover:bg-[#162259] text-white font-medium py-1.5 px-3.5 rounded-[8px] text-[13px] cursor-pointer transition-colors inline-flex items-center justify-center font-figtree"
+                          >
+                            {p.status === "Payment Failed" ? "Retry Payment" : "Pay Now"}
+                          </button>
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))
                 )}

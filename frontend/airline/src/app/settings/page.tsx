@@ -677,7 +677,7 @@ function SecurityTab() {
   const handleConfirmDisableTfa = async () => {
     const codeStr = disableCode.join("");
     if (codeStr.length < 6) {
-      setDisableError("Please enter the full 6-digit verification code.");
+      toast.error("Please enter the full 6-digit verification code.");
       return;
     }
 
@@ -702,7 +702,6 @@ function SecurityTab() {
       toast.success(result.message || "Two-Factor Authentication disabled.");
     } catch (err: any) {
       const errMsg = err.message || "Failed to disable 2FA.";
-      setDisableError(errMsg);
       toast.error(errMsg);
     } finally {
       setIsSubmittingDisable(false);
@@ -1144,10 +1143,16 @@ function SecurityTab() {
                   onCompleteSetup={handleCompleteSetup}
                   onCancel={handleCancelTfa}
                   showToast={(msg, type) => {
-                    if (type === "warning" || type === "info") {
+                    if (type === "error") {
+                      toast.error(msg);
+                    } else if (type === "warning") {
+                      toast.warning(msg);
+                    } else if (type === "info") {
                       toast.info(msg);
                     } else if (type === "success") {
                       toast.success(msg);
+                    } else {
+                      toast.error(msg);
                     }
                   }}
                   isShowingRecoveryCodes={isShowingRecoveryCodes}

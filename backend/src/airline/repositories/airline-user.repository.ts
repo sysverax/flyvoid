@@ -5,11 +5,11 @@ import {
   AccessAction,
   AirlineAsset,
 } from "../../common/constants/access-control.constants";
-import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
 import { AirlineRole } from "../../common/constants/user.constants";
 import { LoggerService } from "../../common/logger/logger.service";
 import { AirlineAccessControlEntity } from "../entities/airline-access-control.entity";
 import { AirlineUserEntity } from "../entities/airline-user.entity";
+import { ListAirlineUsersQueryDto } from "../dto/list-airline-users-query.dto";
 
 @Injectable()
 export class AirlineUserRepository {
@@ -167,7 +167,7 @@ export class AirlineUserRepository {
 
   async findAllByAirlineId(
     airlineId: number,
-    pagination: PaginationQueryDto,
+    query: ListAirlineUsersQueryDto,
     requestId: string,
   ): Promise<{ users: AirlineUserEntity[]; total: number }> {
     this.logger.debug(
@@ -176,21 +176,30 @@ export class AirlineUserRepository {
       requestId,
       {
         airlineId,
-        page: pagination.page,
-        limit: pagination.limit,
+        page: query.page,
+        limit: query.limit,
+        search: query.search,
       },
     );
 
-    const skip = (pagination.page - 1) * pagination.limit;
+    const skip = (query.page - 1) * query.limit;
 
-    const [users, total] = await this.airlineUserRepository.findAndCount({
-      where: { airlineId },
-      order: {
-        createdAt: "DESC",
-      },
-      skip,
-      take: pagination.limit,
-    });
+    const queryBuilder = this.airlineUserRepository
+      .createQueryBuilder("airlineUser")
+      .where("airlineUser.airlineId = :airlineId", { airlineId });
+
+    if (query.search) {
+      queryBuilder.andWhere(
+        "(airlineUser.firstName ILIKE :search OR airlineUser.lastName ILIKE :search OR airlineUser.email ILIKE :search)",
+        { search: `%${query.search}%` },
+      );
+    }
+
+    const [users, total] = await queryBuilder
+      .orderBy("airlineUser.createdAt", "DESC")
+      .skip(skip)
+      .take(query.limit)
+      .getManyAndCount();
 
     return { users, total };
   }
