@@ -36,13 +36,12 @@ export function eraseCookie(name: string) {
   Cookies.remove(name, { path: "/" });
 }
 
-function clearAuthStorage() {
+export function clearAuthStorage() {
   if (typeof window === "undefined") {
     return;
   }
 
-  sessionStorage.removeItem("airline_access_token");
-  sessionStorage.removeItem("airline_current_user");
+  sessionStorage.clear();
   eraseCookie("airline_refresh_token");
 }
 
@@ -160,9 +159,7 @@ apiClient.interceptors.response.use(
     if (isPublicRoute) {
       if (originalRequest.url?.includes("/auth/airline/refresh")) {
         if (typeof window !== "undefined") {
-          sessionStorage.removeItem("airline_access_token");
-          sessionStorage.removeItem("airline_current_user");
-          eraseCookie("airline_refresh_token");
+          clearAuthStorage();
           redirectToLoginWithCurrentPath();
         }
       }

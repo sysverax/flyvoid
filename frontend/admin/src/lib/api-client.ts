@@ -36,6 +36,15 @@ export function eraseCookie(name: string) {
   Cookies.remove(name, { path: "/" });
 }
 
+export function clearAuthStorage() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  sessionStorage.clear();
+  eraseCookie("flyvoid_refresh_token");
+}
+
 // Request interceptor to attach JWT token
 apiClient.interceptors.request.use(
   (config) => {
@@ -85,9 +94,7 @@ apiClient.interceptors.response.use(
       // For refresh failures, clean storage and redirect
       if (originalRequest.url?.includes("/auth/admin/refresh")) {
         if (typeof window !== "undefined") {
-          sessionStorage.removeItem("flyvoid_access_token");
-          sessionStorage.removeItem("flyvoid_current_user");
-          eraseCookie("flyvoid_refresh_token");
+          clearAuthStorage();
           if (window.location.pathname !== "/login") {
             window.location.href = "/login";
           }
@@ -117,8 +124,7 @@ apiClient.interceptors.response.use(
       if (!refreshToken) {
         isRefreshing = false;
         if (typeof window !== "undefined") {
-          sessionStorage.removeItem("flyvoid_access_token");
-          sessionStorage.removeItem("flyvoid_current_user");
+          clearAuthStorage();
           if (window.location.pathname !== "/login") {
             window.location.href = "/login";
           }
@@ -148,9 +154,7 @@ apiClient.interceptors.response.use(
         isRefreshing = false;
 
         if (typeof window !== "undefined") {
-          sessionStorage.removeItem("flyvoid_access_token");
-          sessionStorage.removeItem("flyvoid_current_user");
-          eraseCookie("flyvoid_refresh_token");
+          clearAuthStorage();
           if (window.location.pathname !== "/login") {
             window.location.href = "/login";
           }

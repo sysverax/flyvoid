@@ -1,6 +1,6 @@
 "use client";
 
-import { apiClient, setCookie, getCookie, eraseCookie, extractErrorMessage } from "../lib/api-client";
+import { apiClient, setCookie, getCookie, eraseCookie, extractErrorMessage, clearAuthStorage } from "../lib/api-client";
 import { getModuleKey } from "../lib/navigation";
 
 export interface User {
@@ -147,7 +147,10 @@ export const authService = {
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(user));
       return { user, message: response.data.message || "Successfully signed in." };
     } catch (error: any) {
-      throw new Error(extractErrorMessage(error, "Invalid 2FA code."));
+      const errMsg = extractErrorMessage(error, "Invalid 2FA code.");
+      const errObj = new Error(errMsg) as any;
+      errObj.status = error.response?.status;
+      throw errObj;
     }
   },
 
@@ -189,9 +192,7 @@ export const authService = {
         console.error("Backend signout failed", err);
       }
     }
-    sessionStorage.removeItem("flyvoid_access_token");
-    sessionStorage.removeItem(STORAGE_KEY);
-    eraseCookie("flyvoid_refresh_token");
+    clearAuthStorage();
   },
 
   async setupTfa(): Promise<{ manualEntryKey: string; qrCodeDataUrl: string; message: string }> {

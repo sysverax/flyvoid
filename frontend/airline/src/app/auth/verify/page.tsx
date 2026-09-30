@@ -1,21 +1,31 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Lock, Eye, EyeOff, ShieldCheck, KeyRound } from "lucide-react";
+import { KeyRound, ArrowLeft, Lock, Eye, EyeOff } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { authService } from "@/src/services/auth.service";
 import { toast } from "react-toastify";
 
 type Step = "otp" | "reset" | "success";
-type View = "tfa" | "recovery";
+type ViewType = "tfa" | "recovery";
 
 export default function VerifyPage() {
   const router = useRouter();
-  const [step, setStep] = useState<Step>("otp");
-  const [view, setView] = useState<View>("tfa");
+  const [step, setStep] = useState<Step>(() => {
+    if (typeof window !== "undefined") {
+      if (sessionStorage.getItem("two_factor_token")) {
+        return "otp";
+      }
+      if (sessionStorage.getItem("reset_password_token")) {
+        return "reset";
+      }
+    }
+    return "otp";
+  });
 
   // 2FA / OTP States
+  const [view, setView] = useState<ViewType>("tfa");
   const [code, setCode] = useState<string[]>(Array(6).fill(""));
   const [recoveryCode, setRecoveryCode] = useState("");
 
@@ -38,26 +48,34 @@ export default function VerifyPage() {
     confirmPassword?: boolean;
   }>({});
 
-  const [resetPasswordToken, setResetPasswordToken] = useState("");
+  const [resetPasswordToken, setResetPasswordToken] = useState(() => {
+    if (typeof window !== "undefined") {
+      return sessionStorage.getItem("reset_password_token") || "";
+    }
+    return "";
+  });
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
+  // Focus the first input box when mounting OTP view
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const twoFactorToken = sessionStorage.getItem("two_factor_token");
-      const pwdToken = sessionStorage.getItem("reset_password_token");
+    const twoFactorToken = sessionStorage.getItem("two_factor_token");
+    const pwdToken = sessionStorage.getItem("reset_password_token");
 
-      if (twoFactorToken) {
-        setStep("otp");
-      } else if (pwdToken) {
-        setStep("reset");
-        setResetPasswordToken(pwdToken);
-      } else {
-        toast.error("Invalid or expired session. Please sign in again.");
-        router.push("/auth/login");
+    if (twoFactorToken) {
+      setStep("otp");
+      if (view === "tfa" && inputRefs.current[0]) {
+        inputRefs.current[0].focus();
       }
+    } else if (pwdToken) {
+      setStep("reset");
+      setResetPasswordToken(pwdToken);
+    } else {
+      toast.error("Invalid or expired session. Please sign in again.");
+      router.push("/auth/login");
     }
-  }, [router]);
+  }, [view, router]);
 
+  // Focus first OTP field on step changes
   useEffect(() => {
     if (step === "otp" && view === "tfa" && inputRefs.current[0]) {
       inputRefs.current[0].focus();
@@ -67,7 +85,7 @@ export default function VerifyPage() {
   // --- OTP Verification Logic ---
   const handleCodeChange = (index: number, val: string) => {
     const targetVal = val.length > 1 ? val.slice(-1) : val;
-    if (/[^0-9]/.test(targetVal) && targetVal !== "") return;
+    if (isNaN(Number(targetVal)) && targetVal !== "") return;
 
     const newCode = [...code];
     newCode[index] = targetVal;
@@ -91,6 +109,12 @@ export default function VerifyPage() {
         newCode[index] = "";
         setCode(newCode);
       }
+    } else if (e.key === "ArrowLeft" && index > 0) {
+      e.preventDefault();
+      inputRefs.current[index - 1]?.focus();
+    } else if (e.key === "ArrowRight" && index < 5) {
+      e.preventDefault();
+      inputRefs.current[index + 1]?.focus();
     }
   };
 
@@ -146,6 +170,11 @@ export default function VerifyPage() {
       }
     } catch (err: any) {
       toast.error(err.message || "Verification failed.");
+      if (err.status === 401 || err.response?.status === 401) {
+        sessionStorage.removeItem("two_factor_token");
+        sessionStorage.removeItem("two_factor_email");
+        router.push("/auth/login");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -154,8 +183,15 @@ export default function VerifyPage() {
   // --- Recovery Code Logic ---
   const handleRecoverySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!recoveryCode.trim()) {
-      setErrors({ recoveryCode: "Please enter your recovery code" });
+    const cleanCode = recoveryCode.replace(/[^a-zA-Z0-9]/g, "");
+
+    if (!cleanCode) {
+      setErrors({ recoveryCode: "Recovery code is required" });
+      return;
+    }
+
+    if (cleanCode.length !== 10) {
+      setErrors({ recoveryCode: "Recovery code must be exactly 10 alphanumeric characters" });
       return;
     }
 
@@ -164,7 +200,7 @@ export default function VerifyPage() {
 
     try {
       const email = sessionStorage.getItem("two_factor_email") || "";
-      const result = await authService.recoverTfa(email, recoveryCode.trim());
+      const result = await authService.recoverTfa(email, cleanCode);
 
       if (email) {
         sessionStorage.removeItem(`airline_tfa_enabled_${email}`);
@@ -178,6 +214,11 @@ export default function VerifyPage() {
       router.push("/auth/login");
     } catch (err: any) {
       toast.error(err.message || "Failed to recover 2FA.");
+      if (err.status === 401 || err.response?.status === 401) {
+        sessionStorage.removeItem("two_factor_token");
+        sessionStorage.removeItem("two_factor_email");
+        router.push("/auth/login");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -200,9 +241,55 @@ export default function VerifyPage() {
   };
 
   const validateConfirmPassword = (confirmVal: string, passwordVal: string): string => {
-    if (!confirmVal) return "Please confirm your password";
-    if (confirmVal !== passwordVal) return "Passwords do not match";
+    if (!confirmVal) {
+      return "Please confirm your password";
+    }
+    if (confirmVal !== passwordVal) {
+      return "Passwords do not match";
+    }
     return "";
+  };
+
+  const handleNewPasswordChange = (val: string) => {
+    setNewPassword(val);
+    if (touched.newPassword) {
+      setErrors((prev) => ({
+        ...prev,
+        password: validatePassword(val) || undefined,
+      }));
+    }
+    if (touched.confirmPassword) {
+      setErrors((prev) => ({
+        ...prev,
+        confirmPassword: validateConfirmPassword(confirmPassword, val) || undefined,
+      }));
+    }
+  };
+
+  const handleNewPasswordBlur = () => {
+    setTouched((prev) => ({ ...prev, newPassword: true }));
+    setErrors((prev) => ({
+      ...prev,
+      password: validatePassword(newPassword) || undefined,
+    }));
+  };
+
+  const handleConfirmPasswordChange = (val: string) => {
+    setConfirmPassword(val);
+    if (touched.confirmPassword) {
+      setErrors((prev) => ({
+        ...prev,
+        confirmPassword: validateConfirmPassword(val, newPassword) || undefined,
+      }));
+    }
+  };
+
+  const handleConfirmPasswordBlur = () => {
+    setTouched((prev) => ({ ...prev, confirmPassword: true }));
+    setErrors((prev) => ({
+      ...prev,
+      confirmPassword: validateConfirmPassword(confirmPassword, newPassword) || undefined,
+    }));
   };
 
   const handlePasswordResetSubmit = async (e: React.FormEvent) => {
@@ -241,11 +328,11 @@ export default function VerifyPage() {
         <div className="w-16 h-16 bg-[#0F2757] rounded-[12px] flex items-center justify-center mb-6">
           <img
             src="/icons/plane1.svg"
-            alt="Airbook Logo"
+            alt="FlyVoid Logo"
             className="h-8 w-8 brightness-0 invert"
           />
         </div>
-        <h1 className="text-gray-800 text-[24px] font-bold leading-[100%] py-1">
+        <h1 className="text-gray-800 text-[24px] font-bold leading-[100%] py-1 font-figtree">
           Airline Portal
         </h1>
         <p className="text-gray-500 text-[14px] font-normal mt-1 font-figtree">
@@ -255,151 +342,172 @@ export default function VerifyPage() {
 
       {/* Main Container Card */}
       <div className="w-full bg-white rounded-[16px] border border-gray-200 p-[31px] flex flex-col gap-6 animate-fadeIn">
-        {step === "otp" && view === "tfa" && (
-          <div className="flex flex-col gap-6 animate-fadeIn">
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 bg-gray-100 rounded-[8px] flex items-center justify-center text-[#0F2757]">
-                <ShieldCheck className="w-6 h-6 text-[#0F2757]" />
-              </div>
-              <div className="flex flex-col gap-1">
-                <h2 className="text-gray-800 text-lg font-semibold font-figtree leading-tight">
-                  Two-factor authentication
-                </h2>
-                <p className="text-gray-500 text-[14px] font-normal font-figtree leading-tight">
-                  Enter the 6-digit code from your authenticator app
-                </p>
-              </div>
-            </div>
 
-            <form onSubmit={handleCodeSubmit} className="flex flex-col gap-6" noValidate>
-              <div className="flex flex-col gap-2">
-                <div className="flex justify-between gap-2">
-                  {code.map((digit, idx) => (
-                    <input
-                      key={idx}
-                      ref={(el) => { inputRefs.current[idx] = el; }}
-                      type="text"
-                      maxLength={1}
-                      value={digit}
-                      onChange={(e) => handleCodeChange(idx, e.target.value)}
-                      onKeyDown={(e) => handleKeyDown(idx, e)}
-                      onPaste={idx === 0 ? handlePaste : undefined}
-                      disabled={isLoading}
-                      className={cn(
-                        "w-12 h-12 text-center text-xl font-bold font-figtree rounded-[8px] border bg-[#F9FAFB] outline-none transition-all focus:bg-white focus:ring-2 focus:ring-[#0F2757]/10 disabled:opacity-50",
-                        errors.code ? "border-red-500 focus:ring-red-500/10 border-red-500" : "border-gray-200 focus:border-[#0F2757]"
-                      )}
-                    />
-                  ))}
+        {/* Step 1: OTP / Recovery Form */}
+        {step === "otp" && (
+          <>
+            {view === "tfa" ? (
+              <div className="flex flex-col gap-6">
+                <div className="flex flex-col gap-3">
+                  <div className="w-12 h-12 bg-[#192E571A] rounded-[8px] flex items-center justify-center text-[#0F2757]">
+                    <KeyRound className="w-6 h-6 text-[#0F2757]" />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <h2 className="text-gray-800 text-lg font-semibold leading-tight font-figtree">
+                      Two-factor authentication
+                    </h2>
+                    <p className="text-gray-500 text-[14px] font-normal leading-tight font-figtree">
+                      Enter the 6-digit code from your authenticator app
+                    </p>
+                  </div>
                 </div>
-                {errors.code && (
-                  <span className="text-red-500 text-xs font-medium font-figtree pl-1">
-                    {errors.code}
-                  </span>
-                )}
-              </div>
 
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="w-full h-[48px] rounded-[10px] bg-[#0F2757] hover:bg-[#162259] active:bg-[#091a3c] text-white text-base font-medium transition-all duration-150 flex items-center justify-center gap-2 shadow-lg shadow-[#0F2757]/10 cursor-pointer disabled:opacity-75 font-figtree"
-              >
-                {isLoading ? (
-                  <>
-                    <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    <span>Verifying...</span>
-                  </>
-                ) : (
-                  <span>Verify code</span>
-                )}
-              </button>
-            </form>
+                <form onSubmit={handleCodeSubmit} className="flex flex-col gap-6">
+                  <div className="flex items-center justify-center">
+                    {code.map((digit, idx) => (
+                      <input
+                        key={idx}
+                        type="text"
+                        value={digit}
+                        ref={(el) => { inputRefs.current[idx] = el; }}
+                        onChange={(e) => handleCodeChange(idx, e.target.value)}
+                        onKeyDown={(e) => handleKeyDown(idx, e)}
+                        onPaste={handlePaste}
+                        disabled={isLoading}
+                        className={cn(
+                          "w-[40px] h-[40px] border border-[#DDDFE3] text-center text-base font-bold font-figtree outline-none transition-all",
+                          "focus:bg-white focus:ring-2 focus:ring-[#0F2757]/10 focus:border-[#0F2757] focus:relative focus:z-10",
+                          idx === 0 && "rounded-l-[6px]",
+                          idx === 5 && "rounded-r-[6px]",
+                          idx !== 0 && "-ml-[1px]",
+                          errors.code ? "border-rose-300 focus:ring-rose-500/10 focus:border-rose-400" : "",
+                          "disabled:opacity-70"
+                        )}
+                      />
+                    ))}
+                  </div>
 
-            <div className="flex flex-col items-center gap-3 pt-2 border-t border-gray-100">
-              <button
-                type="button"
-                onClick={() => setView("recovery")}
-                className="text-[#0F2757] text-sm font-semibold hover:underline cursor-pointer font-figtree"
-              >
-                Use a recovery code
-              </button>
-            </div>
-          </div>
-        )}
+                  {errors.code && (
+                    <span className="text-rose-500 text-xs font-medium -mt-3 pl-1 text-center font-figtree">
+                      {errors.code}
+                    </span>
+                  )}
 
-        {step === "otp" && view === "recovery" && (
-          <div className="flex flex-col gap-6 animate-fadeIn">
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 bg-gray-100 rounded-[8px] flex items-center justify-center text-[#0F2757]">
-                <KeyRound className="w-6 h-6 text-[#0F2757]" />
-              </div>
-              <div className="flex flex-col gap-1">
-                <h2 className="text-gray-800 text-lg font-semibold font-figtree leading-tight">
-                  Enter recovery code
-                </h2>
-                <p className="text-gray-500 text-[14px] font-normal font-figtree leading-tight">
-                  Enter one of your emergency recovery codes to regain access
-                </p>
-              </div>
-            </div>
-
-            <form onSubmit={handleRecoverySubmit} className="flex flex-col gap-5" noValidate>
-              <div className="flex flex-col gap-2">
-                <label className="text-gray-800 text-base font-semibold font-figtree leading-tight">
-                  Recovery Code
-                </label>
-                <div className={cn(
-                  "relative h-[47px] w-full rounded-[6px] border bg-[#F9FAFB] transition-all flex items-center px-3 focus-within:bg-white focus-within:ring-2 focus-within:ring-[#0F2757]/10",
-                  errors.recoveryCode ? "border-red-500 focus-within:ring-red-500/10 focus-within:border-red-500" : "border-gray-200 focus-within:border-[#0F2757]"
-                )}>
-                  <input
-                    type="text"
-                    placeholder="e.g. XXXX-XXXX-XXXX"
-                    value={recoveryCode}
-                    onChange={(e) => setRecoveryCode(e.target.value)}
+                  <button
+                    type="submit"
                     disabled={isLoading}
-                    className="w-full h-full bg-transparent outline-none text-gray-800 font-figtree text-[16px] placeholder-gray-400"
-                  />
+                    className="w-full h-[48px] rounded-[10px] bg-[#0F2757] hover:bg-[#162259] active:bg-[#091a3c] active:scale-[0.98] text-white text-base transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-75 disabled:cursor-default shadow-lg shadow-[#0F2757]/10 mt-0.5 font-figtree font-medium"
+                  >
+                    {isLoading ? (
+                      <>
+                        <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        <span>Verifying...</span>
+                      </>
+                    ) : (
+                      <span>Verify & Sign in</span>
+                    )}
+                  </button>
+                </form>
+
+                <div className="flex flex-col items-center gap-3 justify-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setView("recovery");
+                      setErrors({});
+                    }}
+                    disabled={isLoading}
+                    className="text-[#1F2937] hover:text-[#162259] transition-colors text-[13px] underline cursor-pointer disabled:opacity-50 font-figtree"
+                  >
+                    Use a recovery code instead
+                  </button>
                 </div>
-                {errors.recoveryCode && (
-                  <span className="text-red-500 text-xs font-medium font-figtree pl-1">
-                    {errors.recoveryCode}
-                  </span>
-                )}
               </div>
+            ) : (
+              <div className="flex flex-col gap-6 pt-1">
+                <div className="flex flex-col gap-3 -translate-y-1">
+                  <div className="w-12 h-12 bg-[#192E571A] rounded-[8px] flex items-center justify-center text-[#0F2757]">
+                    <KeyRound className="w-6 h-6 text-[#0F2757]" />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <h2 className="text-gray-800 text-lg font-semibold leading-tight font-figtree">
+                      Recovery code
+                    </h2>
+                    <p className="text-gray-500 text-[14px] font-normal leading-tight font-figtree">
+                      Enter a 10-character alphanumeric recovery code
+                    </p>
+                  </div>
+                </div>
 
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="w-full h-[48px] rounded-[10px] bg-[#0F2757] hover:bg-[#162259] active:bg-[#091a3c] text-white text-base font-medium transition-all duration-150 flex items-center justify-center gap-2 shadow-lg shadow-[#0F2757]/10 cursor-pointer disabled:opacity-75 font-figtree"
-              >
-                {isLoading ? (
-                  <>
-                    <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    <span>Recovering...</span>
-                  </>
-                ) : (
-                  <span>Recover Account</span>
-                )}
-              </button>
+                <form onSubmit={handleRecoverySubmit} className="flex flex-col gap-5 -translate-y-1">
+                  <div className="flex flex-col gap-2">
+                    <label className="text-gray-800 text-base font-semibold font-figtree leading-tight">
+                      Recovery Code
+                    </label>
+                    <div className={cn(
+                      "relative h-[47px] w-full rounded-[6px] border bg-[#F9FAFB] transition-all flex items-center px-3 focus-within:bg-white focus-within:ring-2 focus-within:ring-[#0F2757]/10",
+                      errors.recoveryCode ? "border-rose-300 focus-within:ring-rose-500/10 focus-within:border-rose-400" : "border-gray-200 focus-within:border-[#0F2757]"
+                    )}>
+                      <input
+                        type="text"
+                        placeholder="XXXXXXXXXX"
+                        value={recoveryCode}
+                        onChange={(e) => {
+                          setRecoveryCode(e.target.value);
+                          setErrors((prev) => ({ ...prev, recoveryCode: undefined }));
+                        }}
+                        disabled={isLoading}
+                        className="w-full h-full bg-transparent outline-none text-gray-800 font-figtree text-[16px] placeholder-gray-500"
+                      />
+                    </div>
+                    {errors.recoveryCode && (
+                      <span className="text-rose-500 text-xs font-medium font-figtree pl-1">
+                        {errors.recoveryCode}
+                      </span>
+                    )}
+                  </div>
 
-              <button
-                type="button"
-                onClick={() => setView("tfa")}
-                className="text-gray-500 text-sm hover:underline cursor-pointer font-figtree text-center mt-1"
-              >
-                Back to 2FA code
-              </button>
-            </form>
-          </div>
+                  <button
+                    type="submit"
+                    disabled={isLoading}
+                    className="w-full h-[48px] rounded-[10px] bg-[#0F2757] hover:bg-[#162259] active:bg-[#091a3c] active:scale-[0.98] text-white text-base transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-75 disabled:cursor-default shadow-lg shadow-[#0F2757]/10 mt-1 font-figtree font-medium"
+                  >
+                    {isLoading ? (
+                      <>
+                        <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        <span>Recovering...</span>
+                      </>
+                    ) : (
+                      <span>Verify Recovery Code</span>
+                    )}
+                  </button>
+                </form>
+
+                <div className="flex flex-col items-center gap-3 justify-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setView("tfa");
+                      setErrors({});
+                    }}
+                    disabled={isLoading}
+                    className="text-[#1F2937] hover:text-[#162259] transition-colors text-[13px] flex items-center gap-1.5 cursor-pointer disabled:opacity-50 font-figtree"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" /> Go back
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
-        
+
+        {/* Step 2: Initial Password Reset */}
         {step === "reset" && (
           <div className="flex flex-col gap-6 animate-fadeIn">
             <div className="flex items-start gap-4">
@@ -417,20 +525,22 @@ export default function VerifyPage() {
             </div>
 
             <form onSubmit={handlePasswordResetSubmit} className="flex flex-col gap-5" noValidate>
+              {/* New Password */}
               <div className="flex flex-col gap-2">
                 <label className="text-gray-800 text-base font-semibold font-figtree leading-tight">
                   New Password
                 </label>
                 <div className={cn(
                   "relative h-[47px] w-full rounded-[6px] border bg-[#F9FAFB] transition-all flex items-center px-3 focus-within:bg-white focus-within:ring-2 focus-within:ring-[#0F2757]/10",
-                  errors.password ? "border-red-500 focus-within:ring-red-500/10 focus-within:border-red-500" : "border-gray-200 focus-within:border-[#0F2757]"
+                  errors.password ? "border-rose-300 focus-within:ring-rose-500/10 focus-within:border-rose-400" : "border-gray-200 focus-within:border-[#0F2757]"
                 )}>
-                  <Lock className="w-4 h-4 text-gray-400 shrink-0" />
+                  <Lock className="w-4 h-4 text-gray-500 shrink-0" />
                   <input
                     type={showNewPassword ? "text" : "password"}
                     placeholder="At least 8 characters"
                     value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
+                    onChange={(e) => handleNewPasswordChange(e.target.value)}
+                    onBlur={handleNewPasswordBlur}
                     disabled={isLoading}
                     className="w-full h-full bg-transparent pl-[13px] pr-10 outline-none text-gray-800 font-figtree text-[16px] placeholder-gray-500"
                   />
@@ -443,26 +553,28 @@ export default function VerifyPage() {
                   </button>
                 </div>
                 {errors.password && (
-                  <span className="text-red-500 text-xs font-medium font-figtree pl-1">
+                  <span className="text-rose-500 text-xs font-medium font-figtree pl-1">
                     {errors.password}
                   </span>
                 )}
               </div>
 
+              {/* Confirm Password */}
               <div className="flex flex-col gap-2">
                 <label className="text-gray-800 text-base font-semibold font-figtree leading-tight">
                   Confirm Password
                 </label>
                 <div className={cn(
                   "relative h-[47px] w-full rounded-[6px] border bg-[#F9FAFB] transition-all flex items-center px-3 focus-within:bg-white focus-within:ring-2 focus-within:ring-[#0F2757]/10",
-                  errors.confirmPassword ? "border-red-500 focus-within:ring-red-500/10 focus-within:border-red-500" : "border-gray-200 focus-within:border-[#0F2757]"
+                  errors.confirmPassword ? "border-rose-300 focus-within:ring-rose-500/10 focus-within:border-rose-400" : "border-gray-200 focus-within:border-[#0F2757]"
                 )}>
-                  <Lock className="w-4 h-4 text-gray-400 shrink-0" />
+                  <Lock className="w-4 h-4 text-gray-500 shrink-0" />
                   <input
                     type={showConfirmPassword ? "text" : "password"}
                     placeholder="Re-enter new password"
                     value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    onChange={(e) => handleConfirmPasswordChange(e.target.value)}
+                    onBlur={handleConfirmPasswordBlur}
                     disabled={isLoading}
                     className="w-full h-full bg-transparent pl-[13px] pr-10 outline-none text-gray-800 font-figtree text-[16px] placeholder-gray-500"
                   />
@@ -475,16 +587,17 @@ export default function VerifyPage() {
                   </button>
                 </div>
                 {errors.confirmPassword && (
-                  <span className="text-red-500 text-xs font-medium font-figtree pl-1">
+                  <span className="text-rose-500 text-xs font-medium font-figtree pl-1">
                     {errors.confirmPassword}
                   </span>
                 )}
               </div>
 
+              {/* Submit Reset Button */}
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full h-[48px] rounded-[10px] bg-[#0F2757] hover:bg-[#162259] active:bg-[#091a3c] text-white text-base transition-all duration-150 flex items-center justify-center gap-2 shadow-lg shadow-[#0F2757]/10 cursor-pointer disabled:opacity-75 disabled:cursor-default font-figtree mt-1.5"
+                className="w-full h-[48px] rounded-[10px] bg-[#0F2757] hover:bg-[#162259] active:bg-[#091a3c] text-white text-base transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-75 font-figtree mt-1.5"
               >
                 {isLoading ? (
                   <>
@@ -502,6 +615,7 @@ export default function VerifyPage() {
           </div>
         )}
 
+        {/* Step 3: Success Screen */}
         {step === "success" && (
           <div className="flex flex-col items-center text-center gap-4 animate-fadeIn">
             <div className="w-16 h-16 bg-[#1FAD531A] rounded-full flex items-center justify-center text-[#1FAD53]">
@@ -527,7 +641,7 @@ export default function VerifyPage() {
         )}
       </div>
 
-      {/* Footer Security Badge */}
+      {/* Footer Security Shield */}
       <div className="mt-7.5 flex items-center gap-1.5 text-gray-400 select-none animate-fadeIn">
         <img src={"/icons/sheild1.svg"} alt="lock" className="w-4 h-4 text-gray-400 relative bottom-[2px]" />
         <span className="text-[13px] font-normal font-figtree">

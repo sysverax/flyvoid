@@ -18,6 +18,7 @@ import { cn } from "@/src/lib/utils";
 import { toast } from "react-toastify";
 import { SignOutDialog } from "./SignOutDialog";
 import { authService } from "@/src/services/auth.service";
+import { useAuth } from "@/src/hooks/useAuth";
 
 const navItems = [
   { title: "Dashboard", icon: LayoutDashboard, path: "/", key: "dashboard" },
@@ -56,6 +57,7 @@ export function Sidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const { hasPermission } = useAuth();
 
   const handleLogout = () => {
     setSignOutOpen(true);
@@ -103,6 +105,7 @@ export function Sidebar() {
         <nav className="scrollbar-hide flex-1 overflow-y-auto">
           <div className="flex w-full flex-col items-start gap-3">
             {navItems.map((item) => {
+              if (!hasPermission("view", item.path)) return null;
               const isActive =
                 item.key === "dashboard"
                   ? pathname === "/" || pathname === "/dashboard"

@@ -263,7 +263,18 @@ export function ManageUserModal({
           },
         };
       } else {
-        modulePerms[level] = !modulePerms[level];
+        const newVal = !modulePerms[level];
+        modulePerms[level] = newVal;
+
+        if ((level === "edit" || level === "export") && newVal) {
+          modulePerms.view = true;
+        }
+
+        if (level === "view" && !newVal) {
+          modulePerms.edit = false;
+          modulePerms.export = false;
+        }
+
         modulePerms.all = modulePerms.view && modulePerms.edit && modulePerms.export;
         return {
           ...prev,
@@ -301,6 +312,16 @@ export function ManageUserModal({
             ...updated[key],
             [level]: newValue,
           };
+
+          if ((level === "edit" || level === "export") && newValue) {
+            updated[key].view = true;
+          }
+
+          if (level === "view" && !newValue) {
+            updated[key].edit = false;
+            updated[key].export = false;
+          }
+
           updated[key].all = updated[key].view && updated[key].edit && updated[key].export;
         }
       });

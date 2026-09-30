@@ -10,12 +10,14 @@ import { Button } from "@/src/components/ui/button";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell, SortHeader } from "@/src/components/ui/table";
 import { ManageUserModal } from "@/src/components/manage-users/ManageUserModal";
 import { DeleteUserDialog } from "@/src/components/manage-users/DeleteUserDialog";
+import { useAuth } from "@/src/hooks/useAuth";
 import { Pagination } from "@/src/components/ui/pagination";
 import { usersService, User } from "@/src/services/users.service";
 import { toast } from "react-toastify";
 import { TruncatedTooltip } from "@/src/components/ui/TruncatedTooltip";
 
 export default function ManageUsersPage() {
+  const { hasPermission } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -202,14 +204,16 @@ export default function ManageUsersPage() {
             Create and manage airline users and their module access
           </p>
         </div>
-        <Button
-          onClick={handleOpenAddModal}
-          className="h-[50px] bg-primary hover:bg-primary-hover px-4.5 py-[9px] text-[16px] font-medium font-figtree transition-colors duration-200 cursor-pointer text-white flex items-center justify-center gap-2"
-          style={{ borderRadius: "10px" }}
-        >
-          <Plus className="h-5 w-5" />
-          <span>Add New</span>
-        </Button>
+        {hasPermission("edit") && (
+          <Button
+            onClick={handleOpenAddModal}
+            className="h-[50px] bg-primary hover:bg-primary-hover px-4.5 py-[9px] text-[16px] font-medium font-figtree transition-colors duration-200 cursor-pointer text-white flex items-center justify-center gap-2"
+            style={{ borderRadius: "10px" }}
+          >
+            <Plus className="h-5 w-5" />
+            <span>Add New</span>
+          </Button>
+        )}
       </div>
 
       {/* Filter and Search Bar */}
@@ -263,13 +267,13 @@ export default function ManageUsersPage() {
               <TableHead className="min-w-[100px]">
                 <SortHeader label="Status" field="isActive" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
               </TableHead>
-              <TableHead className="min-w-[89px]">Action</TableHead>
+              {hasPermission("edit") && <TableHead className="min-w-[89px]">Action</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={5} className="px-6 py-12 text-center text-gray-500 font-figtree">
+                <TableCell colSpan={hasPermission("edit") ? 5 : 4} className="px-6 py-12 text-center text-gray-500 font-figtree">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <svg className="animate-spin h-8 w-8 text-primary" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -299,41 +303,43 @@ export default function ManageUsersPage() {
                   <TableCell>
                     <StatusBadge status={user.isActive ? "Active" : "Inactive"} />
                   </TableCell>
-                  <TableCell>
-                    <div className="flex items-center justify-start gap-2.5">
-                      <Button
-                        variant="ghost"
-                        className="h-5 w-5 cursor-pointer p-0 hover:bg-transparent"
-                        size="icon"
-                        onClick={() => handleOpenEditModal(user)}
-                        disabled={isEditingId === user.id}
-                      >
-                        {isEditingId === user.id ? (
-                          <Loader2 className="h-4 w-4 animate-spin text-[#6B7280]" />
-                        ) : (
-                          <Image
-                            src="/icons/edit.svg"
-                            alt="Edit"
-                            width={20}
-                            height={20}
-                          />
-                        )}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        className="h-5 w-5 cursor-pointer p-0 hover:bg-transparent"
-                        size="icon"
-                        onClick={() => setDeleteTarget(user)}
-                      >
-                        <Trash2 className="h-5 w-5 text-[#6B7280] hover:text-rose-600 transition-colors" />
-                      </Button>
-                    </div>
-                  </TableCell>
+                  {hasPermission("edit") && (
+                    <TableCell>
+                      <div className="flex items-center justify-start gap-2.5">
+                        <Button
+                          variant="ghost"
+                          className="h-5 w-5 cursor-pointer p-0 hover:bg-transparent"
+                          size="icon"
+                          onClick={() => handleOpenEditModal(user)}
+                          disabled={isEditingId === user.id}
+                        >
+                          {isEditingId === user.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin text-[#6B7280]" />
+                          ) : (
+                            <Image
+                              src="/icons/edit.svg"
+                              alt="Edit"
+                              width={20}
+                              height={20}
+                            />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          className="h-5 w-5 cursor-pointer p-0 hover:bg-transparent"
+                          size="icon"
+                          onClick={() => setDeleteTarget(user)}
+                        >
+                          <Trash2 className="h-5 w-5 text-[#6B7280] hover:text-rose-600 transition-colors" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={5} className="px-6 py-10 text-center text-gray-500 font-figtree">
+                <TableCell colSpan={hasPermission("edit") ? 5 : 4} className="px-6 py-10 text-center text-gray-500 font-figtree">
                   No users found matching your search filters.
                 </TableCell>
               </TableRow>

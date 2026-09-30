@@ -23,12 +23,12 @@ export default function VerificationPage() {
     }
     return "otp";
   });
-  
+
   // 2FA / OTP States
   const [view, setView] = useState<ViewType>("tfa");
   const [code, setCode] = useState<string[]>(Array(6).fill(""));
   const [recoveryCode, setRecoveryCode] = useState("");
-  
+
   // Password Reset States
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -172,6 +172,12 @@ export default function VerificationPage() {
       }
     } catch (err: any) {
       toast.error(err.message || "Verification failed.");
+      if (err.status === 401 || err.response?.status === 401) {
+        sessionStorage.removeItem("two_factor_token");
+        sessionStorage.removeItem("two_factor_email");
+        sessionStorage.removeItem("two_factor_password");
+        router.push("/login");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -339,7 +345,7 @@ export default function VerificationPage() {
 
       {/* Main Container Card */}
       <div className="w-full bg-white rounded-[16px] border border-gray-200 p-[31px] flex flex-col gap-6 animate-fadeIn">
-        
+
         {/* Step 1: OTP / Recovery Form */}
         {step === "otp" && (
           <>
@@ -450,7 +456,7 @@ export default function VerificationPage() {
                     )}>
                       <input
                         type="text"
-                        placeholder="XXXXX-XXXXX"
+                        placeholder="XXXXXXXXXX"
                         value={recoveryCode}
                         onChange={(e) => {
                           setRecoveryCode(e.target.value);

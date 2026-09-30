@@ -42,7 +42,6 @@ const PERMISSION_ROWS: PermissionRow[] = [
   { key: "cancelledFlights", label: "Cancelled Flights" },
   { key: "bookings", label: "Bookings" },
   { key: "payments", label: "Payments" },
-  { key: "settings", label: "Settings" },
 ];
 
 const emptyPermissions = (): UserPermissions => ({
@@ -52,7 +51,6 @@ const emptyPermissions = (): UserPermissions => ({
   cancelledFlights: { view: false, edit: false, export: false, all: false },
   bookings: { view: false, edit: false, export: false, all: false },
   payments: { view: false, edit: false, export: false, all: false },
-  settings: { view: false, edit: false, export: false, all: false },
 });
 
 function superAdminPermissions(): UserPermissions {
@@ -63,7 +61,6 @@ function superAdminPermissions(): UserPermissions {
     cancelledFlights: { view: true, edit: true, export: true, all: true },
     bookings: { view: true, edit: true, export: true, all: true },
     payments: { view: true, edit: true, export: true, all: true },
-    settings: { view: true, edit: true, export: true, all: true },
   };
 }
 
@@ -92,7 +89,6 @@ function mapBackendAccessControlsToFrontend(
     else if (ac.asset === "CANCELLED_FLIGHTS") permissions.cancelledFlights = access;
     else if (ac.asset === "BOOKINGS") permissions.bookings = access;
     else if (ac.asset === "PAYMENTS") permissions.payments = access;
-    else if (ac.asset === "SETTINGS" || ac.asset === "PROFILE") permissions.settings = access;
   });
 
   return permissions;
@@ -119,7 +115,6 @@ function mapFrontendPermissionsToBackend(
   if (frontendPerms.cancelledFlights) addAsset("CANCELLED_FLIGHTS", frontendPerms.cancelledFlights);
   if (frontendPerms.bookings) addAsset("BOOKINGS", frontendPerms.bookings);
   if (frontendPerms.payments) addAsset("PAYMENTS", frontendPerms.payments);
-  if (frontendPerms.settings) addAsset("SETTINGS", frontendPerms.settings);
 
   return accessControls;
 }
@@ -238,7 +233,18 @@ export function ManageUserModal({
           },
         };
       } else {
-        modulePerms[level] = !modulePerms[level];
+        const newVal = !modulePerms[level];
+        modulePerms[level] = newVal;
+
+        if ((level === "edit" || level === "export") && newVal) {
+          modulePerms.view = true;
+        }
+
+        if (level === "view" && !newVal) {
+          modulePerms.edit = false;
+          modulePerms.export = false;
+        }
+
         modulePerms.all = modulePerms.view && modulePerms.edit && modulePerms.export;
         return {
           ...prev,
@@ -276,6 +282,16 @@ export function ManageUserModal({
             ...updated[key],
             [level]: newValue,
           };
+
+          if ((level === "edit" || level === "export") && newValue) {
+            updated[key].view = true;
+          }
+
+          if (level === "view" && !newValue) {
+            updated[key].edit = false;
+            updated[key].export = false;
+          }
+
           updated[key].all = updated[key].view && updated[key].edit && updated[key].export;
         }
       });
