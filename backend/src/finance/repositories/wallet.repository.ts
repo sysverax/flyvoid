@@ -306,6 +306,9 @@ export class WalletRepository {
       .leftJoinAndSelect("transaction.wallet", "wallet")
       .leftJoinAndSelect("wallet.airline", "airline")
       .orderBy("transaction.createdAt", "DESC")
+      // Tie-breaker for rows sharing the same createdAt - without it, ties
+      // have no guaranteed order and rows can shift between pages.
+      .addOrderBy("transaction.id", "DESC")
       .skip(skip)
       .take(filters.limit);
 

@@ -111,6 +111,9 @@ export class CancelledFlightsRepository {
       .leftJoinAndSelect("flight.departureAirport", "departureAirport")
       .leftJoinAndSelect("flight.arrivalAirport", "arrivalAirport")
       .orderBy("flight.createdAt", "DESC")
+      // Tie-breaker for rows sharing the same createdAt - without it, ties
+      // have no guaranteed order and rows can shift between pages.
+      .addOrderBy("flight.id", "DESC")
       .skip(skip)
       .take(limit);
 
@@ -336,6 +339,9 @@ export class CancelledFlightsRepository {
         cancelledFlightId,
       })
       .orderBy("booking.createdAt", "DESC")
+      // Tie-breaker for rows sharing the same createdAt - without it, ties
+      // have no guaranteed order and rows can shift between pages.
+      .addOrderBy("booking.id", "DESC")
       .skip(skip)
       .take(limit)
       .getManyAndCount();
@@ -528,6 +534,10 @@ export class CancelledFlightsRepository {
         cancelledFlightId,
       })
       .orderBy("booking.createdAt", "DESC")
+      // Tie-breaker for rows sharing the same createdAt (e.g. bulk-created
+      // in one transaction) - without it, ties have no guaranteed order and
+      // rows can shift between pages across requests.
+      .addOrderBy("hotelBooking.id", "DESC")
       .skip(skip)
       .take(limit)
       .getManyAndCount();

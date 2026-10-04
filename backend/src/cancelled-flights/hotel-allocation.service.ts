@@ -232,6 +232,14 @@ export class HotelAllocationService {
   }
 
   private roundCurrency(value: number): number {
+    // Every computed price passes through here before being persisted - if
+    // an upstream value is ever NaN/Infinity (e.g. a malformed supplier
+    // rate), stop it here rather than writing a poisoned total that
+    // silently NaNs every future SUM() over this column (Postgres numeric
+    // uniquely allows storing NaN, and COALESCE does not catch it).
+    if (!Number.isFinite(value)) {
+      return 0;
+    }
     return Math.round((value + Number.EPSILON) * 100) / 100;
   }
 

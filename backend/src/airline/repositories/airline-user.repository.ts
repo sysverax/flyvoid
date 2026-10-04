@@ -203,6 +203,9 @@ export class AirlineUserRepository {
 
     const [users, total] = await queryBuilder
       .orderBy("airlineUser.createdAt", "DESC")
+      // Tie-breaker for rows sharing the same createdAt - without it, ties
+      // have no guaranteed order and rows can shift between pages.
+      .addOrderBy("airlineUser.id", "DESC")
       .skip(skip)
       .take(query.limit)
       .getManyAndCount();

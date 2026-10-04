@@ -129,6 +129,9 @@ export class AirportRepository {
 
     const [airports, total] = await qb
       .orderBy("airport.createdAt", "DESC")
+      // Tie-breaker for rows sharing the same createdAt - without it, ties
+      // have no guaranteed order and rows can shift between pages.
+      .addOrderBy("airport.id", "DESC")
       .skip(skip)
       .take(query.limit)
       .getManyAndCount();
@@ -188,6 +191,9 @@ export class AirportRepository {
 
     const [airports, total] = await qb
       .orderBy("airport.createdAt", "DESC")
+      // Tie-breaker for rows sharing the same createdAt - without it, ties
+      // have no guaranteed order and rows can shift between pages.
+      .addOrderBy("airport.id", "DESC")
       .skip(skip)
       .take(query.limit)
       .getManyAndCount();

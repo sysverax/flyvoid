@@ -867,6 +867,7 @@ function PublishedDetailView({
         flightId={flightId}
         hotelBookingId={selectedDrawerHotelBookingId}
         detailData={selectedDrawerDetailData}
+        downloadType="download"
       />
     </div>
   );

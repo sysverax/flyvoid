@@ -45,6 +45,9 @@ export class HotelBookingsRepository {
       .leftJoinAndSelect("cancelledFlight.arrivalAirport", "arrivalAirport")
       .leftJoinAndSelect("cancelledFlight.airline", "airline")
       .orderBy("hotelBooking.createdAt", "DESC")
+      // Tie-breaker for rows sharing the same createdAt - without it, ties
+      // have no guaranteed order and rows can shift between pages.
+      .addOrderBy("hotelBooking.id", "DESC")
       .skip(skip)
       .take(filters.limit);
 
@@ -199,9 +202,18 @@ export class HotelBookingsRepository {
         "COALESCE(SUM(cancelledFlight.totalHotelRooms), 0)",
         "totalRooms",
       )
-      .addSelect("COALESCE(SUM(cancelledFlight.totalPrice), 0)", "totalCost")
+      // Postgres numeric uniquely allows storing NaN (distinct from NULL),
+      // and SUM() propagates it through the whole aggregate - COALESCE
+      // alone doesn't catch it, since it only substitutes for NULL. The
+      // CASE guards below treat a poisoned row as a 0 contribution instead
+      // of silently NaN-ing (and, once serialized to JSON, null-ing) this
+      // entire summary.
       .addSelect(
-        "COALESCE(SUM(cancelledFlight.totalPlatformFee), 0)",
+        "COALESCE(SUM(CASE WHEN cancelledFlight.totalPrice = 'NaN' THEN 0 ELSE cancelledFlight.totalPrice END), 0)",
+        "totalCost",
+      )
+      .addSelect(
+        "COALESCE(SUM(CASE WHEN cancelledFlight.totalPlatformFee = 'NaN' THEN 0 ELSE cancelledFlight.totalPlatformFee END), 0)",
         "totalPlatformFee",
       )
       .getRawOne<{
@@ -218,13 +230,22 @@ export class HotelBookingsRepository {
       airlineId,
     });
 
+    // Second line of defense on top of the SQL-level NaN guards above - a
+    // non-finite value here would otherwise serialize to JSON as `null`
+    // (JSON.stringify(NaN) === "null"), which is how this bug originally
+    // surfaced to API consumers.
+    const toFiniteNumber = (value: unknown): number => {
+      const num = Number(value ?? 0);
+      return Number.isFinite(num) ? num : 0;
+    };
+
     return {
-      totalCancelFlights: Number(raw?.totalCancelFlights ?? 0),
-      totalBookings: Number(raw?.totalBookings ?? 0),
-      totalPassengers: Number(raw?.totalPassengers ?? 0),
-      totalRooms: Number(raw?.totalRooms ?? 0),
-      totalCost: Number(raw?.totalCost ?? 0),
-      totalPlatformFee: Number(raw?.totalPlatformFee ?? 0),
+      totalCancelFlights: toFiniteNumber(raw?.totalCancelFlights),
+      totalBookings: toFiniteNumber(raw?.totalBookings),
+      totalPassengers: toFiniteNumber(raw?.totalPassengers),
+      totalRooms: toFiniteNumber(raw?.totalRooms),
+      totalCost: toFiniteNumber(raw?.totalCost),
+      totalPlatformFee: toFiniteNumber(raw?.totalPlatformFee),
     };
   }
 
@@ -242,6 +263,7 @@ export class HotelBookingsRepository {
       relations: [
         "booking",
         "cancelledFlight",
+        "cancelledFlight.airline",
         "cancelledFlight.departureAirport",
         "cancelledFlight.arrivalAirport",
       ],

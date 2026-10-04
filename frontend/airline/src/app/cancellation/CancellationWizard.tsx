@@ -3739,6 +3739,7 @@ export default function CancellationWizard({
         flightId={selectedDrawerFlightId}
         hotelBookingId={selectedDrawerHotelBookingId}
         detailData={selectedDrawerDetailData}
+        downloadType="download"
       />
     </div>
   );

@@ -1,3 +1,14 @@
+import {
+  escapeHtml,
+  titleCase,
+  renderStars,
+  LOGO_SVG,
+  PDF_BRAND,
+  FONT_IMPORT,
+  FONT_FAMILY,
+  STARS_CSS,
+} from "../../common/pdf/pdf-brand";
+
 export interface HotelAllocationReportRow {
   hotelBookingId: number;
   pnr: string;
@@ -44,15 +55,6 @@ export interface HotelAllocationReportInput {
   };
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
 function formatMoney(amount: number, currency: string): string {
   const value = Number.isFinite(amount) ? amount : 0;
   return `${escapeHtml(currency)} ${value.toLocaleString("en-US", {
@@ -61,25 +63,12 @@ function formatMoney(amount: number, currency: string): string {
   })}`;
 }
 
-function titleCase(value: string): string {
-  return value
-    .split(/[_\s]+/)
-    .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(" ");
-}
-
+// TODO: Unrated hotels currently default to a 4-star display rather than
+// showing "Unrated" - remove this fallback once every supplier reliably
+// returns a real star category.
 function renderRating(rating: string): string {
   const match = rating.match(/(\d+(?:\.\d+)?)/);
-  // TODO: Unrated hotels currently default to a 4-star display rather than
-  // showing "Unrated" - remove this fallback once every supplier reliably
-  // returns a real star category.
-  const stars = match
-    ? Math.max(0, Math.min(5, Math.round(Number(match[1]))))
-    : 4;
-  const filled = "&#9733;".repeat(stars);
-  const empty = "&#9733;".repeat(5 - stars);
-  return `<span class="stars"><span class="stars-filled">${filled}</span><span class="stars-empty">${empty}</span></span>`;
+  return match ? renderStars(rating) : renderStars("4 STARS");
 }
 
 function renderRow(row: HotelAllocationReportRow, currency: string): string {
@@ -132,10 +121,10 @@ export function buildHotelAllocationReportHtml(
 <head>
 <meta charset="utf-8" />
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,300..900;1,300..900&display=swap');
+  ${FONT_IMPORT}
   * { box-sizing: border-box; }
   body {
-    font-family: 'Figtree', 'Helvetica Neue', Arial, sans-serif;
+    font-family: ${FONT_FAMILY};
     color: #1f2430;
     font-size: 11px;
     margin: 0;
@@ -144,7 +133,7 @@ export function buildHotelAllocationReportHtml(
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 3px solid #0F2757;
+    border-bottom: 3px solid ${PDF_BRAND.navy};
     padding-bottom: 14px;
     margin-bottom: 20px;
   }
@@ -154,7 +143,7 @@ export function buildHotelAllocationReportHtml(
     gap: 12px;
   }
   .brand-logo {
-    background: #0F2757;
+    background: ${PDF_BRAND.navy};
     border-radius: 8px;
     padding: 10px 14px;
     display: flex;
@@ -214,7 +203,7 @@ export function buildHotelAllocationReportHtml(
   tfoot { display: table-row-group; }
   tr { page-break-inside: avoid; }
   th {
-    background: #0F2757;
+    background: ${PDF_BRAND.navy};
     color: #ffffff;
     text-align: left;
     font-size: 9.5px;
@@ -234,7 +223,7 @@ export function buildHotelAllocationReportHtml(
   tbody tr:nth-child(even) { background: #f9fafc; }
   tfoot .totals-row td {
     border-bottom: none;
-    border-top: 2px solid #0F2757;
+    border-top: 2px solid ${PDF_BRAND.navy};
     background: #f6f8fb;
     font-size: 11px;
     padding: 9px 8px;
@@ -245,9 +234,7 @@ export function buildHotelAllocationReportHtml(
   .small { font-size: 9px; }
   .right { text-align: right; }
   .center { text-align: center; }
-  .stars { white-space: nowrap; }
-  .stars-filled { color: #F59E0B; font-size: 11px; }
-  .stars-empty { color: #E5E7EB; font-size: 11px; }
+  ${STARS_CSS}
   .summary {
     display: flex;
     justify-content: flex-end;
@@ -265,12 +252,12 @@ export function buildHotelAllocationReportHtml(
   }
   .summary-row.total {
     border-bottom: none;
-    border-top: 2px solid #0F2757;
+    border-top: 2px solid ${PDF_BRAND.navy};
     margin-top: 4px;
     padding-top: 8px;
     font-size: 13px;
     font-weight: 700;
-    color: #0F2757;
+    color: ${PDF_BRAND.navy};
   }
   .footer-note {
     margin-top: 28px;
@@ -287,13 +274,7 @@ export function buildHotelAllocationReportHtml(
     <div>
       <div class="brand">
         <div class="brand-logo">
-          <svg width="150" height="37" viewBox="0 0 150 37" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect x="0" y="3" width="31" height="31" rx="8" fill="white" fill-opacity="0.14"/>
-            <g transform="translate(5.9, 8.5) scale(0.833)">
-              <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2.5 1.5V22l4-1 4 1v-1.5L13 19v-5.5l8 2.5z" fill="white"/>
-            </g>
-            <text x="40" y="26" font-family="'Figtree', 'Helvetica Neue', Arial, sans-serif" font-size="22" font-weight="700" letter-spacing="0.2" fill="white">FlyVoid</text>
-          </svg>
+          ${LOGO_SVG}
         </div>
       </div>
       <div class="brand-sub">Disruption Hotel Accommodation Services</div>

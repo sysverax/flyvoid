@@ -40,6 +40,7 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RbacGuard } from "../auth/guards/rbac.guard";
 import {
   RequireAccessControl,
+  RequireUserRoles,
   RequireUserTypes,
 } from "../auth/decorators/rbac.decorator";
 import {
@@ -802,54 +803,6 @@ export class CancelledFlightsController {
     );
   }
 
-  // ── POST /cancelled-flights/:id/hotel-recommendations ───────────────────
-  @Post(":id/hotel-recommendations")
-  @RequireAccessControl({
-    airline: {
-      asset: AirlineAsset.CANCELLED_FLIGHTS,
-      access: [AccessAction.VIEW],
-    },
-  })
-  @ApiOperation({
-    summary:
-      "Generate hotel recommendations for all bookings of a cancelled flight",
-    description:
-      "Builds preferred/fallback room occupancies per booking, performs a single hotel supplier availability search across deduplicated occupancies, and returns recommendation allocations without creating live hotel bookings.",
-  })
-  @ApiParam({ name: "id", description: "Cancelled flight id" })
-  @ApiNotFoundResponse({
-    schema: createNotFoundErrorSchema(
-      "/api/v1/cancelled-flights/:id/hotel-recommendations",
-      "Cancelled flight not found",
-    ),
-  })
-  @ApiBadRequestResponse({
-    schema: createBadRequestErrorSchema(
-      "/api/v1/cancelled-flights/:id/hotel-recommendations",
-    ),
-  })
-  async getFlightHotelRecommendations(
-    @Param("id", ParseIntPipe) id: number,
-    @RequestId() requestId: string,
-    @RequestLogger() requestLogger: Logger,
-  ): Promise<BaseResponseDto<object>> {
-    requestLogger.info(
-      `Fetching hotel recommendations for cancelled flight ${id}`,
-      { context: this.context },
-    );
-    const data =
-      await this.hotelAllocationService.getHotelRecommendationsForFlight(
-        id,
-        requestId,
-        requestLogger,
-      );
-    return BaseResponseDto.success(
-      data,
-      requestId,
-      "Hotel recommendations generated successfully",
-    );
-  }
-
   // ── POST /cancelled-flights/:id/hotel-allocations ───────────────────
   @Post(":id/hotel-allocations")
   @RequireAccessControl({
@@ -896,48 +849,6 @@ export class CancelledFlightsController {
       data,
       requestId,
       "Hotel allocations generated successfully",
-    );
-  }
-
-  // ── POST /cancelled-flights/:id/hotel-bookings ───────────────────
-
-  // ── GET /cancelled-flights/:id/bookings/:bookingId/hotel-recommendations ──
-  @Get(":id/bookings/:bookingId/hotel-recommendations")
-  @RequireAccessControl({
-    airline: {
-      asset: AirlineAsset.CANCELLED_FLIGHTS,
-      access: [AccessAction.VIEW],
-    },
-  })
-  @ApiOperation({
-    summary: "Get AI-recommended hotels for a passenger on a cancelled flight",
-    description:
-      "Fetches a list of local candidate hotels and scores them dynamically using the configured AI model based on the passenger's class and special needs.",
-  })
-  @ApiParam({ name: "id", description: "Cancelled flight UUID" })
-  @ApiParam({ name: "bookingId", description: "Booking UUID" })
-  @ApiNotFoundResponse({
-    schema: createNotFoundErrorSchema(
-      "/api/v1/cancelled-flights/:id/bookings/:bookingId/hotel-recommendations",
-      "Cancelled flight or booking not found",
-    ),
-  })
-  async getHotelRecommendations(
-    @Param("id", ParseIntPipe) id: number,
-    @Param("bookingId", ParseIntPipe) bookingId: number,
-    @RequestId() requestId: string,
-    @RequestLogger() requestLogger: Logger,
-  ): Promise<BaseResponseDto<object>> {
-    const data = await this.hotelAllocationService.getHotelRecommendations(
-      id,
-      bookingId,
-      requestId,
-      requestLogger,
-    );
-    return BaseResponseDto.success(
-      data,
-      requestId,
-      "AI Hotel recommendations fetched successfully",
     );
   }
 
@@ -1030,7 +941,8 @@ export class CancelledFlightsController {
     },
   })
   @ApiOperation({
-    summary: "Download the hotel allocation invoice/report for a cancelled flight",
+    summary:
+      "Download the hotel allocation invoice/report for a cancelled flight",
     description:
       "Generates a PDF invoice listing every PNR's hotel allocation (contact, passengers, hotel, rating, rooms, and cost) for the cancelled flight, plus a cost summary. Only available once the flight has reached 'allocated', 'paid', or 'published' status.",
   })
@@ -1062,6 +974,96 @@ export class CancelledFlightsController {
       "Content-Disposition": `attachment; filename="${fileName}"`,
     });
     res.send(pdf);
+  }
+
+  // ── POST /cancelled-flights/:id/hotel-recommendations ───────────────────
+  @Post(":id/hotel-recommendations")
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.VIEW],
+    },
+  })
+  @ApiOperation({
+    summary:
+      "Generate hotel recommendations for all bookings of a cancelled flight",
+    description:
+      "Builds preferred/fallback room occupancies per booking, performs a single hotel supplier availability search across deduplicated occupancies, and returns recommendation allocations without creating live hotel bookings.",
+  })
+  @ApiParam({ name: "id", description: "Cancelled flight id" })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/cancelled-flights/:id/hotel-recommendations",
+      "Cancelled flight not found",
+    ),
+  })
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema(
+      "/api/v1/cancelled-flights/:id/hotel-recommendations",
+    ),
+  })
+  async getFlightHotelRecommendations(
+    @Param("id", ParseIntPipe) id: number,
+    @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
+  ): Promise<BaseResponseDto<object>> {
+    requestLogger.info(
+      `Fetching hotel recommendations for cancelled flight ${id}`,
+      { context: this.context },
+    );
+    const data =
+      await this.hotelAllocationService.getHotelRecommendationsForFlight(
+        id,
+        requestId,
+        requestLogger,
+      );
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Hotel recommendations generated successfully",
+    );
+  }
+
+  // ── POST /cancelled-flights/:id/hotel-bookings ───────────────────
+
+  // ── GET /cancelled-flights/:id/bookings/:bookingId/hotel-recommendations ──
+  @Get(":id/bookings/:bookingId/hotel-recommendations")
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.VIEW],
+    },
+  })
+  @ApiOperation({
+    summary: "Get AI-recommended hotels for a passenger on a cancelled flight",
+    description:
+      "Fetches a list of local candidate hotels and scores them dynamically using the configured AI model based on the passenger's class and special needs.",
+  })
+  @ApiParam({ name: "id", description: "Cancelled flight UUID" })
+  @ApiParam({ name: "bookingId", description: "Booking UUID" })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/cancelled-flights/:id/bookings/:bookingId/hotel-recommendations",
+      "Cancelled flight or booking not found",
+    ),
+  })
+  async getHotelRecommendations(
+    @Param("id", ParseIntPipe) id: number,
+    @Param("bookingId", ParseIntPipe) bookingId: number,
+    @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
+  ): Promise<BaseResponseDto<object>> {
+    const data = await this.hotelAllocationService.getHotelRecommendations(
+      id,
+      bookingId,
+      requestId,
+      requestLogger,
+    );
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "AI Hotel recommendations fetched successfully",
+    );
   }
 
   // // ── POST /cancelled-flights/:id/bookings/:bookingId/allocate-hotel ───────

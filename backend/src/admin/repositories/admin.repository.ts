@@ -113,6 +113,9 @@ export class AdminRepository {
 
     queryBuilder
       .orderBy("admin.createdAt", "DESC")
+      // Tie-breaker for rows sharing the same createdAt - without it, ties
+      // have no guaranteed order and rows can shift between pages.
+      .addOrderBy("admin.id", "DESC")
       .skip(skip)
       .take(adminUserQuery.limit);
 
