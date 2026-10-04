@@ -143,6 +143,129 @@ export class CancelledFlightsRepository {
     return { flights, totalCount };
   }
 
+  async getCancelledFlightsSummary(
+    {
+      status,
+      search,
+      airlineId,
+      startDate,
+      endDate,
+    }: {
+      status?: FlightStatus;
+      search?: string;
+      airlineId?: number;
+      startDate?: string;
+      endDate?: string;
+    },
+    requestLogger: Logger,
+  ): Promise<{
+    totalCancelFlights: number;
+    totalAdults: number;
+    totalChildren: number;
+    totalBookings: number;
+    totalRooms: number;
+    totalHotelCost: number;
+    totalHotelTax: number;
+    totalDiscount: number;
+    totalCost: number;
+    totalPlatformFee: number;
+  }> {
+    requestLogger.debug("Querying cancelled flights summary", {
+      context: this.context,
+      status,
+      search,
+      airlineId,
+      startDate,
+      endDate,
+    });
+
+    const qb = this.flightRepo.createQueryBuilder("flight");
+
+    if (typeof airlineId === "number") {
+      qb.andWhere("flight.airlineId = :airlineId", { airlineId });
+    }
+
+    if (status) {
+      qb.andWhere("flight.status = :status", { status });
+    }
+
+    if (search?.trim()) {
+      qb.andWhere("CAST(flight.flight_number AS TEXT) ILIKE :search", {
+        search: `%${search.trim()}%`,
+      });
+    }
+
+    if (startDate) {
+      qb.andWhere("flight.cancellationDate >= :startDate", { startDate });
+    }
+
+    if (endDate) {
+      qb.andWhere("flight.cancellationDate <= :endDate", { endDate });
+    }
+
+    // Postgres numeric uniquely allows storing NaN (distinct from NULL), and
+    // SUM() propagates it through the whole aggregate - COALESCE alone
+    // doesn't catch it, since it only substitutes for NULL. The CASE guards
+    // below treat a poisoned row as a 0 contribution instead of silently
+    // NaN-ing (and, once serialized to JSON, null-ing) this entire summary.
+    const sumIgnoringNaN = (column: string) =>
+      `COALESCE(SUM(CASE WHEN ${column} = 'NaN' THEN 0 ELSE ${column} END), 0)`;
+
+    const raw = await qb
+      .select("COUNT(flight.id)", "totalCancelFlights")
+      .addSelect("COALESCE(SUM(flight.totalAdults), 0)", "totalAdults")
+      .addSelect("COALESCE(SUM(flight.totalChildren), 0)", "totalChildren")
+      .addSelect("COALESCE(SUM(flight.totalBooking), 0)", "totalBookings")
+      .addSelect("COALESCE(SUM(flight.totalHotelRooms), 0)", "totalRooms")
+      .addSelect(
+        sumIgnoringNaN("flight.totalSellingPrice"),
+        "totalHotelCost",
+      )
+      .addSelect(sumIgnoringNaN("flight.totalHotelTaxes"), "totalHotelTax")
+      .addSelect(sumIgnoringNaN("flight.totalDiscounts"), "totalDiscount")
+      .addSelect(sumIgnoringNaN("flight.totalPrice"), "totalCost")
+      .addSelect(
+        sumIgnoringNaN("flight.totalPlatformFee"),
+        "totalPlatformFee",
+      )
+      .getRawOne<{
+        totalCancelFlights: string;
+        totalAdults: string;
+        totalChildren: string;
+        totalBookings: string;
+        totalRooms: string;
+        totalHotelCost: string;
+        totalHotelTax: string;
+        totalDiscount: string;
+        totalCost: string;
+        totalPlatformFee: string;
+      }>();
+
+    requestLogger.debug("Cancelled flights summary query complete", {
+      context: this.context,
+    });
+
+    // Second line of defense on top of the SQL-level NaN guards above - a
+    // non-finite value here would otherwise serialize to JSON as `null`.
+    const toFiniteNumber = (value: unknown): number => {
+      const num = Number(value ?? 0);
+      return Number.isFinite(num) ? num : 0;
+    };
+
+    return {
+      totalCancelFlights: toFiniteNumber(raw?.totalCancelFlights),
+      totalAdults: toFiniteNumber(raw?.totalAdults),
+      totalChildren: toFiniteNumber(raw?.totalChildren),
+      totalBookings: toFiniteNumber(raw?.totalBookings),
+      totalRooms: toFiniteNumber(raw?.totalRooms),
+      totalHotelCost: toFiniteNumber(raw?.totalHotelCost),
+      totalHotelTax: toFiniteNumber(raw?.totalHotelTax),
+      totalDiscount: toFiniteNumber(raw?.totalDiscount),
+      totalCost: toFiniteNumber(raw?.totalCost),
+      totalPlatformFee: toFiniteNumber(raw?.totalPlatformFee),
+    };
+  }
+
   async updateFlightStatus({
     cancelledFlightEntity,
     status,

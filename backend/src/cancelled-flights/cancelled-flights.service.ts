@@ -38,6 +38,8 @@ import { Logger } from "winston";
 import { AuthenticatedUser } from "../auth/interfaces/authenticated-request.interface";
 import { UserType } from "../common/constants/user.constants";
 import { GetCancelledFlightsQueryDto } from "./dto/get-cancelled-flights-query.dto";
+import { GetCancelledFlightsSummaryQueryDto } from "./dto/get-cancelled-flights-summary-query.dto";
+import { CancelledFlightsSummaryResponseDto } from "./dto/cancelled-flights-summary-response.dto";
 import { request } from "http";
 import { config } from "../config/config";
 import { CancelledFlightBookingsListResponseDto } from "./dto/cancelled-flight-bookings-list-response.dto";
@@ -758,6 +760,84 @@ export class CancelledFlightsService {
         totalCount,
       },
     };
+  }
+
+  // ── Summary ──────────────────────────────────────────────────────────────
+  async getCancelledFlightsSummary(
+    user: AuthenticatedUser,
+    query: GetCancelledFlightsSummaryQueryDto,
+    requestLogger: Logger,
+  ): Promise<CancelledFlightsSummaryResponseDto> {
+    const startDate = query.startDate;
+    const endDate = query.endDate;
+
+    if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
+      requestLogger.warn(
+        "Rejected cancelled flights summary query: startDate after endDate",
+        { context: this.context, startDate, endDate },
+      );
+      throw new BadRequestException("startDate cannot be later than endDate");
+    }
+
+    let airlineScopeId: number | undefined;
+
+    if (user.userType === UserType.AIRLINE) {
+      airlineScopeId = user.airlineId;
+
+      if (!airlineScopeId) {
+        requestLogger.error(
+          "Authenticated airline user does not have an associated airlineId",
+          { context: this.context, userId: user.sub },
+        );
+        throw new BadRequestException(
+          "Authenticated airline user does not have an associated airlineId",
+        );
+      }
+
+      if (query.airlineId && query.airlineId !== airlineScopeId) {
+        requestLogger.warn(
+          "Rejected cancelled flights summary query: airlineId filter for another airline",
+          {
+            context: this.context,
+            requestedAirlineId: query.airlineId,
+            ownAirlineId: airlineScopeId,
+          },
+        );
+        throw new BadRequestException(
+          "airlineId filter is not allowed for other airlines",
+        );
+      }
+    } else {
+      airlineScopeId = query.airlineId;
+    }
+
+    requestLogger.info("Fetching cancelled flights summary", {
+      context: this.context,
+      status: query.status,
+      search: query.search,
+      airlineId: airlineScopeId,
+      startDate,
+      endDate,
+    });
+
+    const summary =
+      await this.cancelledFlightsRepository.getCancelledFlightsSummary(
+        {
+          status: query.status,
+          search: query.search,
+          airlineId: airlineScopeId,
+          startDate,
+          endDate,
+        },
+        requestLogger,
+      );
+
+    requestLogger.info("Cancelled flights summary fetched", {
+      context: this.context,
+      ...summary,
+    });
+
+    return summary;
   }
 
   // ── List bookings ────────────────────────────────────────────────────────

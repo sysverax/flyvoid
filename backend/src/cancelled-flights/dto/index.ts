@@ -1,5 +1,7 @@
 export * from "./cancelled-flight-list-response.dto";
 export * from "./get-cancelled-flights-query.dto";
+export * from "./get-cancelled-flights-summary-query.dto";
+export * from "./cancelled-flights-summary-response.dto";
 
 export * from "./cancelled-flight-response.dto";
 export * from "./create-cancelled-flight-request.dto";

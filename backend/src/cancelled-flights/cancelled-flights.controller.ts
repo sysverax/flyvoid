@@ -85,6 +85,8 @@ import { AuthenticatedRequest } from "../auth/interfaces/authenticated-request.i
 import { RequestLogger } from "../common/decorators/request-logger.decorator";
 import { Logger } from "winston";
 import { GetCancelledFlightsQueryDto } from "./dto/get-cancelled-flights-query.dto";
+import { GetCancelledFlightsSummaryQueryDto } from "./dto/get-cancelled-flights-summary-query.dto";
+import { CancelledFlightsSummaryResponseDto } from "./dto/cancelled-flights-summary-response.dto";
 
 @ApiTags("Cancelled Flights")
 @ApiBearerAuth("access-token")
@@ -101,6 +103,7 @@ import { GetCancelledFlightsQueryDto } from "./dto/get-cancelled-flights-query.d
   CancelledFlightHotelBookingListResponseDto,
   HotelSummaryCancelledFlightResponseDto,
   HotelBookingDetailResponseDto,
+  CancelledFlightsSummaryResponseDto,
 )
 export class CancelledFlightsController {
   private readonly context = "CancelledFlightsController";
@@ -172,6 +175,66 @@ export class CancelledFlightsController {
       data,
       requestId,
       "Cancelled flights fetched successfully",
+    );
+  }
+
+  // ── GET /cancelled-flights/summary ───────────────────────────────────────
+  // Registered before ":id/..." routes so "summary" isn't swallowed by them.
+  @Get("summary")
+  @RequireUserTypes(UserType.PLATFORM, UserType.AIRLINE)
+  @RequireAccessControl({
+    platform: {
+      asset: PlatformAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.VIEW],
+    },
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.VIEW],
+    },
+  })
+  @ApiOperation({
+    summary: "Get cancelled flights summary",
+    description:
+      "Returns aggregate totals (flights, adults, children, bookings, rooms, hotel cost, hotel tax, discount, total cost, platform fee) for cancelled flights matching the same filters as GET /cancelled-flights: status, search, airlineId, startDate, endDate. Platform users can view all airlines and can filter by airlineId; airline users only see totals for their own airline.",
+  })
+  @ApiOkResponse({
+    schema: {
+      properties: {
+        success: { type: "boolean", example: true },
+        requestId: { type: "string", example: REQUEST_ID_EXAMPLE },
+        timestamp: { type: "string", example: TIMESTAMP_EXAMPLE },
+        message: {
+          type: "string",
+          example: "Cancelled flights summary fetched successfully",
+        },
+        data: { $ref: getSchemaPath(CancelledFlightsSummaryResponseDto) },
+      },
+    },
+  })
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema("/api/v1/cancelled-flights/summary"),
+  })
+  @ApiUnauthorizedResponse({
+    schema: createUnauthorizedErrorSchema(
+      "/api/v1/cancelled-flights/summary",
+      "Unauthorized",
+    ),
+  })
+  async getCancelledFlightsSummary(
+    @Req() req: AuthenticatedRequest,
+    @Query() query: GetCancelledFlightsSummaryQueryDto,
+    @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
+  ): Promise<BaseResponseDto<CancelledFlightsSummaryResponseDto>> {
+    const data = await this.service.getCancelledFlightsSummary(
+      req.user,
+      query,
+      requestLogger,
+    );
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Cancelled flights summary fetched successfully",
     );
   }
 
