@@ -82,8 +82,8 @@ export function Sidebar() {
       <div className="relative h-14 w-full">
         <Image
           src="/logo.svg"
-          alt="Airbook logo"
-          width={142}
+          alt="FlyVoid logo"
+          width={150}
           height={37}
           className="absolute -top-1 left-[14px]"
           priority

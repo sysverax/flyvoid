@@ -41,6 +41,12 @@ import { GetCancelledFlightsQueryDto } from "./dto/get-cancelled-flights-query.d
 import { request } from "http";
 import { config } from "../config/config";
 import { CancelledFlightBookingsListResponseDto } from "./dto/cancelled-flight-bookings-list-response.dto";
+import { PdfService } from "../common/pdf/pdf.service";
+import {
+  buildHotelAllocationReportHtml,
+  HotelAllocationReportRow,
+} from "./templates/hotel-allocation-report.template";
+import { HotelAllocationEntity } from "./entities/hotel-allocation.entity";
 
 @Injectable()
 export class CancelledFlightsService {
@@ -55,6 +61,7 @@ export class CancelledFlightsService {
 
   constructor(
     private readonly cancelledFlightsRepository: CancelledFlightsRepository,
+    private readonly pdfService: PdfService,
   ) {}
 
   private toCancelledFlightResponse(
@@ -1315,6 +1322,177 @@ export class CancelledFlightsService {
     // );
 
     return this.toCancelledFlightResponse(updatedFlight);
+  }
+
+  // ── Hotel allocation invoice/report (PDF) ──────────────────────────────
+  // Supplier room names carry booking-engine caveats in parentheses, e.g.
+  // "Junior Suite (smoking, bed type is subject to availability)" - the
+  // invoice only needs the room type itself.
+  private simplifyRoomName(roomName: string): string {
+    // Truncate at the first "(" rather than matching balanced pairs - some
+    // suppliers nest parentheses (e.g. "Junior Suite (Smoking (subject to
+    // availability))"), which a single-level regex can't close correctly
+    // and leaves a stray ")" behind.
+    const simplified = roomName.split("(")[0].trim();
+    return simplified || roomName.trim();
+  }
+
+  private summarizeAllocationRooms(
+    rooms: HotelAllocationEntity["rooms"],
+  ): { adults: number; children: number; roomsSummary: string } {
+    let adults = 0;
+    let children = 0;
+    const roomNames = new Set<string>();
+
+    for (const room of rooms ?? []) {
+      adults += room.adults ?? 0;
+      children += room.children ?? 0;
+      roomNames.add(
+        room.roomName ? this.simplifyRoomName(room.roomName) : "Room",
+      );
+    }
+
+    return {
+      adults,
+      children,
+      roomsSummary: Array.from(roomNames).join(", ") || "-",
+    };
+  }
+
+  async generateHotelAllocationReport(
+    flightId: number,
+    user: AuthenticatedUser,
+    requestLogger: Logger,
+  ): Promise<{ fileName: string; pdf: Buffer }> {
+    const flight = await this.cancelledFlightsRepository.findFlightWithRelations(
+      flightId,
+      requestLogger,
+    );
+
+    if (!flight) {
+      requestLogger.warn("Cancelled flight not found for report", {
+        context: this.context,
+        flightId,
+      });
+      throw new NotFoundException(`Cancelled flight '${flightId}' not found`);
+    }
+
+    if (user.userType === UserType.AIRLINE && flight.airlineId !== user.airlineId) {
+      requestLogger.warn("Rejected report access: airline mismatch", {
+        context: this.context,
+        flightId,
+        userAirlineId: user.airlineId,
+      });
+      throw new NotFoundException(`Cancelled flight '${flightId}' not found`);
+    }
+
+    const allowedStatuses = [
+      FlightStatus.ALLOCATED,
+      FlightStatus.PAID,
+      FlightStatus.PUBLISHED,
+    ];
+    if (!allowedStatuses.includes(flight.status)) {
+      requestLogger.warn("Rejected report generation: flight not allocated", {
+        context: this.context,
+        flightId,
+        status: flight.status,
+      });
+      throw new BadRequestException(
+        `Cannot generate the hotel allocation report for flight '${flightId}' from status '${flight.status}'. Flight must be 'allocated', 'paid', or 'published'.`,
+      );
+    }
+
+    const allocations =
+      await this.cancelledFlightsRepository.findAllHotelBookingsByFlightId(
+        flightId,
+        requestLogger,
+      );
+
+    const rows: HotelAllocationReportRow[] = allocations.map((allocation) => {
+      const { adults, children, roomsSummary } = this.summarizeAllocationRooms(
+        allocation.rooms,
+      );
+
+      return {
+        hotelBookingId: allocation.id,
+        pnr: allocation.booking.pnr,
+        passengerName: `${allocation.booking.firstName} ${allocation.booking.lastName}`,
+        adults,
+        children,
+        travelClass: allocation.booking.travelClass,
+        hotelName: allocation.hotelName,
+        hotelAddress: allocation.address ?? null,
+        rating: allocation.category,
+        roomsSummary,
+        totalRooms: allocation.totalRooms,
+        cost: Number(allocation.sellingPrice),
+        totalCost: Number(allocation.totalPrice),
+      };
+    });
+
+    const invoiceNumber = `FV-INV-${String(flight.id).padStart(6, "0")}`;
+    const invoiceDate = new Date().toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+    });
+    const cancellationDate = new Date(flight.cancellationDate).toLocaleDateString(
+      "en-US",
+      { year: "numeric", month: "short", day: "2-digit" },
+    );
+    const statusLabel =
+      flight.status.charAt(0).toUpperCase() + flight.status.slice(1);
+
+    const html = buildHotelAllocationReportHtml({
+      invoiceNumber,
+      invoiceDate,
+      currency: flight.airline.currency,
+      airline: {
+        name: flight.airline.name,
+        code: flight.airline.code,
+        address: flight.airline.address,
+        contactEmail: flight.airline.contactEmail,
+        contactPhone: flight.airline.contactPhone,
+      },
+      flight: {
+        flightNumber: flight.flightNumber,
+        departure: `${flight.departureAirport.iataCode} - ${flight.departureAirport.city}`,
+        arrival: `${flight.arrivalAirport.iataCode} - ${flight.arrivalAirport.city}`,
+        cancellationDate,
+        statusLabel,
+      },
+      rows,
+      totals: {
+        totalBookings: allocations.length,
+        totalRooms: flight.totalHotelRooms ?? 0,
+        subtotal: Number(flight.totalSellingPrice ?? 0),
+        tax: Number(flight.totalHotelTaxes ?? 0),
+        platformFeePercentage: Number(flight.platformFeePercentage ?? 0),
+        platformFee: Number(flight.totalPlatformFee ?? 0),
+        grandTotal: Number(flight.totalPrice ?? 0),
+      },
+    });
+
+    requestLogger.info("Rendering hotel allocation report PDF", {
+      context: this.context,
+      flightId,
+      rowCount: rows.length,
+    });
+
+    const pdf = await this.pdfService.renderHtmlToPdf(html, requestLogger, {
+      landscape: true,
+    });
+
+    requestLogger.info("Hotel allocation report generated", {
+      context: this.context,
+      flightId,
+      rowCount: rows.length,
+    });
+
+    return {
+      fileName: `invoice-${flight.flightNumber}-${flight.id}.pdf`,
+      pdf,
+    };
   }
 
   // private async sendFlightPublishedEmail(

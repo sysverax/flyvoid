@@ -13,6 +13,7 @@ import { CancelledFlightsRepository } from "./cancelled-flights.repository";
 import { AiService } from "../common/ai/ai.service";
 import { HOTEL_PROVIDER } from "./hotel-providers/hotel-provider.interface";
 import { hotelProviderRegistration } from "./hotel-providers/hotel-provider.registry";
+import { PdfService } from "../common/pdf/pdf.service";
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { hotelProviderRegistration } from "./hotel-providers/hotel-provider.regi
     CancelledFlightsRepository,
     AiService,
     hotelProviderRegistration,
+    PdfService,
   ],
   exports: [
     CancelledFlightsService,

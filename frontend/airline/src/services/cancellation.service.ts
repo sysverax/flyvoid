@@ -551,6 +551,27 @@ export const cancellationService = {
       );
     }
   },
+
+  async exportFlightReport(flightId: number | string): Promise<void> {
+    try {
+      const res = await apiClient.get(
+        `/cancelled-flights/${flightId}/report`,
+        { responseType: "blob" },
+      );
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `invoice-${flightId}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error: any) {
+      throw new Error(
+        extractErrorMessage(error, "Failed to export flight report."),
+      );
+    }
+  },
 };
 
 

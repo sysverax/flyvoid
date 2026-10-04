@@ -39,6 +39,7 @@ import {
   Eye,
   Armchair,
   Ticket,
+  Download,
 } from "lucide-react";
 import { useAuth } from "@/src/hooks/useAuth";
 import { BookingDetailsDrawer } from "@/src/components/ui/BookingDetailsDrawer";
@@ -711,6 +712,9 @@ export default function CancellationWizard({
     useState<HotelAllocationsResponse | null>(null);
   const [allocationError, setAllocationError] = useState<string | null>(null);
 
+  // Step 5 Booking Summary state
+  const [isExportingReport, setIsExportingReport] = useState(false);
+
   const fetchReviewData = async (fId: number) => {
     setIsLoadingReview(true);
     try {
@@ -862,6 +866,18 @@ export default function CancellationWizard({
       setIsAllocating(false);
       setAllocationError(error.message || "Failed to allocate hotels");
       toast.error(error.message || "Failed to allocate hotels");
+    }
+  };
+
+  const handleExportReport = async () => {
+    if (!flightId || isExportingReport) return;
+    setIsExportingReport(true);
+    try {
+      await cancellationService.exportFlightReport(flightId);
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to export flight report.");
+    } finally {
+      setIsExportingReport(false);
     }
   };
 
@@ -2894,19 +2910,36 @@ export default function CancellationWizard({
 
         return (
           <div className="space-y-6">
-            <div className="flex items-center gap-3 pb-4">
-              <div className="size-10 bg-[#ECFDF5] text-[#10B981] rounded-lg flex justify-center items-center shrink-0 border border-[#D1FAE5]">
-                <CheckCircle2 className="h-5 w-5" />
+            <div className="flex items-center justify-between gap-3 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="size-10 bg-[#ECFDF5] text-[#10B981] rounded-lg flex justify-center items-center shrink-0 border border-[#D1FAE5]">
+                  <CheckCircle2 className="h-5 w-5" />
+                </div>
+                <div className="text-left">
+                  <h3 className="text-lg font-semibold text-gray-900 font-figtree">
+                    Booking Summary
+                  </h3>
+                  <p className="text-sm text-gray-500 mt-0.5">
+                    Review the booked hotels, room details, and final payment
+                    amount before proceeding.
+                  </p>
+                </div>
               </div>
-              <div className="text-left">
-                <h3 className="text-lg font-semibold text-gray-900 font-figtree">
-                  Booking Summary
-                </h3>
-                <p className="text-sm text-gray-500 mt-0.5">
-                  Review the booked hotels, room details, and final payment
-                  amount before proceeding.
-                </p>
-              </div>
+              {hasPermission("export") && (
+                <button
+                  type="button"
+                  onClick={handleExportReport}
+                  disabled={isExportingReport}
+                  className="flex items-center gap-2 border border-gray-300 hover:bg-gray-50 text-[#374151] px-4 py-2.5 rounded-lg font-medium transition-colors cursor-pointer text-sm disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
+                >
+                  {isExportingReport ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
+                  {isExportingReport ? "Exporting..." : "Export Report"}
+                </button>
+              )}
             </div>
 
             {/* Summary Cards */}

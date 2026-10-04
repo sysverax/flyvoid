@@ -535,6 +535,25 @@ export class CancelledFlightsRepository {
     return { hotelBookings, totalHotelBookings };
   }
 
+  async findAllHotelBookingsByFlightId(
+    cancelledFlightId: number,
+    requestLogger: Logger,
+  ): Promise<HotelAllocationEntity[]> {
+    requestLogger.info("Finding all hotel bookings by flight id for report", {
+      context: this.context,
+      cancelledFlightId,
+    });
+
+    return this.allocationRepo
+      .createQueryBuilder("hotelBooking")
+      .leftJoinAndSelect("hotelBooking.booking", "booking")
+      .where("hotelBooking.cancelled_flight_id = :cancelledFlightId", {
+        cancelledFlightId,
+      })
+      .orderBy("hotelBooking.id", "ASC")
+      .getMany();
+  }
+
   async findHotelBookingById(
     id: number,
     requestLogger: Logger,

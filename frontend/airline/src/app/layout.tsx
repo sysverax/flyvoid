@@ -6,7 +6,7 @@ import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
 export const metadata: Metadata = {
-  title: "Airbook - Airline Portal",
+  title: "FlyVoid - Airline Portal",
   description: "Airline Management Portal",
 };
 

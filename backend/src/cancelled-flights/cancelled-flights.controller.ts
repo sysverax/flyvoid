@@ -12,11 +12,13 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
+import { Response } from "express";
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -27,6 +29,7 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiParam,
+  ApiProduces,
   ApiTags,
   ApiConflictResponse,
   ApiUnauthorizedResponse,
@@ -1016,6 +1019,49 @@ export class CancelledFlightsController {
       requestId,
       "Cancelled flight published successfully",
     );
+  }
+
+  // ── GET /cancelled-flights/:id/report ───────────────────────────────────
+  @Get(":id/report")
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.EXPORT],
+    },
+  })
+  @ApiOperation({
+    summary: "Download the hotel allocation invoice/report for a cancelled flight",
+    description:
+      "Generates a PDF invoice listing every PNR's hotel allocation (contact, passengers, hotel, rating, rooms, and cost) for the cancelled flight, plus a cost summary. Only available once the flight has reached 'allocated', 'paid', or 'published' status.",
+  })
+  @ApiParam({ name: "id", description: "Cancelled flight id" })
+  @ApiProduces("application/pdf")
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/cancelled-flights/:id/report",
+      "Cancelled flight not found",
+    ),
+  })
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema("/api/v1/cancelled-flights/:id/report"),
+  })
+  async downloadHotelAllocationReport(
+    @Param("id", ParseIntPipe) id: number,
+    @Req() req: AuthenticatedRequest,
+    @RequestLogger() requestLogger: Logger,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { fileName, pdf } = await this.service.generateHotelAllocationReport(
+      id,
+      req.user,
+      requestLogger,
+    );
+
+    res.set({
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename="${fileName}"`,
+    });
+    res.send(pdf);
   }
 
   // // ── POST /cancelled-flights/:id/bookings/:bookingId/allocate-hotel ───────
