@@ -24,6 +24,9 @@ import {
   UpdateBookingDto,
   CancelledFlightResponseDto,
   CancelledFlightListResponseDto,
+  CancelledFlightAdminListResponseDto,
+  CancelledFlightListItemDto,
+  CancelledFlightAdminListItemDto,
   ImportBookingResponseDto,
   ReviewCancelledFlightResponseDto,
   AllocateHotelDto,
@@ -649,7 +652,9 @@ export class CancelledFlightsService {
     query: GetCancelledFlightsQueryDto,
     requestId: string,
     requestLogger: Logger,
-  ): Promise<CancelledFlightListResponseDto> {
+  ): Promise<
+    CancelledFlightListResponseDto | CancelledFlightAdminListResponseDto
+  > {
     const page = query.page || 1;
     const limit = query.limit || 10;
 
@@ -733,32 +738,52 @@ export class CancelledFlightsService {
       totalCount,
     });
 
+    const pagination = { currentPage: page, limit, totalCount };
+
+    // Platform users get the owning airline (id, name) on each item; airline
+    // users already know their own airline, so they get the base shape.
+    if (user.userType === UserType.PLATFORM) {
+      return {
+        cancelledFlights: flights.map((flight) => ({
+          ...this.toCancelledFlightListItem(flight),
+          airline: {
+            id: flight.airline.id,
+            name: flight.airline.name,
+          },
+        })) satisfies CancelledFlightAdminListItemDto[],
+        pagination,
+      };
+    }
+
     return {
-      cancelledFlights: flights.map((flight) => ({
-        id: flight.id,
-        flightNumber: flight.flightNumber,
-        departureAirport: {
-          id: flight.departureAirport.id,
-          code: flight.departureAirport.iataCode,
-          name: flight.departureAirport.name,
-        },
-        arrivalAirport: {
-          id: flight.arrivalAirport.id,
-          code: flight.arrivalAirport.iataCode,
-          name: flight.arrivalAirport.name,
-        },
-        cancellationDate: flight.cancellationDate,
-        totalBookings: flight.totalBooking ?? 0,
-        totalPassengers:
-          (flight.totalAdults ?? 0) + (flight.totalChildren ?? 0),
-        totalCost: Number(flight.totalPrice ?? 0),
-        status: flight.status,
-      })),
-      pagination: {
-        currentPage: page,
-        limit,
-        totalCount,
+      cancelledFlights: flights.map((flight) =>
+        this.toCancelledFlightListItem(flight),
+      ) satisfies CancelledFlightListItemDto[],
+      pagination,
+    };
+  }
+
+  private toCancelledFlightListItem(
+    flight: CancelledFlightEntity,
+  ): CancelledFlightListItemDto {
+    return {
+      id: flight.id,
+      flightNumber: flight.flightNumber,
+      departureAirport: {
+        id: flight.departureAirport.id,
+        code: flight.departureAirport.iataCode,
+        name: flight.departureAirport.name,
       },
+      arrivalAirport: {
+        id: flight.arrivalAirport.id,
+        code: flight.arrivalAirport.iataCode,
+        name: flight.arrivalAirport.name,
+      },
+      cancellationDate: flight.cancellationDate,
+      totalBookings: flight.totalBooking ?? 0,
+      totalPassengers: (flight.totalAdults ?? 0) + (flight.totalChildren ?? 0),
+      totalCost: Number(flight.totalPrice ?? 0),
+      status: flight.status,
     };
   }
 

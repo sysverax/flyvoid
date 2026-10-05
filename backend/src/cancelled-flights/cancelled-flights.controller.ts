@@ -68,6 +68,7 @@ import {
   CreateBookingDto,
   BookingResponseDto,
   CancelledFlightListResponseDto,
+  CancelledFlightAdminListResponseDto,
   ImportBookingResponseDto,
   UpdateBookingDto,
   ReviewCancelledFlightResponseDto,
@@ -98,6 +99,7 @@ import { CancelledFlightsSummaryResponseDto } from "./dto/cancelled-flights-summ
   BookingResponseDto,
   CancelledFlightBookingsListResponseDto,
   CancelledFlightListResponseDto,
+  CancelledFlightAdminListResponseDto,
   ImportBookingResponseDto,
   HotelAllocationsDto,
   CancelledFlightHotelBookingListResponseDto,
@@ -141,7 +143,14 @@ export class CancelledFlightsController {
           type: "string",
           example: "Cancelled flights fetched successfully",
         },
-        data: { $ref: "#/components/schemas/CancelledFlightListResponseDto" },
+        data: {
+          oneOf: [
+            { $ref: "#/components/schemas/CancelledFlightListResponseDto" },
+            {
+              $ref: "#/components/schemas/CancelledFlightAdminListResponseDto",
+            },
+          ],
+        },
       },
     },
   })
@@ -159,7 +168,11 @@ export class CancelledFlightsController {
     @Query() query: GetCancelledFlightsQueryDto,
     @RequestId() requestId: string,
     @RequestLogger() requestLogger: Logger,
-  ): Promise<BaseResponseDto<CancelledFlightListResponseDto>> {
+  ): Promise<
+    BaseResponseDto<
+      CancelledFlightListResponseDto | CancelledFlightAdminListResponseDto
+    >
+  > {
     requestLogger.info("Listing cancelled flights", {
       context: this.context,
       query,
