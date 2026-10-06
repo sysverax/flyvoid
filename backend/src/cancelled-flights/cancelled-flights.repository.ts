@@ -110,6 +110,10 @@ export class CancelledFlightsRepository {
       .createQueryBuilder("flight")
       .leftJoinAndSelect("flight.departureAirport", "departureAirport")
       .leftJoinAndSelect("flight.arrivalAirport", "arrivalAirport")
+      // Only id and name are needed for the platform response; avoid loading
+      // the whole airline row.
+      .leftJoin("flight.airline", "airline")
+      .addSelect(["airline.id", "airline.name"])
       .orderBy("flight.createdAt", "DESC")
       // Tie-breaker for rows sharing the same createdAt - without it, ties
       // have no guaranteed order and rows can shift between pages.
