@@ -634,6 +634,7 @@ export class CancelledFlightsRepository {
     cancelledFlightId: number,
     allowedStatuses: FlightStatus[],
     leaseMs: number,
+    runId: string,
     requestLogger: Logger,
   ): Promise<
     | { claimed: true; previousStatus: FlightStatus }
@@ -682,7 +683,11 @@ export class CancelledFlightsRepository {
       await manager.update(
         CancelledFlightEntity,
         { id: cancelledFlightId },
-        { status: FlightStatus.HOTEL_ALLOCATION_IN_PROGRESS },
+        {
+          status: FlightStatus.HOTEL_ALLOCATION_IN_PROGRESS,
+          hotelAllocationRunId: runId,
+          hotelAllocationError: null,
+        },
       );
       return { claimed: true as const, previousStatus: row.status };
     });
@@ -690,6 +695,7 @@ export class CancelledFlightsRepository {
 
   async touchFlightAllocationRun(
     cancelledFlightId: number,
+    runId: string,
     requestLogger: Logger,
   ): Promise<void> {
     await this.flightRepo
@@ -697,6 +703,7 @@ export class CancelledFlightsRepository {
         {
           id: cancelledFlightId,
           status: FlightStatus.HOTEL_ALLOCATION_IN_PROGRESS,
+          hotelAllocationRunId: runId,
         },
         { status: FlightStatus.HOTEL_ALLOCATION_IN_PROGRESS },
       )
@@ -754,6 +761,13 @@ export class CancelledFlightsRepository {
     requestLogger: Logger,
   ): Promise<FlightHotelTotals> {
     return this.allocationRepo.manager.transaction(async (manager) => {
+      await manager
+        .getRepository(CancelledFlightEntity)
+        .createQueryBuilder("flight")
+        .setLock("pessimistic_write")
+        .select("flight.id")
+        .where("flight.id = :id", { id: cancelledFlightId })
+        .getRawOne();
       const totals = await this.sumConfirmedAllocations(
         manager,
         cancelledFlightId,
@@ -779,10 +793,28 @@ export class CancelledFlightsRepository {
 
   async completeFlightAllocationRun(
     cancelledFlightId: number,
+    runId: string,
     platformFeePercentage: number,
+    runError: string | null,
     requestLogger: Logger,
-  ): Promise<{ status: FlightStatus; totals: FlightHotelTotals }> {
-    return this.allocationRepo.manager.transaction(async (manager) => {
+  ): Promise<void> {
+    await this.allocationRepo.manager.transaction(async (manager) => {
+      const flight = await manager
+        .getRepository(CancelledFlightEntity)
+        .createQueryBuilder("flight")
+        .setLock("pessimistic_write")
+        .select("flight.hotelAllocationRunId", "runId")
+        .where("flight.id = :id", { id: cancelledFlightId })
+        .getRawOne<{ runId: string | null }>();
+      if (flight?.runId !== runId) {
+        requestLogger.warn("Hotel allocation run was superseded; not completing it", {
+          context: this.context,
+          cancelledFlightId,
+          runId,
+          currentRunId: flight?.runId ?? null,
+        });
+        return;
+      }
       const totals = await this.sumConfirmedAllocations(
         manager,
         cancelledFlightId,
@@ -795,17 +827,47 @@ export class CancelledFlightsRepository {
       await manager.update(
         CancelledFlightEntity,
         { id: cancelledFlightId },
-        { ...columns, platformFeePercentage, status },
+        {
+          ...columns,
+          platformFeePercentage,
+          status,
+          hotelAllocationRunId: null,
+          hotelAllocationError: runError,
+        },
       );
       requestLogger.info("Completed hotel allocation run", {
         context: this.context,
         cancelledFlightId,
+        runId,
         status,
         confirmedCount,
         totalPrice: totals.totalPrice,
+        runError,
       });
-      return { status, totals };
     });
+  }
+
+  async getFlightAllocationRunState(
+    cancelledFlightId: number,
+    leaseMs: number,
+  ): Promise<{ running: boolean; stale: boolean; error: string | null }> {
+    const row = await this.flightRepo
+      .createQueryBuilder("flight")
+      .select("flight.status", "status")
+      .addSelect("flight.hotelAllocationError", "error")
+      .addSelect(
+        "EXTRACT(EPOCH FROM (now() - flight.updated_at)) * 1000",
+        "ageMs",
+      )
+      .where("flight.id = :id", { id: cancelledFlightId })
+      .getRawOne<{ status: FlightStatus; error: string | null; ageMs: string | number }>();
+    const inProgress = row?.status === FlightStatus.HOTEL_ALLOCATION_IN_PROGRESS;
+    const running = inProgress && Number(row?.ageMs) < leaseMs;
+    return {
+      running,
+      stale: inProgress && !running,
+      error: row?.error ?? null,
+    };
   }
 
   private async sumConfirmedAllocations(

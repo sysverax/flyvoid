@@ -173,6 +173,17 @@ export class CancelledFlightEntity {
   })
   totalEarnings?: number;
 
+  @Column({
+    name: "hotel_allocation_run_id",
+    type: "varchar",
+    length: 64,
+    nullable: true,
+  })
+  hotelAllocationRunId?: string | null;
+
+  @Column({ name: "hotel_allocation_error", type: "text", nullable: true })
+  hotelAllocationError?: string | null;
+
   @ManyToOne(() => AirlineEntity, { onDelete: "RESTRICT" })
   @JoinColumn({ name: "airline_id" })
   airline!: AirlineEntity;

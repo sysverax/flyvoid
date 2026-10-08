@@ -161,6 +161,8 @@ export interface HotelAllocationBookingResult {
 export interface HotelAllocationsResponse {
   cancelledFlightId: number;
   status: string;
+  running: boolean;
+  lastRunError: string | null;
   totalBookings: number;
   confirmedBookings: number;
   allocatedBookings: number;
@@ -488,6 +490,19 @@ export const cancellationService = {
       ) as Error & { status?: number };
       wrapped.status = error?.response?.status;
       throw wrapped;
+    }
+  },
+
+  async getHotelAllocationStatus(flightId: number | string) {
+    try {
+      const response = await apiClient.get(
+        `/cancelled-flights/${flightId}/hotel-allocations`,
+      );
+      return response.data;
+    } catch (error: unknown) {
+      throw new Error(
+        extractErrorMessage(error, "Failed to load hotel allocation status"),
+      );
     }
   },
 

@@ -881,6 +881,7 @@ export class CancelledFlightsController {
 
   // ── POST /cancelled-flights/:id/hotel-allocations ───────────────────
   @Post(":id/hotel-allocations")
+  @HttpCode(HttpStatus.ACCEPTED)
   @RequireAccessControl({
     airline: {
       asset: AirlineAsset.CANCELLED_FLIGHTS,
@@ -889,9 +890,9 @@ export class CancelledFlightsController {
   })
   @ApiOperation({
     summary:
-      "Allocate and book hotels for all bookings (PNRs) of a cancelled flight",
+      "Start allocating and booking hotels for all bookings (PNRs) of a cancelled flight",
     description:
-      "Searches supplier availability once, builds a quality-ordered candidate list per PNR (stars, then price; preferred supply 150% of demand per room shape) and books each PNR live with the supplier: cabin classes in order (First, Business, Premium Economy, Economy), PNRs of one class in parallel, fallback hotels per PNR one at a time. A PNR is confirmed only after the supplier confirms; unknown outcomes become manual_check and are never rebooked automatically. Idempotent: re-running skips confirmed / manual_check PNRs and retries failed ones (until the flight is paid).",
+      "Validates the flight, claims the allocation run and returns 202 at once; booking continues in the background. Poll GET /:id/hotel-allocations until running is false. Searches supplier availability once, builds a quality-ordered candidate list per PNR (stars, then price; preferred supply 150% of demand per room shape) and books each PNR live with the supplier: cabin classes in order (First, Business, Premium Economy, Economy), PNRs of one class in parallel, fallback hotels per PNR one at a time. A PNR is confirmed only after the supplier confirms; unknown outcomes become manual_check and are never rebooked automatically. Idempotent: re-running skips confirmed / manual_check PNRs and retries failed ones (until the flight is paid).",
   })
   @ApiConflictResponse({
     schema: createConflictErrorSchema(
@@ -918,10 +919,10 @@ export class CancelledFlightsController {
     @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<HotelAllocationsDto>> {
     requestLogger.info(
-      `Fetching hotel allocations for cancelled flight ${id}`,
+      `Starting hotel allocation for cancelled flight ${id}`,
       { context: this.context },
     );
-    const data = await this.hotelAllocationService.hotelAllocationsForFlight(
+    const data = await this.hotelAllocationService.startHotelAllocation(
       id,
       request.user,
       requestId,
@@ -930,7 +931,45 @@ export class CancelledFlightsController {
     return BaseResponseDto.success(
       data,
       requestId,
-      "Hotel allocations generated successfully",
+      "Hotel allocation started",
+    );
+  }
+
+  // ── GET /cancelled-flights/:id/hotel-allocations ────────────────────
+  @Get(":id/hotel-allocations")
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.VIEW],
+    },
+  })
+  @ApiOperation({
+    summary: "Hotel allocation progress and per-PNR booking results",
+    description:
+      "Returns whether an allocation run is running, the last run error, per-PNR booking status and totals of confirmed bookings.",
+  })
+  @ApiParam({ name: "id", description: "Cancelled flight id" })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/cancelled-flights/:id/hotel-allocations",
+      "Cancelled flight not found",
+    ),
+  })
+  async hotelAllocationStatus(
+    @Req() request: AuthenticatedRequest,
+    @Param("id", ParseIntPipe) id: number,
+    @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
+  ): Promise<BaseResponseDto<HotelAllocationsDto>> {
+    const data = await this.hotelAllocationService.getHotelAllocationStatus(
+      id,
+      request.user,
+      requestLogger,
+    );
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Hotel allocation status retrieved successfully",
     );
   }
 

@@ -3,7 +3,6 @@ import {
   BadRequestException,
   ConflictException,
   HttpException,
-  InternalServerErrorException,
   Inject,
   Injectable,
   NotFoundException,
@@ -72,18 +71,13 @@ interface StayDates {
   checkOutDate: Date;
 }
 
-interface AllocationRunState {
-  attemptsByBooking: Map<number, number>;
-  currency: string | null;
-}
-
 interface AllocationRunContext {
   flight: CancelledFlightEntity;
   stay: StayDates;
   platformFeePercentage: number;
   requestId: string;
   requestLogger: Logger;
-  runState: AllocationRunState;
+  runId: string;
 }
 
 interface BookingPlanningState {
@@ -1141,14 +1135,12 @@ export class HotelAllocationService {
 
   private static readonly MAX_ATTEMPT_HISTORY = 20;
 
-  async hotelAllocationsForFlight(
+  async startHotelAllocation(
     flightId: number,
     user: AuthenticatedRequest["user"],
     requestId: string,
     requestLogger: Logger,
   ): Promise<HotelAllocationsDto> {
-    // ?? not || : a legitimate 0% fee is falsy and must not fall back to
-    // the default.
     const platformFeePercentage =
       user.platformFeePercentage ?? config.platformFeePercentage;
     requestLogger.info("Starting flight-level hotel allocation and booking", {
@@ -1183,17 +1175,18 @@ export class HotelAllocationService {
       );
     }
 
-    const leaseMs = config.hotelBooking.allocationRunLeaseMs;
+    const runId = randomUUID();
     const run = await this.cancelledFlightsRepository.claimFlightAllocationRun(
       flightId,
       HotelAllocationService.ALLOCATION_RUN_STATUSES,
-      leaseMs,
+      config.hotelBooking.allocationRunLeaseMs,
+      runId,
       requestLogger,
     );
     if (!run.claimed) {
       if (run.reason === "running") {
         throw new ConflictException(
-          `Hotel allocation is already running for flight '${flightId}'; wait for it to finish, then refresh`,
+          `Hotel allocation is already running for flight '${flightId}'`,
         );
       }
       if (run.reason === "missing") {
@@ -1204,22 +1197,83 @@ export class HotelAllocationService {
       );
     }
 
-    const runState: AllocationRunState = {
-      attemptsByBooking: new Map(),
-      currency: null,
-    };
-    let completion: Awaited<
-      ReturnType<CancelledFlightsRepository["completeFlightAllocationRun"]>
-    > | null = null;
+    requestLogger.info("Hotel allocation run started in the background", {
+      context: this.context,
+      flightId,
+      runId,
+    });
+    void this.executeAllocationRun(
+      { flight, stay, platformFeePercentage, requestId, requestLogger, runId },
+      bookings,
+    );
+
+    return this.getHotelAllocationStatus(flightId, user, requestLogger);
+  }
+
+  async getHotelAllocationStatus(
+    flightId: number,
+    user: AuthenticatedRequest["user"],
+    requestLogger: Logger,
+  ): Promise<HotelAllocationsDto> {
+    const flight = await this.requireAirlineFlight(
+      flightId,
+      user,
+      requestLogger,
+    );
+    const [bookings, rows, runState] = await Promise.all([
+      this.cancelledFlightsRepository.findBookingsByFlightId(
+        flightId,
+        requestLogger,
+      ),
+      this.cancelledFlightsRepository.findAllocationsByFlightId(
+        flightId,
+        requestLogger,
+      ),
+      this.cancelledFlightsRepository.getFlightAllocationRunState(
+        flightId,
+        config.hotelBooking.allocationRunLeaseMs,
+      ),
+    ]);
+    const platformFeePercentage = Number(
+      flight.platformFeePercentage ??
+        user.platformFeePercentage ??
+        config.platformFeePercentage,
+    );
+    return this.buildAllocationSummary(
+      flight,
+      bookings,
+      rows,
+      runState,
+      platformFeePercentage,
+    );
+  }
+
+  private async executeAllocationRun(
+    run: AllocationRunContext,
+    bookings: BookingEntity[],
+  ): Promise<void> {
+    const { flight, runId, requestLogger } = run;
+    const heartbeat = setInterval(
+      () =>
+        void this.cancelledFlightsRepository.touchFlightAllocationRun(
+          flight.id,
+          runId,
+          requestLogger,
+        ),
+      Math.max(1000, Math.floor(config.hotelBooking.allocationRunLeaseMs / 5)),
+    );
+    heartbeat.unref();
+
+    let runError: string | null = null;
     try {
       await this.cancelledFlightsRepository.markStaleInProgressAllocations(
-        flightId,
-        leaseMs,
-        "Allocation run was interrupted during the supplier booking; check with the supplier before rebooking",
+        flight.id,
+        config.hotelBooking.staleBookingAttemptMs,
+        "Booking attempt was interrupted; check with the supplier before rebooking",
         requestLogger,
       );
       const rows = await this.cancelledFlightsRepository.findAllocationsByFlightId(
-        flightId,
+        flight.id,
         requestLogger,
       );
       const rowByBooking = new Map(rows.map((row) => [row.bookingId, row]));
@@ -1229,51 +1283,44 @@ export class HotelAllocationService {
 
       requestLogger.info("Resolved bookings to process in this allocation run", {
         context: this.context,
-        flightId,
+        flightId: flight.id,
+        runId,
         totalBookings: bookings.length,
         pending: pending.length,
         skipped: bookings.length - pending.length,
       });
 
       if (pending.length > 0) {
-        await this.bookPendingBookings(
-          {
-            flight,
-            stay,
-            platformFeePercentage,
-            requestId,
-            requestLogger,
-            runState,
-          },
-          pending,
-        );
+        await this.bookPendingBookings(run, pending);
       }
+    } catch (error: any) {
+      runError = String(error?.message ?? error);
+      requestLogger.error("Hotel allocation run failed", {
+        context: this.context,
+        flightId: flight.id,
+        runId,
+        error: runError,
+        stack: error?.stack,
+      });
     } finally {
-      completion = await this.cancelledFlightsRepository
-        .completeFlightAllocationRun(flightId, platformFeePercentage, requestLogger)
-        .catch((error: any) => {
+      clearInterval(heartbeat);
+      await this.cancelledFlightsRepository
+        .completeFlightAllocationRun(
+          flight.id,
+          runId,
+          run.platformFeePercentage,
+          runError,
+          requestLogger,
+        )
+        .catch((error: any) =>
           requestLogger.error("Could not complete the hotel allocation run", {
             context: this.context,
-            flightId,
+            flightId: flight.id,
+            runId,
             error: error?.message,
-          });
-          return null;
-        });
+          }),
+        );
     }
-    if (!completion) {
-      throw new InternalServerErrorException(
-        `Hotel allocation for flight '${flightId}' ran but its result could not be saved; refresh before retrying`,
-      );
-    }
-
-    return this.buildAllocationSummary(
-      flightId,
-      bookings,
-      completion,
-      platformFeePercentage,
-      runState,
-      requestLogger,
-    );
   }
 
   private resolveStayDates(
@@ -1372,12 +1419,7 @@ export class HotelAllocationService {
         flightId: flight.id,
         error: error.message,
       });
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      throw new ServiceUnavailableException(
-        `Hotel availability search failed for flight '${flight.id}': ${error.message}`,
-      );
+      throw new Error(`Hotel availability search failed: ${error.message}`);
     }
 
     const entries = plans.map(({ booking, plan }) => ({
@@ -1441,6 +1483,7 @@ export class HotelAllocationService {
         await this.bookWithFallback(run, planning, entry.booking, entry.needs);
         await this.cancelledFlightsRepository.touchFlightAllocationRun(
           flight.id,
+          run.runId,
           requestLogger,
         );
       });
@@ -1504,7 +1547,6 @@ export class HotelAllocationService {
 
         const { candidate, claim } = selected;
         attempts += 1;
-        run.runState.attemptsByBooking.set(booking.id, attempts);
         requestLogger.info("Attempting hotel booking candidate", {
           context: this.context,
           flightId: run.flight.id,
@@ -1534,7 +1576,6 @@ export class HotelAllocationService {
 
         if (outcome.kind === "confirmed") {
           planning.ledger.commit(claim);
-          run.runState.currency ??= outcome.currency;
           return;
         }
         if (outcome.kind === "unknown") {
@@ -1852,6 +1893,7 @@ export class HotelAllocationService {
       outcome: allConfirmed ? "confirmed" : "unknown",
       completedAt: new Date().toISOString(),
       supplierReferences: references,
+      currency: checks[0].currency,
     };
     if (!allConfirmed) {
       const reason = `Supplier accepted the booking at ${hotelName} without confirming it (statuses: ${booked
@@ -1885,6 +1927,16 @@ export class HotelAllocationService {
         hotelCode,
         bookingReference: allocation.bookingReference,
       });
+      await this.cancelledFlightsRepository
+        .refreshFlightTotals(flight.id, requestLogger)
+        .catch((error: any) =>
+          requestLogger.error("Could not refresh flight totals after a confirmed booking", {
+            context: this.context,
+            flightId: flight.id,
+            bookingId: booking.id,
+            error: error?.message,
+          }),
+        );
       return {
         kind: "confirmed",
         allocation,
@@ -1976,23 +2028,13 @@ export class HotelAllocationService {
     );
   }
 
-  private async buildAllocationSummary(
-    flightId: number,
+  private buildAllocationSummary(
+    flight: CancelledFlightEntity,
     bookings: BookingEntity[],
-    completion: {
-      status: FlightStatus;
-      totals: Awaited<
-        ReturnType<CancelledFlightsRepository["completeFlightAllocationRun"]>
-      >["totals"];
-    },
+    rows: HotelAllocationEntity[],
+    runState: { running: boolean; stale: boolean; error: string | null },
     platformFeePercentage: number,
-    runState: AllocationRunState,
-    requestLogger: Logger,
-  ): Promise<HotelAllocationsDto> {
-    const rows = await this.cancelledFlightsRepository.findAllocationsByFlightId(
-      flightId,
-      requestLogger,
-    );
+  ): HotelAllocationsDto {
     const rowByBooking = new Map(rows.map((row) => [row.bookingId, row]));
     const results: HotelAllocationBookingResultDto[] = [...bookings]
       .sort(compareBookingPriority)
@@ -2020,48 +2062,45 @@ export class HotelAllocationService {
           bookingReference: confirmed ? row!.bookingReference : null,
           totalRooms: confirmed ? row!.totalRooms ?? 0 : 0,
           totalPrice: confirmed ? Number(row!.totalPrice ?? 0) : 0,
-          attempts: runState.attemptsByBooking.get(booking.id) ?? 0,
+          attempts: row?.bookingAttempt
+            ? (row.bookingAttempt.history?.length ?? 0) + 1
+            : 0,
           reason: row?.reason ?? null,
         };
       });
     const count = (status: HotelAllocationStatus) =>
       results.filter((result) => result.status === status).length;
     const confirmedBookings = count(HotelAllocationStatus.CONFIRMED);
-    const failedBookings = count(HotelAllocationStatus.FAILED);
-    const manualCheckBookings = count(HotelAllocationStatus.MANUAL_CHECK);
-    const inProgressBookings = count(HotelAllocationStatus.IN_PROGRESS);
+    const confirmedRows = rows.filter(
+      (row) => row.status === HotelAllocationStatus.CONFIRMED,
+    );
 
-    requestLogger.info("Hotel allocation run summary", {
-      context: this.context,
-      flightId,
-      flightStatus: completion.status,
-      confirmedBookings,
-      failedBookings,
-      manualCheckBookings,
-      inProgressBookings,
-    });
-
-    const { totals } = completion;
     return {
-      cancelledFlightId: flightId,
-      status: completion.status,
+      cancelledFlightId: flight.id,
+      status: flight.status,
+      running: runState.running,
+      lastRunError: runState.stale
+        ? "The last allocation run stopped unexpectedly; run allocation again"
+        : runState.error,
       totalBookings: bookings.length,
       confirmedBookings,
       allocatedBookings: confirmedBookings,
-      failedBookings,
-      manualCheckBookings,
-      inProgressBookings,
+      failedBookings: count(HotelAllocationStatus.FAILED),
+      manualCheckBookings: count(HotelAllocationStatus.MANUAL_CHECK),
+      inProgressBookings: count(HotelAllocationStatus.IN_PROGRESS),
       pendingBookings: count(HotelAllocationStatus.DRAFT),
       results,
-      totalRooms: totals.totalHotelRooms,
-      totalActualPrice: totals.totalActualPrice,
-      totalSellingPrice: totals.totalSellingPrice,
-      totalDiscounts: totals.totalDiscounts,
-      totalHotelTaxes: totals.totalHotelTaxes,
+      totalRooms: Number(flight.totalHotelRooms ?? 0),
+      totalActualPrice: Number(flight.totalActualPrice ?? 0),
+      totalSellingPrice: Number(flight.totalSellingPrice ?? 0),
+      totalDiscounts: Number(flight.totalDiscounts ?? 0),
+      totalHotelTaxes: Number(flight.totalHotelTaxes ?? 0),
       platformFeePercentage,
-      totalPlatformFee: totals.totalPlatformFee,
-      totalPrice: totals.totalPrice,
-      currency: runState.currency ?? "EUR",
+      totalPlatformFee: Number(flight.totalPlatformFee ?? 0),
+      totalPrice: Number(flight.totalPrice ?? 0),
+      currency:
+        confirmedRows.find((row) => row.bookingAttempt?.currency)
+          ?.bookingAttempt?.currency ?? "EUR",
     };
   }
 
@@ -2182,13 +2221,6 @@ export class HotelAllocationService {
         throw outcome.error;
       }
       throw new BadGatewayException(outcome.reason);
-    }
-
-    if (flight.status === FlightStatus.ALLOCATED) {
-      await this.cancelledFlightsRepository.refreshFlightTotals(
-        flight.id,
-        requestLogger,
-      );
     }
 
     const { allocation } = outcome;

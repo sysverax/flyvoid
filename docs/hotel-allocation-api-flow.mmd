@@ -1,4 +1,5 @@
-%% FlyVoid — POST /cancelled-flights/:id/hotel-allocations
+%% FlyVoid — POST /cancelled-flights/:id/hotel-allocations (202, runs in background)
+%%          GET  /cancelled-flights/:id/hotel-allocations (poll progress + results)
 %% Allocation = live supplier booking per PNR. Fully deterministic (no AI).
 %% Vendor calls are cross-referenced into their own files:
 %%   - hotel-allocation-vendor-hotelbeds.mmd / hotel-allocation-vendor-ratehawk.mmd
@@ -9,18 +10,19 @@ flowchart TD
     A(["Client"]) -->|"POST /:id/hotel-allocations"| B["Controller.hotelAllocations"]
     B --> B1{"JwtAuthGuard + RBAC<br/>AIRLINE / CANCELLED_FLIGHTS / EDIT"}
     B1 -->|"denied"| B2["401 / 403"]
-    B1 -->|"allowed"| C["Service.hotelAllocationsForFlight"]
+    B1 -->|"allowed"| C["Service.startHotelAllocation"]
 
     C --> C1{"Flight of this airline?<br/>status in PASSENGERS_BOOKING_CONFIRMED,<br/>ALLOCATED, stale HOTEL_ALLOCATION_IN_PROGRESS?<br/>cancellation date + departure airport?<br/>any bookings?"}
     C1 -->|"no"| E1["400 / 404"]
-    C1 -->|"yes"| L1[("DB tx: claimFlightAllocationRun<br/>lock flight row; refuse a run within its lease;<br/>flight.status = HOTEL_ALLOCATION_IN_PROGRESS")]
-    L1 -->|"run already active"| E2["409 Conflict"]
-    L1 --> L2[("IN_PROGRESS rows older than the lease<br/>(crashed run) → MANUAL_CHECK")]
+    C1 -->|"yes"| L1[("DB tx: claimFlightAllocationRun<br/>lock flight row; refuse a run within its lease;<br/>status = HOTEL_ALLOCATION_IN_PROGRESS, new run id")]
+    L1 -->|"run already active"| E2["409 Conflict<br/>(UI polls the running run)"]
+    L1 --> R1(["202 Accepted + current status<br/>UI polls GET every 3s until running = false"])
+    L1 -.->|"background"| L2[("heartbeat every lease/5 (fenced by run id)<br/>IN_PROGRESS rows older than 60 min → MANUAL_CHECK")]
     L2 --> P1["Pending PNRs = no row, DRAFT, FAILED, CANCELLED<br/>(CONFIRMED / MANUAL_CHECK / IN_PROGRESS skipped → idempotent)<br/>sorted: class → special needs → children → PNR"]
 
     P1 --> P2["Per PNR: resolveRoomSplitPlan<br/>invalid data → row FAILED"]
     P2 --> V1[["Hotel vendor: availability search<br/>(deduplicated occupancies)"]]
-    V1 -->|"error"| E3["502 / 503 — nothing booked"]
+    V1 -->|"error"| E3["run error saved (hotelAllocationError)<br/>nothing booked"]
     V1 --> P3["Choose split per PNR (unchanged rules)<br/>demand per room shape"]
     P3 --> P4["Supply pool per shape:<br/>rates by exact-fit, stars DESC, price ASC<br/>until allotment ≥ ceil(demand × 1.5)<br/>(no hotel cap; less supply → keep all, continue)"]
     P4 --> P5["Run-wide allotment ledger<br/>(synchronous claim / release / commit)"]
@@ -45,9 +47,9 @@ flowchart TD
     F9 --> Z1
     F10 --> Z1
     F8 --> Z1
-    Z1[("DB tx: completeFlightAllocationRun<br/>totals from CONFIRMED rows only;<br/>status = ALLOCATED if ≥1 confirmed,<br/>else PASSENGERS_BOOKING_CONFIRMED")]
-    Z1 --> Z2["Return HotelAllocationsDto<br/>confirmed / failed / manual-check counts<br/>+ per-PNR status, hotel, supplier ref, reason"]
-    Z2 --> M(["Client: 200 OK"])
+    E3 --> Z1
+    Z1[("DB tx: completeFlightAllocationRun (only if run id still matches)<br/>totals from CONFIRMED rows only;<br/>status = ALLOCATED if ≥1 confirmed,<br/>else PASSENGERS_BOOKING_CONFIRMED; save run error")]
+    Z1 --> Z2["GET returns running = false<br/>confirmed / failed / manual-check counts<br/>+ per-PNR status, hotel, supplier ref, reason, lastRunError"]
 
     style V1 fill:transparent,stroke:#2b7ac9,stroke-width:1.5px,stroke-dasharray: 4 3
     style F3 fill:transparent,stroke:#2b7ac9,stroke-width:1.5px,stroke-dasharray: 4 3

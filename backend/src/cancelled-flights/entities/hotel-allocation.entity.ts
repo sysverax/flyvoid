@@ -207,6 +207,7 @@ export interface HotelBookingAttemptRecord {
   completedAt?: string | null;
   outcome: "in_progress" | "confirmed" | "failed" | "unknown";
   supplierReferences?: string[];
+  currency?: string | null;
   unknownReference?: string | null;
   error?: string | null;
 }

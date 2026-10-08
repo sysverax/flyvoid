@@ -225,7 +225,8 @@ function getInitialStepFromStatus(status?: string): number {
     s === "passengers_booking_confirmed"
   )
     return 4;
-  if (s === "allocated" || s === "hotel_allocation_in_progress") return 5;
+  if (s === "hotel_allocation_in_progress") return 4;
+  if (s === "allocated") return 5;
   if (s === "paid" || s === "published") return 7;
   return 1;
 }
@@ -722,6 +723,13 @@ export default function CancellationWizard({
   const [hotelAllocations, setHotelAllocations] =
     useState<HotelAllocationsResponse | null>(null);
   const [allocationError, setAllocationError] = useState<string | null>(null);
+  const [allocationRunProgress, setAllocationRunProgress] = useState<{
+    done: number;
+    total: number;
+  } | null>(null);
+  const allocationPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const allocationAnimationRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isPollingAllocationRef = useRef(false);
 
   // Step 5 Booking Summary state
   const [isExportingReport, setIsExportingReport] = useState(false);
@@ -838,19 +846,111 @@ export default function CancellationWizard({
     }
   }, [activeStep, flightId, step5CurrentPage, step5ResultsPerPage]);
 
-  const handleAllocateHotels = async () => {
-    setIsAllocating(true);
-    setAllocationError(null);
-    setAllocationProgress(1);
+  const ALLOCATION_POLL_MS = 3000;
+  const MAX_ALLOCATION_POLL_ERRORS = 5;
 
-    // Loop through the 4 loading sections during allocation
-    const progressTimer = setInterval(() => {
+  const startAllocationAnimation = () => {
+    if (allocationAnimationRef.current) return;
+    setAllocationProgress(1);
+    allocationAnimationRef.current = setInterval(() => {
       setAllocationProgress((prev) => (prev < 4 ? prev + 1 : 1));
     }, 1200);
+  };
+
+  const stopAllocationPolling = () => {
+    isPollingAllocationRef.current = false;
+    if (allocationPollTimerRef.current) {
+      clearTimeout(allocationPollTimerRef.current);
+      allocationPollTimerRef.current = null;
+    }
+    if (allocationAnimationRef.current) {
+      clearInterval(allocationAnimationRef.current);
+      allocationAnimationRef.current = null;
+    }
+  };
+
+  useEffect(() => stopAllocationPolling, []);
+
+  const finishAllocation = (allocData: HotelAllocationsResponse) => {
+    stopAllocationPolling();
+    setIsAllocating(false);
+    setAllocationProgress(0);
+    setAllocationRunProgress(null);
+    const anythingBooked = (allocData.confirmedBookings ?? 0) > 0;
+    if (allocData.lastRunError) {
+      setAllocationError(allocData.lastRunError);
+      toast.error(allocData.lastRunError);
+      if (!anythingBooked) return;
+    }
+    setHotelAllocations(allocData);
+    setActiveStep(5);
+    showAllocationOutcome(allocData);
+  };
+
+  const pollAllocationStatus = async (fId: number, consecutiveErrors = 0) => {
+    if (!isPollingAllocationRef.current) return;
+    let nextErrors = 0;
+    try {
+      const res = await cancellationService.getHotelAllocationStatus(fId);
+      if (!isPollingAllocationRef.current) return;
+      const data: HotelAllocationsResponse = res?.data || res;
+      if (!data.running) {
+        finishAllocation(data);
+        return;
+      }
+      const done = (data.results ?? []).filter(
+        (r) => r.status !== "draft" && r.status !== "in_progress",
+      ).length;
+      setAllocationRunProgress({ done, total: data.totalBookings ?? 0 });
+    } catch {
+      if (!isPollingAllocationRef.current) return;
+      nextErrors = consecutiveErrors + 1;
+      if (nextErrors >= MAX_ALLOCATION_POLL_ERRORS) {
+        stopAllocationPolling();
+        setIsAllocating(false);
+        setAllocationProgress(0);
+        setAllocationError(
+          "Lost connection while checking hotel allocation progress. Booking continues on the server; reopen this flight to see the latest status.",
+        );
+        return;
+      }
+    }
+    allocationPollTimerRef.current = setTimeout(
+      () => pollAllocationStatus(fId, nextErrors),
+      ALLOCATION_POLL_MS,
+    );
+  };
+
+  const startAllocationPolling = (fId: number) => {
+    if (isPollingAllocationRef.current) return;
+    isPollingAllocationRef.current = true;
+    setIsAllocating(true);
+    setAllocationError(null);
+    startAllocationAnimation();
+    allocationPollTimerRef.current = setTimeout(
+      () => pollAllocationStatus(fId),
+      ALLOCATION_POLL_MS,
+    );
+  };
+
+  useEffect(() => {
+    if (
+      flightId &&
+      initialData?.status?.toLowerCase() === "hotel_allocation_in_progress"
+    ) {
+      startAllocationPolling(flightId);
+    }
+  }, [flightId, initialData?.status]);
+
+  const handleAllocateHotels = async () => {
+    if (isPollingAllocationRef.current) return;
+    setIsAllocating(true);
+    setAllocationError(null);
+    startAllocationAnimation();
 
     if (!flightId) {
       setTimeout(() => {
-        clearInterval(progressTimer);
+        stopAllocationPolling();
         setIsAllocating(false);
         setAllocationProgress(0);
         setActiveStep(5);
@@ -860,28 +960,20 @@ export default function CancellationWizard({
 
     try {
       const allocRes = await cancellationService.allocateHotels(flightId);
-      const allocData = allocRes?.data || allocRes;
-      setHotelAllocations(allocData);
-      setAllocationProgress(4);
-      setTimeout(() => {
-        clearInterval(progressTimer);
-        setIsAllocating(false);
-        setAllocationProgress(0);
-        setActiveStep(5);
-        showAllocationOutcome(allocData);
-      }, 800);
+      const allocData: HotelAllocationsResponse = allocRes?.data || allocRes;
+      if (allocData?.running) {
+        startAllocationPolling(flightId);
+      } else {
+        finishAllocation(allocData);
+      }
     } catch (error: any) {
-      clearInterval(progressTimer);
-      setIsAllocating(false);
       if (error?.status === 409) {
-        setAllocationProgress(0);
-        setActiveStep(5);
-        toast.info(
-          error.message ||
-            "Hotel allocation is already running for this flight. Refresh in a few minutes.",
-        );
+        startAllocationPolling(flightId);
         return;
       }
+      stopAllocationPolling();
+      setIsAllocating(false);
+      setAllocationProgress(0);
       setAllocationError(error.message || "Failed to allocate hotels");
       toast.error(error.message || "Failed to allocate hotels");
     }
@@ -2803,10 +2895,12 @@ export default function CancellationWizard({
                 <Loader2 className="h-10 w-10 text-[#0F2757] animate-spin" />
                 <div className="text-center">
                   <h3 className="text-xl font-semibold text-gray-900 font-figtree">
-                    Allocating Hotels...
+                    Booking Hotels...
                   </h3>
                   <p className="text-sm text-gray-500 mt-1">
-                    Finding the best hotels for your passengers...
+                    {allocationRunProgress && allocationRunProgress.total > 0
+                      ? `${allocationRunProgress.done} of ${allocationRunProgress.total} bookings processed`
+                      : "Finding and booking the best hotels for your passengers..."}
                   </p>
                 </div>
               </div>

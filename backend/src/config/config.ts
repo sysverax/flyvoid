@@ -126,7 +126,11 @@ export const config = {
       10,
     ),
     allocationRunLeaseMs: parseInt(
-      process.env.HOTEL_ALLOCATION_RUN_LEASE_MS ?? String(30 * 60 * 1000),
+      process.env.HOTEL_ALLOCATION_RUN_LEASE_MS ?? String(5 * 60 * 1000),
+      10,
+    ),
+    staleBookingAttemptMs: parseInt(
+      process.env.HOTEL_BOOKING_ATTEMPT_STALE_MS ?? String(60 * 60 * 1000),
       10,
     ),
   },

@@ -71,6 +71,19 @@ export class HotelAllocationsDto {
   status: string;
 
   @ApiProperty({
+    description: "True while an allocation run is booking hotels in the background",
+    example: false,
+  })
+  running: boolean;
+
+  @ApiPropertyOptional({
+    description: "Why the last allocation run stopped early, if it did",
+    nullable: true,
+    example: null,
+  })
+  lastRunError: string | null;
+
+  @ApiProperty({
     description: "Total number of bookings (PNRs) for the cancelled flight",
     example: 10,
   })
