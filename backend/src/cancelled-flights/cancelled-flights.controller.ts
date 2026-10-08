@@ -891,7 +891,7 @@ export class CancelledFlightsController {
     summary:
       "Generate hotel allocations for all bookings of a cancelled flight",
     description:
-      "Builds preferred/fallback room occupancies per booking, performs a single hotel supplier availability search across deduplicated occupancies, and returns hotel allocations without creating live hotel bookings.",
+      "Builds preferred/fallback room occupancies per booking, performs a single hotel supplier availability search across deduplicated occupancies, allocates hotels, then books every allocation live with the hotel supplier. Bookings whose supplier booking fails are listed in bookingFailures and can be retried via book-hotel.",
   })
   @ApiParam({ name: "id", description: "Cancelled flight id" })
   @ApiNotFoundResponse({

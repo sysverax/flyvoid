@@ -66,10 +66,15 @@ flowchart TD
     I1 --> I2["Merge content into results<br/>(failures → null, never aborts)"]
     I2 --> J1["Calculate pricing per allocation<br/>(buying price, platform fee, discounts, tax)"]
     J1 --> J2["Aggregate totals<br/>(price, rooms, earnings, platform fee)"]
-    J2 --> K1[("DB transaction:<br/>saveHotelAllocations<br/>replace prior rows, insert new rows,<br/>flight.status = ALLOCATED")]
-    K1 --> L1["Return HotelAllocationsDto"]
+    J2 --> K1[("DB transaction:<br/>saveHotelAllocations<br/>replace prior rows, insert new rows (status DRAFT),<br/>flight.status = ALLOCATED")]
+    K1 --> K2[["Hotel vendor (active adapter): live booking<br/>per booking, ≤3 in parallel, via reserveHotelRooms:<br/>checkRate every room → claim row IN_PROGRESS →<br/>bookHotel per room → row CONFIRMED + real refs"]]
+    K2 -->|"booking fails"| K3["Row back to DRAFT (clean failure)<br/>or IN_PROGRESS (partial / unknown outcome)<br/>→ listed in bookingFailures,<br/>retry via POST /:id/bookings/:bookingId/book-hotel"]
+    K2 --> K4[("DB: refreshFlightTotals<br/>re-sum flight totals from rows as booked")]
+    K3 --> K4
+    K4 --> L1["Return HotelAllocationsDto<br/>(+ bookedBookings, bookingFailures)"]
     L1 --> M(["Client: 200 OK"])
 
     style V1 fill:transparent,stroke:#2b7ac9,stroke-width:1.5px,stroke-dasharray: 4 3
     style AI1 fill:transparent,stroke:#7a2bc9,stroke-width:1.5px,stroke-dasharray: 4 3
+    style K2 fill:transparent,stroke:#2b7ac9,stroke-width:1.5px,stroke-dasharray: 4 3
     style I1 fill:transparent,stroke:#2b7ac9,stroke-width:1.5px,stroke-dasharray: 4 3

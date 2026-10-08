@@ -638,6 +638,55 @@ export class CancelledFlightsRepository {
     );
   }
 
+  /**
+   * Re-sums the flight's totals from its allocation rows (as booked, so
+   * supplier re-pricing is reflected in what the airline pays) and returns them.
+   */
+  async refreshFlightTotals(
+    cancelledFlightId: number,
+    requestLogger: Logger,
+  ): Promise<{
+    totalActualPrice: number;
+    totalBuyingPrice: number;
+    totalSellingPrice: number;
+    totalDiscounts: number;
+    totalHotelTaxes: number;
+    totalPlatformFee: number;
+    totalPrice: number;
+    totalEarnings: number;
+    totalHotelRooms: number;
+  }> {
+    const rows = await this.allocationRepo.find({
+      where: { cancelledFlightId },
+    });
+    const sum = (pick: (row: HotelAllocationEntity) => unknown): number => {
+      const total = rows.reduce((acc, row) => {
+        const value = Number(pick(row) ?? 0);
+        return acc + (Number.isFinite(value) ? value : 0);
+      }, 0);
+      return Math.round((total + Number.EPSILON) * 100) / 100;
+    };
+    const totals = {
+      totalActualPrice: sum((row) => row.actualPrice),
+      totalBuyingPrice: sum((row) => row.buyingPrice),
+      totalSellingPrice: sum((row) => row.sellingPrice),
+      totalDiscounts: sum((row) => row.discount),
+      totalHotelTaxes: sum((row) => row.tax),
+      totalPlatformFee: sum((row) => row.platformFee),
+      totalPrice: sum((row) => row.totalPrice),
+      totalEarnings: sum((row) => row.earnings),
+      totalHotelRooms: sum((row) => row.totalRooms),
+    };
+    await this.flightRepo.update({ id: cancelledFlightId }, totals);
+    requestLogger.info("Refreshed cancelled flight totals from allocations", {
+      context: this.context,
+      cancelledFlightId,
+      allocationCount: rows.length,
+      totalPrice: totals.totalPrice,
+    });
+    return totals;
+  }
+
   async findHotelBookingsByFlightIdWithPagination(
     cancelledFlightId: number,
     page: number,

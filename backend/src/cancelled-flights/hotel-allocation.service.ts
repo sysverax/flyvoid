@@ -2222,9 +2222,6 @@ export class HotelAllocationService {
       failedBookings: failed,
     });
 
-    // Booked the hotel recommendations using the allocated results and hotel partner APIs
-    // For now avoid the booking step and only provide recommendations(consider as booked)
-
     // Best-effort hotel content lookup, once per allocated hotel (not per booking).
     const allocatedHotelCodes = Array.from(
       new Set(
@@ -2311,8 +2308,9 @@ export class HotelAllocationService {
         })),
         totalRooms: item.rooms?.length ?? 0,
         // "status" is the real column - "allocationStatus" was silently
-        // dropped by TypeORM, leaving every row stuck at the DRAFT default.
-        status: HotelAllocationStatus.CONFIRMED,
+        // dropped by TypeORM. DRAFT until the live supplier booking below
+        // confirms it; a booking that fails stays DRAFT (not booked).
+        status: HotelAllocationStatus.DRAFT,
         currency: "USD",
         bookingReference: `temp-${item.bookingId}-${index}`,
         reason: item.reason ?? null,
@@ -2379,26 +2377,105 @@ export class HotelAllocationService {
       requestLogger,
     );
 
+    // Live supplier booking of every allocation. Runs after the save above
+    // commits: the allocation rows must exist (reserveHotelRooms books the
+    // rooms stored on them), and a supplier booking can't be rolled back, so
+    // a failure here never undoes the allocation - that booking stays DRAFT
+    // (or IN_PROGRESS when partial/unknown) and is retried via book-hotel.
+    const bookingFailures = await this.bookAllocatedHotels(
+      flight,
+      eligibleBookings,
+      user,
+      requestId,
+      requestLogger,
+    );
+
+    // Supplier prices can move between search and booking; recompute the
+    // flight totals (what the airline pays) from the rows as booked.
+    const totals = await this.cancelledFlightsRepository.refreshFlightTotals(
+      flightId,
+      requestLogger,
+    );
+
     return {
       cancelledFlightId: flight.id,
       status: FlightStatus.ALLOCATED,
       totalBookings: bookings.length,
       allocatedBookings: allocated.length,
       failedBookings: failed,
-      totalRooms: totalHotelRooms,
-      totalActualPrice,
-      totalSellingPrice,
-      totalDiscounts,
-      totalHotelTaxes,
+      bookedBookings: allocated.length - bookingFailures.length,
+      bookingFailures,
+      totalRooms: totals.totalHotelRooms,
+      totalActualPrice: totals.totalActualPrice,
+      totalSellingPrice: totals.totalSellingPrice,
+      totalDiscounts: totals.totalDiscounts,
+      totalHotelTaxes: totals.totalHotelTaxes,
       platformFeePercentage,
-      totalPlatformFee,
+      totalPlatformFee: totals.totalPlatformFee,
       currency,
     };
   }
 
+  /**
+   * Books each allocated booking with the supplier (same path as the
+   * book-hotel endpoint). Never throws: returns the bookings that failed.
+   */
+  private async bookAllocatedHotels(
+    flight: CancelledFlightEntity,
+    bookings: BookingEntity[],
+    user: AuthenticatedRequest["user"],
+    requestId: string,
+    requestLogger: Logger,
+  ): Promise<Array<{ bookingId: number; pnr: string; reason: string }>> {
+    const HOTEL_BOOKING_CONCURRENCY = 3;
+    const outcomes = await this.mapWithConcurrency(
+      bookings,
+      HOTEL_BOOKING_CONCURRENCY,
+      async (booking) => {
+        try {
+          // Empty dto: book the rate keys saved on the allocation row.
+          await this.reserveHotelRooms(
+            flight,
+            booking,
+            {},
+            user,
+            requestId,
+            requestLogger,
+          );
+          return null;
+        } catch (error: any) {
+          requestLogger.error("Live hotel booking failed during allocation", {
+            context: this.context,
+            flightId: flight.id,
+            bookingId: booking.id,
+            pnr: booking.pnr,
+            error: error?.message,
+          });
+          return {
+            bookingId: booking.id,
+            pnr: booking.pnr,
+            reason: String(error?.message ?? "Hotel booking failed"),
+          };
+        }
+      },
+    );
+    const failures = outcomes.filter(
+      (outcome): outcome is { bookingId: number; pnr: string; reason: string } =>
+        outcome !== null,
+    );
+    requestLogger.info("Live hotel booking during allocation complete", {
+      context: this.context,
+      flightId: flight.id,
+      booked: bookings.length - failures.length,
+      failed: failures.length,
+    });
+    return failures;
+  }
+
   // ── Live supplier booking for one passenger ─────────────────────────────
 
-  // Real bookings only after allocation: hotel allocation (which replaces
+  // Allocation books every booking itself; this endpoint retries the ones
+  // that failed there. Only after allocation: allocation (which replaces
   // every allocation row of the flight) runs only at
   // PASSENGERS_BOOKING_CONFIRMED, and a flight never returns to that status.
   private static readonly HOTEL_BOOKABLE_FLIGHT_STATUSES =

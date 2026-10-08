@@ -140,6 +140,8 @@ export interface HotelAllocationsResponse {
   totalBookings: number;
   allocatedBookings: number;
   failedBookings: number;
+  bookedBookings: number;
+  bookingFailures: Array<{ bookingId: number; pnr: string; reason: string }>;
   totalRooms: number;
   totalActualPrice: number;
   totalSellingPrice: number;

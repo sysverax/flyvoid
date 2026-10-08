@@ -30,6 +30,20 @@ export class HotelAllocationsDto {
   failedBookings: number;
 
   @ApiProperty({
+    description:
+      "Number of allocated bookings confirmed with the hotel supplier (live booking)",
+    example: 7,
+  })
+  bookedBookings: number;
+
+  @ApiProperty({
+    description:
+      "Allocated bookings whose live supplier booking failed; retry each via POST /:id/bookings/:bookingId/book-hotel",
+    example: [{ bookingId: 12, pnr: "ABC123", reason: "Rate no longer available" }],
+  })
+  bookingFailures: Array<{ bookingId: number; pnr: string; reason: string }>;
+
+  @ApiProperty({
     description: "Total number of rooms allocated for the cancelled flight",
     example: 5,
   })

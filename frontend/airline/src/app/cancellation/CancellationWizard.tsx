@@ -857,9 +857,18 @@ export default function CancellationWizard({
         setIsAllocating(false);
         setAllocationProgress(0);
         setActiveStep(5);
-        toast.success(
-          allocRes?.message || "Hotels allocated successfully",
-        );
+        const bookingFailures = allocData?.bookingFailures ?? [];
+        if (bookingFailures.length > 0) {
+          toast.warning(
+            `Hotels allocated, but ${bookingFailures.length} booking(s) could not be confirmed with the hotel: ${bookingFailures
+              .map((f: { pnr: string }) => f.pnr)
+              .join(", ")}`,
+          );
+        } else {
+          toast.success(
+            allocRes?.message || "Hotels allocated and booked successfully",
+          );
+        }
       }, 800);
     } catch (error: any) {
       clearInterval(progressTimer);
