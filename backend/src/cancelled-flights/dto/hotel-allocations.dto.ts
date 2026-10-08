@@ -1,5 +1,61 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { HotelAllocationStatus } from "../entities/enums";
+
+export type PnrBookingStatus =
+  | "SUCCESS"
+  | "PENDING"
+  | "FAILED"
+  | "MANUAL_CHECK"
+  | "NOT_STARTED";
+
+export class HotelAllocationRoomDto {
+  @ApiProperty({ example: 2 })
+  adults: number;
+
+  @ApiProperty({ example: 0 })
+  children: number;
+
+  @ApiProperty({ example: "Double Room" })
+  roomName: string;
+
+  @ApiProperty({ example: "Room only" })
+  boardName: string;
+
+  @ApiProperty({ example: 120 })
+  price: number;
+}
+
+export class HotelAllocationHotelDto {
+  @ApiProperty({ example: "123456" })
+  hotelCode: string;
+
+  @ApiProperty({ example: "Airport Grand Hotel" })
+  hotelName: string;
+
+  @ApiProperty({ example: "5 STARS" })
+  category: string;
+
+  @ApiPropertyOptional({
+    description: "Only for SUCCESS",
+    nullable: true,
+    example: "1 Airport Rd",
+  })
+  address: string | null;
+
+  @ApiPropertyOptional({ description: "Only for SUCCESS", nullable: true })
+  checkInDate: string | null;
+
+  @ApiPropertyOptional({ description: "Only for SUCCESS", nullable: true })
+  checkOutDate: string | null;
+
+  @ApiProperty({ description: "Only for SUCCESS (else 0)", example: 2 })
+  totalRooms: number;
+
+  @ApiProperty({ description: "Only for SUCCESS (else 0)", example: 264 })
+  totalPrice: number;
+
+  @ApiProperty({ type: [HotelAllocationRoomDto], description: "Only for SUCCESS" })
+  rooms: HotelAllocationRoomDto[];
+}
 
 export class HotelAllocationBookingResultDto {
   @ApiProperty({ example: 12 })
@@ -11,49 +67,43 @@ export class HotelAllocationBookingResultDto {
   @ApiProperty({ example: "business" })
   travelClass: string;
 
-  @ApiProperty({
-    enum: HotelAllocationStatus,
-    description:
-      "confirmed = booked with the supplier; failed = no candidate could be booked (retry allowed); manual_check = supplier outcome unknown, reconcile before rebooking; in_progress = being booked; draft = not attempted yet",
-    example: HotelAllocationStatus.CONFIRMED,
-  })
-  status: HotelAllocationStatus;
-
   @ApiPropertyOptional({
-    description:
-      "Hotel booked (confirmed) or being reconciled (manual_check/in_progress); null otherwise",
-    example: "123456",
+    description: "Persisted processing order of the PNR (class priority first)",
     nullable: true,
+    example: 2,
   })
-  hotelCode: string | null;
-
-  @ApiPropertyOptional({ example: "Airport Grand Hotel", nullable: true })
-  hotelName: string | null;
-
-  @ApiPropertyOptional({ example: "5 STARS", nullable: true })
-  category: string | null;
-
-  @ApiPropertyOptional({
-    description: "Supplier booking reference(s); only for confirmed bookings",
-    example: "f1c9a1e4-...",
-    nullable: true,
-  })
-  bookingReference: string | null;
-
-  @ApiProperty({ example: 2 })
-  totalRooms: number;
-
-  @ApiProperty({ description: "Total price (confirmed bookings only)", example: 264 })
-  totalPrice: number;
+  processingOrder: number | null;
 
   @ApiProperty({
-    description: "Supplier booking attempts made for this PNR in this run",
-    example: 1,
+    enum: ["SUCCESS", "PENDING", "FAILED", "MANUAL_CHECK", "NOT_STARTED"],
+    description:
+      "SUCCESS = booked with the supplier; PENDING = booking in progress (not confirmed); FAILED = no hotel could be booked; MANUAL_CHECK = supplier outcome unknown, reconcile before rebooking; NOT_STARTED = not attempted yet",
+    example: "SUCCESS",
+  })
+  bookingStatus: PnrBookingStatus;
+
+  @ApiPropertyOptional({
+    type: HotelAllocationHotelDto,
+    nullable: true,
+    description:
+      "SUCCESS: the booked hotel. PENDING / MANUAL_CHECK: the hotel being attempted (not confirmed). FAILED / NOT_STARTED: null",
+  })
+  hotel: HotelAllocationHotelDto | null;
+
+  @ApiPropertyOptional({
+    description: "Supplier booking reference(s); only for SUCCESS",
+    nullable: true,
+  })
+  providerBookingReference: string | null;
+
+  @ApiProperty({
+    description: "Booking attempts recorded for this PNR",
+    example: 2,
   })
   attempts: number;
 
   @ApiPropertyOptional({
-    description: "Why this hotel was booked, or the failure / manual-check reason",
+    description: "Booked-hotel note, or the failure / manual-check reason",
     nullable: true,
   })
   reason: string | null;
@@ -63,11 +113,7 @@ export class HotelAllocationsDto {
   @ApiProperty({ description: "ID of the cancelled flight", example: 1 })
   cancelledFlightId: number;
 
-  @ApiProperty({
-    description:
-      "Flight status after the run: allocated when at least one PNR is confirmed, else passengers_booking_confirmed",
-    example: "allocated",
-  })
+  @ApiProperty({ description: "Flight status", example: "allocated" })
   status: string;
 
   @ApiProperty({
@@ -83,100 +129,60 @@ export class HotelAllocationsDto {
   })
   lastRunError: string | null;
 
-  @ApiProperty({
-    description: "Total number of bookings (PNRs) for the cancelled flight",
-    example: 10,
-  })
-  totalBookings: number;
+  @ApiProperty({ example: 100 })
+  totalPnrs: number;
+
+  @ApiProperty({ example: 93 })
+  successfulPnrs: number;
+
+  @ApiProperty({ example: 2 })
+  pendingPnrs: number;
+
+  @ApiProperty({ example: 3 })
+  failedPnrs: number;
+
+  @ApiProperty({ example: 2 })
+  manualCheckPnrs: number;
+
+  @ApiProperty({ example: 0 })
+  notStartedPnrs: number;
 
   @ApiProperty({
-    description: "PNRs whose hotel is booked and confirmed by the supplier",
-    example: 8,
+    description: "True only when every PNR is SUCCESS",
+    example: false,
   })
-  confirmedBookings: number;
-
-  @ApiProperty({
-    description: "Same as confirmedBookings (kept for compatibility)",
-    example: 8,
-  })
-  allocatedBookings: number;
-
-  @ApiProperty({
-    description: "PNRs that could not be booked with any candidate hotel",
-    example: 1,
-  })
-  failedBookings: number;
-
-  @ApiProperty({
-    description:
-      "PNRs whose supplier booking outcome is unknown (timeout/partial); reconcile with the supplier before rebooking",
-    example: 1,
-  })
-  manualCheckBookings: number;
-
-  @ApiProperty({
-    description: "PNRs still being booked (e.g. by a concurrent single-PNR booking)",
-    example: 0,
-  })
-  inProgressBookings: number;
-
-  @ApiProperty({ description: "PNRs not attempted yet", example: 0 })
-  pendingBookings: number;
+  fullyBooked: boolean;
 
   @ApiProperty({ type: [HotelAllocationBookingResultDto] })
   results: HotelAllocationBookingResultDto[];
 
-  @ApiProperty({
-    description: "Total number of rooms booked (confirmed) for the cancelled flight",
-    example: 5,
-  })
+  @ApiProperty({ description: "Rooms of successful bookings", example: 5 })
   totalRooms: number;
 
-  @ApiProperty({
-    description: "Total actual price of the confirmed hotel rooms",
-    example: 900,
-  })
+  @ApiProperty({ example: 900 })
   totalActualPrice: number;
 
-  @ApiProperty({
-    description: "Total selling price of the confirmed hotel rooms",
-    example: 1000,
-  })
+  @ApiProperty({ example: 1000 })
   totalSellingPrice: number;
 
-  @ApiProperty({
-    description: "Total discounts applied to the confirmed hotel bookings",
-    example: 100,
-  })
+  @ApiProperty({ example: 100 })
   totalDiscounts: number;
 
-  @ApiProperty({
-    description: "Total hotel taxes of the confirmed rooms",
-    example: 50,
-  })
+  @ApiProperty({ example: 50 })
   totalHotelTaxes: number;
 
-  @ApiProperty({
-    description: "Platform fee percentage",
-    example: 10,
-  })
+  @ApiProperty({ example: 10 })
   platformFeePercentage: number;
 
-  @ApiProperty({
-    description: "Total platform fee of the confirmed hotel bookings",
-    example: 30,
-  })
+  @ApiProperty({ example: 30 })
   totalPlatformFee: number;
 
   @ApiProperty({
-    description: "Total payable for the confirmed hotel bookings",
+    description: "Total payable for successful bookings",
     example: 1030,
   })
   totalPrice: number;
 
-  @ApiProperty({
-    description: "Currency of the hotel prices",
-    example: "EUR",
-  })
+  @ApiProperty({ example: "EUR" })
   currency: string;
 }

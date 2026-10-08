@@ -122,11 +122,15 @@ export const config = {
       10,
     ),
     maxAttemptsPerBooking: parseInt(
-      process.env.HOTEL_BOOKING_MAX_ATTEMPTS ?? "10",
+      process.env.HOTEL_BOOKING_MAX_ATTEMPTS ?? "5",
       10,
     ),
     allocationRunLeaseMs: parseInt(
       process.env.HOTEL_ALLOCATION_RUN_LEASE_MS ?? String(5 * 60 * 1000),
+      10,
+    ),
+    bookingPlanTtlMs: parseInt(
+      process.env.HOTEL_BOOKING_PLAN_TTL_MS ?? String(60 * 60 * 1000),
       10,
     ),
     staleBookingAttemptMs: parseInt(

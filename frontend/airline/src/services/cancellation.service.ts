@@ -143,17 +143,39 @@ export type HotelBookingStatus =
   | "cancelled"
   | "completed";
 
+export type PnrBookingStatus =
+  | "SUCCESS"
+  | "PENDING"
+  | "FAILED"
+  | "MANUAL_CHECK"
+  | "NOT_STARTED";
+
+export interface HotelAllocationHotel {
+  hotelCode: string;
+  hotelName: string;
+  category: string;
+  address: string | null;
+  checkInDate: string | null;
+  checkOutDate: string | null;
+  totalRooms: number;
+  totalPrice: number;
+  rooms: Array<{
+    adults: number;
+    children: number;
+    roomName: string;
+    boardName: string;
+    price: number;
+  }>;
+}
+
 export interface HotelAllocationBookingResult {
   bookingId: number;
   pnr: string;
   travelClass: string;
-  status: HotelBookingStatus;
-  hotelCode: string | null;
-  hotelName: string | null;
-  category: string | null;
-  bookingReference: string | null;
-  totalRooms: number;
-  totalPrice: number;
+  processingOrder: number | null;
+  bookingStatus: PnrBookingStatus;
+  hotel: HotelAllocationHotel | null;
+  providerBookingReference: string | null;
   attempts: number;
   reason: string | null;
 }
@@ -163,13 +185,13 @@ export interface HotelAllocationsResponse {
   status: string;
   running: boolean;
   lastRunError: string | null;
-  totalBookings: number;
-  confirmedBookings: number;
-  allocatedBookings: number;
-  failedBookings: number;
-  manualCheckBookings: number;
-  inProgressBookings: number;
-  pendingBookings: number;
+  totalPnrs: number;
+  successfulPnrs: number;
+  pendingPnrs: number;
+  failedPnrs: number;
+  manualCheckPnrs: number;
+  notStartedPnrs: number;
+  fullyBooked: boolean;
   results: HotelAllocationBookingResult[];
   totalPrice: number;
   totalRooms: number;

@@ -9,16 +9,23 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { Logger } from "winston";
-import { CancelledFlightsRepository } from "./cancelled-flights.repository";
+import {
+  CancelledFlightsRepository,
+  isRebookableAllocation,
+} from "./cancelled-flights.repository";
 import { BookingEntity } from "./entities/booking.entity";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
 import { randomUUID } from "crypto";
+import { HotelAllocationEntity } from "./entities/hotel-allocation.entity";
+import { HotelBookingAttemptEntity } from "./entities/hotel-booking-attempt.entity";
+import { HotelBookingCandidateEntity } from "./entities/hotel-booking-candidate.entity";
 import {
-  HotelAllocationEntity,
-  HotelBookingAttempt,
-  HotelBookingAttemptRecord,
-} from "./entities/hotel-allocation.entity";
-import { FlightStatus, HotelAllocationStatus, TravelClass } from "./entities/enums";
+  FlightStatus,
+  HotelAllocationStatus,
+  HotelBookingAttemptStatus,
+  HotelBookingFailureCode,
+  TravelClass,
+} from "./entities/enums";
 import {
   AvailabilityHotel,
   AvailabilityRoomRate,
@@ -36,18 +43,19 @@ import { config } from "../config/config";
 import {
   HotelAllocationBookingResultDto,
   HotelAllocationsDto,
+  PnrBookingStatus,
 } from "./dto/hotel-allocations.dto";
 import {
   AllotmentLedger,
-  BookingCandidate,
   LedgerClaim,
   RoomNeed,
-  ShapePool,
+  SelectedRate,
+  buildCandidatePlan,
   buildSupplyPools,
   chooseRoomSplit,
   classRank,
   compareBookingPriority,
-  rankCandidates,
+  selectCandidateRates,
   shapeKey,
   toRoomNeeds,
 } from "./hotel-allocation.planner";
@@ -81,8 +89,6 @@ interface AllocationRunContext {
 }
 
 interface BookingPlanningState {
-  hotels: AvailabilityHotel[];
-  pools: Map<string, ShapePool>;
   ledger: AllotmentLedger;
   contentCache: Map<string, Promise<HotelContentDetails | null>>;
 }
@@ -1127,14 +1133,6 @@ export class HotelAllocationService {
     FlightStatus.ALLOCATED,
   ];
 
-  private static readonly REBOOKABLE_STATUSES = new Set<HotelAllocationStatus>([
-    HotelAllocationStatus.DRAFT,
-    HotelAllocationStatus.FAILED,
-    HotelAllocationStatus.CANCELLED,
-  ]);
-
-  private static readonly MAX_ATTEMPT_HISTORY = 20;
-
   async startHotelAllocation(
     flightId: number,
     user: AuthenticatedRequest["user"],
@@ -1220,7 +1218,7 @@ export class HotelAllocationService {
       user,
       requestLogger,
     );
-    const [bookings, rows, runState] = await Promise.all([
+    const [bookings, rows, attempts, runState] = await Promise.all([
       this.cancelledFlightsRepository.findBookingsByFlightId(
         flightId,
         requestLogger,
@@ -1229,6 +1227,7 @@ export class HotelAllocationService {
         flightId,
         requestLogger,
       ),
+      this.cancelledFlightsRepository.findAttemptsByFlightId(flightId),
       this.cancelledFlightsRepository.getFlightAllocationRunState(
         flightId,
         config.hotelBooking.allocationRunLeaseMs,
@@ -1243,6 +1242,7 @@ export class HotelAllocationService {
       flight,
       bookings,
       rows,
+      attempts,
       runState,
       platformFeePercentage,
     );
@@ -1266,20 +1266,37 @@ export class HotelAllocationService {
 
     let runError: string | null = null;
     try {
-      await this.cancelledFlightsRepository.markStaleInProgressAllocations(
+      await this.cancelledFlightsRepository.recoverInterruptedAttempts(
         flight.id,
+        runId,
         config.hotelBooking.staleBookingAttemptMs,
-        "Booking attempt was interrupted; check with the supplier before rebooking",
         requestLogger,
       );
+
+      const ordered = [...bookings].sort(compareBookingPriority);
+      await this.cancelledFlightsRepository.ensurePnrProcessingOrder(
+        flight.id,
+        ordered.map((booking, index) => ({
+          bookingId: booking.id,
+          processingOrder: index + 1,
+          classPriority: classRank(booking.travelClass),
+        })),
+        {
+          checkInDate: run.stay.checkInDate.toISOString(),
+          checkOutDate: run.stay.checkOutDate.toISOString(),
+          platformFeePercentage: run.platformFeePercentage,
+        },
+        requestLogger,
+      );
+
       const rows = await this.cancelledFlightsRepository.findAllocationsByFlightId(
         flight.id,
         requestLogger,
       );
-      const rowByBooking = new Map(rows.map((row) => [row.bookingId, row]));
-      const pending = bookings
-        .filter((booking) => this.isRebookable(rowByBooking.get(booking.id)))
-        .sort(compareBookingPriority);
+      const pendingIds = new Set(
+        rows.filter((row) => isRebookableAllocation(row)).map((row) => row.bookingId),
+      );
+      const pending = bookings.filter((booking) => pendingIds.has(booking.id));
 
       requestLogger.info("Resolved bookings to process in this allocation run", {
         context: this.context,
@@ -1287,11 +1304,11 @@ export class HotelAllocationService {
         runId,
         totalBookings: bookings.length,
         pending: pending.length,
-        skipped: bookings.length - pending.length,
       });
 
       if (pending.length > 0) {
-        await this.bookPendingBookings(run, pending);
+        await this.planPendingBookings(run, pending, rows);
+        await this.bookPlannedBookings(run, pending);
       }
     } catch (error: any) {
       runError = String(error?.message ?? error);
@@ -1353,32 +1370,39 @@ export class HotelAllocationService {
     };
   }
 
-  private isRebookable(row: HotelAllocationEntity | undefined | null): boolean {
-    if (!row) {
-      return true;
-    }
-    if (
-      row.status === HotelAllocationStatus.CONFIRMED &&
-      row.bookingReference?.startsWith("temp-")
-    ) {
-      return true;
-    }
-    return HotelAllocationService.REBOOKABLE_STATUSES.has(row.status);
-  }
-
-  private async bookPendingBookings(
+  private async planPendingBookings(
     run: AllocationRunContext,
     pending: BookingEntity[],
+    rows: HotelAllocationEntity[],
   ): Promise<void> {
     const { flight, stay, requestId, requestLogger } = run;
+    const fresh = await this.cancelledFlightsRepository.findFreshPlanBookingIds(
+      flight.id,
+      config.hotelBooking.bookingPlanTtlMs,
+    );
+    const rowByBooking = new Map(rows.map((row) => [row.bookingId, row]));
+    const needsPlan = pending.filter(
+      (booking) =>
+        !fresh.has(booking.id) ||
+        rowByBooking.get(booking.id)?.status === HotelAllocationStatus.FAILED,
+    );
+    requestLogger.info("Resolved PNRs that need a new booking plan", {
+      context: this.context,
+      flightId: flight.id,
+      pending: pending.length,
+      reusingPlan: pending.length - needsPlan.length,
+      needsPlan: needsPlan.length,
+    });
+    if (needsPlan.length === 0) {
+      return;
+    }
 
     const plans: Array<{ booking: BookingEntity; plan: RoomSplitPlan }> = [];
-    for (const booking of pending) {
+    for (const booking of needsPlan) {
       const split = this.resolveRoomSplitPlan(booking, requestLogger);
       if (!split.plan) {
-        await this.recordBookingFailed(
-          run,
-          booking,
+        await this.cancelledFlightsRepository.markPnrFailed(
+          booking.id,
           `Invalid passenger data: ${split.reason ?? "no room split"}`,
         );
         continue;
@@ -1426,7 +1450,6 @@ export class HotelAllocationService {
       booking,
       needs: toRoomNeeds(chooseRoomSplit(plan, hotels)),
     }));
-
     const demand = new Map<string, RoomNeed>();
     for (const { needs } of entries) {
       for (const need of needs) {
@@ -1444,34 +1467,82 @@ export class HotelAllocationService {
       demand,
       config.hotelBooking.supplyBufferRatio,
     );
-    requestLogger.info("Built hotel supply pools", {
-      context: this.context,
-      flightId: flight.id,
-      hotelCount: hotels.length,
-      pools: [...pools.values()].map((pool) => ({
-        shape: pool.shapeKey,
-        demand: pool.demand,
-        target: pool.target,
-        poolAllotment: pool.poolAllotment,
-        totalAllotment: pool.totalAllotment,
-        poolHotels: pool.hotelCodes.size,
-        belowTarget: pool.poolAllotment < pool.target,
+
+    await this.cancelledFlightsRepository.savePnrPlans(
+      flight.id,
+      randomUUID(),
+      entries.map(({ booking, needs }) => ({
+        bookingId: booking.id,
+        roomPlan: needs.map((need) => ({
+          adults: need.shape.adults,
+          children: need.shape.children,
+          roomsNeeded: need.roomsNeeded,
+        })),
+        candidates: buildCandidatePlan(hotels, needs, pools),
       })),
-    });
+      requestLogger,
+    );
+  }
+
+  private async bookPlannedBookings(
+    run: AllocationRunContext,
+    pending: BookingEntity[],
+  ): Promise<void> {
+    const { flight, requestLogger } = run;
+    const [rows, attempts] = await Promise.all([
+      this.cancelledFlightsRepository.findAllocationsByFlightId(
+        flight.id,
+        requestLogger,
+      ),
+      this.cancelledFlightsRepository.findAttemptsByFlightId(flight.id),
+    ]);
+    const rowByBooking = new Map(rows.map((row) => [row.bookingId, row]));
+    const planIds = [
+      ...new Set(rows.map((row) => row.planId).filter((id): id is string => !!id)),
+    ];
+    const candidates = await this.cancelledFlightsRepository.findCandidatesByPlans(
+      flight.id,
+      planIds,
+    );
 
     const planning: BookingPlanningState = {
-      hotels,
-      pools,
-      ledger: new AllotmentLedger(hotels),
+      ledger: this.buildPlanLedger(candidates, attempts),
       contentCache: new Map(),
     };
 
-    const ranks = [...new Set(entries.map((e) => classRank(e.booking.travelClass)))]
-      .sort((a, b) => b - a);
+    const entries = pending
+      .map((booking) => ({ booking, row: rowByBooking.get(booking.id) }))
+      .filter(
+        (entry): entry is { booking: BookingEntity; row: HotelAllocationEntity } =>
+          !!entry.row?.planId &&
+          entry.row.status !== HotelAllocationStatus.FAILED &&
+          isRebookableAllocation(entry.row),
+      )
+      .map(({ booking, row }) => ({
+        booking,
+        row,
+        candidates: candidates.filter(
+          (c) => c.bookingId === booking.id && c.planId === row.planId,
+        ),
+        attempts: attempts.filter(
+          (a) => a.bookingId === booking.id && a.planId === row.planId,
+        ),
+      }))
+      .sort(
+        (a, b) =>
+          (a.row.processingOrder ?? Number.MAX_SAFE_INTEGER) -
+          (b.row.processingOrder ?? Number.MAX_SAFE_INTEGER),
+      );
+
+    const ranks = [
+      ...new Set(
+        entries.map((e) => e.row.classPriority ?? classRank(e.booking.travelClass)),
+      ),
+    ].sort((a, b) => b - a);
     const concurrency = Math.max(1, config.hotelBooking.concurrencyPerClass);
     for (const rank of ranks) {
       const stage = entries.filter(
-        (entry) => classRank(entry.booking.travelClass) === rank,
+        (e) => (e.row.classPriority ?? classRank(e.booking.travelClass)) === rank,
       );
       requestLogger.info("Booking hotels for cabin class stage", {
         context: this.context,
@@ -1480,7 +1551,13 @@ export class HotelAllocationService {
         bookings: stage.length,
       });
       await this.mapWithConcurrency(stage, concurrency, async (entry) => {
-        await this.bookWithFallback(run, planning, entry.booking, entry.needs);
+        await this.bookPlannedPnr(
+          run,
+          planning,
+          entry.booking,
+          entry.candidates,
+          entry.attempts,
+        );
         await this.cancelledFlightsRepository.touchFlightAllocationRun(
           flight.id,
           run.runId,
@@ -1490,107 +1567,138 @@ export class HotelAllocationService {
     }
   }
 
-  private async bookWithFallback(
+  private buildPlanLedger(
+    candidates: HotelBookingCandidateEntity[],
+    attempts: HotelBookingAttemptEntity[],
+  ): AllotmentLedger {
+    const snapshot = new Map<string, { allotment: number; planId: string }>();
+    for (const candidate of [...candidates].sort((a, b) => a.id - b.id)) {
+      for (const room of candidate.rooms) {
+        for (const option of room.rateOptions) {
+          snapshot.set(option.rateKey, {
+            allotment: option.allotment,
+            planId: candidate.planId,
+          });
+        }
+      }
+    }
+    const remaining = new Map(
+      [...snapshot].map(([rateKey, { allotment }]) => [rateKey, allotment]),
+    );
+    for (const attempt of attempts) {
+      if (attempt.status === HotelBookingAttemptStatus.FAILED) {
+        continue;
+      }
+      for (const rateKey of attempt.rateKeys) {
+        if (snapshot.get(rateKey)?.planId === attempt.planId) {
+          remaining.set(rateKey, (remaining.get(rateKey) ?? 0) - 1);
+        }
+      }
+    }
+    return new AllotmentLedger(remaining);
+  }
+
+  private async bookPlannedPnr(
     run: AllocationRunContext,
     planning: BookingPlanningState,
     booking: BookingEntity,
-    needs: RoomNeed[],
+    candidates: HotelBookingCandidateEntity[],
+    priorAttempts: HotelBookingAttemptEntity[],
   ): Promise<void> {
     const { requestLogger } = run;
-    const excludedRateKeys = new Set<string>();
+    const definiteFailures = priorAttempts.filter(
+      (a) =>
+        a.status === HotelBookingAttemptStatus.FAILED &&
+        a.failureCode !== HotelBookingFailureCode.INTERRUPTED_BEFORE_REQUEST,
+    );
+    const excludedRateKeys = new Set(definiteFailures.flatMap((a) => a.rateKeys));
     const maxAttempts = Math.max(1, config.hotelBooking.maxAttemptsPerBooking);
-    let attempts = 0;
-    let lastFailure: string | null = null;
+    let failures = definiteFailures.length;
+    let lastFailure: string | null =
+      definiteFailures[definiteFailures.length - 1]?.failureReason ?? null;
 
     try {
       for (;;) {
-        if (attempts >= maxAttempts) {
-          await this.recordBookingFailed(
-            run,
-            booking,
-            `Gave up after ${attempts} failed booking attempt(s); last failure: ${lastFailure}`,
+        if (failures >= maxAttempts) {
+          await this.cancelledFlightsRepository.markPnrFailed(
+            booking.id,
+            `Gave up after ${failures} failed booking attempt(s); last failure: ${lastFailure}`,
           );
           return;
         }
 
-        const candidates = rankCandidates(
-          planning.hotels,
-          needs,
-          planning.ledger,
-          planning.pools,
-          excludedRateKeys,
-        );
-        let selected: { candidate: BookingCandidate; claim: LedgerClaim } | null =
-          null;
+        let selected: {
+          candidate: HotelBookingCandidateEntity;
+          picks: SelectedRate[];
+          claim: LedgerClaim;
+        } | null = null;
         for (const candidate of candidates) {
-          const claim = planning.ledger.tryClaim(
-            candidate.picks.map((pick) => ({
-              rateKey: pick.rate.rateKey,
-              rooms: pick.roomsNeeded,
-            })),
+          const picks = selectCandidateRates(
+            candidate,
+            planning.ledger,
+            excludedRateKeys,
           );
-          if (claim) {
-            selected = { candidate, claim };
+          const claim = picks
+            ? planning.ledger.tryClaim(
+                picks.map((pick) => ({
+                  rateKey: pick.rateKey,
+                  rooms: pick.roomsNeeded,
+                })),
+              )
+            : null;
+          if (picks && claim) {
+            selected = { candidate, picks, claim };
             break;
           }
         }
         if (!selected) {
-          await this.recordBookingFailed(
-            run,
-            booking,
+          await this.cancelledFlightsRepository.markPnrFailed(
+            booking.id,
             lastFailure
-              ? `Every candidate hotel failed to book; last failure: ${lastFailure}`
-              : `No hotel near the airport has rooms left for this booking's room split (${this.describeNeeds(needs)})`,
+              ? `No remaining hotel candidates could be booked; last failure: ${lastFailure}`
+              : "No hotel near the airport has rooms left for this booking's room split",
           );
           return;
         }
 
-        const { candidate, claim } = selected;
-        attempts += 1;
-        requestLogger.info("Attempting hotel booking candidate", {
-          context: this.context,
-          flightId: run.flight.id,
-          bookingId: booking.id,
-          pnr: booking.pnr,
-          attempt: attempts,
-          hotelCode: candidate.hotel.hotelCode,
-          stars: candidate.hotel.stars,
-          tier: candidate.tier,
-          totalPrice: candidate.totalPrice,
-        });
-
+        const { candidate, picks, claim } = selected;
         const outcome = await this.attemptHotelBooking({
           flight: run.flight,
           booking,
-          rooms: candidate.picks.flatMap((pick) =>
+          stay: run.stay,
+          rooms: picks.flatMap((pick) =>
             Array.from({ length: pick.roomsNeeded }, () => ({
-              rateKey: pick.rate.rateKey,
+              rateKey: pick.rateKey,
               shape: pick.shape,
             })),
           ),
+          hotel: {
+            hotelCode: candidate.hotelCode,
+            hotelName: candidate.hotelName,
+            category: candidate.category,
+          },
+          candidateId: candidate.id,
+          planId: candidate.planId,
+          runId: run.runId,
           platformFeePercentage: run.platformFeePercentage,
           requestId: run.requestId,
           requestLogger,
           contentCache: planning.contentCache,
         });
 
-        if (outcome.kind === "confirmed") {
+        if (outcome.kind === "confirmed" || outcome.kind === "unknown") {
           planning.ledger.commit(claim);
-          return;
-        }
-        if (outcome.kind === "unknown") {
-          planning.ledger.commit(claim);
-          return;
-        }
-        if (outcome.kind === "blocked") {
-          planning.ledger.release(claim);
           return;
         }
         planning.ledger.release(claim);
-        for (const pick of candidate.picks) {
-          excludedRateKeys.add(pick.rate.rateKey);
+        if (outcome.kind === "blocked") {
+          return;
         }
-        lastFailure = `${candidate.hotel.hotelName}: ${outcome.reason}`;
+        for (const pick of picks) {
+          excludedRateKeys.add(pick.rateKey);
+        }
+        failures += 1;
+        lastFailure = `${candidate.hotelName}: ${outcome.reason}`;
       }
     } catch (error: any) {
       requestLogger.error("Unexpected error while booking a hotel for a PNR", {
@@ -1604,71 +1712,15 @@ export class HotelAllocationService {
     }
   }
 
-  private describeNeeds(needs: RoomNeed[]): string {
-    return needs
-      .map(
-        (need) =>
-          `${need.roomsNeeded} x ${need.shape.adults} adult(s) + ${need.shape.children} child(ren)`,
-      )
-      .join(", ");
-  }
-
-  private async recordBookingFailed(
-    run: AllocationRunContext,
-    booking: BookingEntity,
-    reason: string,
-  ): Promise<void> {
-    const { requestLogger } = run;
-    requestLogger.warn("PNR hotel booking failed", {
-      context: this.context,
-      flightId: run.flight.id,
-      bookingId: booking.id,
-      pnr: booking.pnr,
-      reason,
-    });
-    try {
-      await this.cancelledFlightsRepository.claimHotelReservation(
-        booking.id,
-        (latest) => {
-          this.assertHotelBookable(booking.id, latest);
-          return latest
-            ? {
-                id: latest.id,
-                status: HotelAllocationStatus.FAILED,
-                bookingReference: "",
-                reason,
-              }
-            : {
-                cancelledFlightId: run.flight.id,
-                bookingId: booking.id,
-                checkInDate: run.stay.checkInDate.toISOString(),
-                checkOutDate: run.stay.checkOutDate.toISOString(),
-                hotelCode: "",
-                hotelName: "",
-                category: "",
-                rooms: [],
-                totalRooms: 0,
-                platformFeePercentage: run.platformFeePercentage,
-                status: HotelAllocationStatus.FAILED,
-                bookingReference: "",
-                reason,
-              };
-        },
-        requestLogger,
-      );
-    } catch (error: any) {
-      requestLogger.warn("Could not record the PNR's failed hotel booking", {
-        context: this.context,
-        bookingId: booking.id,
-        error: error?.message,
-      });
-    }
-  }
-
   private async attemptHotelBooking(input: {
     flight: CancelledFlightEntity;
     booking: BookingEntity;
+    stay: { checkInDate: Date; checkOutDate: Date };
     rooms: Array<{ rateKey: string; shape?: RoomOccupancy }>;
+    hotel?: { hotelCode: string; hotelName: string; category: string };
+    candidateId?: number | null;
+    planId?: string | null;
+    runId?: string | null;
     paymentData?: unknown;
     platformFeePercentage: number;
     requestId: string;
@@ -1678,96 +1730,104 @@ export class HotelAllocationService {
     const { flight, booking, rooms, requestId, requestLogger } = input;
     const rateKeys = rooms.map((room) => room.rateKey);
 
+    let attemptId: number;
+    try {
+      const start = await this.cancelledFlightsRepository.startBookingAttempt(
+        {
+          cancelledFlightId: flight.id,
+          bookingId: booking.id,
+          candidateId: input.candidateId ?? null,
+          planId: input.planId ?? null,
+          runId: input.runId ?? null,
+          rateKeys,
+          provider: config.hotelProvider.name,
+          providerRequestId: randomUUID(),
+          hotelCode: input.hotel?.hotelCode ?? null,
+          hotelName: input.hotel?.hotelName ?? null,
+          category: input.hotel?.category ?? null,
+          checkInDate: input.stay.checkInDate.toISOString(),
+          checkOutDate: input.stay.checkOutDate.toISOString(),
+        },
+        requestLogger,
+      );
+      if (!start.started) {
+        return { kind: "blocked", reason: start.reason };
+      }
+      attemptId = start.attempt.id;
+    } catch (error: any) {
+      return {
+        kind: "blocked",
+        reason: `Could not record the booking attempt: ${error?.message ?? error}`,
+      };
+    }
+
+    const fail = async (
+      code: HotelBookingFailureCode,
+      reason: string,
+      error?: unknown,
+      responseReceived = false,
+    ): Promise<BookingAttemptOutcome> => {
+      await this.settleAttempt(
+        attemptId,
+        booking.id,
+        {
+          status: HotelBookingAttemptStatus.FAILED,
+          failureCode: code,
+          failureReason: reason,
+          responseReceived,
+        },
+        undefined,
+        requestLogger,
+      );
+      return { kind: "rejected", reason, error };
+    };
+
     const checks: HotelRateCheck[] = [];
     for (const room of rooms) {
       let check: HotelRateCheck;
       try {
         check = await this.hotelProvider.checkRate(room.rateKey, requestId);
       } catch (error: any) {
-        return {
-          kind: "rejected",
-          reason: `Rate check failed: ${error?.message ?? error}`,
+        return fail(
+          HotelBookingFailureCode.RATE_CHECK_FAILED,
+          `Rate check failed: ${error?.message ?? error}`,
           error,
-        };
+        );
       }
       if (
         room.shape &&
-        (check.adults < room.shape.adults ||
-          check.children < room.shape.children)
+        (check.adults < room.shape.adults || check.children < room.shape.children)
       ) {
-        return {
-          kind: "rejected",
-          reason: `Rate re-check returned a room for ${check.adults} adult(s) + ${check.children} child(ren); the party needs ${room.shape.adults} + ${room.shape.children}`,
-        };
+        return fail(
+          HotelBookingFailureCode.RATE_MISMATCH,
+          `Rate re-check returned a room for ${check.adults} adult(s) + ${check.children} child(ren); the party needs ${room.shape.adults} + ${room.shape.children}`,
+        );
       }
       checks.push(check);
     }
     if (new Set(checks.map((check) => check.hotelCode)).size > 1) {
-      return {
-        kind: "rejected",
-        reason: "All rooms of one booking must be in the same hotel",
-        error: new BadRequestException(
+      return fail(
+        HotelBookingFailureCode.MIXED_HOTELS,
+        "All rooms of one booking must be in the same hotel",
+        new BadRequestException(
           "All rooms of one booking must be in the same hotel",
         ),
-      };
+      );
     }
     const hotelCode = checks[0].hotelCode;
-    const hotelName = checks[0].hotelName || hotelCode;
+    const hotelName = checks[0].hotelName || input.hotel?.hotelName || hotelCode;
 
-    const attemptRecord: HotelBookingAttemptRecord = {
-      attemptId: randomUUID(),
-      supplier: config.hotelProvider.name,
-      hotelCode,
-      hotelName,
-      rateKeys,
-      requestedAt: new Date().toISOString(),
-      outcome: "in_progress",
-    };
-    let attempt: HotelAllocationEntity;
-    const claimState: { attempt?: HotelBookingAttempt } = {};
-    try {
-      const claimed = await this.cancelledFlightsRepository.claimHotelReservation(
-        booking.id,
-        (latest) => {
-          this.assertHotelBookable(booking.id, latest);
-          claimState.attempt = {
-            ...attemptRecord,
-            history: this.attemptHistory(latest?.bookingAttempt),
-          };
-          return {
-            ...(latest ? { id: latest.id } : {}),
-            ...this.buildAllocationRow(
-              flight.id,
-              booking,
-              checks.map((check, index) => ({
-                check,
-                rateKey: rateKeys[index],
-                price: check.netPrice,
-                buyingPrice: check.buyingPrice ?? check.netPrice,
-              })),
-              input.platformFeePercentage,
-              latest ? undefined : null,
-            ),
-            status: HotelAllocationStatus.IN_PROGRESS,
-            bookingReference: "",
-            reason: `Booking ${rateKeys.length} room(s) at ${hotelName} with the supplier`,
-            bookingAttempt: claimState.attempt,
-          };
-        },
-        requestLogger,
-      );
-      attempt = claimed.attempt;
-    } catch (error: any) {
-      if (error instanceof ConflictException) {
-        return { kind: "blocked", reason: error.message };
-      }
+    const sent = await this.cancelledFlightsRepository.markAttemptRequestSent(
+      attemptId,
+      booking.id,
+      { hotelCode, hotelName, category: checks[0].category },
+    );
+    if (!sent) {
       return {
-        kind: "rejected",
-        reason: `Could not record the booking attempt: ${error?.message ?? error}`,
-        error,
+        kind: "blocked",
+        reason: "Booking attempt was settled elsewhere before the supplier request",
       };
     }
-    const inProgress = claimState.attempt!;
 
     const booked: Array<{
       check: HotelRateCheck;
@@ -1780,10 +1840,10 @@ export class HotelAllocationService {
           context: this.context,
           flightId: flight.id,
           bookingId: booking.id,
+          attemptId,
           hotelCode,
           room: index + 1,
           rooms: rateKeys.length,
-          attemptId: inProgress.attemptId,
         });
         const result = await this.hotelProvider.bookHotel(
           {
@@ -1792,7 +1852,7 @@ export class HotelAllocationService {
             bookingId: booking.id,
             pnr: booking.pnr,
             contactEmail: flight.airline?.contactEmail,
-            contactPhone: flight.airline?.contactPhone,
+            contactPhone: booking.phone?.trim() || flight.airline?.contactPhone,
           },
           rateKey,
           input.paymentData,
@@ -1806,62 +1866,72 @@ export class HotelAllocationService {
       const outcomeUnknown = error instanceof HotelBookingOutcomeUnknownError;
 
       if (!outcomeUnknown && booked.length === 0) {
-        await this.saveAttemptState(
-          attempt.id,
-          {
-            status: HotelAllocationStatus.FAILED,
-            reason: `Booking at ${hotelName} failed: ${message}`,
-            bookingAttempt: {
-              ...inProgress,
-              outcome: "failed",
-              completedAt: new Date().toISOString(),
-              error: message,
-            },
-          },
-          requestLogger,
+        return fail(
+          HotelBookingFailureCode.SUPPLIER_REJECTED,
+          `Booking at ${hotelName} failed: ${message}`,
+          error,
+          true,
         );
-        return { kind: "rejected", reason: message, error };
       }
 
       const unknownReference = outcomeUnknown
         ? (error as HotelBookingOutcomeUnknownError).supplierReference ?? null
         : null;
-      const failedRoom = booked.length + 1;
       const reason =
         `Needs manual check with the supplier: ${booked.length} of ${rateKeys.length} room(s) booked at ${hotelName}` +
         (references.length ? ` (refs: ${references.join(", ")})` : "") +
         (outcomeUnknown
-          ? `; room ${failedRoom} outcome unknown${unknownReference ? ` (supplier ref ${unknownReference})` : ""}: ${message}`
-          : `; room ${failedRoom} failed: ${message}`) +
+          ? `; room ${booked.length + 1} outcome unknown${unknownReference ? ` (supplier ref ${unknownReference})` : ""}: ${message}`
+          : `; room ${booked.length + 1} failed: ${message}`) +
         ". Do not rebook until reconciled.";
       requestLogger.error("Hotel booking outcome needs manual check", {
         context: this.context,
         flightId: flight.id,
         bookingId: booking.id,
         pnr: booking.pnr,
-        attemptId: inProgress.attemptId,
+        attemptId,
         reason,
       });
-      await this.saveAttemptState(
-        attempt.id,
+      await this.settleAttempt(
+        attemptId,
+        booking.id,
         {
-          status: HotelAllocationStatus.MANUAL_CHECK,
-          reason,
-          bookingAttempt: {
-            ...inProgress,
-            outcome: "unknown",
-            completedAt: new Date().toISOString(),
-            supplierReferences: references,
-            unknownReference,
-            error: message,
-          },
+          status: HotelBookingAttemptStatus.MANUAL_CHECK,
+          failureCode: outcomeUnknown
+            ? HotelBookingFailureCode.OUTCOME_UNKNOWN
+            : HotelBookingFailureCode.PARTIAL_BOOKING,
+          failureReason: reason,
+          providerBookingReference: references.length ? references.join(",") : null,
+          providerIdempotencyKey: unknownReference,
+          responseReceived: !outcomeUnknown,
         },
+        undefined,
         requestLogger,
       );
       return { kind: "unknown", reason };
     }
 
     const references = booked.map((room) => room.result.bookingReference);
+    if (
+      !booked.every((room) => room.result.status === HotelAllocationStatus.CONFIRMED)
+    ) {
+      const reason = `Supplier accepted the booking at ${hotelName} without confirming it (refs: ${references.join(", ")}). Check with the supplier.`;
+      await this.settleAttempt(
+        attemptId,
+        booking.id,
+        {
+          status: HotelBookingAttemptStatus.MANUAL_CHECK,
+          failureCode: HotelBookingFailureCode.PROVIDER_UNCONFIRMED,
+          failureReason: reason,
+          providerBookingReference: references.join(","),
+          responseReceived: true,
+        },
+        undefined,
+        requestLogger,
+      );
+      return { kind: "unknown", reason };
+    }
+
     const content = await this.cachedHotelContent(
       hotelCode,
       input.contentCache,
@@ -1885,47 +1955,35 @@ export class HotelAllocationService {
       input.platformFeePercentage,
       content,
     );
-    const allConfirmed = booked.every(
-      (room) => room.result.status === HotelAllocationStatus.CONFIRMED,
-    );
-    const finalAttempt: HotelBookingAttempt = {
-      ...inProgress,
-      outcome: allConfirmed ? "confirmed" : "unknown",
-      completedAt: new Date().toISOString(),
-      supplierReferences: references,
-      currency: checks[0].currency,
-    };
-    if (!allConfirmed) {
-      const reason = `Supplier accepted the booking at ${hotelName} without confirming it (statuses: ${booked
-        .map((room) => room.result.status)
-        .join(", ")}; refs: ${references.join(", ")}). Check with the supplier.`;
-      await this.saveAttemptState(
-        attempt.id,
-        { ...row, status: HotelAllocationStatus.MANUAL_CHECK, reason, bookingAttempt: finalAttempt },
-        requestLogger,
-      );
-      return { kind: "unknown", reason };
-    }
 
     try {
-      const allocation = await this.cancelledFlightsRepository.saveHotelAllocation(
+      const settled = await this.cancelledFlightsRepository.finishBookingAttempt(
+        attemptId,
+        booking.id,
+        {
+          status: HotelBookingAttemptStatus.SUCCESS,
+          providerStatus: null,
+          providerBookingReference: references.join(","),
+          responseReceived: true,
+        },
         {
           ...row,
-          id: attempt.id,
-          status: HotelAllocationStatus.CONFIRMED,
           bookingReference: references.join(","),
           reason: this.confirmedReason(booking, row.hotelName ?? hotelName, row.category ?? ""),
-          bookingAttempt: finalAttempt,
         },
         requestLogger,
       );
+      if (!settled.updated || !settled.allocation) {
+        throw new Error("booking attempt was no longer open");
+      }
       requestLogger.info("Hotel booked and confirmed for PNR", {
         context: this.context,
         flightId: flight.id,
         bookingId: booking.id,
         pnr: booking.pnr,
+        attemptId,
         hotelCode,
-        bookingReference: allocation.bookingReference,
+        bookingReference: references.join(","),
       });
       await this.cancelledFlightsRepository
         .refreshFlightTotals(flight.id, requestLogger)
@@ -1939,7 +1997,7 @@ export class HotelAllocationService {
         );
       return {
         kind: "confirmed",
-        allocation,
+        allocation: settled.allocation,
         references,
         currency: checks[0].currency,
       };
@@ -1948,51 +2006,45 @@ export class HotelAllocationService {
       requestLogger.error("Hotel booked but saving the allocation failed", {
         context: this.context,
         bookingId: booking.id,
-        allocationId: attempt.id,
+        attemptId,
         references,
         error: error?.message,
       });
-      await this.saveAttemptState(
-        attempt.id,
+      await this.settleAttempt(
+        attemptId,
+        booking.id,
         {
-          status: HotelAllocationStatus.MANUAL_CHECK,
-          reason,
-          bookingAttempt: { ...finalAttempt, outcome: "unknown", error: error?.message },
+          status: HotelBookingAttemptStatus.MANUAL_CHECK,
+          failureCode: HotelBookingFailureCode.SAVE_FAILED,
+          failureReason: reason,
+          providerBookingReference: references.join(","),
+          responseReceived: true,
         },
+        undefined,
         requestLogger,
       );
       return { kind: "unknown", reason };
     }
   }
 
-  private async saveAttemptState(
-    allocationId: number,
-    changes: Partial<HotelAllocationEntity>,
+  private async settleAttempt(
+    attemptId: number,
+    bookingId: number,
+    changes: Parameters<CancelledFlightsRepository["finishBookingAttempt"]>[2],
+    success: Partial<HotelAllocationEntity> | undefined,
     requestLogger: Logger,
   ): Promise<void> {
     await this.cancelledFlightsRepository
-      .saveHotelAllocation({ ...changes, id: allocationId }, requestLogger)
+      .finishBookingAttempt(attemptId, bookingId, changes, success, requestLogger)
       .catch((error: any) =>
         requestLogger.error("Could not record the hotel booking attempt outcome", {
           context: this.context,
-          allocationId,
+          attemptId,
+          bookingId,
           status: changes.status,
-          reason: changes.reason,
           error: error?.message,
         }),
       );
-  }
-
-  private attemptHistory(
-    previous: HotelBookingAttempt | null | undefined,
-  ): HotelBookingAttemptRecord[] {
-    if (!previous) {
-      return [];
-    }
-    const { history, ...record } = previous;
-    return [...(history ?? []), record].slice(
-      -HotelAllocationService.MAX_ATTEMPT_HISTORY,
-    );
   }
 
   private cachedHotelContent(
@@ -2028,52 +2080,90 @@ export class HotelAllocationService {
     );
   }
 
+  private toBookingStatus(
+    row: HotelAllocationEntity | undefined,
+    attemptCount: number,
+    running: boolean,
+  ): PnrBookingStatus {
+    if (!row || isRebookableAllocation(row)) {
+      if (row?.status === HotelAllocationStatus.FAILED) {
+        return "FAILED";
+      }
+      return running && attemptCount > 0 ? "PENDING" : "NOT_STARTED";
+    }
+    switch (row.status) {
+      case HotelAllocationStatus.CONFIRMED:
+      case HotelAllocationStatus.COMPLETED:
+        return "SUCCESS";
+      case HotelAllocationStatus.MANUAL_CHECK:
+        return "MANUAL_CHECK";
+      case HotelAllocationStatus.IN_PROGRESS:
+        return "PENDING";
+      default:
+        return "NOT_STARTED";
+    }
+  }
+
   private buildAllocationSummary(
     flight: CancelledFlightEntity,
     bookings: BookingEntity[],
     rows: HotelAllocationEntity[],
+    attempts: HotelBookingAttemptEntity[],
     runState: { running: boolean; stale: boolean; error: string | null },
     platformFeePercentage: number,
   ): HotelAllocationsDto {
     const rowByBooking = new Map(rows.map((row) => [row.bookingId, row]));
+    const attemptsByBooking = new Map<number, number>();
+    for (const attempt of attempts) {
+      attemptsByBooking.set(
+        attempt.bookingId,
+        (attemptsByBooking.get(attempt.bookingId) ?? 0) + 1,
+      );
+    }
     const results: HotelAllocationBookingResultDto[] = [...bookings]
-      .sort(compareBookingPriority)
+      .sort(
+        (a, b) =>
+          (rowByBooking.get(a.id)?.processingOrder ?? Number.MAX_SAFE_INTEGER) -
+            (rowByBooking.get(b.id)?.processingOrder ?? Number.MAX_SAFE_INTEGER) ||
+          compareBookingPriority(a, b),
+      )
       .map((booking) => {
         const row = rowByBooking.get(booking.id);
-        const status = this.isRebookable(row)
-          ? row?.status === HotelAllocationStatus.FAILED
-            ? HotelAllocationStatus.FAILED
-            : HotelAllocationStatus.DRAFT
-          : row!.status;
-        const confirmed = status === HotelAllocationStatus.CONFIRMED;
+        const attemptCount = attemptsByBooking.get(booking.id) ?? 0;
+        const bookingStatus = this.toBookingStatus(row, attemptCount, runState.running);
+        const success = bookingStatus === "SUCCESS";
         const showHotel =
           !!row?.hotelCode &&
-          (confirmed ||
-            status === HotelAllocationStatus.MANUAL_CHECK ||
-            status === HotelAllocationStatus.IN_PROGRESS);
+          (success || bookingStatus === "PENDING" || bookingStatus === "MANUAL_CHECK");
         return {
           bookingId: booking.id,
           pnr: booking.pnr,
           travelClass: booking.travelClass,
-          status,
-          hotelCode: showHotel ? row!.hotelCode : null,
-          hotelName: showHotel ? row!.hotelName : null,
-          category: showHotel ? row!.category : null,
-          bookingReference: confirmed ? row!.bookingReference : null,
-          totalRooms: confirmed ? row!.totalRooms ?? 0 : 0,
-          totalPrice: confirmed ? Number(row!.totalPrice ?? 0) : 0,
-          attempts: row?.bookingAttempt
-            ? (row.bookingAttempt.history?.length ?? 0) + 1
-            : 0,
+          processingOrder: row?.processingOrder ?? null,
+          bookingStatus,
+          hotel: showHotel
+            ? {
+                hotelCode: row!.hotelCode,
+                hotelName: row!.hotelName,
+                category: row!.category,
+                address: success ? row!.address ?? null : null,
+                checkInDate: success ? row!.checkInDate : null,
+                checkOutDate: success ? row!.checkOutDate : null,
+                totalRooms: success ? row!.totalRooms ?? 0 : 0,
+                totalPrice: success ? Number(row!.totalPrice ?? 0) : 0,
+                rooms: success
+                  ? (row!.rooms ?? []).map(({ rateKey, ...room }) => room)
+                  : [],
+              }
+            : null,
+          providerBookingReference: success ? row!.bookingReference || null : null,
+          attempts: attemptCount,
           reason: row?.reason ?? null,
         };
       });
-    const count = (status: HotelAllocationStatus) =>
-      results.filter((result) => result.status === status).length;
-    const confirmedBookings = count(HotelAllocationStatus.CONFIRMED);
-    const confirmedRows = rows.filter(
-      (row) => row.status === HotelAllocationStatus.CONFIRMED,
-    );
+    const count = (status: PnrBookingStatus) =>
+      results.filter((result) => result.bookingStatus === status).length;
+    const successfulPnrs = count("SUCCESS");
 
     return {
       cancelledFlightId: flight.id,
@@ -2082,13 +2172,13 @@ export class HotelAllocationService {
       lastRunError: runState.stale
         ? "The last allocation run stopped unexpectedly; run allocation again"
         : runState.error,
-      totalBookings: bookings.length,
-      confirmedBookings,
-      allocatedBookings: confirmedBookings,
-      failedBookings: count(HotelAllocationStatus.FAILED),
-      manualCheckBookings: count(HotelAllocationStatus.MANUAL_CHECK),
-      inProgressBookings: count(HotelAllocationStatus.IN_PROGRESS),
-      pendingBookings: count(HotelAllocationStatus.DRAFT),
+      totalPnrs: bookings.length,
+      successfulPnrs,
+      pendingPnrs: count("PENDING"),
+      failedPnrs: count("FAILED"),
+      manualCheckPnrs: count("MANUAL_CHECK"),
+      notStartedPnrs: count("NOT_STARTED"),
+      fullyBooked: bookings.length > 0 && successfulPnrs === bookings.length,
       results,
       totalRooms: Number(flight.totalHotelRooms ?? 0),
       totalActualPrice: Number(flight.totalActualPrice ?? 0),
@@ -2098,9 +2188,7 @@ export class HotelAllocationService {
       platformFeePercentage,
       totalPlatformFee: Number(flight.totalPlatformFee ?? 0),
       totalPrice: Number(flight.totalPrice ?? 0),
-      currency:
-        confirmedRows.find((row) => row.bookingAttempt?.currency)
-          ?.bookingAttempt?.currency ?? "EUR",
+      currency: flight.airline?.currency ?? "EUR",
     };
   }
 
@@ -2111,7 +2199,6 @@ export class HotelAllocationService {
       FlightStatus.PUBLISHED,
     ]);
 
-  /** The flight, or 404 when it doesn't exist or belongs to another airline. */
   private async requireAirlineFlight(
     flightId: number,
     user: AuthenticatedRequest["user"],
@@ -2133,7 +2220,6 @@ export class HotelAllocationService {
     return flight;
   }
 
-  /** Re-validates a rate with the active hotel supplier before booking. */
   async checkRate(
     flightId: number,
     bookingId: number,
@@ -2149,7 +2235,6 @@ export class HotelAllocationService {
       flightId,
       bookingId,
     });
-    // buyingPrice is our cost; airlines don't see it (as in hotel-bookings).
     const { buyingPrice, ...check } = await this.hotelProvider.checkRate(
       rateKey,
       requestId,
@@ -2186,22 +2271,26 @@ export class HotelAllocationService {
         booking.id,
         requestLogger,
       );
-    this.assertHotelBookable(booking.id, current);
+    if (!isRebookableAllocation(current)) {
+      throw new ConflictException(
+        `Booking '${booking.id}' hotel booking is ${current!.status} (${current!.reason ?? current!.bookingReference ?? "no details"})`,
+      );
+    }
     const rateKeys = this.resolveRateKeys(dto, booking.id, current);
-    const storedRooms = current?.rooms ?? [];
+    const shapes = (current?.roomPlan ?? []).flatMap((room) =>
+      Array.from({ length: room.roomsNeeded }, () => ({
+        adults: room.adults,
+        children: room.children,
+      })),
+    );
 
     const outcome = await this.attemptHotelBooking({
       flight,
       booking,
+      stay: this.resolveStayDates(flight, requestLogger),
       rooms: rateKeys.map((rateKey, index) => ({
         rateKey,
-        shape:
-          storedRooms.length === rateKeys.length
-            ? {
-                adults: storedRooms[index].adults,
-                children: storedRooms[index].children,
-              }
-            : undefined,
+        shape: shapes.length === rateKeys.length ? shapes[index] : undefined,
       })),
       paymentData: dto.paymentData,
       platformFeePercentage:
@@ -2241,30 +2330,6 @@ export class HotelAllocationService {
     };
   }
 
-  private assertHotelBookable(
-    bookingId: number,
-    current: HotelAllocationEntity | null,
-  ): void {
-    if (this.isRebookable(current)) {
-      return;
-    }
-    const status = current!.status;
-    if (status === HotelAllocationStatus.IN_PROGRESS) {
-      throw new ConflictException(
-        `Booking '${bookingId}' has a hotel booking attempt in progress (${current!.reason ?? "no details"})`,
-      );
-    }
-    if (status === HotelAllocationStatus.MANUAL_CHECK) {
-      throw new ConflictException(
-        `Booking '${bookingId}' has a hotel booking awaiting a manual check with the supplier (${current!.reason ?? "no details"})`,
-      );
-    }
-    throw new ConflictException(
-      `Booking '${bookingId}' already has a hotel reservation in status '${status}' (${current!.bookingReference || "no reference"})`,
-    );
-  }
-
-  /** Rate keys to book: from the request, else the rooms saved on the allocation. */
   private resolveRateKeys(
     dto: BookHotelRequestDto,
     bookingId: number,
@@ -2289,13 +2354,12 @@ export class HotelAllocationService {
     const stored = allocatedRooms.map((room) => room.rateKey);
     if (stored.length === 0 || stored.some((rateKey) => !rateKey)) {
       throw new BadRequestException(
-        `No rate keys to book for booking '${bookingId}': send rateKeys, or re-run hotel allocation`,
+        `No rate keys to book for booking '${bookingId}': send rateKeys, or run hotel allocation again`,
       );
     }
     return stored as string[];
   }
 
-  /** Allocation columns for the given rooms, priced with the platform fee. */
   private buildAllocationRow(
     flightId: number,
     booking: BookingEntity,

@@ -193,25 +193,22 @@ export class HotelAllocationEntity {
   @Column({ name: "reason", type: "text", nullable: true })
   reason?: string | null;
 
-  @Column({ name: "booking_attempt", type: "jsonb", nullable: true })
-  bookingAttempt?: HotelBookingAttempt | null;
-}
+  @Column({ name: "processing_order", type: "integer", nullable: true })
+  processingOrder?: number | null;
 
-export interface HotelBookingAttemptRecord {
-  attemptId: string;
-  supplier: string;
-  hotelCode: string;
-  hotelName: string;
-  rateKeys: string[];
-  requestedAt: string;
-  completedAt?: string | null;
-  outcome: "in_progress" | "confirmed" | "failed" | "unknown";
-  supplierReferences?: string[];
-  currency?: string | null;
-  unknownReference?: string | null;
-  error?: string | null;
-}
+  @Column({ name: "class_priority", type: "integer", nullable: true })
+  classPriority?: number | null;
 
-export interface HotelBookingAttempt extends HotelBookingAttemptRecord {
-  history?: HotelBookingAttemptRecord[];
+  @Column({ name: "plan_id", type: "varchar", length: 64, nullable: true })
+  planId?: string | null;
+
+  @Column({ name: "planned_at", type: "timestamp", nullable: true })
+  plannedAt?: Date | null;
+
+  @Column({ name: "room_plan", type: "jsonb", nullable: true })
+  roomPlan?: Array<{
+    adults: number;
+    children: number;
+    roomsNeeded: number;
+  }> | null;
 }

@@ -1,11 +1,113 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { EntityManager, In, Repository } from "typeorm";
+import { EntityManager, In, Not, Repository } from "typeorm";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
 import { BookingEntity } from "./entities/booking.entity";
-import { FlightStatus, HotelAllocationStatus } from "./entities/enums";
+import {
+  FlightStatus,
+  HotelAllocationStatus,
+  HotelBookingAttemptStatus,
+  HotelBookingFailureCode,
+} from "./entities/enums";
 import { HotelAllocationEntity } from "./entities/hotel-allocation.entity";
+import { HotelBookingAttemptEntity } from "./entities/hotel-booking-attempt.entity";
+import { HotelBookingCandidateEntity } from "./entities/hotel-booking-candidate.entity";
+import { resolveEffectiveAttempt } from "./hotel-allocation.planner";
 import { Logger } from "winston";
+
+export const CLEARED_ALLOCATION_HOTEL: Partial<HotelAllocationEntity> = {
+  hotelCode: "",
+  hotelName: "",
+  category: "",
+  address: null,
+  contact: null,
+  latitude: null,
+  longitude: null,
+  distanceFromAirportKm: null,
+  imageUrl: null,
+  website: null,
+  amenities: null,
+  rooms: [],
+  totalRooms: 0,
+  actualPrice: 0,
+  buyingPrice: 0,
+  sellingPrice: 0,
+  tax: 0,
+  platformFee: 0,
+  totalPrice: 0,
+  earnings: 0,
+  discount: 0,
+  bookingReference: "",
+};
+
+export function isRebookableAllocation(
+  row?: Pick<HotelAllocationEntity, "status" | "bookingReference"> | null,
+): boolean {
+  if (!row) {
+    return true;
+  }
+  if (
+    row.status === HotelAllocationStatus.CONFIRMED &&
+    row.bookingReference?.startsWith("temp-")
+  ) {
+    return true;
+  }
+  return [
+    HotelAllocationStatus.DRAFT,
+    HotelAllocationStatus.FAILED,
+    HotelAllocationStatus.CANCELLED,
+  ].includes(row.status);
+}
+
+export function effectiveAllocationChanges(
+  row: Pick<HotelAllocationEntity, "status">,
+  attempts: Array<
+    Pick<
+      HotelBookingAttemptEntity,
+      "status" | "attemptOrder" | "hotelCode" | "hotelName" | "category" | "failureReason"
+    >
+  >,
+  success?: Partial<HotelAllocationEntity>,
+): Partial<HotelAllocationEntity> | null {
+  const effective = resolveEffectiveAttempt(attempts);
+  const context = (attempt: (typeof attempts)[number]) => ({
+    ...CLEARED_ALLOCATION_HOTEL,
+    hotelCode: attempt.hotelCode ?? "",
+    hotelName: attempt.hotelName ?? "",
+    category: attempt.category ?? "",
+  });
+  if (effective?.status === HotelBookingAttemptStatus.SUCCESS) {
+    return success ? { ...success, status: HotelAllocationStatus.CONFIRMED } : null;
+  }
+  if (effective?.status === HotelBookingAttemptStatus.MANUAL_CHECK) {
+    return {
+      ...context(effective),
+      status: HotelAllocationStatus.MANUAL_CHECK,
+      reason: effective.failureReason ?? "Booking requires manual check",
+    };
+  }
+  if (effective?.status === HotelBookingAttemptStatus.PENDING) {
+    return {
+      ...context(effective),
+      status: HotelAllocationStatus.IN_PROGRESS,
+      reason: effective.hotelName
+        ? `Booking in progress at ${effective.hotelName}`
+        : "Booking in progress",
+    };
+  }
+  if (
+    row.status === HotelAllocationStatus.IN_PROGRESS ||
+    row.status === HotelAllocationStatus.MANUAL_CHECK
+  ) {
+    const latest = [...attempts].sort((a, b) => b.attemptOrder - a.attemptOrder)[0];
+    return {
+      ...CLEARED_ALLOCATION_HOTEL,
+      status: HotelAllocationStatus.DRAFT,
+      reason: latest?.failureReason ?? null,
+    };
+  }
+  return null;
+}
 
 export interface FlightHotelTotals {
   totalActualPrice: number;
@@ -571,43 +673,6 @@ export class CancelledFlightsRepository {
     return this.allocationRepo.save(entity);
   }
 
-  /**
-   * Claims one booking's hotel reservation atomically. The booking row is
-   * locked (SELECT ... FOR UPDATE) so concurrent claims run one at a time;
-   * `prepare` sees the current allocation and either throws to refuse or
-   * returns the in-progress row to save. One short transaction, so it also
-   * works behind a connection pooler.
-   */
-  async claimHotelReservation(
-    bookingId: number,
-    prepare: (
-      existing: HotelAllocationEntity | null,
-    ) => Partial<HotelAllocationEntity>,
-    requestLogger: Logger,
-  ): Promise<{
-    existing: HotelAllocationEntity | null;
-    attempt: HotelAllocationEntity;
-  }> {
-    requestLogger.info("Claiming hotel reservation for booking", {
-      context: this.context,
-      bookingId,
-    });
-    return this.allocationRepo.manager.transaction(async (manager) => {
-      await manager
-        .getRepository(BookingEntity)
-        .createQueryBuilder("booking")
-        .setLock("pessimistic_write")
-        .where("booking.id = :bookingId", { bookingId })
-        .getOne();
-      const allocations = manager.getRepository(HotelAllocationEntity);
-      const existing = await allocations.findOne({ where: { bookingId } });
-      const attempt = await allocations.save(
-        allocations.create(prepare(existing)),
-      );
-      return { existing, attempt };
-    });
-  }
-
   async deleteHotelAllocation(
     id: number,
     requestLogger: Logger,
@@ -714,35 +779,6 @@ export class CancelledFlightsRepository {
           error: error?.message,
         }),
       );
-  }
-
-  async markStaleInProgressAllocations(
-    cancelledFlightId: number,
-    leaseMs: number,
-    reason: string,
-    requestLogger: Logger,
-  ): Promise<number> {
-    const result = await this.allocationRepo
-      .createQueryBuilder()
-      .update(HotelAllocationEntity)
-      .set({ status: HotelAllocationStatus.MANUAL_CHECK, reason })
-      .where("cancelled_flight_id = :cancelledFlightId", { cancelledFlightId })
-      .andWhere("status = :status", {
-        status: HotelAllocationStatus.IN_PROGRESS,
-      })
-      .andWhere("updated_at < now() - (:leaseMs * interval '1 millisecond')", {
-        leaseMs,
-      })
-      .execute();
-    const moved = result.affected ?? 0;
-    if (moved > 0) {
-      requestLogger.warn("Moved interrupted hotel bookings to manual check", {
-        context: this.context,
-        cancelledFlightId,
-        moved,
-      });
-    }
-    return moved;
   }
 
   async findAllocationsByFlightId(
@@ -880,6 +916,459 @@ export class CancelledFlightsRepository {
     return sumHotelTotals(rows);
   }
 
+  async ensurePnrProcessingOrder(
+    cancelledFlightId: number,
+    entries: Array<{
+      bookingId: number;
+      processingOrder: number;
+      classPriority: number;
+    }>,
+    defaults: {
+      checkInDate: string;
+      checkOutDate: string;
+      platformFeePercentage: number;
+    },
+    requestLogger: Logger,
+  ): Promise<void> {
+    await this.allocationRepo.manager.transaction(async (manager) => {
+      const allocations = manager.getRepository(HotelAllocationEntity);
+      const existing = await allocations.find({ where: { cancelledFlightId } });
+      const byBooking = new Map(existing.map((row) => [row.bookingId, row]));
+      for (const entry of entries) {
+        const row = byBooking.get(entry.bookingId);
+        if (!row) {
+          await allocations.save(
+            allocations.create({
+              ...CLEARED_ALLOCATION_HOTEL,
+              cancelledFlightId,
+              bookingId: entry.bookingId,
+              checkInDate: defaults.checkInDate,
+              checkOutDate: defaults.checkOutDate,
+              platformFeePercentage: defaults.platformFeePercentage,
+              status: HotelAllocationStatus.DRAFT,
+              reason: null,
+              processingOrder: entry.processingOrder,
+              classPriority: entry.classPriority,
+            }),
+          );
+        } else if (row.processingOrder == null) {
+          await allocations.update(
+            { id: row.id },
+            {
+              processingOrder: entry.processingOrder,
+              classPriority: entry.classPriority,
+            },
+          );
+        }
+      }
+    });
+    requestLogger.info("Persisted PNR processing order", {
+      context: this.context,
+      cancelledFlightId,
+      pnrs: entries.length,
+    });
+  }
+
+  async findFreshPlanBookingIds(
+    cancelledFlightId: number,
+    ttlMs: number,
+  ): Promise<Set<number>> {
+    const rows = await this.allocationRepo
+      .createQueryBuilder("allocation")
+      .select("allocation.bookingId", "bookingId")
+      .where("allocation.cancelledFlightId = :cancelledFlightId", {
+        cancelledFlightId,
+      })
+      .andWhere("allocation.planId IS NOT NULL")
+      .andWhere(
+        "allocation.plannedAt > now() - (:ttlMs * interval '1 millisecond')",
+        { ttlMs },
+      )
+      .getRawMany<{ bookingId: number }>();
+    return new Set(rows.map((row) => Number(row.bookingId)));
+  }
+
+  async savePnrPlans(
+    cancelledFlightId: number,
+    planId: string,
+    plans: Array<{
+      bookingId: number;
+      roomPlan: Array<{ adults: number; children: number; roomsNeeded: number }>;
+      candidates: Array<Omit<HotelBookingCandidateEntity, "id" | "cancelledFlightId" | "bookingId" | "planId" | "candidateOrder" | "cancelledFlight" | "booking" | "createdAt">>;
+    }>,
+    requestLogger: Logger,
+  ): Promise<void> {
+    await this.allocationRepo.manager.transaction(async (manager) => {
+      const candidates = manager.getRepository(HotelBookingCandidateEntity);
+      const allocations = manager.getRepository(HotelAllocationEntity);
+      for (const plan of plans) {
+        const row = await allocations.findOne({
+          where: { bookingId: plan.bookingId },
+        });
+        if (!row || !isRebookableAllocation(row)) {
+          continue;
+        }
+        if (plan.candidates.length > 0) {
+          await candidates.save(
+            plan.candidates.map((candidate, index) =>
+              candidates.create({
+                ...candidate,
+                cancelledFlightId,
+                bookingId: plan.bookingId,
+                planId,
+                candidateOrder: index + 1,
+              }),
+            ),
+          );
+        }
+        await allocations.update(
+          { id: row.id },
+          {
+            ...CLEARED_ALLOCATION_HOTEL,
+            status: HotelAllocationStatus.DRAFT,
+            reason: null,
+            planId,
+            plannedAt: () => "now()",
+            roomPlan: plan.roomPlan,
+          },
+        );
+      }
+    });
+    requestLogger.info("Persisted hotel booking plan", {
+      context: this.context,
+      cancelledFlightId,
+      planId,
+      pnrs: plans.length,
+      candidates: plans.reduce((sum, plan) => sum + plan.candidates.length, 0),
+    });
+  }
+
+  async findCandidatesByPlans(
+    cancelledFlightId: number,
+    planIds: string[],
+  ): Promise<HotelBookingCandidateEntity[]> {
+    if (planIds.length === 0) {
+      return [];
+    }
+    return this.allocationRepo.manager
+      .getRepository(HotelBookingCandidateEntity)
+      .find({
+        where: { cancelledFlightId, planId: In(planIds) },
+        order: { bookingId: "ASC", candidateOrder: "ASC" },
+      });
+  }
+
+  async findAttemptsByFlightId(
+    cancelledFlightId: number,
+  ): Promise<HotelBookingAttemptEntity[]> {
+    return this.allocationRepo.manager
+      .getRepository(HotelBookingAttemptEntity)
+      .find({
+        where: { cancelledFlightId },
+        order: { bookingId: "ASC", attemptOrder: "ASC" },
+      });
+  }
+
+  async startBookingAttempt(
+    params: {
+      cancelledFlightId: number;
+      bookingId: number;
+      candidateId?: number | null;
+      planId?: string | null;
+      runId?: string | null;
+      rateKeys: string[];
+      provider: string;
+      providerRequestId: string;
+      hotelCode?: string | null;
+      hotelName?: string | null;
+      category?: string | null;
+      checkInDate: string;
+      checkOutDate: string;
+    },
+    requestLogger: Logger,
+  ): Promise<
+    | { started: true; attempt: HotelBookingAttemptEntity }
+    | { started: false; reason: string }
+  > {
+    return this.allocationRepo.manager.transaction(async (manager) => {
+      await this.lockBooking(manager, params.bookingId);
+      const attempts = manager.getRepository(HotelBookingAttemptEntity);
+      const allocations = manager.getRepository(HotelAllocationEntity);
+
+      const active = await attempts.findOne({
+        where: {
+          bookingId: params.bookingId,
+          status: Not(HotelBookingAttemptStatus.FAILED),
+        },
+      });
+      if (active) {
+        return {
+          started: false as const,
+          reason: `Booking '${params.bookingId}' already has a ${active.status} hotel booking attempt`,
+        };
+      }
+      const row = await allocations.findOne({
+        where: { bookingId: params.bookingId },
+      });
+      if (row && !isRebookableAllocation(row)) {
+        return {
+          started: false as const,
+          reason: `Booking '${params.bookingId}' hotel booking is ${row.status}`,
+        };
+      }
+
+      const max = await attempts
+        .createQueryBuilder("attempt")
+        .select("MAX(attempt.attemptOrder)", "max")
+        .where("attempt.bookingId = :bookingId", { bookingId: params.bookingId })
+        .getRawOne<{ max: number | null }>();
+      const attempt = await attempts.save(
+        attempts.create({
+          cancelledFlightId: params.cancelledFlightId,
+          bookingId: params.bookingId,
+          candidateId: params.candidateId ?? null,
+          planId: params.planId ?? null,
+          runId: params.runId ?? null,
+          attemptOrder: Number(max?.max ?? 0) + 1,
+          status: HotelBookingAttemptStatus.PENDING,
+          hotelCode: params.hotelCode ?? null,
+          hotelName: params.hotelName ?? null,
+          category: params.category ?? null,
+          rateKeys: params.rateKeys,
+          provider: params.provider,
+          providerRequestId: params.providerRequestId,
+        }),
+      );
+
+      if (!row) {
+        await allocations.save(
+          allocations.create({
+            ...CLEARED_ALLOCATION_HOTEL,
+            cancelledFlightId: params.cancelledFlightId,
+            bookingId: params.bookingId,
+            checkInDate: params.checkInDate,
+            checkOutDate: params.checkOutDate,
+            status: HotelAllocationStatus.DRAFT,
+            reason: null,
+          }),
+        );
+      }
+      await this.applyEffectiveState(manager, params.bookingId);
+      requestLogger.info("Hotel booking attempt started", {
+        context: this.context,
+        bookingId: params.bookingId,
+        attemptId: attempt.id,
+        attemptOrder: attempt.attemptOrder,
+        hotelCode: params.hotelCode ?? null,
+      });
+      return { started: true as const, attempt };
+    });
+  }
+
+  async markAttemptRequestSent(
+    attemptId: number,
+    bookingId: number,
+    hotel: { hotelCode: string; hotelName: string; category: string },
+  ): Promise<boolean> {
+    return this.allocationRepo.manager.transaction(async (manager) => {
+      await this.lockBooking(manager, bookingId);
+      const result = await manager
+        .createQueryBuilder()
+        .update(HotelBookingAttemptEntity)
+        .set({
+          providerRequestSentAt: () => "now()",
+          hotelCode: hotel.hotelCode,
+          hotelName: hotel.hotelName,
+          category: hotel.category,
+        })
+        .where("id = :attemptId", { attemptId })
+        .andWhere("status = :pending", {
+          pending: HotelBookingAttemptStatus.PENDING,
+        })
+        .andWhere("provider_request_sent_at IS NULL")
+        .execute();
+      if ((result.affected ?? 0) !== 1) {
+        return false;
+      }
+      await this.applyEffectiveState(manager, bookingId);
+      return true;
+    });
+  }
+
+  async finishBookingAttempt(
+    attemptId: number,
+    bookingId: number,
+    changes: {
+      status: HotelBookingAttemptStatus;
+      failureCode?: string | null;
+      failureReason?: string | null;
+      providerStatus?: string | null;
+      providerBookingReference?: string | null;
+      providerIdempotencyKey?: string | null;
+      responseReceived?: boolean;
+    },
+    success: Partial<HotelAllocationEntity> | undefined,
+    requestLogger: Logger,
+  ): Promise<{ updated: boolean; allocation: HotelAllocationEntity | null }> {
+    return this.allocationRepo.manager.transaction(async (manager) => {
+      await this.lockBooking(manager, bookingId);
+      const { responseReceived, ...columns } = changes;
+      const result = await manager
+        .createQueryBuilder()
+        .update(HotelBookingAttemptEntity)
+        .set({
+          ...columns,
+          ...(responseReceived
+            ? { providerResponseReceivedAt: () => "now()" }
+            : {}),
+        })
+        .where("id = :attemptId", { attemptId })
+        .andWhere("status IN (:...open)", {
+          open: [
+            HotelBookingAttemptStatus.PENDING,
+            HotelBookingAttemptStatus.MANUAL_CHECK,
+          ],
+        })
+        .execute();
+      if ((result.affected ?? 0) !== 1) {
+        requestLogger.warn("Hotel booking attempt was already settled", {
+          context: this.context,
+          attemptId,
+          bookingId,
+          status: changes.status,
+        });
+        return { updated: false, allocation: null };
+      }
+      const allocation = await this.applyEffectiveState(
+        manager,
+        bookingId,
+        success,
+      );
+      return { updated: true, allocation };
+    });
+  }
+
+  async markPnrFailed(
+    bookingId: number,
+    reason: string,
+  ): Promise<boolean> {
+    return this.allocationRepo.manager.transaction(async (manager) => {
+      await this.lockBooking(manager, bookingId);
+      const active = await manager
+        .getRepository(HotelBookingAttemptEntity)
+        .findOne({
+          where: { bookingId, status: Not(HotelBookingAttemptStatus.FAILED) },
+        });
+      const allocations = manager.getRepository(HotelAllocationEntity);
+      const row = await allocations.findOne({ where: { bookingId } });
+      if (active || !row || !isRebookableAllocation(row)) {
+        return false;
+      }
+      await allocations.update(
+        { id: row.id },
+        { ...CLEARED_ALLOCATION_HOTEL, status: HotelAllocationStatus.FAILED, reason },
+      );
+      return true;
+    });
+  }
+
+  async recoverInterruptedAttempts(
+    cancelledFlightId: number,
+    runId: string,
+    staleMs: number,
+    requestLogger: Logger,
+  ): Promise<number> {
+    const interrupted =
+      "((run_id IS NOT NULL AND run_id <> :runId) OR (run_id IS NULL AND updated_at < now() - (:staleMs * interval '1 millisecond')))";
+    const recover = (sent: boolean) =>
+      this.allocationRepo.manager
+        .createQueryBuilder()
+        .update(HotelBookingAttemptEntity)
+        .set(
+          sent
+            ? {
+                status: HotelBookingAttemptStatus.MANUAL_CHECK,
+                failureCode: HotelBookingFailureCode.INTERRUPTED_AFTER_REQUEST,
+                failureReason:
+                  "Booking was interrupted after the request was sent to the supplier; outcome unknown",
+              }
+            : {
+                status: HotelBookingAttemptStatus.FAILED,
+                failureCode: HotelBookingFailureCode.INTERRUPTED_BEFORE_REQUEST,
+                failureReason:
+                  "Booking was interrupted before the request was sent to the supplier",
+              },
+        )
+        .where("cancelled_flight_id = :cancelledFlightId", { cancelledFlightId })
+        .andWhere("status = :pending", {
+          pending: HotelBookingAttemptStatus.PENDING,
+        })
+        .andWhere(
+          sent
+            ? "provider_request_sent_at IS NOT NULL"
+            : "provider_request_sent_at IS NULL",
+        )
+        .andWhere(interrupted, { runId, staleMs })
+        .returning("booking_id")
+        .execute();
+
+    const results = [await recover(false), await recover(true)];
+    const bookingIds = new Set<number>(
+      results.flatMap((result) =>
+        (result.raw as Array<{ booking_id: number }>).map((row) =>
+          Number(row.booking_id),
+        ),
+      ),
+    );
+    for (const bookingId of bookingIds) {
+      await this.allocationRepo.manager.transaction(async (manager) => {
+        await this.lockBooking(manager, bookingId);
+        await this.applyEffectiveState(manager, bookingId);
+      });
+    }
+    if (bookingIds.size > 0) {
+      requestLogger.warn("Recovered interrupted hotel booking attempts", {
+        context: this.context,
+        cancelledFlightId,
+        bookings: [...bookingIds],
+      });
+    }
+    return bookingIds.size;
+  }
+
+  private async lockBooking(
+    manager: EntityManager,
+    bookingId: number,
+  ): Promise<void> {
+    await manager
+      .getRepository(BookingEntity)
+      .createQueryBuilder("booking")
+      .setLock("pessimistic_write")
+      .where("booking.id = :bookingId", { bookingId })
+      .getOne();
+  }
+
+  private async applyEffectiveState(
+    manager: EntityManager,
+    bookingId: number,
+    success?: Partial<HotelAllocationEntity>,
+  ): Promise<HotelAllocationEntity | null> {
+    const allocations = manager.getRepository(HotelAllocationEntity);
+    const row = await allocations.findOne({ where: { bookingId } });
+    if (!row) {
+      return null;
+    }
+    const attempts = await manager
+      .getRepository(HotelBookingAttemptEntity)
+      .find({ where: { bookingId }, order: { attemptOrder: "ASC" } });
+    const changes = effectiveAllocationChanges(row, attempts, success);
+    if (!changes) {
+      return row;
+    }
+    await allocations.update({ id: row.id }, changes);
+    return { ...row, ...changes } as HotelAllocationEntity;
+  }
+
   async findHotelBookingsByFlightIdWithPagination(
     cancelledFlightId: number,
     page: number,
@@ -928,6 +1417,9 @@ export class CancelledFlightsRepository {
       .leftJoinAndSelect("hotelBooking.booking", "booking")
       .where("hotelBooking.cancelled_flight_id = :cancelledFlightId", {
         cancelledFlightId,
+      })
+      .andWhere("hotelBooking.status = :confirmed", {
+        confirmed: HotelAllocationStatus.CONFIRMED,
       })
       .orderBy("hotelBooking.id", "ASC")
       .getMany();

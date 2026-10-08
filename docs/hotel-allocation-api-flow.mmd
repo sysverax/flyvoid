@@ -17,31 +17,35 @@ flowchart TD
     C1 -->|"yes"| L1[("DB tx: claimFlightAllocationRun<br/>lock flight row; refuse a run within its lease;<br/>status = HOTEL_ALLOCATION_IN_PROGRESS, new run id")]
     L1 -->|"run already active"| E2["409 Conflict<br/>(UI polls the running run)"]
     L1 --> R1(["202 Accepted + current status<br/>UI polls GET every 3s until running = false"])
-    L1 -.->|"background"| L2[("heartbeat every lease/5 (fenced by run id)<br/>IN_PROGRESS rows older than 60 min → MANUAL_CHECK")]
-    L2 --> P1["Pending PNRs = no row, DRAFT, FAILED, CANCELLED<br/>(CONFIRMED / MANUAL_CHECK / IN_PROGRESS skipped → idempotent)<br/>sorted: class → special needs → children → PNR"]
+    L1 -.->|"background"| L2[("heartbeat every lease/5 (fenced by run id)<br/>recover PENDING attempts of dead runs:<br/>not sent → FAILED (retry same candidate)<br/>sent → MANUAL_CHECK")]
+    L2 --> P0[("persist PNR processing_order + class_priority<br/>(hotel_allocations, once per flight)")]
+    P0 --> P1["Pending PNRs = effective row DRAFT / FAILED / CANCELLED<br/>(SUCCESS / MANUAL_CHECK / PENDING skipped)"]
 
-    P1 --> P2["Per PNR: resolveRoomSplitPlan<br/>invalid data → row FAILED"]
+    P1 --> PL{"Fresh persisted plan?<br/>(plan_id, planned_at within TTL, not FAILED)"}
+    PL -->|"yes"| B0
+    PL -->|"no"| P2["Per PNR: resolveRoomSplitPlan<br/>invalid data → PNR FAILED"]
     P2 --> V1[["Hotel vendor: availability search<br/>(deduplicated occupancies)"]]
     V1 -->|"error"| E3["run error saved (hotelAllocationError)<br/>nothing booked"]
-    V1 --> P3["Choose split per PNR (unchanged rules)<br/>demand per room shape"]
-    P3 --> P4["Supply pool per shape:<br/>rates by exact-fit, stars DESC, price ASC<br/>until allotment ≥ ceil(demand × 1.5)<br/>(no hotel cap; less supply → keep all, continue)"]
-    P4 --> P5["Run-wide allotment ledger<br/>(synchronous claim / release / commit)"]
+    V1 --> P3["Choose split per PNR, demand per shape,<br/>supply pool to ceil(demand × 1.5) allotment"]
+    P3 --> P4[("hotel_booking_candidates (new plan_id)<br/>per PNR: candidate_order = pool → stars DESC → price<br/>rooms + ordered rate options + allotment snapshots")]
+    P4 --> B0["Ledger = candidate snapshots − rooms of<br/>SUCCESS / PENDING / MANUAL_CHECK attempts"]
 
-    P5 --> S1["Class stages in order:<br/>FIRST → BUSINESS → PREMIUM_ECONOMY → ECONOMY<br/>each stage settles before the next starts"]
-    S1 --> S2["Within a stage: PNRs in parallel<br/>(HOTEL_BOOKING_CONCURRENCY, default 3)"]
+    B0 --> S1["Class stages by persisted class_priority:<br/>FIRST → BUSINESS → PREMIUM_ECONOMY → ECONOMY"]
+    S1 --> S2["Within a stage: PNRs by processing_order, in parallel<br/>(HOTEL_BOOKING_CONCURRENCY)"]
 
-    S2 --> F1["Per PNR (sequential fallback):<br/>rankCandidates — one hotel for all rooms;<br/>pool before overflow, stars DESC, total price ASC"]
-    F1 -->|"no candidate left"| F9[("row FAILED + reason")]
+    S2 --> F1["Per PNR (sequential): next persisted candidate<br/>whose rate options have ledger capacity<br/>(rates of failed attempts in this plan excluded)"]
+    F1 -->|"none left"| F9[("effective row FAILED, hotel = null")]
     F1 --> F2["ledger.tryClaim(rooms)"]
-    F2 --> F3[["Hotel vendor: checkRate every room"]]
+    F2 --> F4[("hotel_booking_attempts INSERT status = pending<br/>(unique: one non-failed attempt per PNR)<br/>effective row IN_PROGRESS")]
+    F4 -->|"PNR already active / booked"| F8["skip (blocked) — release claim"]
+    F4 --> F3[["Hotel vendor: checkRate every room"]]
     F3 -->|"fails"| F7
-    F3 --> F4[("short DB tx: claimHotelReservation<br/>row IN_PROGRESS + booking_attempt<br/>(attemptId, hotel, rateKeys, requestedAt)")]
-    F4 -->|"row booked / being booked elsewhere"| F8["skip (blocked) — release claim"]
-    F4 --> F5[["Hotel vendor: bookHotel per room"]]
-    F5 -->|"all rooms confirmed"| F6[("row CONFIRMED<br/>real supplier reference(s), final hotel + price<br/>ledger.commit")]
-    F5 -->|"definite failure, nothing booked"| F7[("row FAILED (this attempt)<br/>ledger.release, exclude rate for PNR")]
+    F3 --> F11[("provider_request_sent_at = now()<br/>only if still pending (compare-and-set)")]
+    F11 --> F5[["Hotel vendor: bookHotel per room"]]
+    F5 -->|"confirmed"| F6[("attempt success + provider reference<br/>effective row CONFIRMED with full hotel<br/>flight totals refreshed")]
+    F5 -->|"definite failure"| F7[("attempt failed (kept for audit)<br/>ledger.release → next candidate")]
     F7 --> F1
-    F5 -->|"timeout / unknown outcome /<br/>some rooms booked"| F10[("row MANUAL_CHECK<br/>supplier refs + unknown reference<br/>ledger keeps rooms; NO other hotel tried")]
+    F5 -->|"timeout / unknown / partial"| F10[("attempt manual_check<br/>idempotency key, refs, reason<br/>NO other hotel tried")]
 
     F6 --> Z1
     F9 --> Z1
@@ -49,7 +53,7 @@ flowchart TD
     F8 --> Z1
     E3 --> Z1
     Z1[("DB tx: completeFlightAllocationRun (only if run id still matches)<br/>totals from CONFIRMED rows only;<br/>status = ALLOCATED if ≥1 confirmed,<br/>else PASSENGERS_BOOKING_CONFIRMED; save run error")]
-    Z1 --> Z2["GET returns running = false<br/>confirmed / failed / manual-check counts<br/>+ per-PNR status, hotel, supplier ref, reason, lastRunError"]
+    Z1 --> Z2["GET returns running = false<br/>totalPnrs / successful / pending / failed / manualCheck<br/>per PNR: bookingStatus, hotel (SUCCESS only as final),<br/>providerBookingReference, reason"]
 
     style V1 fill:transparent,stroke:#2b7ac9,stroke-width:1.5px,stroke-dasharray: 4 3
     style F3 fill:transparent,stroke:#2b7ac9,stroke-width:1.5px,stroke-dasharray: 4 3

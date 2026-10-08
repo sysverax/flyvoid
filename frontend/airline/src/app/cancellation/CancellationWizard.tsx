@@ -206,10 +206,10 @@ function formatDateString(dateStr: string): string {
 
 const HOTEL_BOOKING_STATUS_LABEL: Record<string, string> = {
   confirmed: "Confirmed",
-  failed: "Failed",
+  failed: "Booking Failed",
   manual_check: "Manual Check",
-  in_progress: "Processing",
-  draft: "Pending",
+  in_progress: "Booking In Progress",
+  draft: "Not Started",
   cancelled: "Cancelled",
   completed: "Completed",
 };
@@ -876,7 +876,7 @@ export default function CancellationWizard({
     setIsAllocating(false);
     setAllocationProgress(0);
     setAllocationRunProgress(null);
-    const anythingBooked = (allocData.confirmedBookings ?? 0) > 0;
+    const anythingBooked = (allocData.successfulPnrs ?? 0) > 0;
     if (allocData.lastRunError) {
       setAllocationError(allocData.lastRunError);
       toast.error(allocData.lastRunError);
@@ -899,9 +899,9 @@ export default function CancellationWizard({
         return;
       }
       const done = (data.results ?? []).filter(
-        (r) => r.status !== "draft" && r.status !== "in_progress",
+        (r) => r.bookingStatus !== "NOT_STARTED" && r.bookingStatus !== "PENDING",
       ).length;
-      setAllocationRunProgress({ done, total: data.totalBookings ?? 0 });
+      setAllocationRunProgress({ done, total: data.totalPnrs ?? 0 });
     } catch {
       if (!isPollingAllocationRef.current) return;
       nextErrors = consecutiveErrors + 1;
@@ -985,12 +985,12 @@ export default function CancellationWizard({
       return;
     }
     const pnrsWith = (status: string) =>
-      allocData.results.filter((r) => r.status === status).map((r) => r.pnr);
-    const failed = pnrsWith("failed");
-    const manual = pnrsWith("manual_check");
-    const confirmed = allocData.confirmedBookings ?? 0;
-    const total = allocData.totalBookings ?? allocData.results.length;
-    if (failed.length === 0 && manual.length === 0) {
+      allocData.results.filter((r) => r.bookingStatus === status).map((r) => r.pnr);
+    const failed = pnrsWith("FAILED");
+    const manual = pnrsWith("MANUAL_CHECK");
+    const confirmed = allocData.successfulPnrs ?? 0;
+    const total = allocData.totalPnrs ?? allocData.results.length;
+    if (allocData.fullyBooked) {
       toast.success(`All ${confirmed} booking(s) confirmed with the hotels`);
       return;
     }
@@ -3253,8 +3253,9 @@ export default function CancellationWizard({
                       const isConfirmed = !hb.status || hb.status === "confirmed";
                       const hotelName = isConfirmed
                         ? hb.hotelName || "Transit Hotel"
-                        : hb.status === "manual_check" || hb.status === "in_progress"
-                          ? hb.hotelName || "-"
+                        : (hb.status === "manual_check" || hb.status === "in_progress") &&
+                            hb.hotelName
+                          ? `${hb.hotelName} (not confirmed)`
                           : "Not booked";
                       const ratingVal = parseFloat(hb.rating) || 4;
                       const stars = Math.min(5, Math.max(1, Math.round(ratingVal)));

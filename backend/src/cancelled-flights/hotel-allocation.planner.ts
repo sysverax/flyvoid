@@ -3,6 +3,11 @@ import {
   AvailabilityRoomRate,
   RoomOccupancy,
 } from "./hotel-providers/hotel-provider.interface";
+import {
+  CandidateRateOption,
+  CandidateRoomPlan,
+} from "./entities/hotel-booking-candidate.entity";
+import { HotelBookingAttemptStatus } from "./entities/enums";
 
 export const CLASS_RANK: Record<string, number> = {
   first_class: 3,
@@ -212,17 +217,25 @@ export interface LedgerClaim {
 }
 
 export class AllotmentLedger {
-  private readonly remaining = new Map<string, number>();
+  private readonly remaining: Map<string, number>;
   private nextClaimId = 1;
 
-  constructor(hotels: AvailabilityHotel[]) {
+  constructor(remaining: Map<string, number>) {
+    this.remaining = new Map(
+      [...remaining].map(([rateKey, rooms]) => [rateKey, Math.max(0, rooms)]),
+    );
+  }
+
+  static fromHotels(hotels: AvailabilityHotel[]): AllotmentLedger {
+    const remaining = new Map<string, number>();
     for (const hotel of hotels) {
       for (const rate of hotel.rates) {
         if (rate.allotment !== null) {
-          this.remaining.set(rate.rateKey, Math.max(0, rate.allotment));
+          remaining.set(rate.rateKey, rate.allotment);
         }
       }
     }
+    return new AllotmentLedger(remaining);
   }
 
   available(rateKey: string): number {
@@ -268,42 +281,65 @@ export class AllotmentLedger {
   }
 }
 
-export interface CandidatePick {
-  rate: AvailabilityRoomRate;
-  shape: RoomOccupancy;
-  roomsNeeded: number;
-}
-
-export interface BookingCandidate {
-  hotel: AvailabilityHotel;
-  picks: CandidatePick[];
+export interface PlannedCandidate {
+  hotelCode: string;
+  hotelName: string;
+  category: string;
+  stars: number;
   tier: "pool" | "overflow";
-  totalPrice: number;
+  estimatedPrice: number;
+  currency: string | null;
+  rooms: CandidateRoomPlan[];
 }
 
-export function rankCandidates(
+export interface SelectedRate {
+  rateKey: string;
+  roomsNeeded: number;
+  shape: RoomOccupancy;
+  netPrice: number;
+  inPool: boolean;
+}
+
+export function selectCandidateRates(
+  candidate: { rooms: CandidateRoomPlan[] },
+  ledger: AllotmentLedger,
+  excludedRateKeys: ReadonlySet<string> = new Set(),
+): SelectedRate[] | null {
+  const used = new Map<string, number>();
+  const picks: SelectedRate[] = [];
+  for (const room of candidate.rooms) {
+    const option = room.rateOptions.find(
+      (o) =>
+        !excludedRateKeys.has(o.rateKey) &&
+        ledger.available(o.rateKey) - (used.get(o.rateKey) ?? 0) >=
+          room.roomsNeeded,
+    );
+    if (!option) {
+      return null;
+    }
+    used.set(option.rateKey, (used.get(option.rateKey) ?? 0) + room.roomsNeeded);
+    picks.push({
+      rateKey: option.rateKey,
+      roomsNeeded: room.roomsNeeded,
+      shape: { adults: room.adults, children: room.children },
+      netPrice: option.netPrice,
+      inPool: option.inPool,
+    });
+  }
+  return picks.length > 0 ? picks : null;
+}
+
+export function buildCandidatePlan(
   hotels: AvailabilityHotel[],
   needs: RoomNeed[],
-  ledger: AllotmentLedger,
   pools: Map<string, ShapePool>,
-  excludedRateKeys: ReadonlySet<string> = new Set(),
-): BookingCandidate[] {
-  const candidates: BookingCandidate[] = [];
+): PlannedCandidate[] {
+  const candidates: PlannedCandidate[] = [];
   for (const hotel of hotels) {
-    const used = new Map<string, number>();
-    const picks: CandidatePick[] = [];
-    let inPool = true;
-    for (const need of needs) {
+    const rooms: CandidateRoomPlan[] = needs.map((need) => {
       const pool = pools.get(shapeKey(need.shape));
-      const rate = hotel.rates
-        .filter(
-          (r) =>
-            r.allotment !== null &&
-            !excludedRateKeys.has(r.rateKey) &&
-            isCoveringFit(r, need.shape) &&
-            ledger.available(r.rateKey) - (used.get(r.rateKey) ?? 0) >=
-              need.roomsNeeded,
-        )
+      const rateOptions: CandidateRateOption[] = hotel.rates
+        .filter((r) => hasAllotment(r) && isCoveringFit(r, need.shape))
         .sort(
           (a, b) =>
             Number(pool?.rateKeys.has(b.rateKey) ?? false) -
@@ -312,35 +348,67 @@ export function rankCandidates(
             oversize(a, need.shape) - oversize(b, need.shape) ||
             a.netPrice - b.netPrice ||
             a.rateKey.localeCompare(b.rateKey),
-        )[0];
-      if (!rate) {
-        picks.length = 0;
-        break;
-      }
-      used.set(rate.rateKey, (used.get(rate.rateKey) ?? 0) + need.roomsNeeded);
-      if (!pool?.rateKeys.has(rate.rateKey)) {
-        inPool = false;
-      }
-      picks.push({ rate, shape: need.shape, roomsNeeded: need.roomsNeeded });
-    }
-    if (picks.length !== needs.length || picks.length === 0) {
+        )
+        .map((r) => ({
+          rateKey: r.rateKey,
+          adults: r.adults,
+          children: r.children,
+          netPrice: r.netPrice,
+          allotment: r.allotment ?? 0,
+          inPool: pool?.rateKeys.has(r.rateKey) ?? false,
+        }));
+      return {
+        adults: need.shape.adults,
+        children: need.shape.children,
+        roomsNeeded: need.roomsNeeded,
+        rateOptions,
+      };
+    });
+    const snapshot = new AllotmentLedger(
+      new Map(
+        rooms.flatMap((room) =>
+          room.rateOptions.map((o) => [o.rateKey, o.allotment] as const),
+        ),
+      ),
+    );
+    const picks = selectCandidateRates({ rooms }, snapshot);
+    if (!picks) {
       continue;
     }
     candidates.push({
-      hotel,
-      picks,
-      tier: inPool ? "pool" : "overflow",
-      totalPrice: picks.reduce(
-        (sum, pick) => sum + pick.rate.netPrice * pick.roomsNeeded,
+      hotelCode: hotel.hotelCode,
+      hotelName: hotel.hotelName,
+      category: hotel.category,
+      stars: hotel.stars,
+      tier: picks.every((pick) => pick.inPool) ? "pool" : "overflow",
+      estimatedPrice: picks.reduce(
+        (sum, pick) => sum + pick.netPrice * pick.roomsNeeded,
         0,
       ),
+      currency:
+        hotel.rates.find((r) => r.rateKey === picks[0].rateKey)?.currency ?? null,
+      rooms,
     });
   }
   return candidates.sort(
     (a, b) =>
       Number(a.tier === "overflow") - Number(b.tier === "overflow") ||
-      b.hotel.stars - a.hotel.stars ||
-      a.totalPrice - b.totalPrice ||
-      a.hotel.hotelCode.localeCompare(b.hotel.hotelCode),
+      b.stars - a.stars ||
+      a.estimatedPrice - b.estimatedPrice ||
+      a.hotelCode.localeCompare(b.hotelCode),
+  );
+}
+
+export function resolveEffectiveAttempt<
+  T extends { status: HotelBookingAttemptStatus; attemptOrder: number },
+>(attempts: T[]): T | null {
+  const latest = (status: HotelBookingAttemptStatus) =>
+    attempts
+      .filter((attempt) => attempt.status === status)
+      .sort((a, b) => b.attemptOrder - a.attemptOrder)[0] ?? null;
+  return (
+    latest(HotelBookingAttemptStatus.SUCCESS) ??
+    latest(HotelBookingAttemptStatus.MANUAL_CHECK) ??
+    latest(HotelBookingAttemptStatus.PENDING)
   );
 }
