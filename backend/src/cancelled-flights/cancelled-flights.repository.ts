@@ -1,11 +1,61 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { In, Repository } from "typeorm";
+import { EntityManager, In, Repository } from "typeorm";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
 import { BookingEntity } from "./entities/booking.entity";
-import { FlightStatus } from "./entities/enums";
+import { FlightStatus, HotelAllocationStatus } from "./entities/enums";
 import { HotelAllocationEntity } from "./entities/hotel-allocation.entity";
 import { Logger } from "winston";
+
+export interface FlightHotelTotals {
+  totalActualPrice: number;
+  totalBuyingPrice: number;
+  totalSellingPrice: number;
+  totalDiscounts: number;
+  totalHotelTaxes: number;
+  totalPlatformFee: number;
+  totalPrice: number;
+  totalEarnings: number;
+  totalHotelRooms: number;
+  confirmedCount: number;
+}
+
+export function sumHotelTotals(
+  rows: Array<
+    Pick<
+      HotelAllocationEntity,
+      | "actualPrice"
+      | "buyingPrice"
+      | "sellingPrice"
+      | "discount"
+      | "tax"
+      | "platformFee"
+      | "totalPrice"
+      | "earnings"
+      | "totalRooms"
+    >
+  >,
+): FlightHotelTotals {
+  const sum = (pick: (row: (typeof rows)[number]) => unknown): number => {
+    const total = rows.reduce((acc, row) => {
+      const value = Number(pick(row) ?? 0);
+      return acc + (Number.isFinite(value) ? value : 0);
+    }, 0);
+    return Math.round((total + Number.EPSILON) * 100) / 100;
+  };
+  return {
+    totalActualPrice: sum((row) => row.actualPrice),
+    totalBuyingPrice: sum((row) => row.buyingPrice),
+    totalSellingPrice: sum((row) => row.sellingPrice),
+    totalDiscounts: sum((row) => row.discount),
+    totalHotelTaxes: sum((row) => row.tax),
+    totalPlatformFee: sum((row) => row.platformFee),
+    totalPrice: sum((row) => row.totalPrice),
+    totalEarnings: sum((row) => row.earnings),
+    totalHotelRooms: sum((row) => row.totalRooms),
+    confirmedCount: rows.length,
+  };
+}
 
 @Injectable()
 export class CancelledFlightsRepository {
@@ -580,111 +630,192 @@ export class CancelledFlightsRepository {
     return this.allocationRepo.findOne({ where: { bookingId } });
   }
 
-  async saveHotelAllocations(
+  async claimFlightAllocationRun(
     cancelledFlightId: number,
-    payload: {
-      hotelBookings: Partial<HotelAllocationEntity>[];
-      totalActualPrice: number;
-      totalBuyingPrice: number;
-      totalSellingPrice: number;
-      totalDiscounts: number;
-      totalHotelTaxes: number;
-      platformFeePercentage: number;
-      totalPlatformFee: number;
-      totalPrice: number;
-      totalEarnings: number;
-      totalHotelRooms: number;
-      status: FlightStatus;
-    },
+    allowedStatuses: FlightStatus[],
+    leaseMs: number,
     requestLogger: Logger,
-  ): Promise<void> {
-    // transactionally save all hotel allocations, updated cancel flight
-    await this.allocationRepo.manager.transaction(
-      async (transactionalEntityManager) => {
-        // Clear prior rows first - insert-only would duplicate every booking
-        // if a retry path is ever added (unreachable today; the entry guard blocks it).
-        await transactionalEntityManager.delete(HotelAllocationEntity, {
-          cancelledFlightId,
-        });
-
-        const entities = payload.hotelBookings.map((p) =>
-          this.allocationRepo.create(p),
-        );
-        await transactionalEntityManager.save(entities);
-        requestLogger.info(`Saved ${entities.length} hotel allocations`, {
-          context: this.context,
-          cancelledFlightId,
-        });
-
-        // Update the cancelled flight with aggregated hotel booking totals
-        await transactionalEntityManager.update(
-          CancelledFlightEntity,
-          { id: cancelledFlightId },
-          {
-            totalActualPrice: payload.totalActualPrice,
-            totalBuyingPrice: payload.totalBuyingPrice,
-            totalSellingPrice: payload.totalSellingPrice,
-            totalDiscounts: payload.totalDiscounts,
-            totalHotelTaxes: payload.totalHotelTaxes,
-            platformFeePercentage: payload.platformFeePercentage,
-            totalPlatformFee: payload.totalPlatformFee,
-            totalPrice: payload.totalPrice,
-            totalHotelRooms: payload.totalHotelRooms,
-            totalEarnings: payload.totalEarnings,
-            status: payload.status,
-          },
-        );
-      },
-    );
+  ): Promise<
+    | { claimed: true; previousStatus: FlightStatus }
+    | {
+        claimed: false;
+        reason: "running" | "status" | "missing";
+        status?: FlightStatus;
+      }
+  > {
+    requestLogger.info("Claiming hotel allocation run for flight", {
+      context: this.context,
+      cancelledFlightId,
+    });
+    return this.flightRepo.manager.transaction(async (manager) => {
+      const row = await manager
+        .getRepository(CancelledFlightEntity)
+        .createQueryBuilder("flight")
+        .setLock("pessimistic_write")
+        .select("flight.status", "status")
+        .addSelect(
+          "EXTRACT(EPOCH FROM (now() - flight.updated_at)) * 1000",
+          "ageMs",
+        )
+        .where("flight.id = :id", { id: cancelledFlightId })
+        .getRawOne<{ status: FlightStatus; ageMs: string | number }>();
+      if (!row) {
+        return { claimed: false as const, reason: "missing" as const };
+      }
+      if (
+        row.status === FlightStatus.HOTEL_ALLOCATION_IN_PROGRESS &&
+        Number(row.ageMs) < leaseMs
+      ) {
+        return {
+          claimed: false as const,
+          reason: "running" as const,
+          status: row.status,
+        };
+      }
+      if (!allowedStatuses.includes(row.status)) {
+        return {
+          claimed: false as const,
+          reason: "status" as const,
+          status: row.status,
+        };
+      }
+      await manager.update(
+        CancelledFlightEntity,
+        { id: cancelledFlightId },
+        { status: FlightStatus.HOTEL_ALLOCATION_IN_PROGRESS },
+      );
+      return { claimed: true as const, previousStatus: row.status };
+    });
   }
 
-  /**
-   * Re-sums the flight's totals from its allocation rows (as booked, so
-   * supplier re-pricing is reflected in what the airline pays) and returns them.
-   */
+  async touchFlightAllocationRun(
+    cancelledFlightId: number,
+    requestLogger: Logger,
+  ): Promise<void> {
+    await this.flightRepo
+      .update(
+        {
+          id: cancelledFlightId,
+          status: FlightStatus.HOTEL_ALLOCATION_IN_PROGRESS,
+        },
+        { status: FlightStatus.HOTEL_ALLOCATION_IN_PROGRESS },
+      )
+      .catch((error: any) =>
+        requestLogger.warn("Could not refresh allocation run lease", {
+          context: this.context,
+          cancelledFlightId,
+          error: error?.message,
+        }),
+      );
+  }
+
+  async markStaleInProgressAllocations(
+    cancelledFlightId: number,
+    leaseMs: number,
+    reason: string,
+    requestLogger: Logger,
+  ): Promise<number> {
+    const result = await this.allocationRepo
+      .createQueryBuilder()
+      .update(HotelAllocationEntity)
+      .set({ status: HotelAllocationStatus.MANUAL_CHECK, reason })
+      .where("cancelled_flight_id = :cancelledFlightId", { cancelledFlightId })
+      .andWhere("status = :status", {
+        status: HotelAllocationStatus.IN_PROGRESS,
+      })
+      .andWhere("updated_at < now() - (:leaseMs * interval '1 millisecond')", {
+        leaseMs,
+      })
+      .execute();
+    const moved = result.affected ?? 0;
+    if (moved > 0) {
+      requestLogger.warn("Moved interrupted hotel bookings to manual check", {
+        context: this.context,
+        cancelledFlightId,
+        moved,
+      });
+    }
+    return moved;
+  }
+
+  async findAllocationsByFlightId(
+    cancelledFlightId: number,
+    requestLogger: Logger,
+  ): Promise<HotelAllocationEntity[]> {
+    requestLogger.info("Finding hotel allocations for flight", {
+      context: this.context,
+      cancelledFlightId,
+    });
+    return this.allocationRepo.find({ where: { cancelledFlightId } });
+  }
+
   async refreshFlightTotals(
     cancelledFlightId: number,
     requestLogger: Logger,
-  ): Promise<{
-    totalActualPrice: number;
-    totalBuyingPrice: number;
-    totalSellingPrice: number;
-    totalDiscounts: number;
-    totalHotelTaxes: number;
-    totalPlatformFee: number;
-    totalPrice: number;
-    totalEarnings: number;
-    totalHotelRooms: number;
-  }> {
-    const rows = await this.allocationRepo.find({
-      where: { cancelledFlightId },
+  ): Promise<FlightHotelTotals> {
+    return this.allocationRepo.manager.transaction(async (manager) => {
+      const totals = await this.sumConfirmedAllocations(
+        manager,
+        cancelledFlightId,
+      );
+      const { confirmedCount, ...columns } = totals;
+      await manager.update(
+        CancelledFlightEntity,
+        { id: cancelledFlightId },
+        columns,
+      );
+      requestLogger.info(
+        "Refreshed cancelled flight totals from confirmed bookings",
+        {
+          context: this.context,
+          cancelledFlightId,
+          confirmedCount,
+          totalPrice: totals.totalPrice,
+        },
+      );
+      return totals;
     });
-    const sum = (pick: (row: HotelAllocationEntity) => unknown): number => {
-      const total = rows.reduce((acc, row) => {
-        const value = Number(pick(row) ?? 0);
-        return acc + (Number.isFinite(value) ? value : 0);
-      }, 0);
-      return Math.round((total + Number.EPSILON) * 100) / 100;
-    };
-    const totals = {
-      totalActualPrice: sum((row) => row.actualPrice),
-      totalBuyingPrice: sum((row) => row.buyingPrice),
-      totalSellingPrice: sum((row) => row.sellingPrice),
-      totalDiscounts: sum((row) => row.discount),
-      totalHotelTaxes: sum((row) => row.tax),
-      totalPlatformFee: sum((row) => row.platformFee),
-      totalPrice: sum((row) => row.totalPrice),
-      totalEarnings: sum((row) => row.earnings),
-      totalHotelRooms: sum((row) => row.totalRooms),
-    };
-    await this.flightRepo.update({ id: cancelledFlightId }, totals);
-    requestLogger.info("Refreshed cancelled flight totals from allocations", {
-      context: this.context,
-      cancelledFlightId,
-      allocationCount: rows.length,
-      totalPrice: totals.totalPrice,
+  }
+
+  async completeFlightAllocationRun(
+    cancelledFlightId: number,
+    platformFeePercentage: number,
+    requestLogger: Logger,
+  ): Promise<{ status: FlightStatus; totals: FlightHotelTotals }> {
+    return this.allocationRepo.manager.transaction(async (manager) => {
+      const totals = await this.sumConfirmedAllocations(
+        manager,
+        cancelledFlightId,
+      );
+      const status =
+        totals.confirmedCount > 0
+          ? FlightStatus.ALLOCATED
+          : FlightStatus.PASSENGERS_BOOKING_CONFIRMED;
+      const { confirmedCount, ...columns } = totals;
+      await manager.update(
+        CancelledFlightEntity,
+        { id: cancelledFlightId },
+        { ...columns, platformFeePercentage, status },
+      );
+      requestLogger.info("Completed hotel allocation run", {
+        context: this.context,
+        cancelledFlightId,
+        status,
+        confirmedCount,
+        totalPrice: totals.totalPrice,
+      });
+      return { status, totals };
     });
-    return totals;
+  }
+
+  private async sumConfirmedAllocations(
+    manager: EntityManager,
+    cancelledFlightId: number,
+  ): Promise<FlightHotelTotals> {
+    const rows = await manager.getRepository(HotelAllocationEntity).find({
+      where: { cancelledFlightId, status: HotelAllocationStatus.CONFIRMED },
+    });
+    return sumHotelTotals(rows);
   }
 
   async findHotelBookingsByFlightIdWithPagination(

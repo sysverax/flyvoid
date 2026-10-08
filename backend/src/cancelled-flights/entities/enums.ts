@@ -37,6 +37,8 @@ export enum HotelAllocationStatus {
   DRAFT = "draft",
   IN_PROGRESS = "in_progress",
   CONFIRMED = "confirmed",
+  FAILED = "failed",
+  MANUAL_CHECK = "manual_check",
   CANCELLED = "cancelled",
   COMPLETED = "completed",
 }

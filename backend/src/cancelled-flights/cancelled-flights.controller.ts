@@ -884,14 +884,20 @@ export class CancelledFlightsController {
   @RequireAccessControl({
     airline: {
       asset: AirlineAsset.CANCELLED_FLIGHTS,
-      access: [AccessAction.VIEW],
+      access: [AccessAction.EDIT],
     },
   })
   @ApiOperation({
     summary:
-      "Generate hotel allocations for all bookings of a cancelled flight",
+      "Allocate and book hotels for all bookings (PNRs) of a cancelled flight",
     description:
-      "Builds preferred/fallback room occupancies per booking, performs a single hotel supplier availability search across deduplicated occupancies, allocates hotels, then books every allocation live with the hotel supplier. Bookings whose supplier booking fails are listed in bookingFailures and can be retried via book-hotel.",
+      "Searches supplier availability once, builds a quality-ordered candidate list per PNR (stars, then price; preferred supply 150% of demand per room shape) and books each PNR live with the supplier: cabin classes in order (First, Business, Premium Economy, Economy), PNRs of one class in parallel, fallback hotels per PNR one at a time. A PNR is confirmed only after the supplier confirms; unknown outcomes become manual_check and are never rebooked automatically. Idempotent: re-running skips confirmed / manual_check PNRs and retries failed ones (until the flight is paid).",
+  })
+  @ApiConflictResponse({
+    schema: createConflictErrorSchema(
+      "/api/v1/cancelled-flights/:id/hotel-allocations",
+      "Hotel allocation is already running for this flight",
+    ),
   })
   @ApiParam({ name: "id", description: "Cancelled flight id" })
   @ApiNotFoundResponse({

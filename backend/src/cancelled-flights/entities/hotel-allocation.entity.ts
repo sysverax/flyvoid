@@ -192,4 +192,25 @@ export class HotelAllocationEntity {
 
   @Column({ name: "reason", type: "text", nullable: true })
   reason?: string | null;
+
+  @Column({ name: "booking_attempt", type: "jsonb", nullable: true })
+  bookingAttempt?: HotelBookingAttempt | null;
+}
+
+export interface HotelBookingAttemptRecord {
+  attemptId: string;
+  supplier: string;
+  hotelCode: string;
+  hotelName: string;
+  rateKeys: string[];
+  requestedAt: string;
+  completedAt?: string | null;
+  outcome: "in_progress" | "confirmed" | "failed" | "unknown";
+  supplierReferences?: string[];
+  unknownReference?: string | null;
+  error?: string | null;
+}
+
+export interface HotelBookingAttempt extends HotelBookingAttemptRecord {
+  history?: HotelBookingAttemptRecord[];
 }

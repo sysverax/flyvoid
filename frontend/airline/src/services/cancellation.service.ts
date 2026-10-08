@@ -134,14 +134,42 @@ export interface ReviewCancelledFlightData {
 
 export type ReviewFlightResponse = ReviewCancelledFlightData;
 
+export type HotelBookingStatus =
+  | "draft"
+  | "in_progress"
+  | "confirmed"
+  | "failed"
+  | "manual_check"
+  | "cancelled"
+  | "completed";
+
+export interface HotelAllocationBookingResult {
+  bookingId: number;
+  pnr: string;
+  travelClass: string;
+  status: HotelBookingStatus;
+  hotelCode: string | null;
+  hotelName: string | null;
+  category: string | null;
+  bookingReference: string | null;
+  totalRooms: number;
+  totalPrice: number;
+  attempts: number;
+  reason: string | null;
+}
+
 export interface HotelAllocationsResponse {
   cancelledFlightId: number;
   status: string;
   totalBookings: number;
+  confirmedBookings: number;
   allocatedBookings: number;
   failedBookings: number;
-  bookedBookings: number;
-  bookingFailures: Array<{ bookingId: number; pnr: string; reason: string }>;
+  manualCheckBookings: number;
+  inProgressBookings: number;
+  pendingBookings: number;
+  results: HotelAllocationBookingResult[];
+  totalPrice: number;
   totalRooms: number;
   totalActualPrice: number;
   totalSellingPrice: number;
@@ -188,6 +216,9 @@ export interface HotelBookingItemDTO {
   rating: string;
   totalRooms: number;
   totalCost: number | string;
+  status?: HotelBookingStatus;
+  bookingReference?: string | null;
+  reason?: string | null;
   createdAt: string;
   updatedAt: string | null;
 }
@@ -452,9 +483,11 @@ export const cancellationService = {
       );
       return response.data;
     } catch (error: any) {
-      throw new Error(
+      const wrapped = new Error(
         extractErrorMessage(error, "Failed to allocate hotels"),
-      );
+      ) as Error & { status?: number };
+      wrapped.status = error?.response?.status;
+      throw wrapped;
     }
   },
 
