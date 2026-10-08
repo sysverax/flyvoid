@@ -3314,19 +3314,17 @@ export default function CancellationWizard({
                             {hotelName}
                           </TableCell>
                           <TableCell>
-                            <div className="flex flex-col gap-1 items-start">
+                            <span
+                              className={cn(
+                                "inline-flex",
+                                !isConfirmed && hb.reason && "cursor-help",
+                              )}
+                              title={!isConfirmed && hb.reason ? hb.reason : undefined}
+                            >
                               <StatusBadge
                                 status={HOTEL_BOOKING_STATUS_LABEL[hb.status ?? "confirmed"] ?? hb.status ?? "Confirmed"}
                               />
-                              {!isConfirmed && hb.reason ? (
-                                <span
-                                  className="text-[11px] text-gray-500 line-clamp-2"
-                                  title={hb.reason}
-                                >
-                                  {hb.reason}
-                                </span>
-                              ) : null}
-                            </div>
+                            </span>
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center justify-start text-left text-amber-400">
