@@ -225,7 +225,7 @@ function getInitialStepFromStatus(status?: string): number {
     s === "passengers_booking_confirmed"
   )
     return 4;
-  if (s === "hotel_allocation_in_progress") return 4;
+  if (s === "hotel_allocation_in_progress" || s === "ha in progress") return 4;
   if (s === "allocated") return 5;
   if (s === "paid" || s === "published") return 7;
   return 1;
@@ -723,6 +723,7 @@ export default function CancellationWizard({
   const [hotelAllocations, setHotelAllocations] =
     useState<HotelAllocationsResponse | null>(null);
   const [allocationError, setAllocationError] = useState<string | null>(null);
+  const [isCheckingAllocation, setIsCheckingAllocation] = useState(false);
   const [allocationRunProgress, setAllocationRunProgress] = useState<{
     done: number;
     total: number;
@@ -934,13 +935,29 @@ export default function CancellationWizard({
   };
 
   useEffect(() => {
-    if (
-      flightId &&
-      initialData?.status?.toLowerCase() === "hotel_allocation_in_progress"
-    ) {
-      startAllocationPolling(flightId);
-    }
-  }, [flightId, initialData?.status]);
+    if (activeStep !== 4 || !flightId || isPollingAllocationRef.current) return;
+    let cancelled = false;
+    setIsCheckingAllocation(true);
+    cancellationService
+      .getHotelAllocationStatus(flightId)
+      .then((res) => {
+        const data: HotelAllocationsResponse = res?.data || res;
+        if (cancelled) return;
+        if (data?.running) {
+          startAllocationPolling(flightId);
+        } else if (data?.lastRunError) {
+          setAllocationError(data.lastRunError);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setIsCheckingAllocation(false);
+      });
+    return () => {
+      cancelled = true;
+      setIsCheckingAllocation(false);
+    };
+  }, [activeStep, flightId]);
 
   const handleAllocateHotels = async () => {
     if (isPollingAllocationRef.current) return;
@@ -3032,7 +3049,7 @@ export default function CancellationWizard({
                 <button
                   type="button"
                   onClick={handleAllocateHotels}
-                  disabled={isAllocating}
+                  disabled={isAllocating || isCheckingAllocation}
                   className="bg-[#2B3B67] hover:bg-[#1E2B4D] disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-medium py-2.5 px-6 rounded-lg transition-colors cursor-pointer text-sm inline-flex items-center gap-2"
                 >
                   <Building2 className="h-5 w-5" />
@@ -3301,11 +3318,7 @@ export default function CancellationWizard({
                               <StatusBadge
                                 status={HOTEL_BOOKING_STATUS_LABEL[hb.status ?? "confirmed"] ?? hb.status ?? "Confirmed"}
                               />
-                              {isConfirmed && hb.bookingReference ? (
-                                <span className="text-[11px] text-gray-500 break-all">
-                                  Ref: {hb.bookingReference}
-                                </span>
-                              ) : !isConfirmed && hb.reason ? (
+                              {!isConfirmed && hb.reason ? (
                                 <span
                                   className="text-[11px] text-gray-500 line-clamp-2"
                                   title={hb.reason}
@@ -3826,6 +3839,7 @@ export default function CancellationWizard({
                     isCreatingFlight ||
                     isConfirmingBookings ||
                     isAllocating ||
+                    isCheckingAllocation ||
                     isProcessingPayment ||
                     (activeStep === 6 && !paymentConfirmed)
                   }
@@ -3834,6 +3848,7 @@ export default function CancellationWizard({
                     isCreatingFlight ||
                       isConfirmingBookings ||
                       isAllocating ||
+                      isCheckingAllocation ||
                       isProcessingPayment ||
                       (activeStep === 6 && !paymentConfirmed)
                       ? "bg-[#9CA3AF] text-white cursor-not-allowed border-none"
