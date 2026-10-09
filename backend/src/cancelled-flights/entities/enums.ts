@@ -37,6 +37,31 @@ export enum HotelAllocationStatus {
   DRAFT = "draft",
   IN_PROGRESS = "in_progress",
   CONFIRMED = "confirmed",
+  FAILED = "failed",
+  MANUAL_CHECK = "manual_check",
   CANCELLED = "cancelled",
   COMPLETED = "completed",
+}
+
+export enum HotelBookingAttemptStatus {
+  PENDING = "pending",
+  SUCCESS = "success",
+  FAILED = "failed",
+  MANUAL_CHECK = "manual_check",
+}
+
+export enum HotelBookingFailureCode {
+  INVALID_PASSENGER_DATA = "invalid_passenger_data",
+  NO_CANDIDATES = "no_candidates",
+  MAX_ATTEMPTS = "max_attempts",
+  RATE_CHECK_FAILED = "rate_check_failed",
+  RATE_MISMATCH = "rate_mismatch",
+  MIXED_HOTELS = "mixed_hotels",
+  SUPPLIER_REJECTED = "supplier_rejected",
+  OUTCOME_UNKNOWN = "outcome_unknown",
+  PARTIAL_BOOKING = "partial_booking",
+  PROVIDER_UNCONFIRMED = "provider_unconfirmed",
+  SAVE_FAILED = "save_failed",
+  INTERRUPTED_BEFORE_REQUEST = "interrupted_before_request",
+  INTERRUPTED_AFTER_REQUEST = "interrupted_after_request",
 }

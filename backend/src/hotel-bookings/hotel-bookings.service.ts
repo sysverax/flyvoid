@@ -9,7 +9,10 @@ import { Logger } from "winston";
 import { config } from "../config/config";
 import { UserType } from "../common/constants/user.constants";
 import { AuthenticatedUser } from "../auth/interfaces/authenticated-request.interface";
-import { FlightStatus } from "../cancelled-flights/entities/enums";
+import {
+  FlightStatus,
+  HotelAllocationStatus,
+} from "../cancelled-flights/entities/enums";
 import { HotelAllocationEntity } from "../cancelled-flights/entities/hotel-allocation.entity";
 import { HotelBookingsRepository } from "./hotel-bookings.repository";
 import {
@@ -263,6 +266,12 @@ export class HotelBookingsService {
       );
     }
 
+    if (hotelBooking.status !== HotelAllocationStatus.CONFIRMED) {
+      throw new BadRequestException(
+        `Hotel booking '${hotelBookingId}' is not confirmed with the hotel (status '${hotelBooking.status}')`,
+      );
+    }
+
     const formatDate = (value: string) =>
       new Date(value).toLocaleDateString("en-US", {
         weekday: "short",
@@ -384,6 +393,12 @@ export class HotelBookingsService {
       );
       throw new BadRequestException(
         `Cannot send hotel booking email while the flight status is '${flightStatus}'. Flight must be 'paid' or 'published'.`,
+      );
+    }
+
+    if (hotelBooking.status !== HotelAllocationStatus.CONFIRMED) {
+      throw new BadRequestException(
+        `Hotel booking '${hotelBookingId}' is not confirmed with the hotel (status '${hotelBooking.status}')`,
       );
     }
 

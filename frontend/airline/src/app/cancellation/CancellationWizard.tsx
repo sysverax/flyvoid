@@ -59,6 +59,7 @@ import { Dropdown } from "@/src/components/ui/Dropdown";
 import { DatePicker } from "@/src/components/ui/DatePicker";
 import { AddCardModal } from "@/src/components/ui/AddCardModal";
 import { cn } from "@/src/lib/utils";
+import { StatusBadge } from "@/src/components/ui/StatusBadge";
 import {
   cancellationService,
   CreateCancelledFlightPayload,
@@ -203,6 +204,16 @@ function formatDateString(dateStr: string): string {
   return `${month} ${day}, ${year}`;
 }
 
+const HOTEL_BOOKING_STATUS_LABEL: Record<string, string> = {
+  confirmed: "Confirmed",
+  failed: "Booking Failed",
+  manual_check: "Manual Check",
+  in_progress: "Booking In Progress",
+  draft: "Not Started",
+  cancelled: "Cancelled",
+  completed: "Completed",
+};
+
 function getInitialStepFromStatus(status?: string): number {
   if (!status) return 1;
   const s = status.toLowerCase();
@@ -214,7 +225,8 @@ function getInitialStepFromStatus(status?: string): number {
     s === "passengers_booking_confirmed"
   )
     return 4;
-  if (s === "allocated" || s === "hotel_allocation_in_progress") return 5;
+  if (s === "hotel_allocation_in_progress" || s === "ha in progress") return 4;
+  if (s === "allocated") return 5;
   if (s === "paid" || s === "published") return 7;
   return 1;
 }
@@ -711,6 +723,14 @@ export default function CancellationWizard({
   const [hotelAllocations, setHotelAllocations] =
     useState<HotelAllocationsResponse | null>(null);
   const [allocationError, setAllocationError] = useState<string | null>(null);
+  const [isCheckingAllocation, setIsCheckingAllocation] = useState(false);
+  const [allocationRunProgress, setAllocationRunProgress] = useState<{
+    done: number;
+    total: number;
+  } | null>(null);
+  const allocationPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const allocationAnimationRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isPollingAllocationRef = useRef(false);
 
   // Step 5 Booking Summary state
   const [isExportingReport, setIsExportingReport] = useState(false);
@@ -827,19 +847,127 @@ export default function CancellationWizard({
     }
   }, [activeStep, flightId, step5CurrentPage, step5ResultsPerPage]);
 
-  const handleAllocateHotels = async () => {
-    setIsAllocating(true);
-    setAllocationError(null);
-    setAllocationProgress(1);
+  const ALLOCATION_POLL_MS = 3000;
+  const MAX_ALLOCATION_POLL_ERRORS = 5;
 
-    // Loop through the 4 loading sections during allocation
-    const progressTimer = setInterval(() => {
+  const startAllocationAnimation = () => {
+    if (allocationAnimationRef.current) return;
+    setAllocationProgress(1);
+    allocationAnimationRef.current = setInterval(() => {
       setAllocationProgress((prev) => (prev < 4 ? prev + 1 : 1));
     }, 1200);
+  };
+
+  const stopAllocationPolling = () => {
+    isPollingAllocationRef.current = false;
+    if (allocationPollTimerRef.current) {
+      clearTimeout(allocationPollTimerRef.current);
+      allocationPollTimerRef.current = null;
+    }
+    if (allocationAnimationRef.current) {
+      clearInterval(allocationAnimationRef.current);
+      allocationAnimationRef.current = null;
+    }
+  };
+
+  useEffect(() => stopAllocationPolling, []);
+
+  const finishAllocation = (allocData: HotelAllocationsResponse) => {
+    stopAllocationPolling();
+    setIsAllocating(false);
+    setAllocationProgress(0);
+    setAllocationRunProgress(null);
+    const anythingBooked = (allocData.successfulPnrs ?? 0) > 0;
+    if (allocData.lastRunError) {
+      setAllocationError(allocData.lastRunError);
+      toast.error(allocData.lastRunError);
+      if (!anythingBooked) return;
+    }
+    setHotelAllocations(allocData);
+    setActiveStep(5);
+    showAllocationOutcome(allocData);
+  };
+
+  const pollAllocationStatus = async (fId: number, consecutiveErrors = 0) => {
+    if (!isPollingAllocationRef.current) return;
+    let nextErrors = 0;
+    try {
+      const res = await cancellationService.getHotelAllocationStatus(fId);
+      if (!isPollingAllocationRef.current) return;
+      const data: HotelAllocationsResponse = res?.data || res;
+      if (!data.running) {
+        finishAllocation(data);
+        return;
+      }
+      const done = (data.results ?? []).filter(
+        (r) => r.bookingStatus !== "NOT_STARTED" && r.bookingStatus !== "PENDING",
+      ).length;
+      setAllocationRunProgress({ done, total: data.totalPnrs ?? 0 });
+    } catch {
+      if (!isPollingAllocationRef.current) return;
+      nextErrors = consecutiveErrors + 1;
+      if (nextErrors >= MAX_ALLOCATION_POLL_ERRORS) {
+        stopAllocationPolling();
+        setIsAllocating(false);
+        setAllocationProgress(0);
+        setAllocationError(
+          "Lost connection while checking hotel allocation progress. Booking continues on the server; reopen this flight to see the latest status.",
+        );
+        return;
+      }
+    }
+    allocationPollTimerRef.current = setTimeout(
+      () => pollAllocationStatus(fId, nextErrors),
+      ALLOCATION_POLL_MS,
+    );
+  };
+
+  const startAllocationPolling = (fId: number) => {
+    if (isPollingAllocationRef.current) return;
+    isPollingAllocationRef.current = true;
+    setIsAllocating(true);
+    setAllocationError(null);
+    startAllocationAnimation();
+    allocationPollTimerRef.current = setTimeout(
+      () => pollAllocationStatus(fId),
+      ALLOCATION_POLL_MS,
+    );
+  };
+
+  useEffect(() => {
+    if (activeStep !== 4 || !flightId || isPollingAllocationRef.current) return;
+    let cancelled = false;
+    setIsCheckingAllocation(true);
+    cancellationService
+      .getHotelAllocationStatus(flightId)
+      .then((res) => {
+        const data: HotelAllocationsResponse = res?.data || res;
+        if (cancelled) return;
+        if (data?.running) {
+          startAllocationPolling(flightId);
+        } else if (data?.lastRunError) {
+          setAllocationError(data.lastRunError);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setIsCheckingAllocation(false);
+      });
+    return () => {
+      cancelled = true;
+      setIsCheckingAllocation(false);
+    };
+  }, [activeStep, flightId]);
+
+  const handleAllocateHotels = async () => {
+    if (isPollingAllocationRef.current) return;
+    setIsAllocating(true);
+    setAllocationError(null);
+    startAllocationAnimation();
 
     if (!flightId) {
       setTimeout(() => {
-        clearInterval(progressTimer);
+        stopAllocationPolling();
         setIsAllocating(false);
         setAllocationProgress(0);
         setActiveStep(5);
@@ -849,23 +977,52 @@ export default function CancellationWizard({
 
     try {
       const allocRes = await cancellationService.allocateHotels(flightId);
-      const allocData = allocRes?.data || allocRes;
-      setHotelAllocations(allocData);
-      setAllocationProgress(4);
-      setTimeout(() => {
-        clearInterval(progressTimer);
-        setIsAllocating(false);
-        setAllocationProgress(0);
-        setActiveStep(5);
-        toast.success(
-          allocRes?.message || "Hotels allocated successfully",
-        );
-      }, 800);
+      const allocData: HotelAllocationsResponse = allocRes?.data || allocRes;
+      if (allocData?.running) {
+        startAllocationPolling(flightId);
+      } else {
+        finishAllocation(allocData);
+      }
     } catch (error: any) {
-      clearInterval(progressTimer);
+      if (error?.status === 409) {
+        startAllocationPolling(flightId);
+        return;
+      }
+      stopAllocationPolling();
       setIsAllocating(false);
+      setAllocationProgress(0);
       setAllocationError(error.message || "Failed to allocate hotels");
       toast.error(error.message || "Failed to allocate hotels");
+    }
+  };
+
+  const showAllocationOutcome = (allocData?: HotelAllocationsResponse | null) => {
+    if (!allocData?.results) {
+      toast.success("Hotels booked successfully");
+      return;
+    }
+    const pnrsWith = (status: string) =>
+      allocData.results.filter((r) => r.bookingStatus === status).map((r) => r.pnr);
+    const failed = pnrsWith("FAILED");
+    const manual = pnrsWith("MANUAL_CHECK");
+    const confirmed = allocData.successfulPnrs ?? 0;
+    const total = allocData.totalPnrs ?? allocData.results.length;
+    if (allocData.fullyBooked) {
+      toast.success(`All ${confirmed} booking(s) confirmed with the hotels`);
+      return;
+    }
+    if (confirmed > 0) {
+      toast.success(`${confirmed} of ${total} booking(s) confirmed with the hotels`);
+    }
+    if (failed.length > 0) {
+      toast.error(
+        `No hotel could be booked for ${failed.length} booking(s): ${failed.join(", ")}. Run allocation again to retry them.`,
+      );
+    }
+    if (manual.length > 0) {
+      toast.warning(
+        `${manual.length} booking(s) need a manual check with the supplier before rebooking: ${manual.join(", ")}`,
+      );
     }
   };
 
@@ -2755,10 +2912,12 @@ export default function CancellationWizard({
                 <Loader2 className="h-10 w-10 text-[#0F2757] animate-spin" />
                 <div className="text-center">
                   <h3 className="text-xl font-semibold text-gray-900 font-figtree">
-                    Allocating Hotels...
+                    Booking Hotels...
                   </h3>
                   <p className="text-sm text-gray-500 mt-1">
-                    Finding the best hotels for your passengers...
+                    {allocationRunProgress && allocationRunProgress.total > 0
+                      ? `${allocationRunProgress.done} of ${allocationRunProgress.total} bookings processed`
+                      : "Finding and booking the best hotels for your passengers..."}
                   </p>
                 </div>
               </div>
@@ -2843,8 +3002,8 @@ export default function CancellationWizard({
                   Hotel Allocation
                 </h3>
                 <p className="text-sm text-gray-500 mt-0.5">
-                  Our AI-powered system will automatically assign hotels based
-                  on:
+                  Hotels are booked live with the supplier for every booking,
+                  best-rated first, based on:
                 </p>
               </div>
             </div>
@@ -2890,7 +3049,7 @@ export default function CancellationWizard({
                 <button
                   type="button"
                   onClick={handleAllocateHotels}
-                  disabled={isAllocating}
+                  disabled={isAllocating || isCheckingAllocation}
                   className="bg-[#2B3B67] hover:bg-[#1E2B4D] disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-medium py-2.5 px-6 rounded-lg transition-colors cursor-pointer text-sm inline-flex items-center gap-2"
                 >
                   <Building2 className="h-5 w-5" />
@@ -3078,6 +3237,7 @@ export default function CancellationWizard({
                     <TableHead className="min-w-[100px]">Class</TableHead>
                     <TableHead className="min-w-[120px]">Passengers</TableHead>
                     <TableHead className="min-w-[180px]">Hotel</TableHead>
+                    <TableHead className="min-w-[140px]">Booking Status</TableHead>
                     <TableHead className="min-w-[100px]">Rating</TableHead>
                     <TableHead className="min-w-[80px]">Rooms</TableHead>
                     <TableHead className="min-w-[100px]">Total</TableHead>
@@ -3087,7 +3247,7 @@ export default function CancellationWizard({
                 <TableBody>
                   {isLoadingHotelBookings && hotelBookings.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={10} className="text-center py-10 text-gray-500">
+                      <TableCell colSpan={11} className="text-center py-10 text-gray-500">
                         <div className="flex items-center justify-center gap-2">
                           <Loader2 className="h-5 w-5 animate-spin text-[#0F2757]" />
                           <span>Loading hotel bookings...</span>
@@ -3107,7 +3267,13 @@ export default function CancellationWizard({
                         travelClass === "Business" || travelClass === "First Class";
                       const totalPassengers = (pb?.adults || 0) + (pb?.children || 0);
                       const passengersCount = totalPassengers || 1;
-                      const hotelName = hb.hotelName || "Transit Hotel";
+                      const isConfirmed = !hb.status || hb.status === "confirmed";
+                      const hotelName = isConfirmed
+                        ? hb.hotelName || "Transit Hotel"
+                        : (hb.status === "manual_check" || hb.status === "in_progress") &&
+                            hb.hotelName
+                          ? `${hb.hotelName} (not confirmed)`
+                          : "Not booked";
                       const ratingVal = parseFloat(hb.rating) || 4;
                       const stars = Math.min(5, Math.max(1, Math.round(ratingVal)));
                       const rooms = hb.totalRooms || 1;
@@ -3146,6 +3312,19 @@ export default function CancellationWizard({
                           </TableCell>
                           <TableCell className="font-medium">
                             {hotelName}
+                          </TableCell>
+                          <TableCell>
+                            <span
+                              className={cn(
+                                "inline-flex",
+                                !isConfirmed && hb.reason && "cursor-help",
+                              )}
+                              title={!isConfirmed && hb.reason ? hb.reason : undefined}
+                            >
+                              <StatusBadge
+                                status={HOTEL_BOOKING_STATUS_LABEL[hb.status ?? "confirmed"] ?? hb.status ?? "Confirmed"}
+                              />
+                            </span>
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center justify-start text-left text-amber-400">
@@ -3263,6 +3442,7 @@ export default function CancellationWizard({
                             <TableCell className="font-medium">
                               {hotelName}
                             </TableCell>
+                            <TableCell>-</TableCell>
                             <TableCell>
                               <div className="flex justify-center items-center text-amber-400">
                                 {[...Array(stars)].map((_, i) => (
@@ -3657,6 +3837,7 @@ export default function CancellationWizard({
                     isCreatingFlight ||
                     isConfirmingBookings ||
                     isAllocating ||
+                    isCheckingAllocation ||
                     isProcessingPayment ||
                     (activeStep === 6 && !paymentConfirmed)
                   }
@@ -3665,6 +3846,7 @@ export default function CancellationWizard({
                     isCreatingFlight ||
                       isConfirmingBookings ||
                       isAllocating ||
+                      isCheckingAllocation ||
                       isProcessingPayment ||
                       (activeStep === 6 && !paymentConfirmed)
                       ? "bg-[#9CA3AF] text-white cursor-not-allowed border-none"

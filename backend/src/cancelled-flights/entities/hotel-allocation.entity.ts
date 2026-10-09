@@ -192,4 +192,23 @@ export class HotelAllocationEntity {
 
   @Column({ name: "reason", type: "text", nullable: true })
   reason?: string | null;
+
+  @Column({ name: "processing_order", type: "integer", nullable: true })
+  processingOrder?: number | null;
+
+  @Column({ name: "class_priority", type: "integer", nullable: true })
+  classPriority?: number | null;
+
+  @Column({ name: "plan_id", type: "varchar", length: 64, nullable: true })
+  planId?: string | null;
+
+  @Column({ name: "planned_at", type: "timestamp", nullable: true })
+  plannedAt?: Date | null;
+
+  @Column({ name: "room_plan", type: "jsonb", nullable: true })
+  roomPlan?: Array<{
+    adults: number;
+    children: number;
+    roomsNeeded: number;
+  }> | null;
 }

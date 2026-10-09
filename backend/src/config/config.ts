@@ -111,10 +111,30 @@ export const config = {
       process.env.AI_API_URL ??
       "https://api.groq.com/openai/v1/chat/completions",
     temperature: parseFloat(process.env.AI_TEMPERATURE ?? "0.2"),
-    // Token budget (rough char/4 estimate) for one hotel-allocation AI
-    // call's input; larger flights are split into multiple calls.
-    maxInputTokensPerCall: parseInt(
-      process.env.AI_MAX_INPUT_TOKENS_PER_CALL ?? "6000",
+  },
+
+  hotelBooking: {
+    supplyBufferRatio: parseFloat(
+      process.env.HOTEL_SUPPLY_BUFFER_RATIO ?? "1.5",
+    ),
+    concurrencyPerClass: parseInt(
+      process.env.HOTEL_BOOKING_CONCURRENCY ?? "3",
+      10,
+    ),
+    maxAttemptsPerBooking: parseInt(
+      process.env.HOTEL_BOOKING_MAX_ATTEMPTS ?? "5",
+      10,
+    ),
+    allocationRunLeaseMs: parseInt(
+      process.env.HOTEL_ALLOCATION_RUN_LEASE_MS ?? String(5 * 60 * 1000),
+      10,
+    ),
+    bookingPlanTtlMs: parseInt(
+      process.env.HOTEL_BOOKING_PLAN_TTL_MS ?? String(60 * 60 * 1000),
+      10,
+    ),
+    staleBookingAttemptMs: parseInt(
+      process.env.HOTEL_BOOKING_ATTEMPT_STALE_MS ?? String(60 * 60 * 1000),
       10,
     ),
   },

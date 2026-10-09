@@ -1161,6 +1161,11 @@ export class CancelledFlightsService {
         totalRooms: h.totalRooms,
         totalCost: h.totalPrice,
         reason: h.reason ?? null,
+        status: h.status,
+        bookingReference:
+          h.status === HotelAllocationStatus.CONFIRMED && h.bookingReference
+            ? h.bookingReference
+            : null,
         createdAt: h.createdAt.toISOString(),
         updatedAt: h.updatedAt?.toISOString() ?? null,
       })),

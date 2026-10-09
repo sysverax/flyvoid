@@ -1,75 +1,60 @@
-%% FlyVoid — POST /cancelled-flights/:id/hotel-allocations
-%% Main orchestration. Vendor calls are cross-referenced into their own files:
-%%   - hotel-allocation-vendor-hotelbeds.mmd (hotel vendor: availability search + content lookup)
-%%   - hotel-allocation-vendor-ratehawk.mmd (hotel vendor: availability search + content lookup)
-%%   - hotel-allocation-vendor-ai.mmd (AI vendor: allocation solve)
-%% HotelProvider is a single DI-selected adapter (env var HOTEL_PROVIDER = hotelbeds | ratehawk,
-%% see hotel-provider.registry.ts) — only one of the two hotel vendors is active per deployment.
+%% FlyVoid — POST /cancelled-flights/:id/hotel-allocations (202, runs in background)
+%%          GET  /cancelled-flights/:id/hotel-allocations (poll progress + results)
+%% Allocation = live supplier booking per PNR. Fully deterministic (no AI).
+%% Vendor calls are cross-referenced into their own files:
+%%   - hotel-allocation-vendor-hotelbeds.mmd / hotel-allocation-vendor-ratehawk.mmd
+%% HotelProvider is a single DI-selected adapter (env HOTEL_PROVIDER = hotelbeds | ratehawk).
+%% Planner (pools, ledger, ranking): backend/src/cancelled-flights/hotel-allocation.planner.ts
 
 flowchart TD
     A(["Client"]) -->|"POST /:id/hotel-allocations"| B["Controller.hotelAllocations"]
-    B --> B1{"JwtAuthGuard + RBAC<br/>AIRLINE / CANCELLED_FLIGHTS / VIEW"}
+    B --> B1{"JwtAuthGuard + RBAC<br/>AIRLINE / CANCELLED_FLIGHTS / EDIT"}
     B1 -->|"denied"| B2["401 / 403"]
-    B1 -->|"allowed"| C["Service.hotelAllocationsForFlight"]
+    B1 -->|"allowed"| C["Service.startHotelAllocation"]
 
-    C --> C1[("DB: findFlightWithRelations")]
-    C1 --> C2{"Flight found?"}
-    C2 -->|"no"| E1["404 Not Found"]
-    C2 -->|"yes"| C3{"status ==<br/>PASSENGERS_BOOKING_CONFIRMED?"}
-    C3 -->|"no"| E2["400 Bad Request"]
-    C3 -->|"yes"| C4{"cancellationDate<br/>present &amp; valid?"}
-    C4 -->|"no"| E3["400 Bad Request"]
-    C4 -->|"yes"| C5["Compute checkIn / checkOut<br/>(checkOut = checkIn + 1 day)"]
-    C5 --> C6{"departureAirport<br/>present?"}
-    C6 -->|"no"| E4["404 Not Found"]
+    C --> C1{"Flight of this airline?<br/>status in PASSENGERS_BOOKING_CONFIRMED,<br/>ALLOCATED, stale HOTEL_ALLOCATION_IN_PROGRESS?<br/>cancellation date + departure airport?<br/>any bookings?"}
+    C1 -->|"no"| E1["400 / 404"]
+    C1 -->|"yes"| L1[("DB tx: claimFlightAllocationRun<br/>lock flight row; refuse a run within its lease;<br/>status = HOTEL_ALLOCATION_IN_PROGRESS, new run id")]
+    L1 -->|"run already active"| E2["409 Conflict<br/>(UI polls the running run)"]
+    L1 --> R1(["202 Accepted + current status<br/>UI polls GET every 3s until running = false"])
+    L1 -.->|"background"| L2[("heartbeat every lease/5 (fenced by run id)<br/>recover PENDING attempts of dead runs:<br/>not sent → FAILED (retry same candidate)<br/>sent → MANUAL_CHECK")]
+    L2 --> P0[("persist PNR processing_order + class_priority<br/>(hotel_allocations, once per flight)")]
+    P0 --> P1["Pending PNRs = effective row DRAFT / FAILED / CANCELLED<br/>(SUCCESS / MANUAL_CHECK / PENDING skipped)"]
 
-    C6 -->|"yes"| D1[("DB: findBookingsByFlightId")]
-    D1 --> D2{"Any bookings?"}
-    D2 -->|"no"| E5["400 Bad Request"]
-    D2 -->|"yes"| D3["Per booking:<br/>resolveRoomSplitPlan<br/>(preferred + fallback occupancies)"]
-    D3 --> D4["Invalid-plan bookings →<br/>result = INVALID_PASSENGER_DATA"]
-    D4 --> D5{"Any eligible<br/>bookings left?"}
-    D5 -->|"no"| E6["400 Bad Request"]
-    D5 -->|"yes"| D6["Dedupe occupancies needed<br/>across all eligible bookings"]
+    P1 --> PL{"Fresh persisted plan?<br/>(plan_id, planned_at within TTL, not FAILED)"}
+    PL -->|"yes"| B0
+    PL -->|"no"| P2["Per PNR: resolveRoomSplitPlan<br/>invalid data → PNR FAILED"]
+    P2 --> V1[["Hotel vendor: availability search<br/>(deduplicated occupancies)"]]
+    V1 -->|"error"| E3["run error saved (hotelAllocationError)<br/>nothing booked"]
+    V1 --> P3["Choose split per PNR, demand per shape,<br/>supply pool to ceil(demand × 1.5) allotment"]
+    P3 --> P4[("hotel_booking_candidates (new plan_id)<br/>per PNR: candidate_order = pool → stars DESC → price<br/>rooms + ordered rate options + allotment snapshots")]
+    P4 --> B0["Ledger = candidate snapshots − rooms of<br/>SUCCESS / PENDING / MANUAL_CHECK attempts"]
 
-    D6 --> V1[["Hotel vendor (active adapter): availability search<br/>see hotel-allocation-vendor-hotelbeds.mmd<br/>or hotel-allocation-vendor-ratehawk.mmd"]]
-    V1 -->|"error"| E7["502 / 503<br/>(vendor error propagated or wrapped)"]
-    V1 -->|"hotels + rates"| F1["Build rateByKey lookup"]
-    F1 --> F2["Shortlist ≤8 hotels per room shape<br/>(cheapest, highest-star first)<br/>alias rate keys r0, r1, … to shrink AI prompt"]
-    F2 --> F3["Build passenger groups:<br/>one per booking × distinct room shape<br/>passengerGroupId, sameHotelGroup"]
+    B0 --> S1["Class stages by persisted class_priority:<br/>FIRST → BUSINESS → PREMIUM_ECONOMY → ECONOMY"]
+    S1 --> S2["Within a stage: PNRs by processing_order, in parallel<br/>(HOTEL_BOOKING_CONCURRENCY)"]
 
-    F3 --> F4{"Pre-flight supply check:<br/>allotment (exact + covering)<br/>≥ demand per shape?"}
-    F4 -->|"no"| E8["400 Bad Request<br/>+ per-shape shortages<br/>(no AI call spent)"]
-    F4 -->|"yes"| F5["Keep placeableGroups<br/>(shape has ≥1 option)"]
-    F5 --> F6["Batch groups by AI token budget<br/>(never split one booking across batches)"]
+    S2 --> F1["Per PNR (sequential): next persisted candidate<br/>whose rate options have ledger capacity<br/>(rates of failed attempts in this plan excluded)"]
+    F1 -->|"none left"| F9[("effective row FAILED, hotel = null")]
+    F1 --> F2["ledger.tryClaim(rooms)"]
+    F2 --> F4[("hotel_booking_attempts INSERT status = pending<br/>(unique: one non-failed attempt per PNR)<br/>effective row IN_PROGRESS")]
+    F4 -->|"PNR already active / booked"| F8["skip (blocked) — release claim"]
+    F4 --> F3[["Hotel vendor: checkRate every room"]]
+    F3 -->|"fails"| F7
+    F3 --> F11[("provider_request_sent_at = now()<br/>only if still pending (compare-and-set)")]
+    F11 --> F5[["Hotel vendor: bookHotel per room"]]
+    F5 -->|"confirmed"| F6[("attempt success + provider reference<br/>effective row CONFIRMED with full hotel<br/>flight totals refreshed")]
+    F5 -->|"definite failure"| F7[("attempt failed (kept for audit)<br/>ledger.release → next candidate")]
+    F7 --> F1
+    F5 -->|"timeout / unknown / partial"| F10[("attempt manual_check<br/>idempotency key, refs, reason<br/>NO other hotel tried")]
 
-    F6 --> AI1[["AI vendor: allocateHotelGroups<br/>see hotel-allocation-vendor-ai.mmd"]]
-    AI1 --> G1["Merge batch results:<br/>assignments + unresolved<br/>(a failed batch's groups → unresolved,<br/>doesn't abort the request)"]
-
-    G1 --> G2["Hard-rule verifier<br/>(bookings in class-priority order:<br/>first_class &gt; business &gt; premium_economy &gt; economy)"]
-    G2 --> G2a{"Per booking:<br/>rateKey valid, shortlisted,<br/>occupancy matches, same hotel<br/>across groups, allotment available?"}
-    G2a -->|"yes"| G3["Commit trial allotment decrements<br/>result = RECOMMENDED"]
-    G2a -->|"no"| G4["result = NO_SUITABLE_HOTEL<br/>(reason logged)"]
-
-    G3 --> H1
-    G4 --> H0["Deterministic rescue pass:<br/>try every hotel (star-sorted) for one<br/>that covers ALL of the booking's<br/>shape needs at once"]
-    H0 --> H0a{"Rescue found?"}
-    H0a -->|"yes"| H1["result = RECOMMENDED"]
-    H0a -->|"no"| H1b["stays NO_SUITABLE_HOTEL"]
-
-    H1 --> H2["Class-priority rebalance:<br/>within same room-shape signature,<br/>reshuffle existing RECOMMENDED hotels<br/>so higher class gets the better one"]
-    H1b --> H2
-    H2 --> H3{"All bookings<br/>allocated?"}
-    H3 -->|"no (≥1 failed)"| E9["400 Bad Request<br/>headline + per-PNR reasons<br/>NOTHING SAVED — flight stays<br/>PASSENGERS_BOOKING_CONFIRMED (retriable)"]
-
-    H3 -->|"yes"| I1[["Hotel vendor (active adapter): content lookup (best-effort)<br/>once per unique allocated hotel<br/>see hotel-allocation-vendor-hotelbeds.mmd<br/>or hotel-allocation-vendor-ratehawk.mmd"]]
-    I1 --> I2["Merge content into results<br/>(failures → null, never aborts)"]
-    I2 --> J1["Calculate pricing per allocation<br/>(buying price, platform fee, discounts, tax)"]
-    J1 --> J2["Aggregate totals<br/>(price, rooms, earnings, platform fee)"]
-    J2 --> K1[("DB transaction:<br/>saveHotelAllocations<br/>replace prior rows, insert new rows,<br/>flight.status = ALLOCATED")]
-    K1 --> L1["Return HotelAllocationsDto"]
-    L1 --> M(["Client: 200 OK"])
+    F6 --> Z1
+    F9 --> Z1
+    F10 --> Z1
+    F8 --> Z1
+    E3 --> Z1
+    Z1[("DB tx: completeFlightAllocationRun (only if run id still matches)<br/>totals from CONFIRMED rows only;<br/>status = ALLOCATED if ≥1 confirmed,<br/>else PASSENGERS_BOOKING_CONFIRMED; save run error")]
+    Z1 --> Z2["GET returns running = false<br/>totalPnrs / successful / pending / failed / manualCheck<br/>per PNR: bookingStatus, hotel (SUCCESS only as final),<br/>providerBookingReference, reason"]
 
     style V1 fill:transparent,stroke:#2b7ac9,stroke-width:1.5px,stroke-dasharray: 4 3
-    style AI1 fill:transparent,stroke:#7a2bc9,stroke-width:1.5px,stroke-dasharray: 4 3
-    style I1 fill:transparent,stroke:#2b7ac9,stroke-width:1.5px,stroke-dasharray: 4 3
+    style F3 fill:transparent,stroke:#2b7ac9,stroke-width:1.5px,stroke-dasharray: 4 3
+    style F5 fill:transparent,stroke:#2b7ac9,stroke-width:1.5px,stroke-dasharray: 4 3

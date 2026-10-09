@@ -6,6 +6,8 @@ import { AirportEntity } from "../airline/entities/airport.entity";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
 import { BookingEntity } from "./entities/booking.entity";
 import { HotelAllocationEntity } from "./entities/hotel-allocation.entity";
+import { HotelBookingCandidateEntity } from "./entities/hotel-booking-candidate.entity";
+import { HotelBookingAttemptEntity } from "./entities/hotel-booking-attempt.entity";
 import { CancelledFlightsController } from "./cancelled-flights.controller";
 import { CancelledFlightsService } from "./cancelled-flights.service";
 import { HotelAllocationService } from "./hotel-allocation.service";
@@ -22,6 +24,8 @@ import { PdfService } from "../common/pdf/pdf.service";
       CancelledFlightEntity,
       BookingEntity,
       HotelAllocationEntity,
+      HotelBookingCandidateEntity,
+      HotelBookingAttemptEntity,
       AirlineEntity,
       AirportEntity,
     ]),

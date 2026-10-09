@@ -4,6 +4,12 @@ import { Brackets, Repository } from "typeorm";
 import { Logger } from "winston";
 import { HotelAllocationEntity } from "../cancelled-flights/entities/hotel-allocation.entity";
 import { CancelledFlightEntity } from "../cancelled-flights/entities/cancelled-flight.entity";
+import { HotelAllocationStatus } from "../cancelled-flights/entities/enums";
+
+const NOT_BOOKED_STATUSES = [
+  HotelAllocationStatus.DRAFT,
+  HotelAllocationStatus.FAILED,
+];
 
 export interface HotelBookingFilters {
   page: number;
@@ -49,7 +55,10 @@ export class HotelBookingsRepository {
       // have no guaranteed order and rows can shift between pages.
       .addOrderBy("hotelBooking.id", "DESC")
       .skip(skip)
-      .take(filters.limit);
+      .take(filters.limit)
+      .where("hotelBooking.status NOT IN (:...notBooked)", {
+        notBooked: NOT_BOOKED_STATUSES,
+      });
 
     if (typeof filters.destinationAirportId === "number") {
       qb.andWhere("cancelledFlight.arrivalAirportId = :destinationAirportId", {
@@ -160,7 +169,10 @@ export class HotelBookingsRepository {
         .select("1")
         .from(HotelAllocationEntity, "hotelBooking")
         .leftJoin("hotelBooking.booking", "booking")
-        .where("hotelBooking.cancelledFlightId = cancelledFlight.id");
+        .where("hotelBooking.cancelledFlightId = cancelledFlight.id")
+        .andWhere(
+          `hotelBooking.status NOT IN (${NOT_BOOKED_STATUSES.map((status) => `'${status}'`).join(", ")})`,
+        );
 
       if (filters.startDate) {
         hotelBookingSubquery.andWhere("hotelBooking.checkInDate >= :startDate");
