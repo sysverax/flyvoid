@@ -127,3 +127,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_hotel_booking_attempts_one_active
 
 CREATE INDEX IF NOT EXISTS idx_hotel_booking_attempts_flight_status
   ON public.hotel_booking_attempts (cancelled_flight_id, status);
+
+ALTER TABLE public.hotel_booking_attempts
+  ADD COLUMN IF NOT EXISTS provider_order_info jsonb,
+  ADD COLUMN IF NOT EXISTS provider_order_info_at timestamp without time zone;
+
+ALTER TABLE public.hotel_allocations
+  ADD COLUMN IF NOT EXISTS hotel_policies jsonb;

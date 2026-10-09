@@ -115,6 +115,16 @@ export class HotelBookingAttemptEntity {
   @Column({ name: "failure_reason", type: "text", nullable: true })
   failureReason?: string | null;
 
+  @Column({ name: "provider_order_info", type: "jsonb", nullable: true })
+  providerOrderInfo?: unknown[] | null;
+
+  @Column({
+    name: "provider_order_info_at",
+    type: "timestamp",
+    nullable: true,
+  })
+  providerOrderInfoAt?: Date | null;
+
   @ManyToOne(() => CancelledFlightEntity, { onDelete: "CASCADE" })
   @JoinColumn({ name: "cancelled_flight_id" })
   cancelledFlight!: CancelledFlightEntity;

@@ -50,7 +50,24 @@ export interface AvailabilityHotel {
   rates: AvailabilityRoomRate[];
 }
 
+export interface TaxAtProperty {
+  name: string;
+  amount: number;
+  currencyCode: string | null;
+}
+
+export interface HotelPolicies {
+  checkInTime: string | null;
+  checkOutTime: string | null;
+  extraInfo: string | null;
+  items: Array<{ category: string; details: string[] }>;
+  raw?: Record<string, unknown> | null;
+}
+
 export interface HotelContentDetails {
+  policies?: HotelPolicies | null;
+  name?: string | null;
+  starRating?: number | null;
   address: string | null;
   contact: {
     phones: Array<{ phoneNumber: string; phoneType: string }>;
@@ -94,6 +111,10 @@ export interface HotelRateCheck {
   rateComments: string | null;
   /** True when the supplier re-priced the rate since search. */
   priceChanged: boolean;
+  /** Key to pass to bookHotel instead of the search rate key (carries the validated rate). */
+  bookingKey?: string;
+  /** Taxes not included in the price; collected by the hotel from the guest. */
+  taxesAtProperty?: TaxAtProperty[];
 }
 
 export interface HotelBookingResult {
@@ -163,4 +184,10 @@ export interface HotelProvider {
     paymentData: any,
     requestId: string,
   ): Promise<HotelBookingResult>;
+
+  /** Latest supplier order details for confirmed bookings (by our booking references). */
+  getOrderInfo?(
+    bookingReferences: string[],
+    requestId: string,
+  ): Promise<{ status: string | null; orders: unknown[] } | null>;
 }

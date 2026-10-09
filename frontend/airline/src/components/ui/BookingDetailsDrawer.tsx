@@ -764,11 +764,75 @@ export function BookingDetailsDrawer({
                         </span>
                       </div>
                     </div>
+
+                    {(roomData?.taxesAtProperty?.length ?? 0) > 0 && (
+                      <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                        <div className="font-semibold mb-1">
+                          Payable at the hotel by the guest (not included above)
+                        </div>
+                        {roomData!.taxesAtProperty!.map(
+                          (tax: { name: string; amount: number; currencyCode: string | null }, taxIndex: number) => (
+                            <div key={taxIndex} className="flex justify-between">
+                              <span>{tax.name}</span>
+                              <span className="font-medium">
+                                {Number(tax.amount).toFixed(2)} {tax.currencyCode ?? ""}
+                              </span>
+                            </div>
+                          ),
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}
             </div>
           </div>
+
+          {hotel?.hotelPolicies && (
+            <>
+              <div className="h-px bg-[#E5E7EB] w-full" />
+              <div>
+                <h3 className="font-semibold text-[14px] uppercase tracking-wider text-[#475569] mb-3">
+                  Hotel Policies
+                </h3>
+                <div className="bg-white border border-gray-200 p-5 rounded-xl space-y-3 text-sm text-gray-700">
+                  <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    The guest must follow these conditions at check-in. Items payable at the property are not covered by the prepaid booking.
+                  </p>
+                  {(hotel.hotelPolicies.checkInTime || hotel.hotelPolicies.checkOutTime) && (
+                    <div>
+                      {hotel.hotelPolicies.checkInTime && (
+                        <span>
+                          Check-in from{" "}
+                          <span className="font-semibold text-gray-900">
+                            {hotel.hotelPolicies.checkInTime}
+                          </span>
+                        </span>
+                      )}
+                      {hotel.hotelPolicies.checkInTime && hotel.hotelPolicies.checkOutTime && " · "}
+                      {hotel.hotelPolicies.checkOutTime && (
+                        <span>
+                          Check-out by{" "}
+                          <span className="font-semibold text-gray-900">
+                            {hotel.hotelPolicies.checkOutTime}
+                          </span>
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {hotel.hotelPolicies.extraInfo && (
+                    <p className="whitespace-pre-line">{hotel.hotelPolicies.extraInfo}</p>
+                  )}
+                  {hotel.hotelPolicies.items.map((item: { category: string; details: string[] }) => (
+                    <div key={item.category}>
+                      <span className="font-semibold text-gray-900">{item.category}:</span>{" "}
+                      {item.details.join(" · ")}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
 
           <div className="h-px bg-[#E5E7EB] w-full" />
 

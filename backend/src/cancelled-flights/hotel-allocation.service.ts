@@ -1272,6 +1272,7 @@ export class HotelAllocationService {
         config.hotelBooking.staleBookingAttemptMs,
         requestLogger,
       );
+      await this.refreshMissingOrderInfo(flight.id, run.requestId, requestLogger);
 
       const ordered = [...bookings].sort(compareBookingPriority);
       await this.cancelledFlightsRepository.ensurePnrProcessingOrder(
@@ -1803,7 +1804,11 @@ export class HotelAllocationService {
           `Rate re-check returned a room for ${check.adults} adult(s) + ${check.children} child(ren); the party needs ${room.shape.adults} + ${room.shape.children}`,
         );
       }
-      checks.push(check);
+      checks.push({
+        ...check,
+        hotelName: check.hotelName || input.hotel?.hotelName || "",
+        category: check.category || input.hotel?.category || "",
+      });
     }
     if (new Set(checks.map((check) => check.hotelCode)).size > 1) {
       return fail(
@@ -1854,7 +1859,7 @@ export class HotelAllocationService {
             contactEmail: flight.airline?.contactEmail,
             contactPhone: booking.phone?.trim() || flight.airline?.contactPhone,
           },
-          rateKey,
+          checks[index].bookingKey ?? rateKey,
           input.paymentData,
           requestId,
         );
@@ -1995,6 +2000,7 @@ export class HotelAllocationService {
             error: error?.message,
           }),
         );
+      this.scheduleOrderInfoRefresh(attemptId, references, requestId, requestLogger);
       return {
         kind: "confirmed",
         allocation: settled.allocation,
@@ -2024,6 +2030,76 @@ export class HotelAllocationService {
         requestLogger,
       );
       return { kind: "unknown", reason };
+    }
+  }
+
+  private scheduleOrderInfoRefresh(
+    attemptId: number,
+    references: string[],
+    requestId: string,
+    requestLogger: Logger,
+  ): void {
+    if (!this.hotelProvider.getOrderInfo) {
+      return;
+    }
+    setTimeout(
+      () =>
+        void this.refreshOrderInfo(attemptId, references, requestId, requestLogger),
+      config.hotelBooking.orderInfoDelayMs,
+    ).unref();
+  }
+
+  private async refreshMissingOrderInfo(
+    flightId: number,
+    requestId: string,
+    requestLogger: Logger,
+  ): Promise<void> {
+    if (!this.hotelProvider.getOrderInfo) {
+      return;
+    }
+    const attempts =
+      await this.cancelledFlightsRepository.findSuccessAttemptsMissingOrderInfo(
+        flightId,
+        config.hotelBooking.orderInfoDelayMs,
+      );
+    for (const attempt of attempts) {
+      await this.refreshOrderInfo(
+        attempt.id,
+        (attempt.providerBookingReference ?? "").split(",").filter(Boolean),
+        requestId,
+        requestLogger,
+      );
+    }
+  }
+
+  private async refreshOrderInfo(
+    attemptId: number,
+    references: string[],
+    requestId: string,
+    requestLogger: Logger,
+  ): Promise<void> {
+    try {
+      const info = await this.hotelProvider.getOrderInfo?.(references, requestId);
+      if (!info) {
+        return;
+      }
+      await this.cancelledFlightsRepository.saveAttemptOrderInfo(
+        attemptId,
+        info.status,
+        info.orders,
+      );
+      requestLogger.info("Saved supplier order info for confirmed booking", {
+        context: this.context,
+        attemptId,
+        providerStatus: info.status,
+        orders: info.orders.length,
+      });
+    } catch (error: any) {
+      requestLogger.warn("Could not refresh supplier order info", {
+        context: this.context,
+        attemptId,
+        error: error?.message,
+      });
     }
   }
 
@@ -2235,7 +2311,7 @@ export class HotelAllocationService {
       flightId,
       bookingId,
     });
-    const { buyingPrice, ...check } = await this.hotelProvider.checkRate(
+    const { buyingPrice, bookingKey, ...check } = await this.hotelProvider.checkRate(
       rateKey,
       requestId,
     );
@@ -2400,8 +2476,10 @@ export class HotelAllocationService {
       earnings: pricing.earnings,
       discount: pricing.discount,
       hotelCode: first.check.hotelCode,
-      hotelName: first.hotelName || first.check.hotelName,
-      category: first.check.category,
+      hotelName: content?.name || first.hotelName || first.check.hotelName,
+      category: content?.starRating
+        ? `${content.starRating} STARS`
+        : first.check.category,
       address:
         first.address || first.check.address || content?.address || null,
       // content === undefined: keep whatever profile the row already has
@@ -2414,6 +2492,7 @@ export class HotelAllocationService {
             imageUrl: content?.imageUrl ?? null,
             website: content?.website ?? null,
             amenities: content?.amenities ?? null,
+            hotelPolicies: content?.policies ?? null,
           }
         : {}),
       rooms: rooms.map((room) => ({
@@ -2423,6 +2502,7 @@ export class HotelAllocationService {
         boardName: room.check.boardName,
         price: this.roundCurrency(room.price),
         rateKey: room.rateKey,
+        taxesAtProperty: room.check.taxesAtProperty ?? [],
       })),
       totalRooms: rooms.length,
     };

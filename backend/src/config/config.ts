@@ -133,6 +133,10 @@ export const config = {
       process.env.HOTEL_BOOKING_PLAN_TTL_MS ?? String(60 * 60 * 1000),
       10,
     ),
+    orderInfoDelayMs: parseInt(
+      process.env.HOTEL_ORDER_INFO_DELAY_MS ?? String(90 * 1000),
+      10,
+    ),
     staleBookingAttemptMs: parseInt(
       process.env.HOTEL_BOOKING_ATTEMPT_STALE_MS ?? String(60 * 60 * 1000),
       10,
@@ -160,6 +164,10 @@ export const config = {
     minRate: parseFloat(process.env.HOTEL_SEARCH_MIN_RATE ?? "3"), // 3 stars
     isAllowSearchAPI: true,
     isAllowFetchHotelDetails: true,
+  },
+  flyvoid: {
+    // Corporate email sent to hotel suppliers on every booking; receives the B2B-priced booking documents.
+    email: (process.env.FLYVOID_EMAIL ?? "").trim(),
   },
   platformFeePercentage: parseFloat(
     process.env.PLATFORM_FEE_PERCENTAGE ?? "10",

@@ -260,6 +260,7 @@ export interface HotelBookingRoomDetailDto {
   roomName: string;
   boardName: string;
   price: number;
+  taxesAtProperty?: Array<{ name: string; amount: number; currencyCode: string | null }>;
 }
 
 export interface HotelBookingHotelDetailDto {
@@ -293,6 +294,14 @@ export interface HotelBookingHotelDetailDto {
   createdAt: string;
   updatedAt: string | null;
   amenities?: string[];
+  hotelPolicies?: HotelPoliciesDto | null;
+}
+
+export interface HotelPoliciesDto {
+  checkInTime: string | null;
+  checkOutTime: string | null;
+  extraInfo: string | null;
+  items: Array<{ category: string; details: string[] }>;
 }
 
 export interface HotelBookingDetailFlightDto {

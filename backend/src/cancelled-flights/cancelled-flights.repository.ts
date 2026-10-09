@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { EntityManager, In, Not, Repository } from "typeorm";
+import { QueryDeepPartialEntity } from "typeorm/query-builder/QueryPartialEntity";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
 import { BookingEntity } from "./entities/booking.entity";
 import {
@@ -15,7 +16,7 @@ import { HotelBookingCandidateEntity } from "./entities/hotel-booking-candidate.
 import { resolveEffectiveAttempt } from "./hotel-allocation.planner";
 import { Logger } from "winston";
 
-export const CLEARED_ALLOCATION_HOTEL: Partial<HotelAllocationEntity> = {
+export const CLEARED_ALLOCATION_HOTEL = {
   hotelCode: "",
   hotelName: "",
   category: "",
@@ -27,6 +28,7 @@ export const CLEARED_ALLOCATION_HOTEL: Partial<HotelAllocationEntity> = {
   imageUrl: null,
   website: null,
   amenities: null,
+  hotelPolicies: null,
   rooms: [],
   totalRooms: 0,
   actualPrice: 0,
@@ -38,7 +40,7 @@ export const CLEARED_ALLOCATION_HOTEL: Partial<HotelAllocationEntity> = {
   earnings: 0,
   discount: 0,
   bookingReference: "",
-};
+} satisfies Partial<HotelAllocationEntity>;
 
 export function isRebookableAllocation(
   row?: Pick<HotelAllocationEntity, "status" | "bookingReference"> | null,
@@ -1058,6 +1060,45 @@ export class CancelledFlightsRepository {
       });
   }
 
+  async findSuccessAttemptsMissingOrderInfo(
+    cancelledFlightId: number,
+    olderThanMs: number,
+  ): Promise<HotelBookingAttemptEntity[]> {
+    return this.allocationRepo.manager
+      .getRepository(HotelBookingAttemptEntity)
+      .createQueryBuilder("attempt")
+      .where("attempt.cancelledFlightId = :cancelledFlightId", {
+        cancelledFlightId,
+      })
+      .andWhere("attempt.status = :success", {
+        success: HotelBookingAttemptStatus.SUCCESS,
+      })
+      .andWhere("attempt.providerOrderInfoAt IS NULL")
+      .andWhere("attempt.providerBookingReference IS NOT NULL")
+      .andWhere(
+        "attempt.providerResponseReceivedAt < now() - (:olderThanMs * interval '1 millisecond')",
+        { olderThanMs },
+      )
+      .getMany();
+  }
+
+  async saveAttemptOrderInfo(
+    attemptId: number,
+    providerStatus: string | null,
+    orders: unknown[],
+  ): Promise<void> {
+    await this.allocationRepo.manager
+      .createQueryBuilder()
+      .update(HotelBookingAttemptEntity)
+      .set({
+        providerStatus,
+        providerOrderInfo: orders,
+        providerOrderInfoAt: () => "now()",
+      })
+      .where("id = :attemptId", { attemptId })
+      .execute();
+  }
+
   async findAttemptsByFlightId(
     cancelledFlightId: number,
   ): Promise<HotelBookingAttemptEntity[]> {
@@ -1365,7 +1406,10 @@ export class CancelledFlightsRepository {
     if (!changes) {
       return row;
     }
-    await allocations.update({ id: row.id }, changes);
+    await allocations.update(
+      { id: row.id },
+      changes as QueryDeepPartialEntity<HotelAllocationEntity>,
+    );
     return { ...row, ...changes } as HotelAllocationEntity;
   }
 

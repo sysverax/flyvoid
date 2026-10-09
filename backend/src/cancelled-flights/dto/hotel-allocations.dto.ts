@@ -22,6 +22,13 @@ export class HotelAllocationRoomDto {
 
   @ApiProperty({ example: 120 })
   price: number;
+
+  @ApiPropertyOptional({
+    description:
+      "Taxes not included in the price, collected by the hotel from the guest at check-in (per room, original currency)",
+    example: [{ name: "City tax", amount: 2.88, currencyCode: "EUR" }],
+  })
+  taxesAtProperty?: Array<{ name: string; amount: number; currencyCode: string | null }>;
 }
 
 export class HotelAllocationHotelDto {
