@@ -41,6 +41,20 @@ export class CancelledFlightListItemDto {
   status!: FlightStatus;
 }
 
+export class CancelledFlightListAirlineDto {
+  @ApiProperty({ example: 3 })
+  id!: number;
+
+  @ApiProperty({ example: "SkyWings Airlines" })
+  name!: string;
+}
+
+// Platform (admin) view: same item as the airline view, plus the owning airline.
+export class CancelledFlightAdminListItemDto extends CancelledFlightListItemDto {
+  @ApiProperty({ type: CancelledFlightListAirlineDto })
+  airline!: CancelledFlightListAirlineDto;
+}
+
 export class CancelledFlightListPaginationDto {
   @ApiProperty({ example: 1 })
   currentPage!: number;
@@ -52,9 +66,19 @@ export class CancelledFlightListPaginationDto {
   totalCount!: number;
 }
 
+// Airline view response.
 export class CancelledFlightListResponseDto {
   @ApiProperty({ type: [CancelledFlightListItemDto] })
   cancelledFlights!: CancelledFlightListItemDto[];
+
+  @ApiProperty({ type: CancelledFlightListPaginationDto })
+  pagination!: CancelledFlightListPaginationDto;
+}
+
+// Platform (admin) view response.
+export class CancelledFlightAdminListResponseDto {
+  @ApiProperty({ type: [CancelledFlightAdminListItemDto] })
+  cancelledFlights!: CancelledFlightAdminListItemDto[];
 
   @ApiProperty({ type: CancelledFlightListPaginationDto })
   pagination!: CancelledFlightListPaginationDto;

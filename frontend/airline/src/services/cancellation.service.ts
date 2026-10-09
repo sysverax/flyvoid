@@ -134,12 +134,66 @@ export interface ReviewCancelledFlightData {
 
 export type ReviewFlightResponse = ReviewCancelledFlightData;
 
+export type HotelBookingStatus =
+  | "draft"
+  | "in_progress"
+  | "confirmed"
+  | "failed"
+  | "manual_check"
+  | "cancelled"
+  | "completed";
+
+export type PnrBookingStatus =
+  | "SUCCESS"
+  | "PENDING"
+  | "FAILED"
+  | "MANUAL_CHECK"
+  | "NOT_STARTED";
+
+export interface HotelAllocationHotel {
+  hotelCode: string;
+  hotelName: string;
+  category: string;
+  address: string | null;
+  checkInDate: string | null;
+  checkOutDate: string | null;
+  totalRooms: number;
+  totalPrice: number;
+  rooms: Array<{
+    adults: number;
+    children: number;
+    roomName: string;
+    boardName: string;
+    price: number;
+  }>;
+}
+
+export interface HotelAllocationBookingResult {
+  bookingId: number;
+  pnr: string;
+  travelClass: string;
+  processingOrder: number | null;
+  bookingStatus: PnrBookingStatus;
+  hotel: HotelAllocationHotel | null;
+  providerBookingReference: string | null;
+  attempts: number;
+  reason: string | null;
+}
+
 export interface HotelAllocationsResponse {
   cancelledFlightId: number;
   status: string;
-  totalBookings: number;
-  allocatedBookings: number;
-  failedBookings: number;
+  running: boolean;
+  lastRunError: string | null;
+  totalPnrs: number;
+  successfulPnrs: number;
+  pendingPnrs: number;
+  failedPnrs: number;
+  manualCheckPnrs: number;
+  notStartedPnrs: number;
+  fullyBooked: boolean;
+  results: HotelAllocationBookingResult[];
+  totalPrice: number;
   totalRooms: number;
   totalActualPrice: number;
   totalSellingPrice: number;
@@ -186,6 +240,9 @@ export interface HotelBookingItemDTO {
   rating: string;
   totalRooms: number;
   totalCost: number | string;
+  status?: HotelBookingStatus;
+  bookingReference?: string | null;
+  reason?: string | null;
   createdAt: string;
   updatedAt: string | null;
 }
@@ -450,8 +507,23 @@ export const cancellationService = {
       );
       return response.data;
     } catch (error: any) {
-      throw new Error(
+      const wrapped = new Error(
         extractErrorMessage(error, "Failed to allocate hotels"),
+      ) as Error & { status?: number };
+      wrapped.status = error?.response?.status;
+      throw wrapped;
+    }
+  },
+
+  async getHotelAllocationStatus(flightId: number | string) {
+    try {
+      const response = await apiClient.get(
+        `/cancelled-flights/${flightId}/hotel-allocations`,
+      );
+      return response.data;
+    } catch (error: unknown) {
+      throw new Error(
+        extractErrorMessage(error, "Failed to load hotel allocation status"),
       );
     }
   },
@@ -548,6 +620,27 @@ export const cancellationService = {
     } catch (error: any) {
       throw new Error(
         extractErrorMessage(error, "Failed to publish cancelled flight"),
+      );
+    }
+  },
+
+  async exportFlightReport(flightId: number | string): Promise<void> {
+    try {
+      const res = await apiClient.get(
+        `/cancelled-flights/${flightId}/report`,
+        { responseType: "blob" },
+      );
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `invoice-${flightId}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error: any) {
+      throw new Error(
+        extractErrorMessage(error, "Failed to export flight report."),
       );
     }
   },

@@ -9,6 +9,7 @@ import { AirportEntity } from "../airline/entities/airport.entity";
 import { HotelBookingsController } from "./hotel-bookings.controller";
 import { HotelBookingsService } from "./hotel-bookings.service";
 import { HotelBookingsRepository } from "./hotel-bookings.repository";
+import { PdfService } from "../common/pdf/pdf.service";
 
 @Module({
   imports: [
@@ -22,6 +23,6 @@ import { HotelBookingsRepository } from "./hotel-bookings.repository";
     ]),
   ],
   controllers: [HotelBookingsController],
-  providers: [HotelBookingsService, HotelBookingsRepository],
+  providers: [HotelBookingsService, HotelBookingsRepository, PdfService],
 })
 export class HotelBookingsModule {}

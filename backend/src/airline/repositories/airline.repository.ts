@@ -187,6 +187,9 @@ export class AirlineRepository {
     }
 
     qb.orderBy("airline.createdAt", "DESC");
+    // Tie-breaker for rows sharing the same createdAt - without it, ties
+    // have no guaranteed order and rows can shift between pages.
+    qb.addOrderBy("airline.id", "DESC");
     qb.skip((query.page - 1) * query.limit);
     qb.take(query.limit);
 

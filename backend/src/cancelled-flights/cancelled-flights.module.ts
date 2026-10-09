@@ -6,6 +6,8 @@ import { AirportEntity } from "../airline/entities/airport.entity";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
 import { BookingEntity } from "./entities/booking.entity";
 import { HotelAllocationEntity } from "./entities/hotel-allocation.entity";
+import { HotelBookingCandidateEntity } from "./entities/hotel-booking-candidate.entity";
+import { HotelBookingAttemptEntity } from "./entities/hotel-booking-attempt.entity";
 import { CancelledFlightsController } from "./cancelled-flights.controller";
 import { CancelledFlightsService } from "./cancelled-flights.service";
 import { HotelAllocationService } from "./hotel-allocation.service";
@@ -13,6 +15,7 @@ import { CancelledFlightsRepository } from "./cancelled-flights.repository";
 import { AiService } from "../common/ai/ai.service";
 import { HOTEL_PROVIDER } from "./hotel-providers/hotel-provider.interface";
 import { hotelProviderRegistration } from "./hotel-providers/hotel-provider.registry";
+import { PdfService } from "../common/pdf/pdf.service";
 
 @Module({
   imports: [
@@ -21,6 +24,8 @@ import { hotelProviderRegistration } from "./hotel-providers/hotel-provider.regi
       CancelledFlightEntity,
       BookingEntity,
       HotelAllocationEntity,
+      HotelBookingCandidateEntity,
+      HotelBookingAttemptEntity,
       AirlineEntity,
       AirportEntity,
     ]),
@@ -32,6 +37,7 @@ import { hotelProviderRegistration } from "./hotel-providers/hotel-provider.regi
     CancelledFlightsRepository,
     AiService,
     hotelProviderRegistration,
+    PdfService,
   ],
   exports: [
     CancelledFlightsService,

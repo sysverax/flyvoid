@@ -211,8 +211,22 @@ function PublishedDetailView({
     number | string | null
   >(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isExportingReport, setIsExportingReport] = useState(false);
 
   const flightId = Number(cancellation.id);
+
+  const handleExportReport = async () => {
+    if (!flightId || isExportingReport) return;
+    setIsExportingReport(true);
+    try {
+      await cancellationService.exportFlightReport(flightId);
+    } catch (err: any) {
+      console.error("Failed to export flight report:", err);
+      toast.error(err?.message || "Failed to export flight report.");
+    } finally {
+      setIsExportingReport(false);
+    }
+  };
 
   // 1. Fetch Review Flight API
   useEffect(() => {
@@ -465,9 +479,17 @@ function PublishedDetailView({
             </div>
           </div>
           {hasPermission("export") && (
-            <button className="flex items-center gap-2 border border-gray-300 hover:bg-gray-50 text-[#374151] px-4 py-2.5 rounded-lg font-medium transition-colors cursor-pointer text-sm">
-              <Download className="w-4 h-4" />
-              Export Report
+            <button
+              onClick={handleExportReport}
+              disabled={isExportingReport}
+              className="flex items-center gap-2 border border-gray-300 hover:bg-gray-50 text-[#374151] px-4 py-2.5 rounded-lg font-medium transition-colors cursor-pointer text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {isExportingReport ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Download className="w-4 h-4" />
+              )}
+              {isExportingReport ? "Exporting..." : "Export Report"}
             </button>
           )}
         </div>
@@ -845,6 +867,7 @@ function PublishedDetailView({
         flightId={flightId}
         hotelBookingId={selectedDrawerHotelBookingId}
         detailData={selectedDrawerDetailData}
+        downloadType="download"
       />
     </div>
   );

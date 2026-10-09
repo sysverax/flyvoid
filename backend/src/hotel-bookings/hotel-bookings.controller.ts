@@ -203,8 +203,8 @@ export class HotelBookingsController {
     );
   }
 
-  // ── GET /hotel-bookings/:id/export ───────────────────────────────────────
-  @Get(":id/export")
+  // ── GET /hotel-bookings/:id/confirmation ─────────────────────────────────
+  @Get(":id/confirmation")
   @RequireAccessControl({
     platform: {
       asset: PlatformAsset.CANCELLED_FLIGHTS,
@@ -216,35 +216,40 @@ export class HotelBookingsController {
     },
   })
   @ApiOperation({
-    summary: "Export a hotel booking as CSV",
+    summary: "Download the hotel booking confirmation as a PDF",
     description:
-      "Downloads the flight, passenger booking, and hotel details for a single hotel booking as a CSV file.",
+      "Generates a PDF confirmation/voucher for a single hotel booking, for the passenger to present at hotel check-in. States clearly that the stay is fully prepaid and no payment is due. Only available once the flight's status is 'paid' or 'published'.",
   })
   @ApiParam({ name: "id", description: "Hotel booking id" })
-  @ApiProduces("text/csv")
+  @ApiProduces("application/pdf")
   @ApiNotFoundResponse({
     schema: createNotFoundErrorSchema(
-      "/api/v1/hotel-bookings/:id/export",
+      "/api/v1/hotel-bookings/:id/confirmation",
       "Hotel booking not found",
     ),
   })
-  async exportHotelBooking(
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema(
+      "/api/v1/hotel-bookings/:id/confirmation",
+    ),
+  })
+  async downloadBookingConfirmation(
     @Param("id", ParseIntPipe) id: number,
     @Req() req: AuthenticatedRequest,
     @RequestLogger() requestLogger: Logger,
     @Res() res: Response,
   ): Promise<void> {
-    const { fileName, csv } = await this.service.exportHotelBooking(
+    const { fileName, pdf } = await this.service.generateBookingConfirmationPdf(
       id,
       req.user,
       requestLogger,
     );
 
     res.set({
-      "Content-Type": "text/csv",
+      "Content-Type": "application/pdf",
       "Content-Disposition": `attachment; filename="${fileName}"`,
     });
-    res.send(csv);
+    res.send(pdf);
   }
 
   // ── POST /hotel-bookings/:id/send ────────────────────────────────────────

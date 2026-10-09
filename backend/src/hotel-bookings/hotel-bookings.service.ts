@@ -9,7 +9,10 @@ import { Logger } from "winston";
 import { config } from "../config/config";
 import { UserType } from "../common/constants/user.constants";
 import { AuthenticatedUser } from "../auth/interfaces/authenticated-request.interface";
-import { FlightStatus } from "../cancelled-flights/entities/enums";
+import {
+  FlightStatus,
+  HotelAllocationStatus,
+} from "../cancelled-flights/entities/enums";
 import { HotelAllocationEntity } from "../cancelled-flights/entities/hotel-allocation.entity";
 import { HotelBookingsRepository } from "./hotel-bookings.repository";
 import {
@@ -21,6 +24,8 @@ import {
   HotelBookingsSummaryResponseDto,
   SendHotelBookingEmailResponseDto,
 } from "./dto";
+import { PdfService } from "../common/pdf/pdf.service";
+import { buildHotelBookingConfirmationHtml } from "./templates/hotel-booking-confirmation.template";
 
 @Injectable()
 export class HotelBookingsService {
@@ -33,7 +38,10 @@ export class HotelBookingsService {
     },
   });
 
-  constructor(private readonly repository: HotelBookingsRepository) {}
+  constructor(
+    private readonly repository: HotelBookingsRepository,
+    private readonly pdfService: PdfService,
+  ) {}
 
   // ── List ─────────────────────────────────────────────────────────────────
 
@@ -226,14 +234,14 @@ export class HotelBookingsService {
     return this.toDetailDto(hotelBooking, user);
   }
 
-  // ── Export ───────────────────────────────────────────────────────────────
+  // ── Confirmation PDF ─────────────────────────────────────────────────────
 
-  async exportHotelBooking(
+  async generateBookingConfirmationPdf(
     hotelBookingId: number,
     user: AuthenticatedUser,
     requestLogger: Logger,
-  ): Promise<{ fileName: string; csv: string }> {
-    requestLogger.info("Exporting hotel booking", {
+  ): Promise<{ fileName: string; pdf: Buffer }> {
+    requestLogger.info("Generating hotel booking confirmation PDF", {
       context: this.context,
       hotelBookingId,
     });
@@ -244,17 +252,110 @@ export class HotelBookingsService {
       requestLogger,
     );
 
-    const detail = this.toDetailDto(hotelBooking, user);
-    const csv = this.buildCsv(detail);
+    const flightStatus = hotelBooking.cancelledFlight.status;
+    if (
+      flightStatus !== FlightStatus.PAID &&
+      flightStatus !== FlightStatus.PUBLISHED
+    ) {
+      requestLogger.warn(
+        "Rejected booking confirmation PDF: flight not paid/published",
+        { context: this.context, hotelBookingId, flightStatus },
+      );
+      throw new BadRequestException(
+        `Cannot generate the booking confirmation while the flight status is '${flightStatus}'. The hotel booking must be paid first - flight must be 'paid' or 'published'.`,
+      );
+    }
 
-    requestLogger.info("Hotel booking exported successfully", {
+    if (hotelBooking.status !== HotelAllocationStatus.CONFIRMED) {
+      throw new BadRequestException(
+        `Hotel booking '${hotelBookingId}' is not confirmed with the hotel (status '${hotelBooking.status}')`,
+      );
+    }
+
+    const formatDate = (value: string) =>
+      new Date(value).toLocaleDateString("en-US", {
+        weekday: "short",
+        year: "numeric",
+        month: "short",
+        day: "2-digit",
+      });
+
+    const nights = Math.max(
+      1,
+      Math.round(
+        (new Date(hotelBooking.checkOutDate).getTime() -
+          new Date(hotelBooking.checkInDate).getTime()) /
+          (1000 * 60 * 60 * 24),
+      ),
+    );
+
+    const flight = hotelBooking.cancelledFlight;
+    const booking = hotelBooking.booking;
+
+    const html = buildHotelBookingConfirmationHtml({
+      hotelBookingId: hotelBooking.id,
+      confirmationNumber: hotelBooking.bookingReference,
+      issuedDate: new Date().toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "2-digit",
+      }),
+      guest: {
+        firstName: booking.firstName,
+        lastName: booking.lastName,
+        email: booking.email,
+        phone: booking.phone,
+        pnr: booking.pnr,
+        adults: booking.adults,
+        children: booking.children,
+      },
+      flight: {
+        flightNumber: flight.flightNumber,
+        departure: `${flight.departureAirport.iataCode} - ${flight.departureAirport.city}`,
+        arrival: `${flight.arrivalAirport.iataCode} - ${flight.arrivalAirport.city}`,
+        cancellationDate: formatDate(flight.cancellationDate),
+      },
+      hotel: {
+        name: hotelBooking.hotelName,
+        rating: hotelBooking.category,
+        address: hotelBooking.address ?? null,
+        imageUrl: hotelBooking.imageUrl ?? null,
+        frontDeskPhone:
+          hotelBooking.contact?.phones?.find(
+            (p) => p.phoneType === "PHONEHOTEL",
+          )?.phoneNumber ??
+          hotelBooking.contact?.phones?.[0]?.phoneNumber ??
+          null,
+        reservationsPhone:
+          hotelBooking.contact?.phones?.find(
+            (p) => p.phoneType === "PHONEBOOKING",
+          )?.phoneNumber ?? null,
+      },
+      stay: {
+        checkInDate: formatDate(hotelBooking.checkInDate),
+        checkOutDate: formatDate(hotelBooking.checkOutDate),
+        nights,
+        totalRooms: hotelBooking.totalRooms,
+        rooms: (hotelBooking.rooms ?? []).map((room) => ({
+          roomName: room.roomName,
+          boardName: room.boardName,
+          adults: room.adults,
+          children: room.children,
+        })),
+      },
+      airlineName: flight.airline.name,
+    });
+
+    const pdf = await this.pdfService.renderHtmlToPdf(html, requestLogger);
+
+    requestLogger.info("Hotel booking confirmation PDF generated", {
       context: this.context,
       hotelBookingId,
     });
 
     return {
-      fileName: `hotel-booking-${hotelBookingId}.csv`,
-      csv,
+      fileName: `hotel-booking-confirmation-${hotelBookingId}.pdf`,
+      pdf,
     };
   }
 
@@ -292,6 +393,12 @@ export class HotelBookingsService {
       );
       throw new BadRequestException(
         `Cannot send hotel booking email while the flight status is '${flightStatus}'. Flight must be 'paid' or 'published'.`,
+      );
+    }
+
+    if (hotelBooking.status !== HotelAllocationStatus.CONFIRMED) {
+      throw new BadRequestException(
+        `Hotel booking '${hotelBookingId}' is not confirmed with the hotel (status '${hotelBooking.status}')`,
       );
     }
 
@@ -474,77 +581,6 @@ export class HotelBookingsService {
       },
       hotel,
     };
-  }
-
-  private csvEscape(value: string | number | null | undefined): string {
-    const str = value === null || value === undefined ? "" : String(value);
-    return `"${str.replace(/"/g, '""')}"`;
-  }
-
-  private buildCsv(detail: HotelBookingDetailResponseDto): string {
-    const roomsSummary = detail.hotel.rooms
-      .map(
-        (room) =>
-          `${room.adults}A/${room.children}C ${room.roomName} (${room.boardName})`,
-      )
-      .join("; ");
-
-    const headers = [
-      "Hotel Booking ID",
-      "Booking Reference",
-      "Flight Number",
-      "Flight Status",
-      "Cancellation Date",
-      "Departure Airport",
-      "Arrival Airport",
-      "Passenger Name",
-      "PNR",
-      "Passenger Email",
-      "Passenger Phone",
-      "Travel Class",
-      "Hotel Name",
-      "Category",
-      "Check-in Date",
-      "Check-out Date",
-      "Rooms",
-      "Total Rooms",
-      "Hotel Cost",
-      "Platform Fee Percentage",
-      "Platform Fee",
-      "Total Price",
-      "Status",
-    ];
-
-    const row = [
-      detail.id,
-      detail.hotel.bookingReference,
-      detail.flight.flightNumber,
-      detail.flight.status,
-      detail.flight.cancellationDate,
-      detail.flight.route.departureAirport.code,
-      detail.flight.route.arrivalAirport.code,
-      `${detail.booking.firstName} ${detail.booking.lastName}`,
-      detail.booking.pnr,
-      detail.booking.email,
-      detail.booking.phone,
-      detail.booking.travelClass,
-      detail.hotel.hotelName,
-      detail.hotel.category,
-      detail.hotel.checkInDate,
-      detail.hotel.checkOutDate,
-      roomsSummary,
-      detail.hotel.totalRooms,
-      detail.hotel.actualPrice,
-      detail.hotel.platformFeePercentage,
-      detail.hotel.platformFee,
-      detail.hotel.totalPrice,
-      detail.hotel.status,
-    ];
-
-    return [
-      headers.map((header) => this.csvEscape(header)).join(","),
-      row.map((value) => this.csvEscape(value)).join(","),
-    ].join("\n");
   }
 
   private buildEmailBody(hotelBooking: HotelAllocationEntity): string {

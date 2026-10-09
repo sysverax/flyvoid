@@ -207,20 +207,21 @@ export const hotelBookingsService = {
     }
   },
 
-  async exportHotelBooking(id: number | string): Promise<void> {
+  async downloadHotelConfirmation(id: number | string): Promise<void> {
     try {
-      const res = await apiClient.get(`/hotel-bookings/${id}/export`, {
+      const res = await apiClient.get(`/hotel-bookings/${id}/confirmation`, {
         responseType: "blob",
       });
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const link = document.createElement("a");
       link.href = url;
-      link.setAttribute("download", `hotel-booking-${id}.csv`);
+      link.setAttribute("download", `hotel-booking-confirmation-${id}.pdf`);
       document.body.appendChild(link);
       link.click();
       link.remove();
+      window.URL.revokeObjectURL(url);
     } catch (error: any) {
-      throw new Error(extractErrorMessage(error, "Failed to export hotel booking CSV."));
+      throw new Error(extractErrorMessage(error, "Failed to download hotel booking confirmation PDF."));
     }
   },
 

@@ -110,6 +110,26 @@ const statusStyles: Record<string, { bg: string; text: string }> = {
     bg: "bg-[#FEE2E2]",
     text: "text-[#991B1B]",
   },
+  "Booking Failed": {
+    bg: "bg-[#FEE2E2]",
+    text: "text-[#991B1B]",
+  },
+  "Booking In Progress": {
+    bg: "bg-[#FEF3C7]",
+    text: "text-[#92400E]",
+  },
+  "Not Started": {
+    bg: "bg-[#E5E7EB]",
+    text: "text-[#374151]",
+  },
+  "Manual Check": {
+    bg: "bg-[#FFEDD5]",
+    text: "text-[#9A3412]",
+  },
+  Cancelled: {
+    bg: "bg-[#E5E7EB]",
+    text: "text-[#374151]",
+  },
   Active: {
     bg: "bg-[#D1FAE5]",
     text: "text-[#065F46]",

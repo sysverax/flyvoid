@@ -294,11 +294,9 @@ export default function BookingsPage() {
 
   // Computed Stats from API summary data
   const stats = useMemo(() => {
-    const totalBookings = summaryData
-      ? summaryData.totalBookings
-      : totalResults;
-    const totalPassengers = summaryData ? summaryData.totalPassengers : 0;
-    const totalCost = summaryData ? summaryData.totalCost : 0;
+    const totalBookings = summaryData?.totalBookings ?? totalResults;
+    const totalPassengers = summaryData?.totalPassengers ?? 0;
+    const totalCost = summaryData?.totalCost ?? 0;
     return { totalBookings, totalPassengers, totalCost };
   }, [summaryData, totalResults]);
 
@@ -335,10 +333,10 @@ export default function BookingsPage() {
     }
     setExportingId(targetId);
     try {
-      await hotelBookingsService.exportHotelBooking(targetId);
-      toast.success(`Booking CSV exported successfully.`);
+      await hotelBookingsService.downloadHotelConfirmation(targetId);
+      toast.success(`Booking confirmation PDF downloaded successfully.`);
     } catch (err: any) {
-      toast.error(err.message || "Failed to export hotel booking CSV.");
+      toast.error(err.message || "Failed to download hotel booking confirmation PDF.");
     } finally {
       setExportingId(null);
     }
@@ -685,7 +683,7 @@ export default function BookingsPage() {
                             onClick={() => handleDownloadReceipt(b)}
                             disabled={exportingId === (b.numericId || b.id.replace(/\D/g, ""))}
                             className="p-1 text-[#6B7280] hover:text-emerald-600 transition-colors cursor-pointer disabled:opacity-50"
-                            title="Download CSV"
+                            title="Download confirmation PDF"
                           >
                             {exportingId === (b.numericId || b.id.replace(/\D/g, "")) ? (
                               <svg className="animate-spin h-[20px] w-[20px] text-emerald-600" fill="none" viewBox="0 0 24 24">
@@ -767,7 +765,7 @@ export default function BookingsPage() {
         flightId={selectedDrawerBooking?.raw?.cancelledFlightId}
         detailData={drawerDetailData}
         showSendConfirmation
-        downloadType="csv"
+        downloadType="download"
         isBookingsTab
       />
     </div>

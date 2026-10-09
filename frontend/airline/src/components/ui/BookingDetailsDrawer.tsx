@@ -37,7 +37,11 @@ interface BookingDetailsDrawerProps {
   hotelBookingId?: number | string | null;
   detailData?: HotelBookingDetailDataDto | null;
   showSendConfirmation?: boolean;
-  downloadType?: "pdf" | "csv";
+  // "download" fetches the real backend-generated confirmation PDF via
+  // hotelBookingsService.downloadHotelConfirmation; "print" just prints the
+  // drawer's own content via the browser (window.print()) - a different,
+  // lighter-weight mechanism, not the backend PDF.
+  downloadType?: "download" | "print";
   isBookingsTab?: boolean;
 }
 
@@ -49,7 +53,7 @@ export function BookingDetailsDrawer({
   hotelBookingId,
   detailData: propDetailData,
   showSendConfirmation = false,
-  downloadType = "pdf",
+  downloadType = "print",
   isBookingsTab = false,
 }: BookingDetailsDrawerProps) {
   const { hasPermission } = useAuth();
@@ -127,7 +131,7 @@ export function BookingDetailsDrawer({
     }
   };
 
-  const handleDownloadCsv = async () => {
+  const handleDownloadConfirmation = async () => {
     const rawId = activeDetailData?.id || hotelBookingId || booking?.id;
     const targetId = typeof rawId === "string" ? rawId.replace(/\D/g, "") : rawId;
     if (!targetId) {
@@ -136,10 +140,10 @@ export function BookingDetailsDrawer({
     }
     setIsExporting(true);
     try {
-      await hotelBookingsService.exportHotelBooking(targetId);
-      toast.success("Booking CSV exported successfully.");
+      await hotelBookingsService.downloadHotelConfirmation(targetId);
+      toast.success("Booking confirmation PDF downloaded successfully.");
     } catch (err: any) {
-      toast.error(err.message || "Failed to export hotel booking CSV.");
+      toast.error(err.message || "Failed to download hotel booking confirmation PDF.");
     } finally {
       setIsExporting(false);
     }
@@ -816,7 +820,7 @@ export function BookingDetailsDrawer({
           </div>
         </div>
 
-        {/* Footer with Download button (CSV or PDF) and optionally Send Confirmation button */}
+        {/* Footer with Download button (confirmation PDF, or print-to-PDF) and optionally Send Confirmation button */}
         {(canExport || (showSendConfirmation && canEdit)) && (
           <div className="p-4 border-t border-gray-200 bg-white">
             {showSendConfirmation ? (
@@ -824,11 +828,11 @@ export function BookingDetailsDrawer({
                 {canExport && (
                   <button
                     type="button"
-                    onClick={downloadType === "csv" ? handleDownloadCsv : () => window.print()}
-                    disabled={downloadType === "csv" && isExporting}
+                    onClick={downloadType === "download" ? handleDownloadConfirmation : () => window.print()}
+                    disabled={downloadType === "download" && isExporting}
                     className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-semibold rounded-xl shadow-sm transition-colors cursor-pointer disabled:opacity-60"
                   >
-                    {downloadType === "csv" && isExporting ? (
+                    {downloadType === "download" && isExporting ? (
                       <>
                         <Loader2 className="w-4 h-4 shrink-0 animate-spin text-gray-500" />
                         <span>Downloading...</span>
@@ -836,7 +840,7 @@ export function BookingDetailsDrawer({
                     ) : (
                       <>
                         <Download className="w-4 h-4 shrink-0 text-gray-500" />
-                        <span>{downloadType === "csv" ? "Download CSV" : "Download PDF"}</span>
+                        <span>{downloadType === "download" ? "Download Confirmation" : "Download PDF"}</span>
                       </>
                     )}
                   </button>
@@ -866,11 +870,11 @@ export function BookingDetailsDrawer({
               canExport && (
                 <button
                   type="button"
-                  onClick={downloadType === "csv" ? handleDownloadCsv : () => window.print()}
-                  disabled={downloadType === "csv" && isExporting}
+                  onClick={downloadType === "download" ? handleDownloadConfirmation : () => window.print()}
+                  disabled={downloadType === "download" && isExporting}
                   className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-[#0F2757] hover:bg-[#162259] text-white text-sm font-semibold rounded-xl shadow-sm transition-colors cursor-pointer disabled:opacity-60"
                 >
-                  {downloadType === "csv" && isExporting ? (
+                  {downloadType === "download" && isExporting ? (
                     <>
                       <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
                       <span>Downloading...</span>
@@ -878,7 +882,7 @@ export function BookingDetailsDrawer({
                   ) : (
                     <>
                       <Download className="w-4 h-4 shrink-0" />
-                      <span>{downloadType === "csv" ? "Download CSV" : "Download PDF"}</span>
+                      <span>{downloadType === "download" ? "Download Confirmation" : "Download PDF"}</span>
                     </>
                   )}
                 </button>

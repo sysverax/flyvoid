@@ -173,6 +173,7 @@ export class AirlineInvitationRepository {
       })
       .andWhere("invite.expires_at > :now", { now: new Date() })
       .orderBy("invite.createdAt", "DESC")
+      .addOrderBy("invite.id", "DESC")
       .getOne();
   }
 
@@ -203,6 +204,7 @@ export class AirlineInvitationRepository {
       })
       .andWhere("invite.expires_at > :now", { now: new Date() })
       .orderBy("invite.createdAt", "DESC")
+      .addOrderBy("invite.id", "DESC")
       .getOne();
   }
 
@@ -411,6 +413,7 @@ export class AirlineInvitationRepository {
 
     return queryBuilder
       .orderBy("invite.createdAt", "DESC")
+      .addOrderBy("invite.id", "DESC")
       .skip(skip)
       .take(query.limit)
       .getManyAndCount()
