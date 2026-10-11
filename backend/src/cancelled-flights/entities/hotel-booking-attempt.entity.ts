@@ -12,6 +12,16 @@ import { BookingEntity } from "./booking.entity";
 import { CancelledFlightEntity } from "./cancelled-flight.entity";
 import { HotelBookingCandidateEntity } from "./hotel-booking-candidate.entity";
 import { HotelBookingAttemptStatus } from "./enums";
+import type { HotelRateCheck } from "../hotel-providers/hotel-provider.interface";
+
+export interface ProviderOrder {
+  room: number;
+  reference: string;
+  status: "pending" | "booked" | "failed";
+  rateKey: string;
+  check: HotelRateCheck;
+  failureReason?: string | null;
+}
 
 @Entity("hotel_booking_attempts")
 @Index(
@@ -114,6 +124,19 @@ export class HotelBookingAttemptEntity {
 
   @Column({ name: "failure_reason", type: "text", nullable: true })
   failureReason?: string | null;
+
+  @Column({ name: "provider_orders", type: "jsonb", nullable: true })
+  providerOrders?: ProviderOrder[] | null;
+
+  @Column({ name: "provider_order_info", type: "jsonb", nullable: true })
+  providerOrderInfo?: unknown[] | null;
+
+  @Column({
+    name: "provider_order_info_at",
+    type: "timestamp",
+    nullable: true,
+  })
+  providerOrderInfoAt?: Date | null;
 
   @ManyToOne(() => CancelledFlightEntity, { onDelete: "CASCADE" })
   @JoinColumn({ name: "cancelled_flight_id" })

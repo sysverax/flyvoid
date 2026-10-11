@@ -10,6 +10,10 @@ import {
 import { CancelledFlightEntity } from "./cancelled-flight.entity";
 import { BookingEntity } from "./booking.entity";
 import { HotelAllocationStatus } from "./enums";
+import {
+  HotelPolicies,
+  TaxAtProperty,
+} from "../hotel-providers/hotel-provider.interface";
 
 // Stub entity — allocation logic not yet implemented
 @Entity("hotel_allocations")
@@ -159,6 +163,7 @@ export class HotelAllocationEntity {
     boardName: string;
     price: number;
     rateKey?: string;
+    taxesAtProperty?: TaxAtProperty[];
   }[];
 
   @Column({ name: "total_rooms", type: "integer", nullable: true })
@@ -192,6 +197,9 @@ export class HotelAllocationEntity {
 
   @Column({ name: "reason", type: "text", nullable: true })
   reason?: string | null;
+
+  @Column({ name: "hotel_policies", type: "jsonb", nullable: true })
+  hotelPolicies?: HotelPolicies | null;
 
   @Column({ name: "processing_order", type: "integer", nullable: true })
   processingOrder?: number | null;

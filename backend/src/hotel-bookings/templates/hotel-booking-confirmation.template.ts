@@ -7,12 +7,17 @@ import {
   FONT_FAMILY,
   STARS_CSS,
 } from "../../common/pdf/pdf-brand";
+import {
+  HotelPolicies,
+  TaxAtProperty,
+} from "../../cancelled-flights/hotel-providers/hotel-provider.interface";
 
 export interface HotelBookingConfirmationRoom {
   roomName: string;
   boardName: string;
   adults: number;
   children: number;
+  taxesAtProperty: TaxAtProperty[];
 }
 
 export interface HotelBookingConfirmationInput {
@@ -35,6 +40,7 @@ export interface HotelBookingConfirmationInput {
     cancellationDate: string;
   };
   hotel: {
+    policies: HotelPolicies | null;
     name: string;
     rating: string;
     address: string | null;
@@ -50,6 +56,64 @@ export interface HotelBookingConfirmationInput {
     rooms: HotelBookingConfirmationRoom[];
   };
   airlineName: string;
+}
+
+function renderTaxesAtProperty(rooms: HotelBookingConfirmationRoom[]): string {
+  const lines = rooms.flatMap((room, index) =>
+    room.taxesAtProperty.map(
+      (tax) =>
+        `<tr><td>Room ${index + 1}</td><td>${escapeHtml(tax.name)}</td><td class="strong">${escapeHtml(
+          `${tax.amount.toFixed(2)} ${tax.currencyCode ?? ""}`.trim(),
+        )}</td></tr>`,
+    ),
+  );
+  if (lines.length === 0) {
+    return "";
+  }
+  return `
+  <div class="section-title">Taxes Payable at the Hotel &ndash; Paid by the Guest</div>
+  <div class="policy-note">
+    These local taxes are not included in the prepaid booking. They are collected by the hotel and must be paid by the guest at check-in or check-out.
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Room</th>
+        <th>Tax</th>
+        <th>Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${lines.join("")}
+    </tbody>
+  </table>`;
+}
+
+function renderPolicies(policies: HotelPolicies | null): string {
+  if (!policies) {
+    return "";
+  }
+  const times = [
+    policies.checkInTime ? `Check-in from <span class="strong">${escapeHtml(policies.checkInTime)}</span>` : null,
+    policies.checkOutTime ? `Check-out by <span class="strong">${escapeHtml(policies.checkOutTime)}</span>` : null,
+  ].filter(Boolean);
+  return `
+  <div class="section-title">Hotel Policies &ndash; Please Read Before Check-in</div>
+  <div class="policies">
+    <div class="policy-note">
+      The room stay is prepaid. Items marked &ldquo;payable at the property&rdquo; (for example city tax, deposits or extra services)
+      are not covered by this voucher and must be settled directly with the hotel. The guest must comply with these conditions at check-in.
+    </div>
+    ${times.length ? `<div class="policy-line">${times.join(" &middot; ")}</div>` : ""}
+    ${policies.extraInfo ? `<div class="policy-extra">${escapeHtml(policies.extraInfo)}</div>` : ""}
+    ${policies.items
+      .map(
+        (item) => `<div class="policy-item"><span class="strong">${escapeHtml(item.category)}:</span> ${item.details
+          .map((detail) => escapeHtml(detail))
+          .join(" &middot; ")}</div>`,
+      )
+      .join("")}
+  </div>`;
 }
 
 function renderRoomRow(room: HotelBookingConfirmationRoom): string {
@@ -227,6 +291,24 @@ export function buildHotelBookingConfirmationHtml(
     padding-top: 12px;
     line-height: 1.6;
   }
+  .policies {
+    border: 1px solid #e5e8ee;
+    border-radius: 6px;
+    padding: 12px 14px;
+    font-size: 10.5px;
+    line-height: 1.55;
+  }
+  .policy-note {
+    background: #fff8e6;
+    border: 1px solid #f2d999;
+    border-radius: 4px;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+    font-size: 10px;
+  }
+  .policy-line { margin-bottom: 6px; }
+  .policy-extra { white-space: pre-line; margin-bottom: 6px; }
+  .policy-item { margin-top: 3px; }
   .ref-strip {
     margin-top: 22px;
     display: flex;
@@ -263,7 +345,11 @@ export function buildHotelBookingConfirmationHtml(
       <div class="desc">
         This accommodation has been paid in full by ${escapeHtml(input.airlineName)} on behalf of the
         guest named below, following the cancellation of flight ${escapeHtml(flight.flightNumber)}.
-        No further payment is due from the guest for the room stay. Please present this confirmation at check-in.
+        No further payment is due from the guest for the room stay${
+          stay.rooms.some((room) => room.taxesAtProperty.length > 0)
+            ? ", except the local taxes listed below, which the hotel collects from the guest"
+            : ""
+        }. Please present this confirmation at check-in.
       </div>
     </div>
   </div>
@@ -312,6 +398,10 @@ export function buildHotelBookingConfirmationHtml(
       ${stay.rooms.map((room) => renderRoomRow(room)).join("")}
     </tbody>
   </table>
+
+  ${renderTaxesAtProperty(stay.rooms)}
+
+  ${renderPolicies(hotel.policies)}
 
   <div class="ref-strip">
     <div>Flight ${escapeHtml(flight.flightNumber)}: ${escapeHtml(flight.departure)} &rarr; ${escapeHtml(flight.arrival)}</div>

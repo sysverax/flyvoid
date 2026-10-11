@@ -1267,6 +1267,7 @@ export class CancelledFlightsService {
         imageUrl: hotelBooking.imageUrl ?? null,
         website: hotelBooking.website ?? null,
         amenities: hotelBooking.amenities ?? null,
+        hotelPolicies: hotelBooking.hotelPolicies ?? null,
         checkInDate: hotelBooking.checkInDate,
         checkOutDate: hotelBooking.checkOutDate,
         rooms: hotelBooking.rooms ?? [],
