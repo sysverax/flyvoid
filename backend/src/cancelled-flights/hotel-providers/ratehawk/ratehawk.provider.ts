@@ -50,6 +50,7 @@ interface RatehawkBookingRequest {
   contactEmail?: string;
   contactPhone?: string;
   userIp?: string;
+  onSupplierOrderCreated?: (reference: string) => Promise<void>;
 }
 
 /** Same shape as HotelbedsProvider.bookHotel's result, plus ETG's order number. */
@@ -1655,6 +1656,8 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         );
       }
 
+      await bookingData.onSupplierOrderCreated?.(partnerOrderId);
+
       // ETG wants one guest entry per person; only the lead passenger is named.
       const firstName = this.sanitizeName(bookingData.firstName, "Guest");
       const lastName = this.sanitizeName(bookingData.lastName, "Guest");
@@ -1779,6 +1782,33 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         `RateHawk Bookings API failed: ${error.message}`,
       );
     }
+  }
+
+  /** One booking/finish/status check, used to confirm a webhook's reported status. */
+  async checkBookingStatus(
+    partnerOrderId: string,
+    requestId: string,
+  ): Promise<{ state: "booked" | "failed" | "processing"; code: string | null }> {
+    const log = this.logFor(requestId);
+    this.assertCredentials(log);
+    const envelope = await this.request<any>(
+      "hotel/order/booking/finish/status/",
+      { partner_order_id: partnerOrderId },
+      log,
+      { retry: false },
+    );
+    if (envelope?.status === "ok") {
+      return { state: "booked", code: null };
+    }
+    const code = envelope?.error ?? null;
+    if (
+      !envelope ||
+      envelope.status === "processing" ||
+      (!!code && RatehawkProvider.RETRYABLE_ERRORS.has(code))
+    ) {
+      return { state: "processing", code };
+    }
+    return { state: "failed", code };
   }
 
   /** Polls booking/finish/status until `ok`, a final error, or the booking timeout. */

@@ -17,7 +17,10 @@ import { BookingEntity } from "./entities/booking.entity";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
 import { randomUUID } from "crypto";
 import { HotelAllocationEntity } from "./entities/hotel-allocation.entity";
-import { HotelBookingAttemptEntity } from "./entities/hotel-booking-attempt.entity";
+import {
+  HotelBookingAttemptEntity,
+  ProviderOrder,
+} from "./entities/hotel-booking-attempt.entity";
 import { HotelBookingCandidateEntity } from "./entities/hotel-booking-candidate.entity";
 import {
   FlightStatus,
@@ -92,6 +95,8 @@ interface BookingPlanningState {
   ledger: AllotmentLedger;
   contentCache: Map<string, Promise<HotelContentDetails | null>>;
 }
+
+export type SupplierWebhookOutcome = "processed" | "ignored" | "retry";
 
 type BookingAttemptOutcome =
   | {
@@ -1762,6 +1767,7 @@ export class HotelAllocationService {
       };
     }
 
+    const orders: ProviderOrder[] = [];
     const fail = async (
       code: HotelBookingFailureCode,
       reason: string,
@@ -1775,6 +1781,7 @@ export class HotelAllocationService {
           status: HotelBookingAttemptStatus.FAILED,
           failureCode: code,
           failureReason: reason,
+          ...(orders.length ? { providerOrders: orders } : {}),
           responseReceived,
         },
         undefined,
@@ -1858,17 +1865,44 @@ export class HotelAllocationService {
             pnr: booking.pnr,
             contactEmail: flight.airline?.contactEmail,
             contactPhone: booking.phone?.trim() || flight.airline?.contactPhone,
+            onSupplierOrderCreated: async (reference) => {
+              const order: ProviderOrder = {
+                room: index + 1,
+                reference,
+                status: "pending",
+                rateKey,
+                check: checks[index],
+              };
+              const recorded =
+                await this.cancelledFlightsRepository.recordProviderOrder(
+                  attemptId,
+                  order,
+                );
+              if (!recorded) {
+                throw new Error(
+                  "Booking attempt was settled elsewhere before the supplier request",
+                );
+              }
+              orders.push(order);
+            },
           },
           checks[index].bookingKey ?? rateKey,
           input.paymentData,
           requestId,
         );
+        const order = orders.find((entry) => entry.room === index + 1);
+        if (order) order.status = "booked";
         booked.push({ check: checks[index], rateKey, result });
       }
     } catch (error: any) {
       const message = String(error?.message ?? error);
       const references = booked.map((room) => room.result.bookingReference);
       const outcomeUnknown = error instanceof HotelBookingOutcomeUnknownError;
+      const current = orders.find((entry) => entry.room === booked.length + 1);
+      if (current && !outcomeUnknown) {
+        current.status = "failed";
+        current.failureReason = message;
+      }
 
       if (!outcomeUnknown && booked.length === 0) {
         return fail(
@@ -1908,6 +1942,7 @@ export class HotelAllocationService {
           failureReason: reason,
           providerBookingReference: references.length ? references.join(",") : null,
           providerIdempotencyKey: unknownReference,
+          providerOrders: orders,
           responseReceived: !outcomeUnknown,
         },
         undefined,
@@ -1929,6 +1964,7 @@ export class HotelAllocationService {
           failureCode: HotelBookingFailureCode.PROVIDER_UNCONFIRMED,
           failureReason: reason,
           providerBookingReference: references.join(","),
+          providerOrders: orders,
           responseReceived: true,
         },
         undefined,
@@ -1969,6 +2005,7 @@ export class HotelAllocationService {
           status: HotelBookingAttemptStatus.SUCCESS,
           providerStatus: null,
           providerBookingReference: references.join(","),
+          providerOrders: orders,
           responseReceived: true,
         },
         {
@@ -2024,6 +2061,7 @@ export class HotelAllocationService {
           failureCode: HotelBookingFailureCode.SAVE_FAILED,
           failureReason: reason,
           providerBookingReference: references.join(","),
+          providerOrders: orders,
           responseReceived: true,
         },
         undefined,
@@ -2031,6 +2069,272 @@ export class HotelAllocationService {
       );
       return { kind: "unknown", reason };
     }
+  }
+
+  /**
+   * Supplier booking status webhook. The payload is not signed, so the status is
+   * always re-checked with the supplier before an open attempt is settled.
+   */
+  async handleSupplierBookingStatus(input: {
+    provider: string;
+    reference: string;
+    reportedStatus: string;
+    requestId: string;
+    requestLogger: Logger;
+  }): Promise<SupplierWebhookOutcome> {
+    const { provider, reference, reportedStatus, requestId, requestLogger } =
+      input;
+    const meta = { context: this.context, provider, reference, reportedStatus };
+
+    const attempt =
+      await this.cancelledFlightsRepository.findAttemptBySupplierReference(
+        provider,
+        reference,
+      );
+    if (!attempt) {
+      requestLogger.warn("Booking status webhook for an unknown order", meta);
+      return "ignored";
+    }
+    const attemptMeta = {
+      ...meta,
+      attemptId: attempt.id,
+      bookingId: attempt.bookingId,
+      flightId: attempt.cancelledFlightId,
+      attemptStatus: attempt.status,
+    };
+
+    if (
+      attempt.status === HotelBookingAttemptStatus.SUCCESS ||
+      attempt.status === HotelBookingAttemptStatus.FAILED
+    ) {
+      const knownStatus = attempt.providerOrders?.find(
+        (order) => order.reference === reference,
+      )?.status;
+      const contradicts =
+        (reportedStatus === "completed" && knownStatus === "failed") ||
+        (reportedStatus === "failed" && knownStatus === "booked");
+      if (contradicts) {
+        requestLogger.error(
+          "Booking status webhook contradicts a settled attempt; check with the supplier",
+          { ...attemptMeta, knownStatus },
+        );
+      } else {
+        requestLogger.info("Booking status webhook for a settled attempt", attemptMeta);
+      }
+      return "ignored";
+    }
+
+    if (
+      attempt.status === HotelBookingAttemptStatus.PENDING &&
+      !(await this.cancelledFlightsRepository.isAttemptStale(
+        attempt.id,
+        config.hotelBooking.staleBookingAttemptMs,
+      ))
+    ) {
+      requestLogger.info(
+        "Booking status webhook arrived while the booking is still in progress; asking for a retry",
+        attemptMeta,
+      );
+      return "retry";
+    }
+
+    if (!this.hotelProvider.checkBookingStatus) {
+      requestLogger.error(
+        "Cannot confirm booking status webhook: the configured hotel provider differs",
+        { ...attemptMeta, configuredProvider: config.hotelProvider.name },
+      );
+      return "retry";
+    }
+
+    const confirmed = await this.hotelProvider.checkBookingStatus(
+      reference,
+      requestId,
+    );
+    requestLogger.info("Confirmed booking status with the supplier", {
+      ...attemptMeta,
+      confirmedState: confirmed.state,
+      code: confirmed.code,
+    });
+    if (confirmed.state === "processing") {
+      return "retry";
+    }
+    if ((confirmed.state === "booked") !== (reportedStatus === "completed")) {
+      requestLogger.warn(
+        "Supplier status differs from the webhook; using the supplier status",
+        { ...attemptMeta, confirmedState: confirmed.state },
+      );
+    }
+
+    const orders = (attempt.providerOrders ?? []).map((order) => ({ ...order }));
+    const order = orders.find((entry) => entry.reference === reference);
+    if (!order) return "ignored";
+    order.status = confirmed.state;
+    order.failureReason =
+      confirmed.state === "failed" ? confirmed.code ?? "failed" : null;
+
+    const totalRooms = Math.max(attempt.rateKeys?.length ?? 0, orders.length);
+    const booked = orders.filter((entry) => entry.status === "booked");
+    const pending = orders.filter((entry) => entry.status === "pending");
+    const hotelName = attempt.hotelName || order.check.hotelName || attempt.hotelCode || "";
+
+    if (pending.length > 0) {
+      await this.cancelledFlightsRepository.updateOpenAttemptOrders(
+        attempt.id,
+        attempt.bookingId,
+        orders,
+        {},
+      );
+      return "processed";
+    }
+
+    if (booked.length === totalRooms) {
+      return this.confirmAttemptFromWebhook(
+        attempt,
+        orders,
+        requestId,
+        requestLogger,
+      );
+    }
+
+    if (booked.length === 0) {
+      const reason = `Booking at ${hotelName} failed: supplier reported ${order.failureReason}`;
+      const settled = await this.cancelledFlightsRepository.finishBookingAttempt(
+        attempt.id,
+        attempt.bookingId,
+        {
+          status: HotelBookingAttemptStatus.FAILED,
+          failureCode: HotelBookingFailureCode.SUPPLIER_REJECTED,
+          failureReason: reason,
+          providerOrders: orders,
+          responseReceived: true,
+        },
+        undefined,
+        requestLogger,
+      );
+      if (settled.updated) {
+        await this.cancelledFlightsRepository.markPnrFailed(
+          attempt.bookingId,
+          reason,
+        );
+        requestLogger.info("Hotel booking failed per supplier webhook", attemptMeta);
+      }
+      return "processed";
+    }
+
+    const failedRooms = orders
+      .filter((entry) => entry.status === "failed")
+      .map((entry) => `room ${entry.room} (${entry.failureReason})`);
+    const reason =
+      `Partially booked: ${booked.length} of ${totalRooms} room(s) booked at ${hotelName} ` +
+      `(refs: ${booked.map((entry) => entry.reference).join(", ")})` +
+      (failedRooms.length ? `; failed: ${failedRooms.join(", ")}` : "") +
+      ". Do not rebook until reconciled.";
+    await this.cancelledFlightsRepository.updateOpenAttemptOrders(
+      attempt.id,
+      attempt.bookingId,
+      orders,
+      {
+        failureCode: HotelBookingFailureCode.PARTIAL_BOOKING,
+        failureReason: reason,
+      },
+    );
+    requestLogger.warn("Hotel booking partially booked per supplier webhook", {
+      ...attemptMeta,
+      reason,
+    });
+    return "processed";
+  }
+
+  private async confirmAttemptFromWebhook(
+    attempt: HotelBookingAttemptEntity,
+    orders: ProviderOrder[],
+    requestId: string,
+    requestLogger: Logger,
+  ): Promise<SupplierWebhookOutcome> {
+    const booking = await this.cancelledFlightsRepository.findBookingById(
+      attempt.bookingId,
+      requestLogger,
+    );
+    if (!booking) {
+      requestLogger.error("Booking for a confirmed supplier order no longer exists", {
+        context: this.context,
+        attemptId: attempt.id,
+        bookingId: attempt.bookingId,
+      });
+      return "ignored";
+    }
+    const current =
+      await this.cancelledFlightsRepository.findAllocationByBookingId(
+        booking.id,
+        requestLogger,
+      );
+    const platformFeePercentage = Number(
+      current?.platformFeePercentage ?? config.platformFeePercentage,
+    );
+    const sorted = [...orders].sort((a, b) => a.room - b.room);
+    const rooms = sorted.map((order) => ({
+      check: order.check,
+      rateKey: order.rateKey,
+      price: Number(order.check.netPrice),
+      buyingPrice: Number(order.check.buyingPrice ?? order.check.netPrice),
+    }));
+    const hotelCode = rooms[0].check.hotelCode;
+    const content = await this.cachedHotelContent(
+      hotelCode,
+      undefined,
+      requestId,
+      requestLogger,
+    );
+    const row = this.buildAllocationRow(
+      attempt.cancelledFlightId,
+      booking,
+      rooms,
+      platformFeePercentage,
+      content,
+    );
+    const references = sorted.map((order) => order.reference);
+
+    const settled = await this.cancelledFlightsRepository.finishBookingAttempt(
+      attempt.id,
+      booking.id,
+      {
+        status: HotelBookingAttemptStatus.SUCCESS,
+        failureCode: null,
+        failureReason: null,
+        providerStatus: null,
+        providerBookingReference: references.join(","),
+        providerOrders: orders,
+        responseReceived: true,
+      },
+      {
+        ...row,
+        bookingReference: references.join(","),
+        reason: this.confirmedReason(booking, row.hotelName ?? "", row.category ?? ""),
+      },
+      requestLogger,
+    );
+    if (!settled.updated) {
+      return "ignored";
+    }
+    await this.cancelledFlightsRepository.refreshFlightTotals(
+      attempt.cancelledFlightId,
+      requestLogger,
+    );
+    const promoted =
+      await this.cancelledFlightsRepository.promoteFlightAfterLateConfirmation(
+        attempt.cancelledFlightId,
+      );
+    requestLogger.info("Hotel booking confirmed per supplier webhook", {
+      context: this.context,
+      attemptId: attempt.id,
+      bookingId: booking.id,
+      pnr: booking.pnr,
+      flightId: attempt.cancelledFlightId,
+      bookingReference: references.join(","),
+      flightPromoted: promoted,
+    });
+    this.scheduleOrderInfoRefresh(attempt.id, references, requestId, requestLogger);
+    return "processed";
   }
 
   private scheduleOrderInfoRefresh(

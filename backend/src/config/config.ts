@@ -137,6 +137,10 @@ export const config = {
       process.env.HOTEL_ORDER_INFO_DELAY_MS ?? String(90 * 1000),
       10,
     ),
+    webhookMaxAgeMs: parseInt(
+      process.env.HOTEL_WEBHOOK_MAX_AGE_MS ?? String(24 * 60 * 60 * 1000),
+      10,
+    ),
     staleBookingAttemptMs: parseInt(
       process.env.HOTEL_BOOKING_ATTEMPT_STALE_MS ?? String(60 * 60 * 1000),
       10,

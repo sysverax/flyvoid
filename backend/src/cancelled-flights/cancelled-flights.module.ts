@@ -8,6 +8,8 @@ import { BookingEntity } from "./entities/booking.entity";
 import { HotelAllocationEntity } from "./entities/hotel-allocation.entity";
 import { HotelBookingCandidateEntity } from "./entities/hotel-booking-candidate.entity";
 import { HotelBookingAttemptEntity } from "./entities/hotel-booking-attempt.entity";
+import { SupplierWebhookTokenEntity } from "./entities/supplier-webhook-token.entity";
+import { HotelSupplierWebhooksController } from "./hotel-supplier-webhooks.controller";
 import { CancelledFlightsController } from "./cancelled-flights.controller";
 import { CancelledFlightsService } from "./cancelled-flights.service";
 import { HotelAllocationService } from "./hotel-allocation.service";
@@ -26,11 +28,12 @@ import { PdfService } from "../common/pdf/pdf.service";
       HotelAllocationEntity,
       HotelBookingCandidateEntity,
       HotelBookingAttemptEntity,
+      SupplierWebhookTokenEntity,
       AirlineEntity,
       AirportEntity,
     ]),
   ],
-  controllers: [CancelledFlightsController],
+  controllers: [CancelledFlightsController, HotelSupplierWebhooksController],
   providers: [
     CancelledFlightsService,
     HotelAllocationService,

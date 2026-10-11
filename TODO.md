@@ -42,26 +42,30 @@
   - Confirm bookings still succeed, the new CSV column imports, and older CSV files still work.
 - [ ] **RateHawk certification answer:** send the prepared answer (search sends the flight's majority residency; hotel page and prebook send each booking's own). If Option 2 is chosen, add: "Allocation cannot start until every passenger booking has a passport country."
 
-## 2. Receive RateHawk booking status webhooks
+## 2. Handle partial bookings (some rooms booked, some failed)
 
-**Why:** today we poll `/hotel/order/booking/finish/status/` every 2.5 s for up to 180 s. An order still `processing` after that becomes MANUAL_CHECK and must be reconciled by hand. With a webhook, RateHawk sends the final status whenever it arrives, so those bookings resolve to SUCCESS or FAILED automatically. Keep polling as the main path; the webhook is a safety net (whichever arrives first wins).
+**Why:** a PNR that needs more than one room (e.g. 4 adults → 2 rooms of 2) books each room as its own RateHawk order, all at the same hotel. If room 1 is booked and room 2 definitely fails (e.g. `soldout`), the PNR is **partially booked**: some passengers have a room, others don't. Today the code marks this MANUAL_CHECK, which is wrong. MANUAL_CHECK means "outcome unknown", whereas here the outcome is known: one room succeeded, one failed. It needs its own state and automatic recovery.
 
-**After building:** send RateHawk the callback URLs (sandbox and production) and the response our server returns, and update the certification answer (see below).
+**Note:** a timeout or unknown result on a room (outcome not known) stays MANUAL_CHECK. Only a *definite* failure of a remaining room counts as partial.
 
 ### Steps
 
-- [ ] **Check RateHawk's webhook spec:** payload fields, how they authenticate the call (signature, shared key or IP allow-list), and the response they expect from our server.
-- [ ] **Public endpoint:** e.g. `POST /api/v1/webhooks/ratehawk/booking-status`.
-  - No user login (RateHawk calls it); reachable from the internet over HTTPS on each environment.
-  - Verify the request using RateHawk's authentication before trusting anything; reject anything that fails.
-- [ ] **Processing:**
-  - Find the booking attempt by the `partner_order_id` in the payload. It's already saved, including for timed-out bookings (`provider_idempotency_key`).
-  - `ok` → mark the attempt SUCCESS (save the reference, refresh flight totals, then fetch `/hotel/order/info/`).
-  - Final error → mark it FAILED.
-  - Only update attempts that are still `pending` or `manual_check` (the same compare-and-set check used today), so a webhook and polling can't both win.
-  - Repeated webhooks for the same order must be harmless.
-- [ ] **Multi-room bookings:** each room is a separate RateHawk order. Track rooms individually; the booking becomes SUCCESS only when all its rooms are `ok`.
-- [ ] **Response to RateHawk:** reply in the format they expect.
-- [ ] **Sandbox test:** give RateHawk the sandbox callback URL and test with their special test orders (e.g. a `partner_order_id` ending in `unknown_success`) to simulate a late final status. Confirm a timed-out MANUAL_CHECK booking resolves automatically.
-- [ ] **RateHawk certification answer:** add the webhook part:
-  > We use both methods: we poll /hotel/order/booking/finish/status/ every 2.5 seconds for up to 180 seconds, and we also receive booking status webhooks at [callback URL], so orders that are still processing after our polling window are resolved automatically when the final status arrives. Our server responds to your webhooks with [response per your spec].
+- [ ] **New status `PARTIAL`:**
+  - Add it to the attempt status (`HotelBookingAttemptStatus`) and the effective PNR status (`HotelAllocationStatus`).
+  - Booked rooms stay booked (their references are saved); failed rooms are recorded with their failure reason.
+  - Partial is not counted as SUCCESS, and not shown as "Booking Failed".
+- [ ] **Track rooms individually on the attempt:** per room, save the rate key, `partner_order_id`, status (booked / failed), price and failure reason, instead of only the joined reference list.
+- [ ] **Automatic recovery, in order:**
+  1. **Retry the missing room(s) at the same hotel** with the hotel's other rates (another room type or meal plan), keeping the rooms already booked. All rooms booked → SUCCESS.
+  2. **If no other rate works:** cancel the already-booked room(s) with `/hotel/order/cancel/` (the provider already has `cancelBooking`), **only if the cancellation is free** (check the cancellation penalties from prebook). Then move the whole PNR to the next candidate hotel as usual.
+  3. **If the cancellation isn't free or fails:** keep the PNR as PARTIAL and show it for a person to decide (keep the booked room and handle the rest manually, or cancel at a cost).
+- [ ] **Pricing and totals:** flight totals and billing include only the rooms actually booked, and are refreshed after each room is booked or cancelled.
+- [ ] **API and frontend:**
+  - API `bookingStatus` gets a `PARTIAL` value, with per-room details (which rooms are booked, which failed).
+  - Airline UI: show "Partially booked" with the booked hotel and rooms, plus the failure reason for the rest, on hover as today.
+  - Voucher: only for the booked rooms, with the PNR's remaining guests clearly not covered.
+  - Summary counts: add `partialPnrs`; `fullyBooked` stays false while any PNR is partial.
+- [ ] **Re-runs:** re-running allocation retries the missing rooms of a PARTIAL PNR (step 1 first) and never re-books its already-booked rooms.
+- [ ] **Sandbox test:**
+  - A 4-adult PNR where room 2 fails (e.g. using RateHawk's `unknown_soldout` test suffix on the second room's order).
+  - Confirm that room 1 stays booked and the PNR becomes PARTIAL, then that recovery books another rate at the same hotel or cancels and moves the PNR.

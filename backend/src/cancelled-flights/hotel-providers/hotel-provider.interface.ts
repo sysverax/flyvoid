@@ -89,6 +89,8 @@ export interface HotelBookingRequest {
   /** Booking contact (the airline's); suppliers that don't need it ignore it. */
   contactEmail?: string;
   contactPhone?: string;
+  /** Called with the supplier order reference before the booking request is sent. */
+  onSupplierOrderCreated?: (reference: string) => Promise<void>;
 }
 
 /** Supplier-neutral result of re-validating a rate before booking. */
@@ -184,6 +186,12 @@ export interface HotelProvider {
     paymentData: any,
     requestId: string,
   ): Promise<HotelBookingResult>;
+
+  /** Current final status of one supplier order (by our booking reference). */
+  checkBookingStatus?(
+    reference: string,
+    requestId: string,
+  ): Promise<{ state: "booked" | "failed" | "processing"; code: string | null }>;
 
   /** Latest supplier order details for confirmed bookings (by our booking references). */
   getOrderInfo?(
