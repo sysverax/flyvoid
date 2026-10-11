@@ -19,6 +19,7 @@ import { SupplierWebhookTokenEntity } from "./entities/supplier-webhook-token.en
 import { HotelBookingCandidateEntity } from "./entities/hotel-booking-candidate.entity";
 import { resolveEffectiveAttempt } from "./hotel-allocation.planner";
 import { Logger } from "winston";
+import type { PnrBookingStatus } from "./dto/hotel-allocations.dto";
 
 export const CLEARED_ALLOCATION_HOTEL = {
   hotelCode: "",
@@ -70,7 +71,12 @@ export function effectiveAllocationChanges(
   attempts: Array<
     Pick<
       HotelBookingAttemptEntity,
-      "status" | "attemptOrder" | "hotelCode" | "hotelName" | "category" | "failureReason"
+      | "status"
+      | "attemptOrder"
+      | "hotelCode"
+      | "hotelName"
+      | "category"
+      | "failureReason"
     >
   >,
   success?: Partial<HotelAllocationEntity>,
@@ -83,7 +89,9 @@ export function effectiveAllocationChanges(
     category: attempt.category ?? "",
   });
   if (effective?.status === HotelBookingAttemptStatus.SUCCESS) {
-    return success ? { ...success, status: HotelAllocationStatus.CONFIRMED } : null;
+    return success
+      ? { ...success, status: HotelAllocationStatus.CONFIRMED }
+      : null;
   }
   if (effective?.status === HotelBookingAttemptStatus.MANUAL_CHECK) {
     return {
@@ -105,7 +113,9 @@ export function effectiveAllocationChanges(
     row.status === HotelAllocationStatus.IN_PROGRESS ||
     row.status === HotelAllocationStatus.MANUAL_CHECK
   ) {
-    const latest = [...attempts].sort((a, b) => b.attemptOrder - a.attemptOrder)[0];
+    const latest = [...attempts].sort(
+      (a, b) => b.attemptOrder - a.attemptOrder,
+    )[0];
     return {
       ...CLEARED_ALLOCATION_HOTEL,
       status: HotelAllocationStatus.DRAFT,
@@ -379,17 +389,11 @@ export class CancelledFlightsRepository {
       .addSelect("COALESCE(SUM(flight.totalChildren), 0)", "totalChildren")
       .addSelect("COALESCE(SUM(flight.totalBooking), 0)", "totalBookings")
       .addSelect("COALESCE(SUM(flight.totalHotelRooms), 0)", "totalRooms")
-      .addSelect(
-        sumIgnoringNaN("flight.totalSellingPrice"),
-        "totalHotelCost",
-      )
+      .addSelect(sumIgnoringNaN("flight.totalSellingPrice"), "totalHotelCost")
       .addSelect(sumIgnoringNaN("flight.totalHotelTaxes"), "totalHotelTax")
       .addSelect(sumIgnoringNaN("flight.totalDiscounts"), "totalDiscount")
       .addSelect(sumIgnoringNaN("flight.totalPrice"), "totalCost")
-      .addSelect(
-        sumIgnoringNaN("flight.totalPlatformFee"),
-        "totalPlatformFee",
-      )
+      .addSelect(sumIgnoringNaN("flight.totalPlatformFee"), "totalPlatformFee")
       .getRawOne<{
         totalCancelFlights: string;
         totalAdults: string;
@@ -849,12 +853,15 @@ export class CancelledFlightsRepository {
         .where("flight.id = :id", { id: cancelledFlightId })
         .getRawOne<{ runId: string | null }>();
       if (flight?.runId !== runId) {
-        requestLogger.warn("Hotel allocation run was superseded; not completing it", {
-          context: this.context,
-          cancelledFlightId,
-          runId,
-          currentRunId: flight?.runId ?? null,
-        });
+        requestLogger.warn(
+          "Hotel allocation run was superseded; not completing it",
+          {
+            context: this.context,
+            cancelledFlightId,
+            runId,
+            currentRunId: flight?.runId ?? null,
+          },
+        );
         return;
       }
       const totals = await this.sumConfirmedAllocations(
@@ -902,13 +909,99 @@ export class CancelledFlightsRepository {
         "ageMs",
       )
       .where("flight.id = :id", { id: cancelledFlightId })
-      .getRawOne<{ status: FlightStatus; error: string | null; ageMs: string | number }>();
-    const inProgress = row?.status === FlightStatus.HOTEL_ALLOCATION_IN_PROGRESS;
+      .getRawOne<{
+        status: FlightStatus;
+        error: string | null;
+        ageMs: string | number;
+      }>();
+    const inProgress =
+      row?.status === FlightStatus.HOTEL_ALLOCATION_IN_PROGRESS;
     const running = inProgress && Number(row?.ageMs) < leaseMs;
     return {
       running,
       stale: inProgress && !running,
       error: row?.error ?? null,
+    };
+  }
+
+  // Mirrors HotelAllocationService.toBookingStatus, aggregated in SQL.
+  async getAllocationProgress(
+    cancelledFlightId: number,
+    leaseMs: number,
+  ): Promise<{
+    airlineId: number;
+    status: FlightStatus;
+    running: boolean;
+    stale: boolean;
+    error: string | null;
+    counts: Record<PnrBookingStatus, number>;
+  } | null> {
+    const flight = await this.flightRepo
+      .createQueryBuilder("flight")
+      .select("flight.airlineId", "airlineId")
+      .addSelect("flight.status", "status")
+      .addSelect("flight.hotelAllocationError", "error")
+      .addSelect(
+        "EXTRACT(EPOCH FROM (now() - flight.updated_at)) * 1000",
+        "ageMs",
+      )
+      .where("flight.id = :id", { id: cancelledFlightId })
+      .getRawOne<{
+        airlineId: number;
+        status: FlightStatus;
+        error: string | null;
+        ageMs: string | number;
+      }>();
+    if (!flight) {
+      return null;
+    }
+    const inProgress =
+      flight.status === FlightStatus.HOTEL_ALLOCATION_IN_PROGRESS;
+    const running = inProgress && Number(flight.ageMs) < leaseMs;
+    const countRows: Array<{ status: PnrBookingStatus; count: number }> =
+      await this.allocationRepo.query(
+        `SELECT s.pnr_status AS "status", COUNT(*)::int AS "count"
+         FROM (
+           SELECT CASE
+             WHEN a.id IS NULL
+               OR a.status IN ('draft', 'failed', 'cancelled')
+               OR (a.status = 'confirmed' AND a.booking_reference LIKE 'temp-%')
+             THEN CASE
+               WHEN a.status = 'failed' THEN 'FAILED'
+               WHEN $2::boolean AND EXISTS (
+                 SELECT 1 FROM hotel_booking_attempts t WHERE t.booking_id = b.id
+               ) THEN 'PENDING'
+               ELSE 'NOT_STARTED'
+             END
+             WHEN a.status IN ('confirmed', 'completed') THEN 'SUCCESS'
+             WHEN a.status = 'manual_check' THEN 'MANUAL_CHECK'
+             WHEN a.status = 'in_progress' THEN 'PENDING'
+             ELSE 'NOT_STARTED'
+           END AS pnr_status
+           FROM cancelled_flight_bookings b
+           LEFT JOIN hotel_allocations a ON a.booking_id = b.id
+           WHERE b.cancelled_flight_id = $1
+         ) s
+         GROUP BY s.pnr_status`,
+        [cancelledFlightId, running],
+      );
+    const counts: Record<PnrBookingStatus, number> = {
+      SUCCESS: 0,
+      PENDING: 0,
+      FAILED: 0,
+      MANUAL_CHECK: 0,
+      NOT_STARTED: 0,
+    };
+    for (const row of countRows) {
+      counts[row.status] = Number(row.count);
+    }
+    return {
+      airlineId: flight.airlineId,
+      status: flight.status,
+      running,
+      stale: inProgress && !running,
+      error: flight.error ?? null,
+      counts,
     };
   }
 
@@ -999,8 +1092,24 @@ export class CancelledFlightsRepository {
     planId: string,
     plans: Array<{
       bookingId: number;
-      roomPlan: Array<{ adults: number; children: number; roomsNeeded: number }>;
-      candidates: Array<Omit<HotelBookingCandidateEntity, "id" | "cancelledFlightId" | "bookingId" | "planId" | "candidateOrder" | "cancelledFlight" | "booking" | "createdAt">>;
+      roomPlan: Array<{
+        adults: number;
+        children: number;
+        roomsNeeded: number;
+      }>;
+      candidates: Array<
+        Omit<
+          HotelBookingCandidateEntity,
+          | "id"
+          | "cancelledFlightId"
+          | "bookingId"
+          | "planId"
+          | "candidateOrder"
+          | "cancelledFlight"
+          | "booking"
+          | "createdAt"
+        >
+      >;
     }>,
     requestLogger: Logger,
   ): Promise<void> {
@@ -1165,7 +1274,9 @@ export class CancelledFlightsRepository {
       const max = await attempts
         .createQueryBuilder("attempt")
         .select("MAX(attempt.attemptOrder)", "max")
-        .where("attempt.bookingId = :bookingId", { bookingId: params.bookingId })
+        .where("attempt.bookingId = :bookingId", {
+          bookingId: params.bookingId,
+        })
         .getRawOne<{ max: number | null }>();
       const attempt = await attempts.save(
         attempts.create({
@@ -1407,10 +1518,7 @@ export class CancelledFlightsRepository {
       .execute();
   }
 
-  async markPnrFailed(
-    bookingId: number,
-    reason: string,
-  ): Promise<boolean> {
+  async markPnrFailed(bookingId: number, reason: string): Promise<boolean> {
     return this.allocationRepo.manager.transaction(async (manager) => {
       await this.lockBooking(manager, bookingId);
       const active = await manager
@@ -1425,7 +1533,11 @@ export class CancelledFlightsRepository {
       }
       await allocations.update(
         { id: row.id },
-        { ...CLEARED_ALLOCATION_HOTEL, status: HotelAllocationStatus.FAILED, reason },
+        {
+          ...CLEARED_ALLOCATION_HOTEL,
+          status: HotelAllocationStatus.FAILED,
+          reason,
+        },
       );
       return true;
     });
@@ -1458,7 +1570,9 @@ export class CancelledFlightsRepository {
                   "Booking was interrupted before the request was sent to the supplier",
               },
         )
-        .where("cancelled_flight_id = :cancelledFlightId", { cancelledFlightId })
+        .where("cancelled_flight_id = :cancelledFlightId", {
+          cancelledFlightId,
+        })
         .andWhere("status = :pending", {
           pending: HotelBookingAttemptStatus.PENDING,
         })

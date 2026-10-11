@@ -203,6 +203,21 @@ export interface HotelAllocationsResponse {
   currency: string;
 }
 
+export interface HotelAllocationProgressResponse {
+  cancelledFlightId: number;
+  status: string;
+  running: boolean;
+  lastRunError: string | null;
+  totalPnrs: number;
+  processedPnrs: number;
+  successfulPnrs: number;
+  pendingPnrs: number;
+  failedPnrs: number;
+  manualCheckPnrs: number;
+  notStartedPnrs: number;
+  fullyBooked: boolean;
+}
+
 export interface HotelSummaryCancelledFlightSummaryDto {
   totalBookings: number;
   totalAdults: number;
@@ -260,7 +275,11 @@ export interface HotelBookingRoomDetailDto {
   roomName: string;
   boardName: string;
   price: number;
-  taxesAtProperty?: Array<{ name: string; amount: number; currencyCode: string | null }>;
+  taxesAtProperty?: Array<{
+    name: string;
+    amount: number;
+    currencyCode: string | null;
+  }>;
 }
 
 export interface HotelBookingHotelDetailDto {
@@ -537,6 +556,19 @@ export const cancellationService = {
     }
   },
 
+  async getHotelAllocationProgress(flightId: number | string) {
+    try {
+      const response = await apiClient.get(
+        `/cancelled-flights/${flightId}/hotel-allocations/progress`,
+      );
+      return response.data;
+    } catch (error: unknown) {
+      throw new Error(
+        extractErrorMessage(error, "Failed to load hotel allocation progress"),
+      );
+    }
+  },
+
   async getHotelSummary(flightId: number | string): Promise<{
     success: boolean;
     data: HotelSummaryResponse;
@@ -591,10 +623,7 @@ export const cancellationService = {
       return response.data;
     } catch (error: any) {
       throw new Error(
-        extractErrorMessage(
-          error,
-          "Failed to fetch hotel booking details",
-        ),
+        extractErrorMessage(error, "Failed to fetch hotel booking details"),
       );
     }
   },
@@ -610,9 +639,7 @@ export const cancellationService = {
       );
       return response.data;
     } catch (error: any) {
-      throw new Error(
-        extractErrorMessage(error, "Failed to process payment"),
-      );
+      throw new Error(extractErrorMessage(error, "Failed to process payment"));
     }
   },
 
@@ -635,10 +662,9 @@ export const cancellationService = {
 
   async exportFlightReport(flightId: number | string): Promise<void> {
     try {
-      const res = await apiClient.get(
-        `/cancelled-flights/${flightId}/report`,
-        { responseType: "blob" },
-      );
+      const res = await apiClient.get(`/cancelled-flights/${flightId}/report`, {
+        responseType: "blob",
+      });
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const link = document.createElement("a");
       link.href = url;
@@ -654,5 +680,3 @@ export const cancellationService = {
     }
   },
 };
-
-
