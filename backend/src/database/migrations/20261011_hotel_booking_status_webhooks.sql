@@ -1,5 +1,10 @@
 ALTER TABLE public.hotel_booking_attempts
+  ADD COLUMN IF NOT EXISTS provider_order_info jsonb,
+  ADD COLUMN IF NOT EXISTS provider_order_info_at timestamp without time zone,
   ADD COLUMN IF NOT EXISTS provider_orders jsonb;
+
+ALTER TABLE public.hotel_allocations
+  ADD COLUMN IF NOT EXISTS hotel_policies jsonb;
 
 CREATE TABLE IF NOT EXISTS public.supplier_webhook_tokens (
   id serial PRIMARY KEY,
