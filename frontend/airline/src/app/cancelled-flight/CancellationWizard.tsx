@@ -162,7 +162,7 @@ interface ManualBooking {
   tags: string[];
 }
 
-interface Cancellation {
+export interface Cancellation {
   id: string;
   flight: string;
   route: string;
@@ -174,10 +174,13 @@ interface Cancellation {
   reason: string;
 }
 
-interface CancellationWizardProps {
+export interface CancellationWizardProps {
   onClose: () => void;
-  onSave: (added: Cancellation) => void;
+  onSave?: (added: Cancellation) => void;
   initialData?: Cancellation | null;
+  initialStep?: number;
+  flightId?: number | null;
+  onStepChange?: (step: number, flightId?: number | null) => void;
 }
 
 function formatDateString(dateStr: string): string {
@@ -221,11 +224,18 @@ const HOTEL_BOOKING_STATUS_LABEL: Record<string, string> = {
   completed: "Completed",
 };
 
-function getInitialStepFromStatus(status?: string): number {
-  if (!status) return 1;
+export function getInitialStepFromStatus(
+  status?: string,
+  bookingsCount?: number,
+): number {
+  if (!status) return 2;
   const s = status.toLowerCase();
-  if (s === "draft") return 1;
-  if (s === "in_progress" || s === "in progress") return 2;
+  if (s === "draft") {
+    return bookingsCount && bookingsCount > 0 ? 3 : 2;
+  }
+  if (s === "in_progress" || s === "in progress") {
+    return bookingsCount && bookingsCount > 0 ? 3 : 2;
+  }
   if (
     s === "verified" ||
     s === "confirmed" ||
@@ -235,7 +245,40 @@ function getInitialStepFromStatus(status?: string): number {
   if (s === "hotel_allocation_in_progress" || s === "ha in progress") return 4;
   if (s === "allocated") return 5;
   if (s === "paid" || s === "published") return 7;
-  return 1;
+  return 2;
+}
+
+export function getMaxAllowedStep(flight: any, summary?: any): number {
+  if (!flight) return 2;
+  const status = (flight.status || "").toLowerCase();
+
+  if (status === "published" || status === "paid") {
+    return 7;
+  }
+  if (status === "allocated") {
+    return 6;
+  }
+  if (
+    status === "passengers_booking_confirmed" ||
+    status === "confirmed" ||
+    status === "verified" ||
+    status === "hotel_allocation_in_progress" ||
+    status === "ha in progress"
+  ) {
+    return 4;
+  }
+
+  const bookingsCount =
+    summary?.totalBookings ??
+    flight?.totalBookings ??
+    flight?.summary?.totalBookings ??
+    flight?.bookings ??
+    0;
+
+  if (bookingsCount > 0) {
+    return 3;
+  }
+  return 2;
 }
 
 function toIsoDate(dateStr: string): string {
@@ -253,11 +296,20 @@ export default function CancellationWizard({
   onClose,
   onSave,
   initialData,
+  initialStep,
+  flightId: propFlightId,
+  onStepChange,
 }: CancellationWizardProps) {
   const { hasPermission } = useAuth();
   const [activeStep, setActiveStep] = useState(() =>
-    getInitialStepFromStatus(initialData?.status),
+    initialStep || getInitialStepFromStatus(initialData?.status) || 1,
   );
+
+  useEffect(() => {
+    if (initialStep && initialStep !== activeStep) {
+      setActiveStep(initialStep);
+    }
+  }, [initialStep]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -483,7 +535,9 @@ export default function CancellationWizard({
 
   useEffect(() => {
     if (initialData) {
-      setActiveStep(getInitialStepFromStatus(initialData.status));
+      if (!initialStep) {
+        setActiveStep(getInitialStepFromStatus(initialData.status));
+      }
       if (initialData.status?.toLowerCase() === "paid") {
         setPaymentConfirmed(true);
       }
@@ -704,17 +758,57 @@ export default function CancellationWizard({
   const [manifestFileName, setManifestFileName] = useState("");
 
   const [createdFlightId, setCreatedFlightId] = useState<number | null>(() =>
-    initialData?.id && !isNaN(Number(initialData.id))
+    propFlightId ||
+    (initialData?.id && !isNaN(Number(initialData.id))
       ? Number(initialData.id)
-      : null,
+      : null),
   );
   const [isCreatingFlight, setIsCreatingFlight] = useState(false);
 
   const flightId =
     createdFlightId ||
+    propFlightId ||
     (initialData?.id && !isNaN(Number(initialData.id))
       ? Number(initialData.id)
       : null);
+
+  const changeStep = (nextStep: number, targetFlightId?: number | null) => {
+    setActiveStep(nextStep);
+    const currentFId = targetFlightId !== undefined ? targetFlightId : flightId;
+    onStepChange?.(nextStep, currentFId);
+  };
+
+  useEffect(() => {
+    if (flightId && !initialData) {
+      cancellationService
+        .reviewFlight(flightId)
+        .then((res) => {
+          const f = res?.data?.flight || (res as any)?.flight;
+          if (f) {
+            if (f.flightNumber) setNewFlight(f.flightNumber);
+            if (f.cancellationDate) setNewDate(toIsoDate(f.cancellationDate));
+            if (f.route?.departureAirport?.code)
+              setNewDepartureAirport(f.route.departureAirport.code);
+            if (f.route?.arrivalAirport?.code)
+              setNewArrivalAirport(f.route.arrivalAirport.code);
+            const reason = f.cancellationReasonText || f.cancellationReason;
+            if (reason) {
+              const reasonVal = formatCancellationReason(reason);
+              if (reasonVal !== "N/A") {
+                setNewReason(reasonVal);
+                setSelectedReasonTag(reasonVal);
+              }
+            }
+            if (f.status?.toLowerCase() === "paid") {
+              setPaymentConfirmed(true);
+            }
+          }
+        })
+        .catch((err) => {
+          console.error("Failed to load flight details in wizard:", err);
+        });
+    }
+  }, [flightId, initialData]);
 
   const fetchBookings = async (fId: number) => {
     setIsLoadingBookings(true);
@@ -938,7 +1032,7 @@ export default function CancellationWizard({
       if (!anythingBooked) return;
     }
     setHotelAllocations(allocData);
-    setActiveStep(5);
+    changeStep(5);
     showAllocationOutcome(allocData);
   };
 
@@ -1507,7 +1601,7 @@ export default function CancellationWizard({
 
   const handlePrevStep = () => {
     if (activeStep > 1) {
-      setActiveStep((prev) => prev - 1);
+      changeStep(activeStep - 1);
     }
   };
 
@@ -1586,6 +1680,9 @@ export default function CancellationWizard({
         toast.success(
           response?.message || "Cancelled flight updated successfully",
         );
+        if (advance) {
+          changeStep(2, flightId);
+        }
       } else {
         const createPayload: CreateCancelledFlightPayload = {
           flightNumber: newFlight.trim(),
@@ -1598,14 +1695,15 @@ export default function CancellationWizard({
         const response =
           await cancellationService.createCancelledFlight(createPayload);
 
+        const newId = response?.data?.id || flightId;
         if (response?.data?.id) {
           setCreatedFlightId(response.data.id);
         }
         toast.success(response?.message || "Cancelled flight created");
-      }
 
-      if (advance) {
-        setActiveStep(2);
+        if (advance) {
+          changeStep(2, newId);
+        }
       }
     } catch (error: any) {
       toast.error(error.message || "Failed to save cancelled flight details");
@@ -1633,7 +1731,11 @@ export default function CancellationWizard({
         reason: formatCancellationReason(newReason || selectedReasonTag),
       };
       toast.success("Cancelled flight published successfully");
-      onSave(added);
+      if (onSave) {
+        onSave(added);
+      } else {
+        onClose();
+      }
       return;
     }
 
@@ -1657,7 +1759,11 @@ export default function CancellationWizard({
         status: "Published",
         reason: formatCancellationReason(newReason || selectedReasonTag),
       };
-      onSave(added);
+      if (onSave) {
+        onSave(added);
+      } else {
+        onClose();
+      }
     } catch (error: any) {
       toast.error(error.message || "Failed to publish cancelled flight");
     } finally {
@@ -1673,17 +1779,17 @@ export default function CancellationWizard({
         toast.error("At least one booking is required.");
         return;
       }
-      setActiveStep(3);
+      changeStep(3);
     } else if (activeStep === 3) {
       if (!flightId) {
-        setActiveStep(4);
+        changeStep(4);
         return;
       }
       setIsConfirmingBookings(true);
       try {
         const res = await cancellationService.confirmBookings(flightId);
         toast.success(res?.message || "Passenger booking details confirmed");
-        setActiveStep(4);
+        changeStep(4);
       } catch (error: any) {
         toast.error(error.message || "Failed to confirm passenger details");
       } finally {
@@ -1693,18 +1799,18 @@ export default function CancellationWizard({
       if (flightId && !hotelAllocations && !isAllocating) {
         await handleAllocateHotels();
       } else {
-        setActiveStep(5);
+        changeStep(5);
       }
     } else if (activeStep === 6) {
       if (!flightId) {
-        setActiveStep(7);
+        changeStep(7);
         return;
       }
       setIsProcessingPayment(true);
       try {
         const res = await cancellationService.processPayment(flightId);
         toast.success(res?.message || "Payment processed successfully");
-        setActiveStep(7);
+        changeStep(7);
       } catch (error: any) {
         toast.error(error.message || "Failed to process payment");
       } finally {
@@ -1713,7 +1819,7 @@ export default function CancellationWizard({
     } else if (activeStep === 7) {
       await handlePublishFlight();
     } else {
-      setActiveStep((prev) => prev + 1);
+      changeStep(activeStep + 1);
     }
   };
 
@@ -1747,7 +1853,7 @@ export default function CancellationWizard({
                 <div
                   onClick={() => {
                     if (isCompleted || (step.number < activeStep && flightId)) {
-                      setActiveStep(step.number);
+                      changeStep(step.number);
                     }
                   }}
                   className={cn(
