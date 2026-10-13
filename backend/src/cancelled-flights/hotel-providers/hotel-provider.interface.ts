@@ -93,6 +93,11 @@ export interface HotelBookingRequest {
   onSupplierOrderCreated?: (reference: string) => Promise<void>;
 }
 
+/** Guest's passport country (ISO 3166-1 alpha-2); suppliers price by it. */
+export interface SupplierSearchOptions {
+  residency?: string | null;
+}
+
 /** Supplier-neutral result of re-validating a rate before booking. */
 export interface HotelRateCheck {
   hotelCode: string;
@@ -160,6 +165,7 @@ export interface HotelProvider {
     occupancies: RoomOccupancy[],
     requestId: string,
     requestLogger: Logger,
+    options?: SupplierSearchOptions,
   ): Promise<AvailabilityHotel[]>;
 
   searchNearbyHotels(
@@ -177,7 +183,11 @@ export interface HotelProvider {
   ): Promise<HotelContentDetails | null>;
 
   /** Re-validates a rate (availability, price, cancellation) before booking. */
-  checkRate(rateKey: string, requestId: string): Promise<HotelRateCheck>;
+  checkRate(
+    rateKey: string,
+    requestId: string,
+    options?: SupplierSearchOptions,
+  ): Promise<HotelRateCheck>;
 
   /** Live reservation of a checked rate for one passenger booking. */
   bookHotel(

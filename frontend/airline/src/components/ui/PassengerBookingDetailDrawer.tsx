@@ -4,6 +4,7 @@ import { X, User, Users, Armchair, FileText } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { countries } from "countries-list";
 
 export interface PassengerBookingDetailDrawerProps {
   isOpen: boolean;
@@ -29,6 +30,10 @@ export function PassengerBookingDetailDrawer({
     firstName || lastName ? `${firstName} ${lastName}`.trim() : null;
   const email = booking?.email || null;
   const phone = booking?.phone || null;
+  const residency: string | null = booking?.residency || null;
+  const passportCountry = residency
+    ? `${countries[residency as keyof typeof countries]?.name ?? residency} (${residency})`
+    : null;
   const adults =
     booking?.adults !== undefined && booking?.adults !== null
       ? Number(booking.adults)
@@ -128,6 +133,12 @@ export function PassengerBookingDetailDrawer({
                 <div className="text-gray-500 text-sm mb-1">Phone Number</div>
                 <div className="font-medium text-gray-900 text-sm">
                   {phone || "N/A"}
+                </div>
+              </div>
+              <div>
+                <div className="text-gray-500 text-sm mb-1">Passport Country</div>
+                <div className="font-medium text-gray-900 text-sm">
+                  {passportCountry || "N/A"}
                 </div>
               </div>
             </div>

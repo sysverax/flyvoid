@@ -18,6 +18,7 @@ import {
   Mail,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
+import { countries } from "countries-list";
 import { useEffect, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "react-toastify";
@@ -173,6 +174,10 @@ export function BookingDetailsDrawer({
     firstName || lastName ? `${firstName} ${lastName}`.trim() : null;
   const email = pBooking?.email || null;
   const phone = pBooking?.phone || null;
+  const residency: string | null = pBooking?.residency || null;
+  const passportCountry = residency
+    ? `${countries[residency as keyof typeof countries]?.name ?? residency} (${residency})`
+    : null;
 
   const hasPax =
     (pBooking?.adults !== undefined && pBooking?.adults !== null) ||
@@ -506,6 +511,12 @@ export function BookingDetailsDrawer({
                 <div className="text-gray-500 text-sm mb-1">Phone Number</div>
                 <div className="font-medium text-gray-900 text-sm">
                   {phone || "N/A"}
+                </div>
+              </div>
+              <div>
+                <div className="text-gray-500 text-sm mb-1">Passport Country</div>
+                <div className="font-medium text-gray-900 text-sm">
+                  {passportCountry || "N/A"}
                 </div>
               </div>
             </div>

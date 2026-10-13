@@ -173,6 +173,8 @@ export const config = {
     // Corporate email sent to hotel suppliers on every booking; receives the B2B-priced booking documents.
     email: (process.env.FLYVOID_EMAIL ?? "").trim(),
   },
+  /** All hotel prices, totals and invoices are in this currency. */
+  currency: "USD",
   platformFeePercentage: parseFloat(
     process.env.PLATFORM_FEE_PERCENTAGE ?? "10",
   ),

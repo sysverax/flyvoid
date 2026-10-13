@@ -64,6 +64,8 @@ export interface BookingDTO {
   lastName: string;
   email: string;
   phone: string;
+  /** Passport country, ISO 3166-1 alpha-2 (e.g. "US"). */
+  residency: string;
   travelClass: string;
   adults: number;
   children: number;
@@ -79,6 +81,7 @@ export interface CreateBookingPayload {
   lastName: string;
   email: string;
   phone: string;
+  residency: string;
   travelClass: string;
   adults: number;
   children: number;
