@@ -40,6 +40,7 @@ const PERMISSION_ROWS: PermissionRow[] = [
   { key: "dashboard", label: "Dashboard" },
   { key: "airlines", label: "Airlines" },
   { key: "cancelledFlights", label: "Cancelled Flights" },
+  { key: "hotelBookings", label: "Bookings" },
   { key: "platformOverview", label: "Platform Overview", category: "PAYMENTS & REVENUE" },
   { key: "detailedAnalysis", label: "Detailed Analysis", category: "PAYMENTS & REVENUE" },
   { key: "platformTreasury", label: "Platform Treasury", category: "PAYMENTS & REVENUE" },
@@ -52,6 +53,7 @@ const emptyPermissions = (): UserPermissions => ({
   dashboard: { view: false, edit: false, export: false, all: false },
   airlines: { view: false, edit: false, export: false, all: false },
   cancelledFlights: { view: false, edit: false, export: false, all: false },
+  hotelBookings: { view: false, edit: false, export: false, all: false },
   platformOverview: { view: false, edit: false, export: false, all: false },
   detailedAnalysis: { view: false, edit: false, export: false, all: false },
   platformTreasury: { view: false, edit: false, export: false, all: false },
@@ -65,6 +67,7 @@ function superAdminPermissions(): UserPermissions {
     dashboard: { view: true, edit: true, export: true, all: true },
     airlines: { view: true, edit: true, export: true, all: true },
     cancelledFlights: { view: true, edit: true, export: true, all: true },
+    hotelBookings: { view: true, edit: true, export: true, all: true },
     platformOverview: { view: true, edit: true, export: true, all: true },
     detailedAnalysis: { view: true, edit: true, export: true, all: true },
     platformTreasury: { view: true, edit: true, export: true, all: true },
@@ -96,6 +99,7 @@ function mapBackendAccessControlsToFrontend(
     if (ac.asset === "DASHBOARD") permissions.dashboard = access;
     else if (ac.asset === "AIRLINES") permissions.airlines = access;
     else if (ac.asset === "CANCELLED_FLIGHTS") permissions.cancelledFlights = access;
+    else if (ac.asset === "HOTEL_BOOKINGS") permissions.hotelBookings = access;
     else if (ac.asset === "INVITES_ONBOARDING") permissions.invitesOnboarding = access;
     else if (ac.asset === "SYSTEM_SETTINGS") permissions.systemSettings = access;
     else if (ac.asset === "AUDIT_LOGS") permissions.auditLogs = access;
@@ -127,6 +131,7 @@ function mapFrontendPermissionsToBackend(
   if (frontendPerms.dashboard) addAsset("DASHBOARD", frontendPerms.dashboard);
   if (frontendPerms.airlines) addAsset("AIRLINES", frontendPerms.airlines);
   if (frontendPerms.cancelledFlights) addAsset("CANCELLED_FLIGHTS", frontendPerms.cancelledFlights);
+  if (frontendPerms.hotelBookings) addAsset("HOTEL_BOOKINGS", frontendPerms.hotelBookings);
   if (frontendPerms.invitesOnboarding) addAsset("INVITES_ONBOARDING", frontendPerms.invitesOnboarding);
   if (frontendPerms.systemSettings) addAsset("SYSTEM_SETTINGS", frontendPerms.systemSettings);
   if (frontendPerms.auditLogs) addAsset("AUDIT_LOGS", frontendPerms.auditLogs);
