@@ -24,6 +24,7 @@ import {
   HotelProvider,
   HotelRateCheck,
   RoomOccupancy,
+  SupplierSearchOptions,
 } from "../hotel-provider.interface";
 
 /** Everything needed to re-find a search rate at booking time (search_hash is not issued on our contract). */
@@ -476,6 +477,11 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     ];
   }
 
+  /** ETG expects a lowercase ISO 3166-1 alpha-2 code ("us"). */
+  private residencyFor(options?: SupplierSearchOptions): string | null {
+    return options?.residency?.toLowerCase() || null;
+  }
+
   private radiusInMeters(radius: number): number {
     const unit = String(config.hotelSearch.unit).toLowerCase();
     const meters =
@@ -726,7 +732,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
               netPrice: this.netAmounts(payment).shown,
               buyingPrice: this.netAmounts(payment).charged,
               currency: String(
-                payment.show_currency_code ?? payment.currency_code ?? "USD",
+                payment.show_currency_code ?? payment.currency_code ?? config.currency,
               ),
               allotment:
                 rate.allotment !== undefined && rate.allotment !== null
@@ -777,6 +783,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     checkout: string,
     occupancy: RoomOccupancy,
     requestLogger: Logger,
+    residency: string | null,
   ): Promise<any[]> {
     const data = await this.call<{ hotels?: any[] }>(
       "search/serp/geo/",
@@ -785,6 +792,8 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         checkout,
         language: LANGUAGE,
         guests: this.guestsFor(occupancy),
+        ...(residency ? { residency } : {}),
+        currency: config.currency,
         latitude: Number(airport.latitude),
         longitude: Number(airport.longitude),
         radius: this.radiusInMeters(radius),
@@ -801,6 +810,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     checkout: string,
     occupancy: RoomOccupancy,
     requestLogger: Logger,
+    residency: string | null,
     filter?: { star_rating: number[] },
   ): Promise<any[]> {
     const chunks: number[][] = [];
@@ -817,6 +827,8 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
             checkout,
             language: LANGUAGE,
             guests: this.guestsFor(occupancy),
+            ...(residency ? { residency } : {}),
+            currency: config.currency,
             hids: chunk,
             ...(filter ? { filter } : {}),
           },
@@ -838,6 +850,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     occupancy: RoomOccupancy,
     starsByHid: Map<number, number>,
     requestLogger: Logger,
+    residency: string | null,
   ): Promise<void> {
     const unknown = hids.filter((hid) => !starsByHid.has(hid));
     if (!unknown.length) return;
@@ -852,6 +865,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
           checkout,
           occupancy,
           requestLogger,
+          residency,
           {
             star_rating: [star],
           },
@@ -871,6 +885,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     occupancies: RoomOccupancy[],
     requestId: string,
     requestLogger: Logger,
+    options?: SupplierSearchOptions,
   ): Promise<AvailabilityHotel[]> {
     if (!config.hotelSearch.isAllowSearchAPI) {
       return await this.searchNearbyHotelsWithOccupanciesFromJson(
@@ -907,10 +922,12 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
       }
     };
 
+    const residency = this.residencyFor(options);
     requestLogger.info("Fetching hotel availability from RateHawk API", {
       context: this.context,
       airportCode: airport.iataCode,
       occupancyCount: dedupedOccupancies.length,
+      residency,
       useSandbox: this.useSandbox,
     });
 
@@ -935,6 +952,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
           checkOutDate,
           probe,
           requestLogger,
+          residency,
         );
         const hids = geoHotels
           .map((hotel) => Number(hotel.hid))
@@ -952,6 +970,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
             probe,
             starsByHid,
             requestLogger,
+            residency,
           );
         }
 
@@ -966,6 +985,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
                 checkOutDate,
                 occupancy,
                 requestLogger,
+                residency,
               ),
           );
           priced.forEach((hotels, i) => {
@@ -1407,7 +1427,11 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
   }
 
   /** Re-prices a search rate: hotelpage (by hotel id) -> same room and meal -> prebook. */
-  private async prebookRate(rateKey: string, log: RhLogger) {
+  private async prebookRate(
+    rateKey: string,
+    log: RhLogger,
+    residency: string | null = null,
+  ) {
     const key = this.decodeRateKey(rateKey);
 
     const hotelpage = await this.call<{ hotels?: any[] }>(
@@ -1417,6 +1441,8 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         checkout: key.checkout,
         language: LANGUAGE,
         guests: [{ adults: key.adults, children: key.childrenAges }],
+        ...(residency ? { residency } : {}),
+        currency: config.currency,
         hid: key.hid,
       },
       log,
@@ -1492,7 +1518,11 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
   }
 
   // HotelProvider.checkRate — hotelpage + prebook, then the hotel's real name/address.
-  async checkRate(rateKey: string, requestId: string): Promise<HotelRateCheck> {
+  async checkRate(
+    rateKey: string,
+    requestId: string,
+    options?: SupplierSearchOptions,
+  ): Promise<HotelRateCheck> {
     const log = this.logFor(requestId);
     this.assertCredentials(log);
     this.assertFlyvoidEmail();
@@ -1504,7 +1534,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         requestId,
       );
       const { key, rate, priceChanged, payment, bookHash, hotelSlug } =
-        await this.prebookRate(rateKey, log);
+        await this.prebookRate(rateKey, log, this.residencyFor(options));
 
       this.logger.info(
         "Successfully validated rate with RateHawk",
@@ -1526,7 +1556,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         netPrice: this.netAmounts(payment).shown,
         buyingPrice: this.netAmounts(payment).charged,
         currency: String(
-          payment?.show_currency_code ?? payment?.currency_code ?? "USD",
+          payment?.show_currency_code ?? payment?.currency_code ?? config.currency,
         ),
         cancellationPolicies: (payment?.cancellation_penalties?.policies ?? [])
           .filter((p: any) => Number(p.amount_show ?? p.amount_charge ?? 0) > 0)

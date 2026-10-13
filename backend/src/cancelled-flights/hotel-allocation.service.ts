@@ -286,6 +286,20 @@ export class HotelAllocationService {
     return booking;
   }
 
+  /** The passport country most PNRs share; used for the flight-wide hotel search. */
+  private majorityResidency(
+    bookings: Array<Pick<BookingEntity, "residency">>,
+  ): string | null {
+    const counts = new Map<string, number>();
+    for (const { residency } of bookings) {
+      counts.set(residency, (counts.get(residency) ?? 0) + 1);
+    }
+    return (
+      [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] ??
+      null
+    );
+  }
+
   private occupancyKey(occupancy: RoomOccupancy): string {
     const ages = (occupancy.childrenAges ?? []).join("-");
     return `${occupancy.adults}_${occupancy.children}_${ages}`;
@@ -916,7 +930,7 @@ export class HotelAllocationService {
           failedBookings: results.length,
           totalRooms: 0,
           totalBuyingPrice: 0,
-          currency: "EUR",
+          currency: config.currency,
         },
         allocations: results,
       };
@@ -953,6 +967,7 @@ export class HotelAllocationService {
         uniqueOccupancies,
         requestId,
         requestLogger,
+        { residency: this.majorityResidency(eligibleBookings) },
       );
     } catch (error: any) {
       requestLogger.error("Hotel availability search failed", {
@@ -1114,7 +1129,7 @@ export class HotelAllocationService {
     );
     const currency =
       allocated.find((item) => item.rooms?.[0]?.currency)?.rooms?.[0]
-        ?.currency ?? "EUR";
+        ?.currency ?? config.currency;
 
     const summaryLog =
       failed > 0
@@ -1504,6 +1519,7 @@ export class HotelAllocationService {
         uniqueOccupancies,
         requestId,
         requestLogger,
+        { residency: this.majorityResidency(plans.map(({ booking }) => booking)) },
       );
     } catch (error: any) {
       requestLogger.error("Hotel availability search failed", {
@@ -1866,7 +1882,9 @@ export class HotelAllocationService {
     for (const room of rooms) {
       let check: HotelRateCheck;
       try {
-        check = await this.hotelProvider.checkRate(room.rateKey, requestId);
+        check = await this.hotelProvider.checkRate(room.rateKey, requestId, {
+          residency: booking.residency,
+        });
       } catch (error: any) {
         return fail(
           HotelBookingFailureCode.RATE_CHECK_FAILED,
@@ -2709,7 +2727,7 @@ export class HotelAllocationService {
       platformFeePercentage,
       totalPlatformFee: Number(flight.totalPlatformFee ?? 0),
       totalPrice: Number(flight.totalPrice ?? 0),
-      currency: flight.airline?.currency ?? "EUR",
+      currency: config.currency,
     };
   }
 
@@ -2751,14 +2769,20 @@ export class HotelAllocationService {
     requestLogger: Logger,
   ): Promise<Omit<HotelRateCheck, "buyingPrice">> {
     await this.requireAirlineFlight(flightId, user, requestLogger);
-    await this.requireBookingForFlight(bookingId, flightId, requestLogger);
+    const booking = await this.requireBookingForFlight(
+      bookingId,
+      flightId,
+      requestLogger,
+    );
     requestLogger.info("Checking rate with hotel supplier", {
       context: this.context,
       flightId,
       bookingId,
     });
     const { buyingPrice, bookingKey, ...check } =
-      await this.hotelProvider.checkRate(rateKey, requestId);
+      await this.hotelProvider.checkRate(rateKey, requestId, {
+        residency: booking.residency,
+      });
     return check;
   }
 

@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { Transform } from "class-transformer";
 import {
   IsArray,
   IsEmail,
@@ -10,6 +11,10 @@ import {
   Min,
 } from "class-validator";
 import { SpecialNote, TravelClass } from "../entities/enums";
+import {
+  IsPassportCountry,
+  normalizeCountryCode,
+} from "../passport-country";
 
 export class CreateBookingDto {
   @ApiProperty({ example: "ABC123" })
@@ -35,6 +40,16 @@ export class CreateBookingDto {
   @IsNotEmpty()
   @IsString()
   phone!: string;
+
+  @ApiProperty({
+    example: "US",
+    description: "Passport country (ISO 3166-1 alpha-2)",
+  })
+  @Transform(({ value }) =>
+    typeof value === "string" ? (normalizeCountryCode(value) ?? value) : value,
+  )
+  @IsPassportCountry()
+  residency!: string;
 
   @ApiProperty({ enum: TravelClass })
   @IsEnum(TravelClass)

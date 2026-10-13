@@ -35,6 +35,10 @@ export class BookingEntity {
   @Column({ name: "phone", type: "varchar", length: 30 })
   phone!: string;
 
+  /** Passport country, ISO 3166-1 alpha-2 (e.g. "US"); suppliers price by it. */
+  @Column({ name: "residency", type: "varchar", length: 2 })
+  residency!: string;
+
   @Column({ name: "travel_class", type: "varchar", length: 20 })
   travelClass!: TravelClass;
 

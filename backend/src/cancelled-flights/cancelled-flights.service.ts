@@ -8,6 +8,7 @@ import {
 } from "@nestjs/common";
 import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
 import { CancelledFlightsRepository } from "./cancelled-flights.repository";
+import { toCountryCode } from "./passport-country";
 import { BookingEntity } from "./entities/booking.entity";
 import {
   CancellationReason,
@@ -96,6 +97,7 @@ export class CancelledFlightsService {
       lastName: booking.lastName,
       email: booking.email,
       phone: booking.phone,
+      residency: booking.residency,
       travelClass: booking.travelClass,
       adults: booking.adults,
       children: booking.children,
@@ -282,6 +284,7 @@ export class CancelledFlightsService {
         lastName: dto.lastName,
         email: dto.email,
         phone: dto.phone,
+        residency: dto.residency,
         travelClass: dto.travelClass,
         adults: dto.adults,
         children: dto.children,
@@ -368,6 +371,11 @@ export class CancelledFlightsService {
     // Parse the CSV file
     const csv = file.buffer.toString("utf-8");
     const rows = this.parseCsvRows(csv);
+    if (!/passport/i.test(String(rows[0]?.[5] ?? ""))) {
+      throw new BadRequestException(
+        "The 6th column must be Passport Country (after Phone). Columns: PNR, First Name, Last Name, Email, Phone, Passport Country, Travel Class, Adults, Children, Special Notes, Additional Notes.",
+      );
+    }
     const pnrSet = new Set<string>();
 
     const bookings: {
@@ -377,6 +385,7 @@ export class CancelledFlightsService {
       lastName: string;
       email: string;
       phone: string;
+      residency: string;
       travelClass: TravelClass;
       adults: number;
       children: number;
@@ -384,6 +393,7 @@ export class CancelledFlightsService {
       additionalNotes: string | null;
     }[] = [];
     const errorsList: { row: number; errors: string[] }[] = [];
+    const badResidencyRows: string[] = [];
     let validCount = 0;
     let errorCount = 0;
 
@@ -401,11 +411,13 @@ export class CancelledFlightsService {
       const lastName = getValue(2);
       const email = getValue(3);
       const phone = getValue(4);
-      const travelClassRaw = getValue(5).toLowerCase();
-      const adultsRaw = parseInt(getValue(6), 10);
-      const childrenRaw = parseInt(getValue(7), 10);
-      const specialNotesRaw = getValue(8);
-      const additionalNotes = getValue(9) || null;
+      const residencyRaw = getValue(5);
+      const residency = toCountryCode(residencyRaw);
+      const travelClassRaw = getValue(6).toLowerCase();
+      const adultsRaw = parseInt(getValue(7), 10);
+      const childrenRaw = parseInt(getValue(8), 10);
+      const specialNotesRaw = getValue(9);
+      const additionalNotes = getValue(10) || null;
 
       const errors: string[] = [];
 
@@ -422,6 +434,11 @@ export class CancelledFlightsService {
         errors.push("Email is invalid");
       }
       if (!phone) errors.push("Phone is required");
+      if (!residency) {
+        badResidencyRows.push(
+          residencyRaw ? `${rowNumber} ('${residencyRaw}')` : `${rowNumber} (empty)`,
+        );
+      }
       const validTravelClasses = Object.values(TravelClass) as string[];
       if (!validTravelClasses.includes(travelClassRaw)) {
         errors.push(
@@ -466,6 +483,7 @@ export class CancelledFlightsService {
         lastName,
         email,
         phone,
+        residency: residency ?? "",
         travelClass: travelClassRaw as TravelClass,
         adults: adultsRaw,
         children: childrenRaw,
@@ -473,6 +491,17 @@ export class CancelledFlightsService {
         additionalNotes,
       });
     });
+
+    if (badResidencyRows.length > 0) {
+      requestLogger.warn("Rejected booking import: rows without passport country", {
+        context: this.context,
+        flightId,
+        rows: badResidencyRows,
+      });
+      throw new BadRequestException(
+        `Passport Country is missing or not a recognised country in row(s) ${badResidencyRows.join(", ")}. Use a country name or 2-letter code (e.g. United States or US). Nothing was imported; fix the file and upload it again.`,
+      );
+    }
 
     // Check for duplicate PNRs in the database
     const existingBookings =
@@ -510,6 +539,7 @@ export class CancelledFlightsService {
       lastName: string;
       email: string;
       phone: string;
+      residency: string;
       travelClass: TravelClass;
       adults: number;
       children: number;
@@ -522,6 +552,7 @@ export class CancelledFlightsService {
       lastName: b.lastName,
       email: b.email,
       phone: b.phone,
+      residency: b.residency,
       travelClass: b.travelClass,
       adults: b.adults,
       children: b.children,
@@ -600,6 +631,7 @@ export class CancelledFlightsService {
         ...(dto.lastName !== undefined && { lastName: dto.lastName }),
         ...(dto.email !== undefined && { email: dto.email }),
         ...(dto.phone !== undefined && { phone: dto.phone }),
+        ...(dto.residency !== undefined && { residency: dto.residency }),
         ...(dto.travelClass !== undefined && {
           travelClass: dto.travelClass,
         }),
@@ -1151,6 +1183,7 @@ export class CancelledFlightsService {
           lastName: h.booking.lastName,
           email: h.booking.email,
           phone: h.booking.phone,
+          residency: h.booking.residency,
           travelClass: h.booking.travelClass,
           adults: h.booking.adults,
           children: h.booking.children,
@@ -1557,7 +1590,7 @@ export class CancelledFlightsService {
     const html = buildHotelAllocationReportHtml({
       invoiceNumber,
       invoiceDate,
-      currency: flight.airline.currency,
+      currency: config.currency,
       airline: {
         name: flight.airline.name,
         code: flight.airline.code,

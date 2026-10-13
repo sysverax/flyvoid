@@ -574,6 +574,7 @@ export class HotelBookingsService {
         lastName: hotelBooking.booking.lastName,
         email: hotelBooking.booking.email,
         phone: hotelBooking.booking.phone,
+        residency: hotelBooking.booking.residency,
         travelClass: hotelBooking.booking.travelClass,
         adults: hotelBooking.booking.adults,
         children: hotelBooking.booking.children,

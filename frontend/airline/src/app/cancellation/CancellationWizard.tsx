@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef, Fragment } from "react";
+import { countries } from "countries-list";
 import {
   X,
   Plus,
@@ -153,6 +154,7 @@ interface ManualBooking {
   lastName: string;
   email: string;
   phone: string;
+  residency: string;
   travelClass: string;
   adults: number;
   children: number;
@@ -201,6 +203,13 @@ function formatDateString(dateStr: string): string {
   const year = date.getFullYear();
   return `${month} ${day}, ${year}`;
 }
+
+const COUNTRY_OPTIONS = Object.entries(countries)
+  .map(([code, c]) => ({ value: code, label: `${c.name} (${code})` }))
+  .sort((a, b) => a.label.localeCompare(b.label));
+
+const countryName = (code?: string | null): string =>
+  code ? (countries[code as keyof typeof countries]?.name ?? code) : "";
 
 const HOTEL_BOOKING_STATUS_LABEL: Record<string, string> = {
   confirmed: "Confirmed",
@@ -518,6 +527,7 @@ export default function CancellationWizard({
   const [bookingAdults, setBookingAdults] = useState("1");
   const [bookingChildren, setBookingChildren] = useState("0");
   const [bookingNotesText, setBookingNotesText] = useState("");
+  const [bookingResidency, setBookingResidency] = useState("");
   const [selectedNoteTags, setSelectedNoteTags] = useState<string[]>([]);
 
   // Step 2 Validation & Error State (matching admin invite modal)
@@ -527,6 +537,7 @@ export default function CancellationWizard({
     | "lastName"
     | "email"
     | "phone"
+    | "residency"
     | "travelClass"
     | "adults"
     | "children";
@@ -559,6 +570,9 @@ export default function CancellationWizard({
         if (!/^[\+]?[\d\s\-\(\)]{7,20}$/.test(v))
           return "Please enter a valid phone number";
         return "";
+      case "residency":
+        if (!v) return "Passport Country is required";
+        return "";
       case "travelClass":
         if (!v) return "Travel Class is required";
         return "";
@@ -587,6 +601,8 @@ export default function CancellationWizard({
             ? bookingLastName
             : field === "email"
               ? bookingEmail
+              : field === "residency"
+                ? bookingResidency
               : field === "travelClass"
                 ? bookingClass
                 : field === "adults"
@@ -636,6 +652,13 @@ export default function CancellationWizard({
       const msg = validateStep2("phone", val);
       setStep2Errors((prev) => ({ ...prev, phone: msg || undefined }));
     }
+  };
+
+  const handleBookingResidencyChange = (val: string) => {
+    setBookingResidency(val);
+    setStep2Touched((prev) => ({ ...prev, residency: true }));
+    const msg = validateStep2("residency", val);
+    setStep2Errors((prev) => ({ ...prev, residency: msg || undefined }));
   };
 
   const handleBookingClassChange = (val: string) => {
@@ -707,6 +730,7 @@ export default function CancellationWizard({
           lastName: b.lastName,
           email: b.email,
           phone: b.phone,
+          residency: b.residency,
           travelClass: ENUM_TO_TRAVEL_CLASS[b.travelClass] || "Economy",
           adults: b.adults || 1,
           children: b.children || 0,
@@ -1215,6 +1239,7 @@ export default function CancellationWizard({
         lastName: "Admin",
         email: "ops@summitair.com",
         phone: "+1 555 020 0000",
+        residency: "US",
         travelClass: "Economy",
         adults: 1,
         children: 0,
@@ -1228,6 +1253,7 @@ export default function CancellationWizard({
         lastName: "Smith",
         email: "jane.smith@email.com",
         phone: "+1 555 999 1122",
+        residency: "GB",
         travelClass: "Business",
         adults: 2,
         children: 1,
@@ -1254,6 +1280,7 @@ export default function CancellationWizard({
     setBookingLastName(booking.lastName || "");
     setBookingEmail(booking.email || "");
     setBookingPhone(booking.phone || "");
+    setBookingResidency(booking.residency || "");
     setBookingClass(booking.travelClass || "Economy");
     setBookingAdults(String(booking.adults ?? 1));
     setBookingChildren(String(booking.children ?? 0));
@@ -1338,6 +1365,7 @@ export default function CancellationWizard({
       "lastName",
       "email",
       "phone",
+      "residency",
       "travelClass",
       "adults",
       "children",
@@ -1348,6 +1376,7 @@ export default function CancellationWizard({
       lastName: bookingLastName,
       email: bookingEmail,
       phone: bookingPhone,
+      residency: bookingResidency,
       travelClass: bookingClass,
       adults: bookingAdults,
       children: bookingChildren,
@@ -1365,6 +1394,7 @@ export default function CancellationWizard({
         lastName: true,
         email: true,
         phone: true,
+        residency: true,
         travelClass: true,
         adults: true,
         children: true,
@@ -1387,6 +1417,7 @@ export default function CancellationWizard({
       lastName: bookingLastName.trim(),
       email: bookingEmail.trim(),
       phone: bookingPhone.trim(),
+      residency: bookingResidency,
       travelClass: mappedTravelClass,
       adults: Number(bookingAdults) || 1,
       children: Number(bookingChildren) || 0,
@@ -1415,6 +1446,7 @@ export default function CancellationWizard({
                     lastName: bookingLastName,
                     email: bookingEmail,
                     phone: bookingPhone,
+                    residency: bookingResidency,
                     travelClass: bookingClass,
                     adults: Number(bookingAdults) || 1,
                     children: Number(bookingChildren) || 0,
@@ -1440,6 +1472,7 @@ export default function CancellationWizard({
             lastName: bookingLastName,
             email: bookingEmail,
             phone: bookingPhone,
+            residency: bookingResidency,
             travelClass: bookingClass,
             adults: Number(bookingAdults) || 1,
             children: Number(bookingChildren) || 0,
@@ -1457,6 +1490,7 @@ export default function CancellationWizard({
       setBookingLastName("");
       setBookingEmail("");
       setBookingPhone("");
+      setBookingResidency("");
       setBookingClass("Economy");
       setBookingAdults("1");
       setBookingChildren("0");
@@ -2135,6 +2169,13 @@ export default function CancellationWizard({
                       <p className="text-[13px] text-[#9CA3AF]">
                         Supports .csv • Max 10MB
                       </p>
+                      <p className="text-[12px] text-[#9CA3AF] mt-2 max-w-[460px]">
+                        Columns: PNR, First Name, Last Name, Email, Phone,
+                        Passport Country (name or code, e.g. United States
+                        or US), Travel Class, Adults, Children, Special
+                        Notes, Additional Notes. Every row needs a Passport
+                        Country.
+                      </p>
                     </>
                   )}
                 </div>
@@ -2185,6 +2226,7 @@ export default function CancellationWizard({
                         setBookingLastName("");
                         setBookingEmail("");
                         setBookingPhone("");
+                        setBookingResidency("");
                         setBookingClass("Economy");
                         setBookingAdults("1");
                         setBookingChildren("0");
@@ -2321,6 +2363,32 @@ export default function CancellationWizard({
                     {step2Errors.phone && step2Touched.phone && (
                       <p className="step2-field-error mt-0.5 text-xs text-red-500">
                         {step2Errors.phone}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[15px] font-medium text-[#1F2937]">
+                      Passport Country *
+                    </label>
+                    <Dropdown
+                      value={bookingResidency}
+                      onChange={handleBookingResidencyChange}
+                      options={COUNTRY_OPTIONS}
+                      placeholder="Select country"
+                      searchable
+                      maxListHeightClass="max-h-64"
+                      triggerWidthClass="w-full"
+                      widthClass="w-full"
+                      bgClass="bg-white"
+                      heightClass="h-[42px]"
+                      error={
+                        !!(step2Errors.residency && step2Touched.residency)
+                      }
+                    />
+                    {step2Errors.residency && step2Touched.residency && (
+                      <p className="step2-field-error mt-0.5 text-xs text-red-500">
+                        {step2Errors.residency}
                       </p>
                     )}
                   </div>
@@ -2605,6 +2673,9 @@ export default function CancellationWizard({
                           </TableHead>
                           <TableHead className="min-w-[160px]">Email</TableHead>
                           <TableHead className="min-w-[120px]">Phone</TableHead>
+                          <TableHead className="min-w-[130px]">
+                            Passport Country
+                          </TableHead>
                           <TableHead className="min-w-[80px] text-center">
                             Adults
                           </TableHead>
@@ -2640,6 +2711,9 @@ export default function CancellationWizard({
                               </TableCell>
                               <TableCell className="text-gray-550">
                                 {b.phone}
+                              </TableCell>
+                              <TableCell className="text-gray-550">
+                                {countryName(b.residency)}
                               </TableCell>
                               <TableCell>{b.adults}</TableCell>
                               <TableCell>{b.children}</TableCell>
@@ -2901,6 +2975,9 @@ export default function CancellationWizard({
                     </TableHead>
                     <TableHead className="min-w-[160px]">Email</TableHead>
                     <TableHead className="min-w-[130px]">Phone</TableHead>
+                    <TableHead className="min-w-[130px]">
+                      Passport Country
+                    </TableHead>
                     <TableHead className="min-w-[80px]">Adults</TableHead>
                     <TableHead className="min-w-[80px]">Children</TableHead>
                     <TableHead className="min-w-[100px]">Class</TableHead>
@@ -2942,6 +3019,9 @@ export default function CancellationWizard({
                         </TableCell>
                         <TableCell className="text-gray-550">
                           {b.phone || "—"}
+                        </TableCell>
+                        <TableCell className="text-gray-550">
+                          {countryName(b.residency)}
                         </TableCell>
                         <TableCell>{b.adults}</TableCell>
                         <TableCell>{b.children}</TableCell>
