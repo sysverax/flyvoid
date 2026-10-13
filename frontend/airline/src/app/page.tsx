@@ -452,7 +452,7 @@ export default function DashboardPage() {
               Recent Cancellations
             </h2>
             <Link
-              href="/cancellation"
+              href="/cancelled-flight"
               className="text-sm font-semibold text-[#0F2757] hover:text-[#162259] transition-colors flex items-center gap-1 group"
             >
               View all

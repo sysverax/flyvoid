@@ -61,7 +61,7 @@ function getModuleKey(path: string): string {
   if (cleanPath === "" || cleanPath === "/") return "dashboard";
   if (cleanPath.startsWith("/airports")) return "airports";
   if (cleanPath.startsWith("/wallet")) return "wallet";
-  if (cleanPath.startsWith("/cancellation")) return "cancelledFlights";
+  if (cleanPath.startsWith("/cancelled-flight") || cleanPath.startsWith("/cancellation")) return "cancelledFlights";
   if (cleanPath.startsWith("/bookings")) return "bookings";
   if (cleanPath.startsWith("/payments")) return "payments";
   if (cleanPath.startsWith("/manage-users")) return "manageUsers";

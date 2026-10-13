@@ -37,7 +37,7 @@ const navItems = [
   {
     title: "Cancelled Flights",
     icon: "/icons/cancel.svg",
-    path: "/cancellation",
+    path: "/cancelled-flight",
     key: "cancellation",
   },
   { title: "Bookings", icon: Plane, path: "/bookings", key: "bookings" },
@@ -109,7 +109,8 @@ export function Sidebar() {
               const isActive =
                 item.key === "dashboard"
                   ? pathname === "/" || pathname === "/dashboard"
-                  : pathname === item.path;
+                  : pathname === item.path ||
+                    (item.path !== "/" && pathname?.startsWith(item.path + "/"));
               return (
                 <Link
                   key={item.path}

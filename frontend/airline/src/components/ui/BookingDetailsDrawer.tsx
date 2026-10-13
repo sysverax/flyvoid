@@ -65,7 +65,7 @@ export function BookingDetailsDrawer({
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
-  const modulePath = isBookingsTab ? "/bookings" : "/cancellation";
+  const modulePath = isBookingsTab ? "/bookings" : "/cancelled-flight";
   const canExport = hasPermission("export", modulePath);
   const canEdit = hasPermission("edit", modulePath);
 
