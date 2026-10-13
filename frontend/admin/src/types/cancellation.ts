@@ -19,9 +19,12 @@ export interface CancelledFlightItem {
   };
   cancellationDate: string;
   totalBookings?: number;
+  totalHotels?: number;
   totalPassengers?: number;
+  totalRooms?: number;
   totalCost?: number;
   totalPlatformFee?: number;
+  totalEarnings?: number;
   status: string;
 }
 
@@ -37,6 +40,8 @@ export interface GetCancelledFlightsQueryParams {
   status?: string;
   search?: string;
   airlineId?: number;
+  country?: string;
+  countryCode?: string;
   startDate?: string;
   endDate?: string;
 }
@@ -58,6 +63,8 @@ export interface GetCancelledFlightsSummaryQueryParams {
   airlineId?: number;
   status?: string;
   search?: string;
+  country?: string;
+  countryCode?: string;
   startDate?: string;
   endDate?: string;
 }

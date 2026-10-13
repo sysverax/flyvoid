@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { Search, Users, DollarSign, Loader2 } from "lucide-react";
+import { countries } from "countries-list";
 import {
   Table,
   TableHeader,
@@ -12,7 +13,7 @@ import {
   SortHeader,
 } from "../../components/ui/table";
 import { Pagination } from "@/src/components/ui/pagination";
-import { sortData } from "@/src/lib/utils";
+import { sortData, getCountryCode } from "@/src/lib/utils";
 import {
   CancelledFlightItem,
   CancelledFlightsPagination,
@@ -44,6 +45,7 @@ export default function CancellationPage() {
 
   // State for search and filters
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCountry, setSelectedCountry] = useState("All Countries");
   const [selectedStatus, setSelectedStatus] = useState("All Status");
   const [selectedAirline, setSelectedAirline] = useState("All Airlines");
   const [startDate, setStartDate] = useState("");
@@ -78,6 +80,13 @@ export default function CancellationPage() {
     return map;
   }, [airlines]);
 
+  const countryOptions = [
+    { value: "All Countries", label: "All Countries" },
+    ...Object.entries(countries)
+      .map(([_, c]) => ({ value: c.name, label: c.name }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
+  ];
+
   const statusOptions = [
     { value: "All Status", label: "All Status" },
     { value: "draft", label: "Draft" },
@@ -107,6 +116,10 @@ export default function CancellationPage() {
     if (searchQuery.trim()) {
       params.search = searchQuery.trim();
     }
+    if (selectedCountry && selectedCountry !== "All Countries") {
+      params.country = selectedCountry;
+      params.countryCode = getCountryCode(selectedCountry);
+    }
     if (selectedStatus && selectedStatus !== "All Status") {
       params.status = selectedStatus;
     }
@@ -123,13 +136,17 @@ export default function CancellationPage() {
       params.endDate = endDate;
     }
     return params;
-  }, [currentPage, resultsPerPage, searchQuery, selectedStatus, selectedAirline, startDate, endDate]);
+  }, [currentPage, resultsPerPage, searchQuery, selectedCountry, selectedStatus, selectedAirline, startDate, endDate]);
 
   const summaryQueryParams = useMemo<GetCancelledFlightsSummaryQueryParams>(() => {
     const params: GetCancelledFlightsSummaryQueryParams = {};
     if (searchQuery.trim()) {
       params.search = searchQuery.trim();
     }
+    if (selectedCountry && selectedCountry !== "All Countries") {
+      params.country = selectedCountry;
+      params.countryCode = getCountryCode(selectedCountry);
+    }
     if (selectedStatus && selectedStatus !== "All Status") {
       params.status = selectedStatus;
     }
@@ -146,7 +163,7 @@ export default function CancellationPage() {
       params.endDate = endDate;
     }
     return params;
-  }, [searchQuery, selectedStatus, selectedAirline, startDate, endDate]);
+  }, [searchQuery, selectedCountry, selectedStatus, selectedAirline, startDate, endDate]);
 
   // Fetch paginated flight list
   const fetchFlights = async () => {
@@ -185,6 +202,7 @@ export default function CancellationPage() {
   // Handler to clear all filters
   const handleClearAll = () => {
     setSearchQuery("");
+    setSelectedCountry("All Countries");
     setSelectedStatus("All Status");
     setSelectedAirline("All Airlines");
     setStartDate("");
@@ -229,12 +247,16 @@ export default function CancellationPage() {
 
   const getAirlineDisplay = (flight: CancelledFlightItem) => {
     if (flight.airline) {
-      return { name: flight.airline.name, code: flight.airline.code };
+      const code =
+        flight.airline.code ||
+        (flight.airline.id ? airlinesMap[flight.airline.id]?.code : undefined) ||
+        "";
+      return { name: flight.airline.name, code };
     }
     if (flight.airlineId && airlinesMap[flight.airlineId]) {
       return airlinesMap[flight.airlineId];
     }
-    return { name: "N/A", code: "N/A" };
+    return { name: "N/A", code: "" };
   };
 
   const statsConfig = [
@@ -253,7 +275,7 @@ export default function CancellationPage() {
       icon: <Users className="h-5 w-5" />,
     },
     {
-      title: "Platform Revenue",
+      title: "Platform Earnings",
       value: summary
         ? `$${summary.totalPlatformFee.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
         : "$0",
@@ -274,30 +296,6 @@ export default function CancellationPage() {
         </p>
       </div>
 
-      {/* Stats Cards Grid */}
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-3 mb-8">
-        {statsConfig.map((card, idx) => (
-          <div
-            key={idx}
-            className="flex items-start justify-between rounded-[12px] border border-[#E5E7EB] bg-white p-3.5 relative -top-0.5"
-          >
-            <div>
-              <p className="text-[16px] text-[#6B7280]">{card.title}</p>
-              <h3 className="text-[24px] font-semibold text-[#1F2937] -ml-0.5">
-                {card.value}
-              </h3>
-              <p className="text-[14px] text-[#6B7280] mt-2.5">
-                {card.description}
-              </p>
-            </div>
-
-            <div className="rounded-[8px] bg-[#F3F4F6] p-2.5 text-[#0F2757] flex items-center justify-center h-11 w-11 shrink-0">
-              {card.icon}
-            </div>
-          </div>
-        ))}
-      </div>
-
       {/* Filters Box */}
       <div className="mb-6">
         <FiltersCard
@@ -306,19 +304,21 @@ export default function CancellationPage() {
             setSearchQuery(q);
             setCurrentPage(1);
           }}
-          searchPlaceholder="Search flight number..."
+          searchPlaceholder="Search flights..."
           onClearFilters={handleClearAll}
         >
-          {/* Status Dropdown */}
+          {/* Country Dropdown */}
           <Dropdown
-            value={selectedStatus}
+            value={selectedCountry}
             onChange={(val) => {
-              setSelectedStatus(val);
+              setSelectedCountry(val);
               setCurrentPage(1);
             }}
-            options={statusOptions}
-            widthClass="w-44"
-            triggerWidthClass="w-[180px]"
+            options={countryOptions}
+            widthClass="w-full sm:w-44"
+            triggerWidthClass="w-full sm:w-44"
+            maxListHeightClass="max-h-[296px]"
+            searchable
           />
 
           {/* Airline Dropdown */}
@@ -330,6 +330,18 @@ export default function CancellationPage() {
             }}
             options={airlineOptions}
             widthClass="w-60"
+            triggerWidthClass="w-[180px]"
+          />
+
+          {/* Status Dropdown */}
+          <Dropdown
+            value={selectedStatus}
+            onChange={(val) => {
+              setSelectedStatus(val);
+              setCurrentPage(1);
+            }}
+            options={statusOptions}
+            widthClass="w-44"
             triggerWidthClass="w-[180px]"
           />
 
@@ -360,11 +372,44 @@ export default function CancellationPage() {
         </FiltersCard>
       </div>
 
+      {/* Stats Cards Grid */}
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-3 mb-6">
+        {statsConfig.map((card, idx) => (
+          <div
+            key={idx}
+            className="flex items-start justify-between rounded-[12px] border border-[#E5E7EB] bg-white p-3.5 relative -top-0.5"
+          >
+            <div>
+              <p className="text-[16px] text-[#6B7280]">{card.title}</p>
+              <h3 className="text-[24px] font-semibold text-[#1F2937] -ml-0.5">
+                {card.value}
+              </h3>
+              <p className="text-[14px] text-[#6B7280] mt-2.5">
+                {card.description}
+              </p>
+            </div>
+
+            <div className="rounded-[8px] bg-[#F3F4F6] p-2.5 text-[#0F2757] flex items-center justify-center h-11 w-11 shrink-0">
+              {card.icon}
+            </div>
+          </div>
+        ))}
+      </div>
+
       {/* Flights Table */}
       <div className="overflow-hidden rounded-[12px] border border-[#E5E7EB] bg-white mb-5 relative -left-[1px]">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="min-w-[80px]">
+                <SortHeader
+                  label="ID"
+                  field="id"
+                  sortField={sortField}
+                  sortOrder={sortOrder}
+                  onSort={handleSort}
+                />
+              </TableHead>
               <TableHead className="min-w-[100px]">
                 <SortHeader
                   label="Flight"
@@ -374,7 +419,7 @@ export default function CancellationPage() {
                   onSort={handleSort}
                 />
               </TableHead>
-              <TableHead className="min-w-[223px]">
+              <TableHead className="min-w-[200px]">
                 <SortHeader
                   label="Airline"
                   field="airline"
@@ -383,7 +428,7 @@ export default function CancellationPage() {
                   onSort={handleSort}
                 />
               </TableHead>
-              <TableHead className="min-w-[223px]">
+              <TableHead className="min-w-[140px]">
                 Route
               </TableHead>
               <TableHead className="min-w-[110px]">
@@ -395,7 +440,7 @@ export default function CancellationPage() {
                   onSort={handleSort}
                 />
               </TableHead>
-              <TableHead className="min-w-[120px]">
+              <TableHead className="min-w-[110px]">
                 <SortHeader
                   label="Passengers"
                   field="totalPassengers"
@@ -404,7 +449,25 @@ export default function CancellationPage() {
                   onSort={handleSort}
                 />
               </TableHead>
-              <TableHead className="min-w-[120px] relative -left-1">
+              <TableHead className="min-w-[100px]">
+                <SortHeader
+                  label="Hotels"
+                  field="totalHotels"
+                  sortField={sortField}
+                  sortOrder={sortOrder}
+                  onSort={handleSort}
+                />
+              </TableHead>
+              <TableHead className="min-w-[100px]">
+                <SortHeader
+                  label="Rooms"
+                  field="totalRooms"
+                  sortField={sortField}
+                  sortOrder={sortOrder}
+                  onSort={handleSort}
+                />
+              </TableHead>
+              <TableHead className="min-w-[110px] relative -left-1">
                 <SortHeader
                   label="Cost"
                   field="totalCost"
@@ -413,10 +476,10 @@ export default function CancellationPage() {
                   onSort={handleSort}
                 />
               </TableHead>
-              <TableHead className="min-w-[120px] relative -left-1">
+              <TableHead className="min-w-[110px] relative -left-1">
                 <SortHeader
-                  label="Revenue"
-                  field="totalPlatformFee"
+                  label="Earnings"
+                  field="totalEarnings"
                   sortField={sortField}
                   sortOrder={sortOrder}
                   onSort={handleSort}
@@ -436,7 +499,7 @@ export default function CancellationPage() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={8} className="px-6 py-12 text-center text-gray-500 font-figtree">
+                <TableCell colSpan={11} className="px-6 py-12 text-center text-gray-500 font-figtree">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <svg className="animate-spin h-8 w-8 text-primary" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -448,7 +511,7 @@ export default function CancellationPage() {
               </TableRow>
             ) : sortedFlights.length === 0 ? (
               <TableEmptyState
-                colSpan={8}
+                colSpan={11}
                 icon={Search}
                 title="No flights found"
                 message="Try adjusting your filters or search query."
@@ -460,28 +523,25 @@ export default function CancellationPage() {
                 const arrCode = flight.arrivalAirport?.code || "N/A";
                 const routeStr = `${depCode} → ${arrCode}`;
                 const passengersCount = flight.totalPassengers ?? 0;
-                const costAmount = flight.totalCost ?? 0;
-                const revenueDisplay =
-                  flight.totalPlatformFee !== undefined && flight.totalPlatformFee !== null
-                    ? `$${flight.totalPlatformFee.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
+                const hotelsCount = flight.totalHotels ?? "N/A";
+                const roomsCount = flight.totalRooms ?? "N/A";
+                const costAmount = flight.totalCost ?? "N/A";
+                const earningsValue = flight.totalEarnings;
+                const earningsDisplay =
+                  earningsValue !== undefined && earningsValue !== null
+                    ? `$${earningsValue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
                     : "N/A";
 
                 return (
                   <TableRow key={flight.id}>
                     <TableCell className="font-mono text-[#1F2937] font-medium">
+                      {flight.id}
+                    </TableCell>
+                    <TableCell className="font-mono text-[#1F2937] font-medium">
                       {flight.flightNumber}
                     </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <span className="font-medium text-[#1F2937]">
-                          {airlineInfo.name}
-                        </span>
-                        {airlineInfo.code !== "N/A" && (
-                          <span className="rounded-[4px] bg-[#E5E7EB] text-[#1F2937] font-inter text-[12px] px-2.5 py-1.5 font-medium relative left-1">
-                            {airlineInfo.code}
-                          </span>
-                        )}
-                      </div>
+                    <TableCell className="font-medium text-[#1F2937]">
+                      {airlineInfo.name}
                     </TableCell>
                     <TableCell className="text-[#6B7280]">
                       {routeStr}
@@ -492,11 +552,17 @@ export default function CancellationPage() {
                     <TableCell className="text-[#1F2937]">
                       {passengersCount}
                     </TableCell>
+                    <TableCell className="text-[#1F2937]">
+                      {hotelsCount}
+                    </TableCell>
+                    <TableCell className="text-[#1F2937]">
+                      {roomsCount}
+                    </TableCell>
                     <TableCell className="text-[#6B7280] relative -left-0.5">
                       ${costAmount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                     </TableCell>
-                    <TableCell className={flight.totalPlatformFee !== undefined && flight.totalPlatformFee !== null ? "!text-[#10B981] font-semibold" : "text-[#6B7280]"}>
-                      {revenueDisplay}
+                    <TableCell className={earningsValue !== undefined && earningsValue !== null ? "!text-[#10B981] font-semibold" : "text-[#6B7280]"}>
+                      {earningsDisplay}
                     </TableCell>
                     <TableCell>
                       <StatusBadge status={flight.status} />

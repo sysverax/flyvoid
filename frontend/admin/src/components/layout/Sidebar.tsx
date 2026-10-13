@@ -24,6 +24,7 @@ const navItems = [
   { title: "Airlines", icon: Plane, path: "/airlines", key: "airlines" },
   { title: "Airports", icon: "/icons/airport.svg", path: "/airports", key: "airports" },
   { title: "Cancellation", icon: "/icons/cancel.svg", path: "/cancellation", key: "cancellation" },
+  { title: "Bookings", icon: "/icons/booking.svg", path: "/bookings", key: "bookings" },
   { title: "Payments", icon: "/icons/payment.svg", path: "/payments", key: "payments" },
   { title: "Onboarding", icon: "/icons/onboarding.svg", path: "/onboarding", key: "onboarding" },
   { title: "Audit Logs", icon: FileText, path: "/audit-logs", key: "auditLogs" },
@@ -82,7 +83,7 @@ export function Sidebar() {
       <div className="flex flex-1 flex-col justify-between pb-0">
         {/* Navigation */}
         <nav className="scrollbar-hide flex-1 overflow-y-auto">
-          <div className="flex w-full flex-col items-start gap-3">
+          <div className="flex w-full flex-col items-start gap-2.5">
             {navItems.map((item) => {
               if (!hasPermission("view", item.path)) return null;
 
