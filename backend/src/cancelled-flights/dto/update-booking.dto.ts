@@ -1,4 +1,5 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
+import { Transform } from "class-transformer";
 import {
   IsArray,
   IsEmail,
@@ -11,6 +12,10 @@ import {
   ValidateIf,
 } from "class-validator";
 import { SpecialNote, TravelClass } from "../entities/enums";
+import {
+  IsPassportCountry,
+  normalizeCountryCode,
+} from "../passport-country";
 
 export class UpdateBookingDto {
   @ApiPropertyOptional({ example: "ABC123" })
@@ -42,6 +47,18 @@ export class UpdateBookingDto {
   @IsString()
   @IsNotEmpty()
   phone?: string;
+
+  @ApiPropertyOptional({
+    example: "US",
+    description: "Passport country (ISO 3166-1 alpha-2)",
+  })
+  // Can be changed but never cleared, so only an omitted field skips validation.
+  @ValidateIf((o: UpdateBookingDto) => o.residency !== undefined)
+  @Transform(({ value }) =>
+    typeof value === "string" ? (normalizeCountryCode(value) ?? value) : value,
+  )
+  @IsPassportCountry()
+  residency?: string;
 
   @ApiPropertyOptional({ enum: TravelClass })
   @IsOptional()

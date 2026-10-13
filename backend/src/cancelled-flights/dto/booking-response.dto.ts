@@ -23,6 +23,12 @@ export class ParentBookingResponseDto {
   @ApiProperty({ example: "+1234567890" })
   phone!: string;
 
+  @ApiProperty({
+    example: "US",
+    description: "Passport country (ISO 3166-1 alpha-2)",
+  })
+  residency!: string;
+
   @ApiProperty({ example: "Economy" })
   travelClass!: TravelClass;
 

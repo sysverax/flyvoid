@@ -8,6 +8,7 @@ import {
   DollarSign,
   TrendingUp,
   Award,
+  Wallet,
 } from "lucide-react";
 import { Dropdown } from "@/src/components/ui/Dropdown";
 import { cn } from "@/src/lib/utils";
@@ -16,12 +17,14 @@ import {
   ResponsiveContainer,
   BarChart,
   LineChart,
+  AreaChart,
   CartesianGrid,
   XAxis,
   YAxis,
   Tooltip,
   Bar,
   Line,
+  Area,
 } from "recharts";
 
 interface KpiCardData {
@@ -29,7 +32,7 @@ interface KpiCardData {
   value: string;
   trend?: string;
   trendType?: "up" | "down" | "neutral";
-  subtext: string;
+  subtext?: string;
   icon: React.ComponentType<{ className?: string }> | string;
 }
 
@@ -62,62 +65,12 @@ interface DashboardState {
 const PERIOD_DATA: Record<string, DashboardState> = {
   "Today": {
     kpiCards: [
-      {
-        title: "Total Airlines",
-        value: "24",
-        trend: "+4% vs yesterday",
-        trendType: "up",
-        subtext: "Today",
-        icon: Plane,
-      },
-      {
-        title: "Active Airlines",
-        value: "18",
-        trend: "75% of onboarded",
-        trendType: "neutral",
-        subtext: "Adoption & retention",
-        icon: Building2,
-      },
-      {
-        title: "Cancelled Flights",
-        value: "3",
-        trend: "-50% vs yesterday",
-        trendType: "down",
-        subtext: "Today",
-        icon: "/icons/plane.svg",
-      },
-      {
-        title: "Platform Revenue",
-        value: "$9.2K",
-        trend: "+12% vs yesterday",
-        trendType: "up",
-        subtext: "Platform fees only",
-        icon: DollarSign,
-      },
-      {
-        title: "Total Platform Revenue",
-        value: "$9.2K",
-        subtext: "Platform fees earned",
-        icon: DollarSign,
-      },
-      {
-        title: "Outstanding Platform Fees",
-        value: "$2.1K",
-        subtext: "Billed but unsettled",
-        icon: DollarSign,
-      },
-      {
-        title: "Total Credit Issued",
-        value: "$15.0K",
-        subtext: "Max outstanding fees allowed",
-        icon: DollarSign,
-      },
-      {
-        title: "Credit Utilization",
-        value: "14.0%",
-        subtext: "Outstanding vs credit limits",
-        icon: TrendingUp,
-      },
+      { title: "Total Revenue", value: "$320K", icon: DollarSign },
+      { title: "Total Cancelled Flights", value: "3", icon: "/icons/plane.svg" },
+      { title: "Total Earnings", value: "$16.5K", icon: TrendingUp },
+      { title: "Total Airlines", value: "5", icon: Plane },
+      { title: "Total Credit Issued", value: "$410K", icon: "/icons/card.svg" },
+      { title: "Total Wallet Balance", value: "$139.2K", icon: Wallet },
     ],
     cancellations: [
       { month: "02:00", value: 0 },
@@ -157,62 +110,12 @@ const PERIOD_DATA: Record<string, DashboardState> = {
   },
   "This Week": {
     kpiCards: [
-      {
-        title: "Total Airlines",
-        value: "24",
-        trend: "+8% vs last week",
-        trendType: "up",
-        subtext: "This Week",
-        icon: Plane,
-      },
-      {
-        title: "Active Airlines",
-        value: "19",
-        trend: "79% of onboarded",
-        trendType: "neutral",
-        subtext: "Adoption & retention",
-        icon: Building2,
-      },
-      {
-        title: "Cancelled Flights",
-        value: "18",
-        trend: "-12% vs last week",
-        trendType: "down",
-        subtext: "This Week",
-        icon: "/icons/plane.svg",
-      },
-      {
-        title: "Platform Revenue",
-        value: "$58.2K",
-        trend: "+15% vs last week",
-        trendType: "up",
-        subtext: "Platform fees only",
-        icon: DollarSign,
-      },
-      {
-        title: "Total Platform Revenue",
-        value: "$58.2K",
-        subtext: "Platform fees earned",
-        icon: DollarSign,
-      },
-      {
-        title: "Outstanding Platform Fees",
-        value: "$14.5K",
-        subtext: "Billed but unsettled",
-        icon: DollarSign,
-      },
-      {
-        title: "Total Credit Issued",
-        value: "$85.0K",
-        subtext: "Max outstanding fees allowed",
-        icon: DollarSign,
-      },
-      {
-        title: "Credit Utilization",
-        value: "17.1%",
-        subtext: "Outstanding vs credit limits",
-        icon: TrendingUp,
-      },
+      { title: "Total Revenue", value: "$2.1M", icon: DollarSign },
+      { title: "Total Cancelled Flights", value: "12", icon: "/icons/plane.svg" },
+      { title: "Total Earnings", value: "$112K", icon: TrendingUp },
+      { title: "Total Airlines", value: "5", icon: Plane },
+      { title: "Total Credit Issued", value: "$410K", icon: "/icons/card.svg" },
+      { title: "Total Wallet Balance", value: "$139.2K", icon: Wallet },
     ],
     cancellations: [
       { month: "Mon", value: 2 },
@@ -242,62 +145,12 @@ const PERIOD_DATA: Record<string, DashboardState> = {
   },
   "This Month": {
     kpiCards: [
-      {
-        title: "Total Airlines",
-        value: "24",
-        trend: "+12% vs prior period",
-        trendType: "up",
-        subtext: "This Month",
-        icon: Plane,
-      },
-      {
-        title: "Active Airlines",
-        value: "21",
-        trend: "0% 60% of onboarded",
-        trendType: "neutral",
-        subtext: "Adoption & retention",
-        icon: Building2,
-      },
-      {
-        title: "Cancelled Flights",
-        value: "84",
-        trend: "-36% vs prior period",
-        trendType: "down",
-        subtext: "This Month",
-        icon: "/icons/plane.svg",
-      },
-      {
-        title: "Platform Revenue",
-        value: "$234K",
-        trend: "18% vs prior period",
-        trendType: "up",
-        subtext: "Platform fees only",
-        icon: DollarSign,
-      },
-      {
-        title: "Total Platform Revenue",
-        value: "$476K",
-        subtext: "Platform fees earned",
-        icon: DollarSign,
-      },
-      {
-        title: "Outstanding Platform Fees",
-        value: "$105K",
-        subtext: "Billed but unsettled",
-        icon: DollarSign,
-      },
-      {
-        title: "Total Credit Issued",
-        value: "$410K",
-        subtext: "Max outstanding fees allowed",
-        icon: DollarSign,
-      },
-      {
-        title: "Credit Utilization",
-        value: "25.6%",
-        subtext: "Outstanding vs credit limits",
-        icon: TrendingUp,
-      },
+      { title: "Total Revenue", value: "$9.5M", icon: DollarSign },
+      { title: "Total Cancelled Flights", value: "47", icon: "/icons/plane.svg" },
+      { title: "Total Earnings", value: "$476K", icon: TrendingUp },
+      { title: "Total Airlines", value: "5", icon: Plane },
+      { title: "Total Credit Issued", value: "$410K", icon: "/icons/card.svg" },
+      { title: "Total Wallet Balance", value: "$139.2K", icon: Wallet },
     ],
     cancellations: [
       { month: "Jan", value: 46 },
@@ -337,62 +190,12 @@ const PERIOD_DATA: Record<string, DashboardState> = {
   },
   "This Year": {
     kpiCards: [
-      {
-        title: "Total Airlines",
-        value: "28",
-        trend: "+40% vs prior period",
-        trendType: "up",
-        subtext: "This Year",
-        icon: Plane,
-      },
-      {
-        title: "Active Airlines",
-        value: "25",
-        trend: "72% of onboarded",
-        trendType: "neutral",
-        subtext: "Adoption & retention",
-        icon: Building2,
-      },
-      {
-        title: "Cancelled Flights",
-        value: "920",
-        trend: "-12% vs prior period",
-        trendType: "down",
-        subtext: "This Year",
-        icon: "/icons/plane.svg",
-      },
-      {
-        title: "Platform Revenue",
-        value: "$2.4M",
-        trend: "32% vs prior period",
-        trendType: "up",
-        subtext: "Platform fees only",
-        icon: DollarSign,
-      },
-      {
-        title: "Total Platform Revenue",
-        value: "$2.4M",
-        subtext: "Platform fees earned",
-        icon: DollarSign,
-      },
-      {
-        title: "Outstanding Platform Fees",
-        value: "$520K",
-        subtext: "Billed but unsettled",
-        icon: DollarSign,
-      },
-      {
-        title: "Total Credit Issued",
-        value: "$2.1M",
-        subtext: "Max outstanding fees allowed",
-        icon: DollarSign,
-      },
-      {
-        title: "Credit Utilization",
-        value: "24.8%",
-        subtext: "Outstanding vs credit limits",
-        icon: TrendingUp,
-      },
+      { title: "Total Revenue", value: "$38.2M", icon: DollarSign },
+      { title: "Total Cancelled Flights", value: "184", icon: "/icons/plane.svg" },
+      { title: "Total Earnings", value: "$1.9M", icon: TrendingUp },
+      { title: "Total Airlines", value: "5", icon: Plane },
+      { title: "Total Credit Issued", value: "$410K", icon: "/icons/card.svg" },
+      { title: "Total Wallet Balance", value: "$139.2K", icon: Wallet },
     ],
     cancellations: [
       { month: "Jan", value: 50 },
@@ -432,62 +235,12 @@ const PERIOD_DATA: Record<string, DashboardState> = {
   },
   "All": {
     kpiCards: [
-      {
-        title: "Total Airlines",
-        value: "32",
-        trend: "+15% vs prior year",
-        trendType: "up",
-        subtext: "Overall",
-        icon: Plane,
-      },
-      {
-        title: "Active Airlines",
-        value: "28",
-        trend: "87% of onboarded",
-        trendType: "neutral",
-        subtext: "Adoption & retention",
-        icon: Building2,
-      },
-      {
-        title: "Cancelled Flights",
-        value: "2,450",
-        trend: "-18% vs prior year",
-        trendType: "down",
-        subtext: "Overall",
-        icon: "/icons/plane.svg",
-      },
-      {
-        title: "Platform Revenue",
-        value: "$8.4M",
-        trend: "+35% vs prior year",
-        trendType: "up",
-        subtext: "Platform fees only",
-        icon: DollarSign,
-      },
-      {
-        title: "Total Platform Revenue",
-        value: "$8.4M",
-        subtext: "Platform fees earned",
-        icon: DollarSign,
-      },
-      {
-        title: "Outstanding Platform Fees",
-        value: "$1.8M",
-        subtext: "Billed but unsettled",
-        icon: DollarSign,
-      },
-      {
-        title: "Total Credit Issued",
-        value: "$7.2M",
-        subtext: "Max outstanding fees allowed",
-        icon: DollarSign,
-      },
-      {
-        title: "Credit Utilization",
-        value: "25.0%",
-        subtext: "Outstanding vs credit limits",
-        icon: TrendingUp,
-      },
+      { title: "Total Revenue", value: "$95.4M", icon: DollarSign },
+      { title: "Total Cancelled Flights", value: "462", icon: "/icons/plane.svg" },
+      { title: "Total Earnings", value: "$4.8M", icon: TrendingUp },
+      { title: "Total Airlines", value: "5", icon: Plane },
+      { title: "Total Credit Issued", value: "$410K", icon: "/icons/card.svg" },
+      { title: "Total Wallet Balance", value: "$139.2K", icon: Wallet },
     ],
     cancellations: [
       { month: "Jan", value: 65 },
@@ -552,6 +305,151 @@ export default function DashboardPage() {
   // Hover states for dynamic tooltips
   const [hoveredBarIndex, setHoveredBarIndex] = useState<number | null>(null);
   const [hoveredPointIndex, setHoveredPointIndex] = useState<number | null>(null);
+
+  // Dynamic chart revenue data matching the shared monthly curve
+  const chartRevenueData = useMemo(() => {
+    return [
+      { month: "Jan", revenue: 26 },
+      { month: "Feb", revenue: 46 },
+      { month: "Mar", revenue: 40 },
+      { month: "Apr", revenue: 31 },
+      { month: "May", revenue: 53 },
+      { month: "Jun", revenue: 52 },
+      { month: "Jul", revenue: 42 },
+      { month: "Aug", revenue: 24 },
+      { month: "Sep", revenue: 51 },
+      { month: "Oct", revenue: 38 },
+      { month: "Nov", revenue: 47 },
+      { month: "Dec", revenue: 25 },
+    ];
+  }, []);
+
+  // Cancelled flights trend data matching the shared screenshot (Jan-Dec alternate labels)
+  const cancelledFlightsTrendData = useMemo(() => {
+    return [
+      { month: "", count: 4 },
+      { month: "Feb", count: 5 },
+      { month: "", count: 2 },
+      { month: "Apr", count: 2 },
+      { month: "", count: 4 },
+      { month: "Jun", count: 6 },
+      { month: "", count: 6 },
+      { month: "Aug", count: 6 },
+      { month: "", count: 4 },
+      { month: "Oct", count: 3 },
+      { month: "", count: 3 },
+      { month: "Dec", count: 2 },
+    ];
+  }, []);
+
+  // Top 10 Airlines data matching the shared screenshot
+  const topAirlinesData = useMemo(() => {
+    return [
+      {
+        rank: 1,
+        name: "Northern Star Airlines",
+        code: "NSA",
+        revenue: "$194.5K",
+        cancelledFlights: 234,
+      },
+      {
+        rank: 2,
+        name: "SkyLine Airways",
+        code: "SKY",
+        revenue: "$122.5K",
+        cancelledFlights: 156,
+      },
+      {
+        rank: 3,
+        name: "Atlantic Express",
+        code: "ATX",
+        revenue: "$79K",
+        cancelledFlights: 89,
+      },
+      {
+        rank: 4,
+        name: "Meridian Air",
+        code: "MDA",
+        revenue: "$46K",
+        cancelledFlights: 67,
+      },
+      {
+        rank: 5,
+        name: "Pacific Airways",
+        code: "PCA",
+        revenue: "$38K",
+        cancelledFlights: 54,
+      },
+      {
+        rank: 6,
+        name: "Global Jet Airways",
+        code: "GJA",
+        revenue: "$29K",
+        cancelledFlights: 41,
+      },
+      {
+        rank: 7,
+        name: "Summit Airlines",
+        code: "SMA",
+        revenue: "$22K",
+        cancelledFlights: 33,
+      },
+      {
+        rank: 8,
+        name: "AeroVoyage",
+        code: "AVG",
+        revenue: "$18.5K",
+        cancelledFlights: 27,
+      },
+      {
+        rank: 9,
+        name: "Horizon Express",
+        code: "HZX",
+        revenue: "$14K",
+        cancelledFlights: 20,
+      },
+      {
+        rank: 10,
+        name: "BreezeLine Air",
+        code: "BLA",
+        revenue: "$9.5K",
+        cancelledFlights: 15,
+      },
+    ];
+  }, []);
+
+  // Vendor Performance data matching the shared screenshot
+  const vendorPerformanceData = useMemo(() => {
+    return [
+      {
+        name: "Hotelbeds",
+        share: "19.3% of earnings",
+        percentage: 19.3,
+        dotColor: "bg-[#1E2B4C]",
+        barColor: "bg-[#1E2B4C]",
+        bookings: "2,327",
+        commission: "$50.5K",
+      },
+      {
+        name: "RateHawk",
+        share: "39.1% of earnings",
+        percentage: 39.1,
+        dotColor: "bg-[#16A34A]",
+        barColor: "bg-[#16A34A]",
+        bookings: "4,709",
+        commission: "$102.3K",
+      },
+      {
+        name: "Booking.com",
+        share: "41.6% of earnings",
+        percentage: 41.6,
+        dotColor: "bg-[#EA580C]",
+        barColor: "bg-[#EA580C]",
+        bookings: "5,016",
+        commission: "$109K",
+      },
+    ];
+  }, []);
 
   // Stats computed from activeData for Recharts components
   const stats = useMemo(() => {
@@ -647,7 +545,7 @@ export default function DashboardPage() {
         </div>
 
         {/* KPI metrics cards grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {activeData.kpiCards.map((card, index) => {
             const isImageIcon = typeof card.icon === "string";
             const IconComponent = !isImageIcon ? (card.icon as React.ComponentType<{ className?: string }>) : null;
@@ -655,249 +553,279 @@ export default function DashboardPage() {
             return (
               <div
                 key={index}
-                className="w-full px-4 py-4 leading-[100%] tracking-[0%] bg-white rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col justify-start items-start gap-4 hover:shadow-md transition-shadow"
+                className="w-full px-5 py-4 bg-white rounded-xl border border-gray-200 flex justify-between items-start hover:shadow-sm transition-shadow"
               >
-                <div className="self-stretch flex flex-col justify-start items-start gap-2">
-                  <div className="self-stretch inline-flex justify-between items-start gap-5 relative -left-0.5">
-                    <div className="flex-1 inline-flex flex-col justify-start items-start gap-1.5">
-                      <div className="self-stretch justify-start text-gray-500 text-base font-normal font-figtree leading-[100%] tracking-[0%]">
-                        {card.title}
-                      </div>
-                      <div className="inline-flex justify-start items-center gap-1.5">
-                        <div className="justify-start text-gray-800 text-2xl font-semibold font-figtree">
-                          {card.value}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Premium Icon box */}
-                    <div className="size-11 p-2.5 bg-gray-100 rounded-lg flex justify-center items-center shrink-0">
-                      {isImageIcon ? (
-                        <Image
-                          src={card.icon as string}
-                          alt={card.title}
-                          width={22}
-                          height={22}
-                          className="h-5.5 w-5.5 opacity-90"
-                        />
-                      ) : (
-                        IconComponent && <IconComponent className="h-5.5 w-6 text-blue-950 stroke-[1.8]" />
-                      )}
-                    </div>
-                  </div>
+                <div className="flex flex-col justify-start items-start">
+                  <span className="text-gray-500 text-[14px] font-normal font-figtree">
+                    {card.title}
+                  </span>
+                  <span className="text-gray-800 text-[26px] font-semibold font-figtree mt-2">
+                    {card.value}
+                  </span>
                 </div>
 
-                <div className="self-stretch flex flex-col justify-start items-start gap-2">
-                  {card.trend && (
-                    <div className="self-stretch inline-flex justify-start items-center gap-1">
-                      <div className="flex justify-start items-center gap-1 text-sm font-normal font-figtree">
-                        {(() => {
-                          const firstSpace = card.trend.indexOf(" ");
-                          if (firstSpace === -1) {
-                            return (
-                              <span
-                                className={cn(
-                                  card.trendType === "up" && "text-emerald-500",
-                                  card.trendType === "down" && "text-rose-500",
-                                  card.trendType === "neutral" && "text-gray-500"
-                                )}
-                              >
-                                {card.trend}
-                              </span>
-                            );
-                          }
-                          const valuePart = card.trend.substring(0, firstSpace);
-                          const textPart = card.trend.substring(firstSpace);
-                          return (
-                            <>
-                              <span
-                                className={cn(
-                                  card.trendType === "up" && "text-emerald-500",
-                                  card.trendType === "down" && "text-rose-500",
-                                  card.trendType === "neutral" && "text-gray-500"
-                                )}
-                              >
-                                {valuePart}
-                              </span>
-                              <span className="text-gray-500">{textPart.trim()}</span>
-                            </>
-                          );
-                        })()}
-                      </div>
-                    </div>
+                {/* Icon box */}
+                <div className="size-11 p-2.5 bg-gray-100 rounded-lg flex justify-center items-center shrink-0 text-[#0F2757]">
+                  {isImageIcon ? (
+                    <Image
+                      src={card.icon as string}
+                      alt={card.title}
+                      width={22}
+                      height={22}
+                      className="h-5.5 w-5.5"
+                    />
+                  ) : (
+                    IconComponent && <IconComponent className="h-5.5 w-5.5 stroke-[1.8]" />
                   )}
-                  <div className="justify-start text-gray-500 text-sm font-normal font-figtree leading-[100%] tracking-[0%]">
-                    {card.subtext}
-                  </div>
                 </div>
               </div>
             );
           })}
         </div>
 
-        {/* Charts Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-1.5">
+        {/* Platform Revenue — This Month Full Width Chart Card */}
+        <div className="self-stretch px-6 py-5 bg-white rounded-xl border border-gray-200 flex flex-col justify-start items-start gap-3">
+          <div className="self-stretch justify-start text-gray-800 text-lg font-semibold font-figtree">
+            Platform Revenue — This Month
+          </div>
+          <div className="w-full h-[240px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart
+                data={chartRevenueData}
+                margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+              >
+                <defs>
+                  <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#CBD5E1" stopOpacity={0.6} />
+                    <stop offset="100%" stopColor="#CBD5E1" stopOpacity={0.08} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid
+                  strokeDasharray="4 4"
+                  stroke="#E5E7EB"
+                  vertical={false}
+                />
+                <XAxis
+                  dataKey="month"
+                  stroke="#6B7280"
+                  fontSize={12}
+                  axisLine={false}
+                  tickLine={false}
+                  tickMargin={12}
+                />
+                <YAxis
+                  stroke="#6B7280"
+                  fontSize={12}
+                  axisLine={false}
+                  tickLine={false}
+                  domain={[0, 60]}
+                  ticks={[0, 15, 30, 45, 60]}
+                  tickFormatter={(val: number) => `$${val}k`}
+                  width={45}
+                />
+                <Tooltip
+                  cursor={{ stroke: "#0F2757", strokeWidth: 1, strokeDasharray: "3 3" }}
+                  contentStyle={{
+                    backgroundColor: "#FFFFFF",
+                    border: "1px solid #E5E7EB",
+                    borderRadius: "8px",
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+                  }}
+                  formatter={(value: any) => [`$${value}k`, "Revenue"]}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="revenue"
+                  stroke="#1E293B"
+                  strokeWidth={2}
+                  fillOpacity={1}
+                  fill="url(#revenueGradient)"
+                  dot={false}
+                  activeDot={{ r: 5, fill: "#1E293B", stroke: "#FFFFFF", strokeWidth: 2 }}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
 
-          <div className="animate-fade-in self-stretch pl-6 pr-4.5 pt-6 pb-3 bg-white rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col justify-start items-start gap-5">
-            <div className="self-stretch justify-start text-gray-800 text-xl font-semibold font-figtree">
-              Monthly Flight Cancellations
+        {/* Bottom Section: Cancelled Flights Trend + Top 10 Airlines */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-1">
+          {/* Cancelled Flights Trend Card */}
+          <div className="self-stretch px-6 py-5 bg-white rounded-xl border border-gray-200 flex flex-col justify-start items-start gap-4">
+            <div className="self-stretch justify-start text-gray-800 text-lg font-semibold font-figtree">
+              Cancelled Flights Trend — This Month
             </div>
-            <div className="w-full h-[256px]">
+            <div className="w-full h-[280px]">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
-                  data={stats.monthlyCancellations}
-                  barCategoryGap="3"
-                  margin={{ top: 10, right: 0, left: 0, bottom: 0 }}
+                  data={cancelledFlightsTrendData}
+                  barSize={16}
+                  margin={{ top: 15, right: 10, left: -20, bottom: 0 }}
                 >
-                  <defs>
-                    <linearGradient id="barHoverBorder" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#4797f9" />
-                      <stop offset="100%" stopColor="#1e3a8a" />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                  <CartesianGrid
+                    strokeDasharray="4 4"
+                    stroke="#E5E7EB"
+                    vertical={false}
+                  />
                   <XAxis
                     dataKey="month"
-                    stroke="hsl(var(--muted-foreground))"
+                    stroke="#6B7280"
                     fontSize={12}
                     axisLine={false}
                     tickLine={false}
-                    tickMargin={2}
+                    tickMargin={10}
+                    interval={0}
                   />
                   <YAxis
-                    stroke="hsl(var(--muted-foreground))"
+                    stroke="#6B7280"
                     fontSize={12}
                     axisLine={false}
                     tickLine={false}
-                    domain={cancellationsYAxisConfig.domain}
-                    ticks={cancellationsYAxisConfig.ticks}
-                    width={26}
-                    textAnchor="end"
-                  // dx={0}
+                    domain={[0, 8]}
+                    ticks={[0, 2, 4, 6, 8]}
+                    width={40}
                   />
                   <Tooltip
-                    cursor={false}
+                    cursor={{ fill: "transparent" }}
                     contentStyle={{
-                      backgroundColor: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
+                      backgroundColor: "#FFFFFF",
+                      border: "1px solid #E5E7EB",
                       borderRadius: "8px",
+                      boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
                     }}
-                    formatter={(value: any) => [value, "Flights"]}
+                    formatter={(value: any) => [value, "Cancelled Flights"]}
                   />
                   <Bar
                     dataKey="count"
-                    fill="#0F2757"
-                    radius={[6, 6, 0, 0]}
-                    activeBar={{
-                      stroke: "url(#barHoverBorder)",
-                      strokeWidth: 2,
-                      fill: "rgb(8, 41, 109)"
-                    }}
+                    fill="#1E2B4C"
+                    radius={[4, 4, 0, 0]}
                   />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          {/* Monthly Platform Revenue Line Chart Card */}
-          <div className="self-stretch pl-6 pr-9 pt-6 pb-3 bg-white rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col justify-start items-start gap-4.5">
-            <div className="self-stretch justify-start text-gray-800 text-xl font-semibold font-figtree leading-[150%] tracking-[0%] relative -left-0.5">
-              Monthly Platform Revenue
+          {/* Top 10 Airlines Card */}
+          <div className="self-stretch px-6 py-5 bg-white rounded-xl border border-gray-200 flex flex-col justify-start items-start gap-4">
+            <div className="self-stretch justify-start text-gray-800 text-lg font-semibold font-figtree">
+              Top 10 Airlines — This Month
             </div>
-            <div className="w-full h-[256px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart
-                  data={activeData.revenuePoints}
-                  margin={{ top: 10, right: 0, left: 0, bottom: 0 }}
-                  style={{ overflow: "visible" }}
+            <div className="w-full max-h-[280px] overflow-y-auto pr-1.5 space-y-3">
+              {topAirlinesData.map((airline) => (
+                <div
+                  key={airline.rank}
+                  className="w-full p-3 bg-white rounded-xl border border-gray-100 shadow-[0_1px_3px_rgba(0,0,0,0.03)] flex justify-between items-center hover:border-gray-200 transition-colors"
                 >
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                  <XAxis
-                    dataKey="month"
-                    stroke="hsl(var(--muted-foreground))"
-                    fontSize={12}
-                    axisLine={false}
-                    tickLine={false}
-                    tickMargin={2}
-                  />
-                  <YAxis
-                    stroke="hsl(var(--muted-foreground))"
-                    fontSize={12}
-                    axisLine={false}
-                    tickLine={false}
-                    domain={revenueYAxisConfig.domain}
-                    ticks={revenueYAxisConfig.ticks}
-                    width={45}
-                    tickFormatter={revenueYAxisConfig.tickFormatter}
-                    textAnchor="start"
-                    dx={-39}
-                  />
-                  <Tooltip
-                    cursor={false}
-                    contentStyle={{
-                      backgroundColor: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: "8px",
-                    }}
-                    formatter={(value: any) => [`$${value}K`, "Revenue"]}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="val"
-                    stroke="#059669"
-                    strokeWidth={2.5}
-                    dot={{ fill: "#10B981", r: 4, strokeWidth: 0 }}
-                    activeDot={{ fill: "#10B981", r: 6, strokeWidth: 0 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+                  <div className="flex items-center gap-3">
+                    <span className="w-6 h-6 rounded-md bg-gray-100 text-gray-600 text-xs font-medium flex items-center justify-center shrink-0">
+                      {airline.rank}
+                    </span>
+                    <div className="flex flex-col">
+                      <span className="text-gray-900 text-sm font-medium font-figtree leading-snug">
+                        {airline.name}
+                      </span>
+                      <span className="inline-block px-1.5 py-0.5 mt-1 bg-gray-100 text-gray-500 rounded text-[11px] font-medium tracking-wide w-fit">
+                        {airline.code}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end">
+                    <span className="text-gray-900 text-sm font-semibold font-figtree">
+                      {airline.revenue}
+                    </span>
+                    <span className="text-gray-400 text-xs mt-0.5">
+                      {airline.cancelledFlights} cancelled flights
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
 
-        {/* Bottom Ratio details footer panel */}
-        <div className="self-stretch px-6 py-5 bg-white rounded-xl outline outline-1 outline-offset-[-1px] outline-gray-200 flex flex-col md:flex-row justify-start items-stretch gap-6">
-          {[
-            {
-              label: "Fee Collection Rate",
-              value: activeData.ratios.revenueToSpend,
-              icon: TrendingUp,
-            },
-            {
-              label: "AVG REVENUE PER AIRLINE",
-              value: activeData.ratios.avgRevenuePerAirline,
-              icon: DollarSign,
-            },
-            {
-              label: "TOP AIRLINE (REVENUE)",
-              value: activeData.ratios.topAirline,
-              icon: Award,
-              truncate: true,
-            },
-          ].map((item, idx) => {
-            const Icon = item.icon;
-            return (
-              <div key={idx} className="flex-1 flex justify-start items-center gap-3 py-1">
-                <div className="size-11 p-2.5 bg-gray-100 rounded-lg flex justify-center items-center gap-2.5 shrink-0">
-                  <Icon className="h-5 w-5 text-blue-950" />
+        {/* Vendor Performance — This Month Card */}
+        <div className="self-stretch px-6 py-5 bg-white rounded-xl border border-gray-200 flex flex-col justify-start items-start gap-6">
+          <div className="self-stretch flex items-center gap-2 text-gray-800 text-lg font-semibold font-figtree">
+            <Building2 className="w-5 h-5 text-gray-500" />
+            <span>Vendor Performance — This Month</span>
+          </div>
+
+          <div className="self-stretch flex flex-col gap-6">
+            {vendorPerformanceData.map((vendor, idx) => (
+              <div key={idx} className="self-stretch flex flex-col gap-2.5">
+                <div className="self-stretch flex justify-between items-start">
+                  {/* Left: Vendor Name & Share */}
+                  <div className="flex items-start gap-2.5">
+                    <span className={cn("w-2 h-2 rounded-full mt-1.5 shrink-0", vendor.dotColor)} />
+                    <div className="flex flex-col">
+                      <span className="text-gray-900 text-sm font-semibold font-figtree">
+                        {vendor.name}
+                      </span>
+                      <span className="text-gray-400 text-xs font-normal">
+                        {vendor.share}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Right: Bookings & Commission */}
+                  <div className="flex items-center gap-12 sm:gap-16">
+                    <div className="flex flex-col items-end">
+                      <span className="text-gray-400 text-xs font-normal">
+                        Total bookings
+                      </span>
+                      <span className="text-gray-800 text-sm font-semibold font-figtree mt-0.5">
+                        {vendor.bookings}
+                      </span>
+                    </div>
+                    <div className="flex flex-col items-end min-w-[100px]">
+                      <span className="text-gray-400 text-xs font-normal">
+                        Commission earned
+                      </span>
+                      <span className="text-emerald-600 text-sm font-semibold font-figtree mt-0.5">
+                        {vendor.commission}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex flex-col justify-start items-start">
-                  <div className="justify-start text-gray-500 text-[14px] font-normal uppercase font-figtree">
-                    {item.label}
-                  </div>
+
+                {/* Progress bar */}
+                <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
                   <div
-                    className={cn(
-                      "justify-start text-gray-800 text-lg font-semibold font-figtree -mt-1",
-                      item.truncate && "truncate max-w-[200px]"
-                    )}
-                    title={item.truncate ? item.value : undefined}
-                  >
-                    {item.value}
-                  </div>
+                    className={cn("h-full rounded-full transition-all duration-500", vendor.barColor)}
+                    style={{ width: `${vendor.percentage}%` }}
+                  />
                 </div>
               </div>
-            );
-          })}
+            ))}
+          </div>
+
+          {/* Divider */}
+          <div className="w-full h-px bg-gray-100" />
+
+          {/* All vendors summary row */}
+          <div className="self-stretch flex justify-between items-center pt-1">
+            <span className="text-gray-900 text-sm font-semibold font-figtree">
+              All vendors (3)
+            </span>
+            <div className="flex items-center gap-12 sm:gap-16">
+              <div className="flex flex-col items-end">
+                <span className="text-gray-400 text-xs font-normal">
+                  Total bookings
+                </span>
+                <span className="text-gray-800 text-sm font-semibold font-figtree mt-0.5">
+                  12,052
+                </span>
+              </div>
+              <div className="flex flex-col items-end min-w-[100px]">
+                <span className="text-gray-400 text-xs font-normal">
+                  Commission earned
+                </span>
+                <span className="text-emerald-600 text-sm font-semibold font-figtree mt-0.5">
+                  $261.8K
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
 
       </div>

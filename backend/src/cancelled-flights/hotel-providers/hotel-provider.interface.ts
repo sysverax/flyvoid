@@ -50,7 +50,24 @@ export interface AvailabilityHotel {
   rates: AvailabilityRoomRate[];
 }
 
+export interface TaxAtProperty {
+  name: string;
+  amount: number;
+  currencyCode: string | null;
+}
+
+export interface HotelPolicies {
+  checkInTime: string | null;
+  checkOutTime: string | null;
+  extraInfo: string | null;
+  items: Array<{ category: string; details: string[] }>;
+  raw?: Record<string, unknown> | null;
+}
+
 export interface HotelContentDetails {
+  policies?: HotelPolicies | null;
+  name?: string | null;
+  starRating?: number | null;
   address: string | null;
   contact: {
     phones: Array<{ phoneNumber: string; phoneType: string }>;
@@ -72,6 +89,13 @@ export interface HotelBookingRequest {
   /** Booking contact (the airline's); suppliers that don't need it ignore it. */
   contactEmail?: string;
   contactPhone?: string;
+  /** Called with the supplier order reference before the booking request is sent. */
+  onSupplierOrderCreated?: (reference: string) => Promise<void>;
+}
+
+/** Guest's passport country (ISO 3166-1 alpha-2); suppliers price by it. */
+export interface SupplierSearchOptions {
+  residency?: string | null;
 }
 
 /** Supplier-neutral result of re-validating a rate before booking. */
@@ -94,6 +118,10 @@ export interface HotelRateCheck {
   rateComments: string | null;
   /** True when the supplier re-priced the rate since search. */
   priceChanged: boolean;
+  /** Key to pass to bookHotel instead of the search rate key (carries the validated rate). */
+  bookingKey?: string;
+  /** Taxes not included in the price; collected by the hotel from the guest. */
+  taxesAtProperty?: TaxAtProperty[];
 }
 
 export interface HotelBookingResult {
@@ -137,6 +165,7 @@ export interface HotelProvider {
     occupancies: RoomOccupancy[],
     requestId: string,
     requestLogger: Logger,
+    options?: SupplierSearchOptions,
   ): Promise<AvailabilityHotel[]>;
 
   searchNearbyHotels(
@@ -154,7 +183,11 @@ export interface HotelProvider {
   ): Promise<HotelContentDetails | null>;
 
   /** Re-validates a rate (availability, price, cancellation) before booking. */
-  checkRate(rateKey: string, requestId: string): Promise<HotelRateCheck>;
+  checkRate(
+    rateKey: string,
+    requestId: string,
+    options?: SupplierSearchOptions,
+  ): Promise<HotelRateCheck>;
 
   /** Live reservation of a checked rate for one passenger booking. */
   bookHotel(
@@ -163,4 +196,16 @@ export interface HotelProvider {
     paymentData: any,
     requestId: string,
   ): Promise<HotelBookingResult>;
+
+  /** Current final status of one supplier order (by our booking reference). */
+  checkBookingStatus?(
+    reference: string,
+    requestId: string,
+  ): Promise<{ state: "booked" | "failed" | "processing"; code: string | null }>;
+
+  /** Latest supplier order details for confirmed bookings (by our booking references). */
+  getOrderInfo?(
+    bookingReferences: string[],
+    requestId: string,
+  ): Promise<{ status: string | null; orders: unknown[] } | null>;
 }

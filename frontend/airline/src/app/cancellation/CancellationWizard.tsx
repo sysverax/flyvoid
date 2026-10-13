@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef, Fragment } from "react";
+import { countries } from "countries-list";
 import {
   X,
   Plus,
@@ -68,12 +69,12 @@ import {
   BookingDTO,
   ReviewFlightResponse,
   HotelAllocationsResponse,
+  HotelAllocationProgressResponse,
   HotelSummaryCancelledFlightSummaryDto,
   HotelBookingItemDTO,
   HotelBookingDetailDataDto,
 } from "@/src/services/cancellation.service";
 import { airportsService, AirportDTO } from "@/src/services/airports.service";
-
 
 const NOTE_TAG_TO_ENUM: Record<string, string> = {
   "Wheelchair Assistance": "wheelchair_assistance",
@@ -107,7 +108,6 @@ const ENUM_TO_TRAVEL_CLASS: Record<string, string> = {
   economy: "Economy",
 };
 
-
 function mapCancellationReason(tag: string, text: string): string | undefined {
   const combined = (tag + " " + text).trim().toLowerCase();
   if (!combined) return undefined;
@@ -140,7 +140,6 @@ function formatCancellationReason(reason?: string | null): string {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : "N/A";
 }
 
-
 const TRAVEL_CLASS_OPTIONS = [
   { value: "Economy", label: "Economy" },
   { value: "Premium Economy", label: "Premium Economy" },
@@ -155,6 +154,7 @@ interface ManualBooking {
   lastName: string;
   email: string;
   phone: string;
+  residency: string;
   travelClass: string;
   adults: number;
   children: number;
@@ -203,6 +203,13 @@ function formatDateString(dateStr: string): string {
   const year = date.getFullYear();
   return `${month} ${day}, ${year}`;
 }
+
+const COUNTRY_OPTIONS = Object.entries(countries)
+  .map(([code, c]) => ({ value: code, label: `${c.name} (${code})` }))
+  .sort((a, b) => a.label.localeCompare(b.label));
+
+const countryName = (code?: string | null): string =>
+  code ? (countries[code as keyof typeof countries]?.name ?? code) : "";
 
 const HOTEL_BOOKING_STATUS_LABEL: Record<string, string> = {
   confirmed: "Confirmed",
@@ -288,7 +295,10 @@ export default function CancellationWizard({
     const fetchAirports = async () => {
       setIsLoadingAirports(true);
       try {
-        const response = await airportsService.getAirports({ page: 1, limit: 100 });
+        const response = await airportsService.getAirports({
+          page: 1,
+          limit: 100,
+        });
         if (isMounted && response?.airports && response.airports.length > 0) {
           setAirports(response.airports);
         }
@@ -318,7 +328,7 @@ export default function CancellationWizard({
     const found = airports.find(
       (a) =>
         (a.iataCode && a.iataCode.toUpperCase() === val.toUpperCase()) ||
-        String(a.id) === val
+        String(a.id) === val,
     );
     if (found) return found.id;
     const parsed = parseInt(val, 10);
@@ -388,12 +398,17 @@ export default function CancellationWizard({
   const handleStep1Blur = (field: Step1Field) => () => {
     setStep1Touched((prev) => ({ ...prev, [field]: true }));
     const val =
-      field === "flightNumber" ? newFlight :
-        field === "cancellationDate" ? newDate :
-          field === "departureAirport" ? newDepartureAirport :
-            field === "arrivalAirport" ? newArrivalAirport :
-              field === "checkInDate" ? checkInDate :
-                checkOutDate;
+      field === "flightNumber"
+        ? newFlight
+        : field === "cancellationDate"
+          ? newDate
+          : field === "departureAirport"
+            ? newDepartureAirport
+            : field === "arrivalAirport"
+              ? newArrivalAirport
+              : field === "checkInDate"
+                ? checkInDate
+                : checkOutDate;
     const msg = validateStep1(field, val);
     setStep1Errors((prev) => ({ ...prev, [field]: msg || undefined }));
   };
@@ -512,6 +527,7 @@ export default function CancellationWizard({
   const [bookingAdults, setBookingAdults] = useState("1");
   const [bookingChildren, setBookingChildren] = useState("0");
   const [bookingNotesText, setBookingNotesText] = useState("");
+  const [bookingResidency, setBookingResidency] = useState("");
   const [selectedNoteTags, setSelectedNoteTags] = useState<string[]>([]);
 
   // Step 2 Validation & Error State (matching admin invite modal)
@@ -521,6 +537,7 @@ export default function CancellationWizard({
     | "lastName"
     | "email"
     | "phone"
+    | "residency"
     | "travelClass"
     | "adults"
     | "children";
@@ -553,6 +570,9 @@ export default function CancellationWizard({
         if (!/^[\+]?[\d\s\-\(\)]{7,20}$/.test(v))
           return "Please enter a valid phone number";
         return "";
+      case "residency":
+        if (!v) return "Passport Country is required";
+        return "";
       case "travelClass":
         if (!v) return "Travel Class is required";
         return "";
@@ -573,14 +593,23 @@ export default function CancellationWizard({
   const handleStep2Blur = (field: Step2Field) => () => {
     setStep2Touched((prev) => ({ ...prev, [field]: true }));
     const val =
-      field === "pnr" ? bookingPnr :
-        field === "firstName" ? bookingFirstName :
-          field === "lastName" ? bookingLastName :
-            field === "email" ? bookingEmail :
-              field === "travelClass" ? bookingClass :
-                field === "adults" ? bookingAdults :
-                  field === "children" ? bookingChildren :
-                    bookingPhone;
+      field === "pnr"
+        ? bookingPnr
+        : field === "firstName"
+          ? bookingFirstName
+          : field === "lastName"
+            ? bookingLastName
+            : field === "email"
+              ? bookingEmail
+              : field === "residency"
+                ? bookingResidency
+              : field === "travelClass"
+                ? bookingClass
+                : field === "adults"
+                  ? bookingAdults
+                  : field === "children"
+                    ? bookingChildren
+                    : bookingPhone;
     const msg = validateStep2(field, val);
     setStep2Errors((prev) => ({ ...prev, [field]: msg || undefined }));
   };
@@ -623,6 +652,13 @@ export default function CancellationWizard({
       const msg = validateStep2("phone", val);
       setStep2Errors((prev) => ({ ...prev, phone: msg || undefined }));
     }
+  };
+
+  const handleBookingResidencyChange = (val: string) => {
+    setBookingResidency(val);
+    setStep2Touched((prev) => ({ ...prev, residency: true }));
+    const msg = validateStep2("residency", val);
+    setStep2Errors((prev) => ({ ...prev, residency: msg || undefined }));
   };
 
   const handleBookingClassChange = (val: string) => {
@@ -694,6 +730,7 @@ export default function CancellationWizard({
           lastName: b.lastName,
           email: b.email,
           phone: b.phone,
+          residency: b.residency,
           travelClass: ENUM_TO_TRAVEL_CLASS[b.travelClass] || "Economy",
           adults: b.adults || 1,
           children: b.children || 0,
@@ -712,7 +749,9 @@ export default function CancellationWizard({
   };
 
   // Step 3 Review state
-  const [reviewData, setReviewData] = useState<ReviewFlightResponse | null>(null);
+  const [reviewData, setReviewData] = useState<ReviewFlightResponse | null>(
+    null,
+  );
   const [isLoadingReview, setIsLoadingReview] = useState(false);
 
   // Step 4 Allocation state
@@ -728,8 +767,12 @@ export default function CancellationWizard({
     done: number;
     total: number;
   } | null>(null);
-  const allocationPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const allocationAnimationRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const allocationPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const allocationAnimationRef = useRef<ReturnType<typeof setInterval> | null>(
+    null,
+  );
   const isPollingAllocationRef = useRef(false);
 
   // Step 5 Booking Summary state
@@ -814,11 +857,16 @@ export default function CancellationWizard({
     isFetchingHotelBookingsRef.current = true;
     setIsLoadingHotelBookings(true);
     try {
-      const res = await cancellationService.listHotelBookings(fId, { page, limit });
+      const res = await cancellationService.listHotelBookings(fId, {
+        page,
+        limit,
+      });
       const data = res?.data || (res as any);
       if (data?.hotelBookings) {
         setHotelBookings(data.hotelBookings);
-        setTotalHotelBookings(data.totalHotelBookings ?? data.hotelBookings.length);
+        setTotalHotelBookings(
+          data.totalHotelBookings ?? data.hotelBookings.length,
+        );
       }
     } catch (err: any) {
       console.error("Failed to load hotel bookings:", err);
@@ -836,7 +884,10 @@ export default function CancellationWizard({
       if (addedBookings.length === 0) {
         fetchBookings(flightId);
       }
-    } else if ((activeStep === 5 || activeStep === 6 || activeStep === 7) && flightId) {
+    } else if (
+      (activeStep === 5 || activeStep === 6 || activeStep === 7) &&
+      flightId
+    ) {
       fetchHotelSummary(flightId);
     }
   }, [activeStep, flightId]);
@@ -848,7 +899,10 @@ export default function CancellationWizard({
   }, [activeStep, flightId, step5CurrentPage, step5ResultsPerPage]);
 
   const ALLOCATION_POLL_MS = 3000;
+  const ALLOCATION_POLL_MAX_MS = 8000;
   const MAX_ALLOCATION_POLL_ERRORS = 5;
+  const allocationPollDelayRef = useRef(ALLOCATION_POLL_MS);
+  const allocationLastProcessedRef = useRef(-1);
 
   const startAllocationAnimation = () => {
     if (allocationAnimationRef.current) return;
@@ -890,41 +944,56 @@ export default function CancellationWizard({
 
   const pollAllocationStatus = async (fId: number, consecutiveErrors = 0) => {
     if (!isPollingAllocationRef.current) return;
-    let nextErrors = 0;
-    try {
-      const res = await cancellationService.getHotelAllocationStatus(fId);
-      if (!isPollingAllocationRef.current) return;
-      const data: HotelAllocationsResponse = res?.data || res;
-      if (!data.running) {
-        finishAllocation(data);
-        return;
-      }
-      const done = (data.results ?? []).filter(
-        (r) => r.bookingStatus !== "NOT_STARTED" && r.bookingStatus !== "PENDING",
-      ).length;
-      setAllocationRunProgress({ done, total: data.totalPnrs ?? 0 });
-    } catch {
-      if (!isPollingAllocationRef.current) return;
-      nextErrors = consecutiveErrors + 1;
-      if (nextErrors >= MAX_ALLOCATION_POLL_ERRORS) {
-        stopAllocationPolling();
-        setIsAllocating(false);
-        setAllocationProgress(0);
-        setAllocationError(
-          "Lost connection while checking hotel allocation progress. Booking continues on the server; reopen this flight to see the latest status.",
-        );
-        return;
+    let nextErrors = consecutiveErrors;
+    // Skip requests while the tab is hidden; polling resumes on the next tick.
+    if (!document.hidden) {
+      try {
+        const res = await cancellationService.getHotelAllocationProgress(fId);
+        if (!isPollingAllocationRef.current) return;
+        const progress: HotelAllocationProgressResponse = res?.data || res;
+        nextErrors = 0;
+        if (!progress.running) {
+          const fullRes =
+            await cancellationService.getHotelAllocationStatus(fId);
+          if (!isPollingAllocationRef.current) return;
+          finishAllocation(fullRes?.data || fullRes);
+          return;
+        }
+        const done = progress.processedPnrs ?? 0;
+        setAllocationRunProgress({ done, total: progress.totalPnrs ?? 0 });
+        allocationPollDelayRef.current =
+          done === allocationLastProcessedRef.current
+            ? Math.min(
+                allocationPollDelayRef.current * 1.5,
+                ALLOCATION_POLL_MAX_MS,
+              )
+            : ALLOCATION_POLL_MS;
+        allocationLastProcessedRef.current = done;
+      } catch {
+        if (!isPollingAllocationRef.current) return;
+        nextErrors = consecutiveErrors + 1;
+        if (nextErrors >= MAX_ALLOCATION_POLL_ERRORS) {
+          stopAllocationPolling();
+          setIsAllocating(false);
+          setAllocationProgress(0);
+          setAllocationError(
+            "Lost connection while checking hotel allocation progress. Booking continues on the server; reopen this flight to see the latest status.",
+          );
+          return;
+        }
       }
     }
     allocationPollTimerRef.current = setTimeout(
       () => pollAllocationStatus(fId, nextErrors),
-      ALLOCATION_POLL_MS,
+      allocationPollDelayRef.current,
     );
   };
 
   const startAllocationPolling = (fId: number) => {
     if (isPollingAllocationRef.current) return;
     isPollingAllocationRef.current = true;
+    allocationPollDelayRef.current = ALLOCATION_POLL_MS;
+    allocationLastProcessedRef.current = -1;
     setIsAllocating(true);
     setAllocationError(null);
     startAllocationAnimation();
@@ -939,9 +1008,9 @@ export default function CancellationWizard({
     let cancelled = false;
     setIsCheckingAllocation(true);
     cancellationService
-      .getHotelAllocationStatus(flightId)
+      .getHotelAllocationProgress(flightId)
       .then((res) => {
-        const data: HotelAllocationsResponse = res?.data || res;
+        const data: HotelAllocationProgressResponse = res?.data || res;
         if (cancelled) return;
         if (data?.running) {
           startAllocationPolling(flightId);
@@ -996,13 +1065,17 @@ export default function CancellationWizard({
     }
   };
 
-  const showAllocationOutcome = (allocData?: HotelAllocationsResponse | null) => {
+  const showAllocationOutcome = (
+    allocData?: HotelAllocationsResponse | null,
+  ) => {
     if (!allocData?.results) {
       toast.success("Hotels booked successfully");
       return;
     }
     const pnrsWith = (status: string) =>
-      allocData.results.filter((r) => r.bookingStatus === status).map((r) => r.pnr);
+      allocData.results
+        .filter((r) => r.bookingStatus === status)
+        .map((r) => r.pnr);
     const failed = pnrsWith("FAILED");
     const manual = pnrsWith("MANUAL_CHECK");
     const confirmed = allocData.successfulPnrs ?? 0;
@@ -1012,7 +1085,9 @@ export default function CancellationWizard({
       return;
     }
     if (confirmed > 0) {
-      toast.success(`${confirmed} of ${total} booking(s) confirmed with the hotels`);
+      toast.success(
+        `${confirmed} of ${total} booking(s) confirmed with the hotels`,
+      );
     }
     if (failed.length > 0) {
       toast.error(
@@ -1046,8 +1121,10 @@ export default function CancellationWizard({
   );
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   // Step 3 Passenger Booking Detail Drawer state
-  const [isPassengerBookingDrawerOpen, setIsPassengerBookingDrawerOpen] = useState(false);
-  const [selectedPassengerBooking, setSelectedPassengerBooking] = useState<any>(null);
+  const [isPassengerBookingDrawerOpen, setIsPassengerBookingDrawerOpen] =
+    useState(false);
+  const [selectedPassengerBooking, setSelectedPassengerBooking] =
+    useState<any>(null);
 
   // Step 5 Drawer state
   const [isBookingDetailsOpen, setIsBookingDetailsOpen] = useState(false);
@@ -1114,8 +1191,6 @@ export default function CancellationWizard({
   const [step3CurrentPage, setStep3CurrentPage] = useState(1);
   const [step3ResultsPerPage, setStep3ResultsPerPage] = useState(10);
 
-
-
   // Step 7 Publish state
   const [notifySMS, setNotifySMS] = useState(true);
   const [notifyEmail, setNotifyEmail] = useState(true);
@@ -1164,6 +1239,7 @@ export default function CancellationWizard({
         lastName: "Admin",
         email: "ops@summitair.com",
         phone: "+1 555 020 0000",
+        residency: "US",
         travelClass: "Economy",
         adults: 1,
         children: 0,
@@ -1177,6 +1253,7 @@ export default function CancellationWizard({
         lastName: "Smith",
         email: "jane.smith@email.com",
         phone: "+1 555 999 1122",
+        residency: "GB",
         travelClass: "Business",
         adults: 2,
         children: 1,
@@ -1203,6 +1280,7 @@ export default function CancellationWizard({
     setBookingLastName(booking.lastName || "");
     setBookingEmail(booking.email || "");
     setBookingPhone(booking.phone || "");
+    setBookingResidency(booking.residency || "");
     setBookingClass(booking.travelClass || "Economy");
     setBookingAdults(String(booking.adults ?? 1));
     setBookingChildren(String(booking.children ?? 0));
@@ -1210,7 +1288,9 @@ export default function CancellationWizard({
     setSelectedNoteTags(booking.tags || []);
 
     setTimeout(() => {
-      const pnrInput = document.querySelector('input[placeholder="e.g., ABC123"]');
+      const pnrInput = document.querySelector(
+        'input[placeholder="e.g., ABC123"]',
+      );
       pnrInput?.scrollIntoView({ behavior: "smooth", block: "center" });
       (pnrInput as HTMLInputElement)?.focus();
     }, 50);
@@ -1285,6 +1365,7 @@ export default function CancellationWizard({
       "lastName",
       "email",
       "phone",
+      "residency",
       "travelClass",
       "adults",
       "children",
@@ -1295,6 +1376,7 @@ export default function CancellationWizard({
       lastName: bookingLastName,
       email: bookingEmail,
       phone: bookingPhone,
+      residency: bookingResidency,
       travelClass: bookingClass,
       adults: bookingAdults,
       children: bookingChildren,
@@ -1312,6 +1394,7 @@ export default function CancellationWizard({
         lastName: true,
         email: true,
         phone: true,
+        residency: true,
         travelClass: true,
         adults: true,
         children: true,
@@ -1334,6 +1417,7 @@ export default function CancellationWizard({
       lastName: bookingLastName.trim(),
       email: bookingEmail.trim(),
       phone: bookingPhone.trim(),
+      residency: bookingResidency,
       travelClass: mappedTravelClass,
       adults: Number(bookingAdults) || 1,
       children: Number(bookingChildren) || 0,
@@ -1356,20 +1440,21 @@ export default function CancellationWizard({
             prev.map((b) =>
               b.id === editingBookingId
                 ? {
-                  ...b,
-                  pnr: bookingPnr,
-                  firstName: bookingFirstName,
-                  lastName: bookingLastName,
-                  email: bookingEmail,
-                  phone: bookingPhone,
-                  travelClass: bookingClass,
-                  adults: Number(bookingAdults) || 1,
-                  children: Number(bookingChildren) || 0,
-                  notes: bookingNotesText,
-                  tags: selectedNoteTags,
-                }
-                : b
-            )
+                    ...b,
+                    pnr: bookingPnr,
+                    firstName: bookingFirstName,
+                    lastName: bookingLastName,
+                    email: bookingEmail,
+                    phone: bookingPhone,
+                    residency: bookingResidency,
+                    travelClass: bookingClass,
+                    adults: Number(bookingAdults) || 1,
+                    children: Number(bookingChildren) || 0,
+                    notes: bookingNotesText,
+                    tags: selectedNoteTags,
+                  }
+                : b,
+            ),
           );
         }
         toast.success("Booking updated successfully");
@@ -1387,6 +1472,7 @@ export default function CancellationWizard({
             lastName: bookingLastName,
             email: bookingEmail,
             phone: bookingPhone,
+            residency: bookingResidency,
             travelClass: bookingClass,
             adults: Number(bookingAdults) || 1,
             children: Number(bookingChildren) || 0,
@@ -1404,6 +1490,7 @@ export default function CancellationWizard({
       setBookingLastName("");
       setBookingEmail("");
       setBookingPhone("");
+      setBookingResidency("");
       setBookingClass("Economy");
       setBookingAdults("1");
       setBookingChildren("0");
@@ -1508,7 +1595,8 @@ export default function CancellationWizard({
           ...(reasonEnum ? { cancellationReason: reasonEnum } : {}),
           ...(reasonText ? { cancellationReasonText: reasonText } : {}),
         };
-        const response = await cancellationService.createCancelledFlight(createPayload);
+        const response =
+          await cancellationService.createCancelledFlight(createPayload);
 
         if (response?.data?.id) {
           setCreatedFlightId(response.data.id);
@@ -1665,7 +1753,7 @@ export default function CancellationWizard({
                   className={cn(
                     "flex flex-col items-center shrink-0 w-[140px] z-10",
                     (isCompleted || (step.number < activeStep && !!flightId)) &&
-                    "cursor-pointer",
+                      "cursor-pointer",
                   )}
                 >
                   {/* Circle */}
@@ -1793,7 +1881,9 @@ export default function CancellationWizard({
                   value={newDepartureAirport}
                   onChange={handleDepartureAirportChange}
                   options={airportOptions}
-                  placeholder={isLoadingAirports ? "Loading airports..." : "Select airport"}
+                  placeholder={
+                    isLoadingAirports ? "Loading airports..." : "Select airport"
+                  }
                   searchable
                   triggerWidthClass="w-full"
                   widthClass="w-full"
@@ -1823,7 +1913,9 @@ export default function CancellationWizard({
                   value={newArrivalAirport}
                   onChange={handleArrivalAirportChange}
                   options={airportOptions}
-                  placeholder={isLoadingAirports ? "Loading airports..." : "Select airport"}
+                  placeholder={
+                    isLoadingAirports ? "Loading airports..." : "Select airport"
+                  }
                   searchable
                   triggerWidthClass="w-full"
                   widthClass="w-full"
@@ -2077,6 +2169,13 @@ export default function CancellationWizard({
                       <p className="text-[13px] text-[#9CA3AF]">
                         Supports .csv • Max 10MB
                       </p>
+                      <p className="text-[12px] text-[#9CA3AF] mt-2 max-w-[460px]">
+                        Columns: PNR, First Name, Last Name, Email, Phone,
+                        Passport Country (name or code, e.g. United States
+                        or US), Travel Class, Adults, Children, Special
+                        Notes, Additional Notes. Every row needs a Passport
+                        Country.
+                      </p>
                     </>
                   )}
                 </div>
@@ -2127,6 +2226,7 @@ export default function CancellationWizard({
                         setBookingLastName("");
                         setBookingEmail("");
                         setBookingPhone("");
+                        setBookingResidency("");
                         setBookingClass("Economy");
                         setBookingAdults("1");
                         setBookingChildren("0");
@@ -2269,6 +2369,32 @@ export default function CancellationWizard({
 
                   <div className="flex flex-col gap-1.5">
                     <label className="text-[15px] font-medium text-[#1F2937]">
+                      Passport Country *
+                    </label>
+                    <Dropdown
+                      value={bookingResidency}
+                      onChange={handleBookingResidencyChange}
+                      options={COUNTRY_OPTIONS}
+                      placeholder="Select country"
+                      searchable
+                      maxListHeightClass="max-h-64"
+                      triggerWidthClass="w-full"
+                      widthClass="w-full"
+                      bgClass="bg-white"
+                      heightClass="h-[42px]"
+                      error={
+                        !!(step2Errors.residency && step2Touched.residency)
+                      }
+                    />
+                    {step2Errors.residency && step2Touched.residency && (
+                      <p className="step2-field-error mt-0.5 text-xs text-red-500">
+                        {step2Errors.residency}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[15px] font-medium text-[#1F2937]">
                       Travel Class *
                     </label>
                     <Dropdown
@@ -2302,7 +2428,8 @@ export default function CancellationWizard({
                         handleBookingAdultsChange(e.target.value)
                       }
                       onKeyDown={(e) => {
-                        if (e.key === "-" || e.key === "e" || e.key === "+") e.preventDefault();
+                        if (e.key === "-" || e.key === "e" || e.key === "+")
+                          e.preventDefault();
                       }}
                       onBlur={handleStep2Blur("adults")}
                       className={cn(
@@ -2327,9 +2454,12 @@ export default function CancellationWizard({
                       type="number"
                       min={0}
                       value={bookingChildren}
-                      onChange={(e) => handleBookingChildrenChange(e.target.value)}
+                      onChange={(e) =>
+                        handleBookingChildrenChange(e.target.value)
+                      }
                       onKeyDown={(e) => {
-                        if (e.key === "-" || e.key === "e" || e.key === "+") e.preventDefault();
+                        if (e.key === "-" || e.key === "e" || e.key === "+")
+                          e.preventDefault();
                       }}
                       onBlur={handleStep2Blur("children")}
                       className={cn(
@@ -2466,49 +2596,64 @@ export default function CancellationWizard({
                       </div>
                       <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 flex-1 text-xs">
                         <div className="flex items-center justify-between gap-1">
-                          <span className="text-gray-600 truncate">Economy</span>
+                          <span className="text-gray-600 truncate">
+                            Economy
+                          </span>
                           <span className="font-semibold text-gray-900">
                             {
                               addedBookings.filter(
                                 (b) =>
-                                  (b.travelClass || "").toLowerCase() === "economy",
+                                  (b.travelClass || "").toLowerCase() ===
+                                  "economy",
                               ).length
                             }
                           </span>
                         </div>
                         <div className="flex items-center justify-between gap-1">
-                          <span className="text-gray-600 truncate" title="Premium Economy">
+                          <span
+                            className="text-gray-600 truncate"
+                            title="Premium Economy"
+                          >
                             Premium economy
                           </span>
                           <span className="font-semibold text-gray-900">
                             {
                               addedBookings.filter(
                                 (b) =>
-                                  (b.travelClass || "").toLowerCase() === "premium economy" ||
-                                  (b.travelClass || "").toLowerCase() === "premium_economy",
+                                  (b.travelClass || "").toLowerCase() ===
+                                    "premium economy" ||
+                                  (b.travelClass || "").toLowerCase() ===
+                                    "premium_economy",
                               ).length
                             }
                           </span>
                         </div>
                         <div className="flex items-center justify-between gap-1">
-                          <span className="text-gray-600 truncate">Business</span>
+                          <span className="text-gray-600 truncate">
+                            Business
+                          </span>
                           <span className="font-semibold text-gray-900">
                             {
                               addedBookings.filter(
                                 (b) =>
-                                  (b.travelClass || "").toLowerCase() === "business",
+                                  (b.travelClass || "").toLowerCase() ===
+                                  "business",
                               ).length
                             }
                           </span>
                         </div>
                         <div className="flex items-center justify-between gap-1">
-                          <span className="text-gray-600 truncate">First class</span>
+                          <span className="text-gray-600 truncate">
+                            First class
+                          </span>
                           <span className="font-semibold text-gray-900">
                             {
                               addedBookings.filter(
                                 (b) =>
-                                  (b.travelClass || "").toLowerCase() === "first class" ||
-                                  (b.travelClass || "").toLowerCase() === "first_class",
+                                  (b.travelClass || "").toLowerCase() ===
+                                    "first class" ||
+                                  (b.travelClass || "").toLowerCase() ===
+                                    "first_class",
                               ).length
                             }
                           </span>
@@ -2528,6 +2673,9 @@ export default function CancellationWizard({
                           </TableHead>
                           <TableHead className="min-w-[160px]">Email</TableHead>
                           <TableHead className="min-w-[120px]">Phone</TableHead>
+                          <TableHead className="min-w-[130px]">
+                            Passport Country
+                          </TableHead>
                           <TableHead className="min-w-[80px] text-center">
                             Adults
                           </TableHead>
@@ -2563,6 +2711,9 @@ export default function CancellationWizard({
                               </TableCell>
                               <TableCell className="text-gray-550">
                                 {b.phone}
+                              </TableCell>
+                              <TableCell className="text-gray-550">
+                                {countryName(b.residency)}
                               </TableCell>
                               <TableCell>{b.adults}</TableCell>
                               <TableCell>{b.children}</TableCell>
@@ -2672,7 +2823,7 @@ export default function CancellationWizard({
                   <p className="text-xs text-gray-500">Route</p>
                   <p className="font-semibold text-gray-900 text-base">
                     {reviewData?.flight?.route?.departureAirport &&
-                      reviewData?.flight?.route?.arrivalAirport
+                    reviewData?.flight?.route?.arrivalAirport
                       ? `${reviewData.flight.route.departureAirport.code} ➔ ${reviewData.flight.route.arrivalAirport.code}`
                       : newDepartureAirport && newArrivalAirport
                         ? `${newDepartureAirport} ➔ ${newArrivalAirport}`
@@ -2740,7 +2891,7 @@ export default function CancellationWizard({
                   <span className="text-[20px] leading-tight font-bold text-[#111827]">
                     {reviewData?.summary
                       ? reviewData.summary.totalAdults +
-                      reviewData.summary.totalChildren
+                        reviewData.summary.totalChildren
                       : totalPassengersCount}
                   </span>
                   <span className="text-[13px] text-[#6B7280] mt-0.5">
@@ -2767,15 +2918,20 @@ export default function CancellationWizard({
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-1">
-                    <span className="text-gray-600 truncate" title="Premium Economy">
+                    <span
+                      className="text-gray-600 truncate"
+                      title="Premium Economy"
+                    >
                       Premium economy
                     </span>
                     <span className="font-semibold text-gray-900">
                       {
                         addedBookings.filter(
                           (b) =>
-                            (b.travelClass || "").toLowerCase() === "premium economy" ||
-                            (b.travelClass || "").toLowerCase() === "premium_economy",
+                            (b.travelClass || "").toLowerCase() ===
+                              "premium economy" ||
+                            (b.travelClass || "").toLowerCase() ===
+                              "premium_economy",
                         ).length
                       }
                     </span>
@@ -2797,8 +2953,10 @@ export default function CancellationWizard({
                       {
                         addedBookings.filter(
                           (b) =>
-                            (b.travelClass || "").toLowerCase() === "first class" ||
-                            (b.travelClass || "").toLowerCase() === "first_class",
+                            (b.travelClass || "").toLowerCase() ===
+                              "first class" ||
+                            (b.travelClass || "").toLowerCase() ===
+                              "first_class",
                         ).length
                       }
                     </span>
@@ -2817,27 +2975,32 @@ export default function CancellationWizard({
                     </TableHead>
                     <TableHead className="min-w-[160px]">Email</TableHead>
                     <TableHead className="min-w-[130px]">Phone</TableHead>
+                    <TableHead className="min-w-[130px]">
+                      Passport Country
+                    </TableHead>
                     <TableHead className="min-w-[80px]">Adults</TableHead>
                     <TableHead className="min-w-[80px]">Children</TableHead>
                     <TableHead className="min-w-[100px]">Class</TableHead>
-                    <TableHead className="min-w-[80px] text-center">Action</TableHead>
+                    <TableHead className="min-w-[80px] text-center">
+                      Action
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {(addedBookings.length > 0
                     ? addedBookings
                     : ([
-                      {
-                        id: "1",
-                        pnr: "DDJU",
-                        firstName: "New",
-                        lastName: "Admin",
-                        email: "ops@summitair.com",
-                        adults: 1,
-                        children: 0,
-                        travelClass: "Economy",
-                      },
-                    ] as typeof addedBookings)
+                        {
+                          id: "1",
+                          pnr: "DDJU",
+                          firstName: "New",
+                          lastName: "Admin",
+                          email: "ops@summitair.com",
+                          adults: 1,
+                          children: 0,
+                          travelClass: "Economy",
+                        },
+                      ] as typeof addedBookings)
                   )
                     .slice(
                       (step3CurrentPage - 1) * step3ResultsPerPage,
@@ -2856,6 +3019,9 @@ export default function CancellationWizard({
                         </TableCell>
                         <TableCell className="text-gray-550">
                           {b.phone || "—"}
+                        </TableCell>
+                        <TableCell className="text-gray-550">
+                          {countryName(b.residency)}
                         </TableCell>
                         <TableCell>{b.adults}</TableCell>
                         <TableCell>{b.children}</TableCell>
@@ -3237,7 +3403,9 @@ export default function CancellationWizard({
                     <TableHead className="min-w-[100px]">Class</TableHead>
                     <TableHead className="min-w-[120px]">Passengers</TableHead>
                     <TableHead className="min-w-[180px]">Hotel</TableHead>
-                    <TableHead className="min-w-[140px]">Booking Status</TableHead>
+                    <TableHead className="min-w-[140px]">
+                      Booking Status
+                    </TableHead>
                     <TableHead className="min-w-[100px]">Rating</TableHead>
                     <TableHead className="min-w-[80px]">Rooms</TableHead>
                     <TableHead className="min-w-[100px]">Total</TableHead>
@@ -3247,7 +3415,10 @@ export default function CancellationWizard({
                 <TableBody>
                   {isLoadingHotelBookings && hotelBookings.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={11} className="text-center py-10 text-gray-500">
+                      <TableCell
+                        colSpan={11}
+                        className="text-center py-10 text-gray-500"
+                      >
                         <div className="flex items-center justify-center gap-2">
                           <Loader2 className="h-5 w-5 animate-spin text-[#0F2757]" />
                           <span>Loading hotel bookings...</span>
@@ -3259,23 +3430,34 @@ export default function CancellationWizard({
                       const pb = hb.passengerBooking;
                       const hotelBookingId = String(hb.id);
                       const pnr = pb?.pnr || "-";
-                      const contactName = `${pb?.firstName || ""} ${pb?.lastName || ""}`.trim() || "-";
+                      const contactName =
+                        `${pb?.firstName || ""} ${pb?.lastName || ""}`.trim() ||
+                        "-";
                       const email = pb?.email || "";
                       const travelClass =
-                        ENUM_TO_TRAVEL_CLASS[pb?.travelClass] || pb?.travelClass || "Economy";
+                        ENUM_TO_TRAVEL_CLASS[pb?.travelClass] ||
+                        pb?.travelClass ||
+                        "Economy";
                       const isBusiness =
-                        travelClass === "Business" || travelClass === "First Class";
-                      const totalPassengers = (pb?.adults || 0) + (pb?.children || 0);
+                        travelClass === "Business" ||
+                        travelClass === "First Class";
+                      const totalPassengers =
+                        (pb?.adults || 0) + (pb?.children || 0);
                       const passengersCount = totalPassengers || 1;
-                      const isConfirmed = !hb.status || hb.status === "confirmed";
+                      const isConfirmed =
+                        !hb.status || hb.status === "confirmed";
                       const hotelName = isConfirmed
                         ? hb.hotelName || "Transit Hotel"
-                        : (hb.status === "manual_check" || hb.status === "in_progress") &&
+                        : (hb.status === "manual_check" ||
+                              hb.status === "in_progress") &&
                             hb.hotelName
                           ? `${hb.hotelName} (not confirmed)`
                           : "Not booked";
                       const ratingVal = parseFloat(hb.rating) || 4;
-                      const stars = Math.min(5, Math.max(1, Math.round(ratingVal)));
+                      const stars = Math.min(
+                        5,
+                        Math.max(1, Math.round(ratingVal)),
+                      );
                       const rooms = hb.totalRooms || 1;
                       const bookingCost = Number(hb.totalCost) || 0;
 
@@ -3291,9 +3473,7 @@ export default function CancellationWizard({
                             <div className="font-semibold text-gray-900">
                               {contactName}
                             </div>
-                            <div className="text-xs text-gray-500">
-                              {email}
-                            </div>
+                            <div className="text-xs text-gray-500">{email}</div>
                           </TableCell>
                           <TableCell>
                             <span
@@ -3319,10 +3499,20 @@ export default function CancellationWizard({
                                 "inline-flex",
                                 !isConfirmed && hb.reason && "cursor-help",
                               )}
-                              title={!isConfirmed && hb.reason ? hb.reason : undefined}
+                              title={
+                                !isConfirmed && hb.reason
+                                  ? hb.reason
+                                  : undefined
+                              }
                             >
                               <StatusBadge
-                                status={HOTEL_BOOKING_STATUS_LABEL[hb.status ?? "confirmed"] ?? hb.status ?? "Confirmed"}
+                                status={
+                                  HOTEL_BOOKING_STATUS_LABEL[
+                                    hb.status ?? "confirmed"
+                                  ] ??
+                                  hb.status ??
+                                  "Confirmed"
+                                }
                               />
                             </span>
                           </TableCell>
@@ -3376,17 +3566,17 @@ export default function CancellationWizard({
                     (addedBookings.length > 0
                       ? addedBookings
                       : [
-                        {
-                          id: "1",
-                          pnr: "AAAAA",
-                          firstName: "New",
-                          lastName: "Admin",
-                          email: "ops@summitair.com",
-                          adults: 1,
-                          children: 0,
-                          travelClass: "Economy",
-                        },
-                      ]
+                          {
+                            id: "1",
+                            pnr: "AAAAA",
+                            firstName: "New",
+                            lastName: "Admin",
+                            email: "ops@summitair.com",
+                            adults: 1,
+                            children: 0,
+                            travelClass: "Economy",
+                          },
+                        ]
                     )
                       .slice(
                         (step5CurrentPage - 1) * step5ResultsPerPage,
@@ -3403,7 +3593,8 @@ export default function CancellationWizard({
                         const stars = isBusiness ? 4 : 3;
                         const rooms = Math.ceil((b.adults + b.children) / 2);
                         const bookingCost =
-                          hotelAllocations?.totalSellingPrice && (addedBookings.length === 1 || !addedBookings.length)
+                          hotelAllocations?.totalSellingPrice &&
+                          (addedBookings.length === 1 || !addedBookings.length)
                             ? hotelAllocations.totalSellingPrice
                             : rooms * (isBusiness ? 160 : 120);
                         const passengersCount = b.adults + b.children;
@@ -3453,7 +3644,9 @@ export default function CancellationWizard({
                                 ))}
                               </div>
                             </TableCell>
-                            <TableCell className="text-center">{rooms}</TableCell>
+                            <TableCell className="text-center">
+                              {rooms}
+                            </TableCell>
                             <TableCell className="text-right font-semibold text-gray-900">
                               {currencySymbol}
                               {bookingCost.toLocaleString(undefined, {
@@ -3887,9 +4080,7 @@ export default function CancellationWizard({
                   ) : (
                     <>
                       <span>
-                        {activeStep === 5
-                          ? "Continue to Payment"
-                          : "Continue"}
+                        {activeStep === 5 ? "Continue to Payment" : "Continue"}
                       </span>
                       <ArrowRight className="h-4 w-4" />
                     </>

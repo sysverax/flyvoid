@@ -76,6 +76,7 @@ import {
   CheckRateRequestDto,
   BookHotelRequestDto,
   HotelAllocationsDto,
+  HotelAllocationProgressDto,
   CancelledFlightHotelBookingListResponseDto,
   CancelledFlightBookingsListResponseDto,
   HotelSummaryCancelledFlightResponseDto,
@@ -102,6 +103,7 @@ import { CancelledFlightsSummaryResponseDto } from "./dto/cancelled-flights-summ
   CancelledFlightAdminListResponseDto,
   ImportBookingResponseDto,
   HotelAllocationsDto,
+  HotelAllocationProgressDto,
   CancelledFlightHotelBookingListResponseDto,
   HotelSummaryCancelledFlightResponseDto,
   HotelBookingDetailResponseDto,
@@ -918,21 +920,16 @@ export class CancelledFlightsController {
     @RequestId() requestId: string,
     @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<HotelAllocationsDto>> {
-    requestLogger.info(
-      `Starting hotel allocation for cancelled flight ${id}`,
-      { context: this.context },
-    );
+    requestLogger.info(`Starting hotel allocation for cancelled flight ${id}`, {
+      context: this.context,
+    });
     const data = await this.hotelAllocationService.startHotelAllocation(
       id,
       request.user,
       requestId,
       requestLogger,
     );
-    return BaseResponseDto.success(
-      data,
-      requestId,
-      "Hotel allocation started",
-    );
+    return BaseResponseDto.success(data, requestId, "Hotel allocation started");
   }
 
   // ── GET /cancelled-flights/:id/hotel-allocations ────────────────────
@@ -970,6 +967,52 @@ export class CancelledFlightsController {
       data,
       requestId,
       "Hotel allocation status retrieved successfully",
+    );
+  }
+
+  // ── GET /cancelled-flights/:id/hotel-allocations/progress ───────────
+  @Get(":id/hotel-allocations/progress")
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.VIEW],
+    },
+  })
+  @ApiOperation({
+    summary: "Lightweight hotel allocation progress for polling",
+    description:
+      "Returns only run state and per-status PNR counts (no per-PNR results or price totals). Poll this while running is true, then fetch GET /:id/hotel-allocations once for the full results.",
+  })
+  @ApiParam({ name: "id", description: "Cancelled flight id" })
+  @ApiOkResponse({
+    schema: {
+      properties: {
+        success: { type: "boolean", example: true },
+        data: { $ref: getSchemaPath(HotelAllocationProgressDto) },
+      },
+    },
+  })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/cancelled-flights/:id/hotel-allocations/progress",
+      "Cancelled flight not found",
+    ),
+  })
+  async hotelAllocationProgress(
+    @Req() request: AuthenticatedRequest,
+    @Param("id", ParseIntPipe) id: number,
+    @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
+  ): Promise<BaseResponseDto<HotelAllocationProgressDto>> {
+    const data = await this.hotelAllocationService.getHotelAllocationProgress(
+      id,
+      request.user,
+      requestLogger,
+    );
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Hotel allocation progress retrieved successfully",
     );
   }
 

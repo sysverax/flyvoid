@@ -1,4 +1,5 @@
-import { ApiProperty } from "@nestjs/swagger";
+import { HotelPolicies } from "../../cancelled-flights/hotel-providers/hotel-provider.interface";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { HotelAllocationStatus } from "../../cancelled-flights/entities/enums";
 import { BookingResponseDto } from "../../cancelled-flights/dto/booking-response.dto";
 import { ReviewCancelledFlightDto } from "../../cancelled-flights/dto/review-cancelled-flight-response.dto";
@@ -18,6 +19,13 @@ export class HotelBookingRoomDto {
 
   @ApiProperty({ example: 120.5 })
   price!: number;
+
+  @ApiPropertyOptional({
+    description:
+      "Taxes not included in the price, collected by the hotel from the guest at check-in (per room, original currency)",
+    example: [{ name: "City tax", amount: 2.88, currencyCode: "EUR" }],
+  })
+  taxesAtProperty?: Array<{ name: string; amount: number; currencyCode: string | null }>;
 }
 
 export class HotelBookingHotelDetailDto {
@@ -69,6 +77,19 @@ export class HotelBookingHotelDetailDto {
     type: [String],
   })
   amenities?: string[] | null;
+
+  @ApiProperty({
+    description:
+      "Hotel policies from the supplier (metapolicy_struct / metapolicy_extra_info) the guest must follow at check-in",
+    nullable: true,
+    example: {
+      checkInTime: "15:00",
+      checkOutTime: "11:00",
+      extraInfo: "City tax of EUR 2.88 per guest per night is collected at the property.",
+      items: [{ category: "Pets", details: ["EUR 0 per room per stay; not included (payable at the property)"] }],
+    },
+  })
+  hotelPolicies?: HotelPolicies | null;
 
   @ApiProperty({ example: "2024-01-15" })
   checkInDate!: string;

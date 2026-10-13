@@ -3,6 +3,7 @@ export const NAVIGATION_ITEMS = [
   { title: "Airlines", path: "/airlines", key: "airlines" },
   { title: "Airports", path: "/airports", key: "airports" },
   { title: "Cancellation", path: "/cancellation", key: "cancelledFlights" },
+  { title: "Bookings", path: "/bookings", key: "hotelBookings" },
   { title: "Payments", path: "/payments", key: "payments" },
   { title: "Onboarding", path: "/onboarding", key: "invitesOnboarding" },
   { title: "Audit Logs", path: "/audit-logs", key: "auditLogs" },

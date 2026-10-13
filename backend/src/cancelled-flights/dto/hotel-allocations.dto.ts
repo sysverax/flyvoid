@@ -22,6 +22,17 @@ export class HotelAllocationRoomDto {
 
   @ApiProperty({ example: 120 })
   price: number;
+
+  @ApiPropertyOptional({
+    description:
+      "Taxes not included in the price, collected by the hotel from the guest at check-in (per room, original currency)",
+    example: [{ name: "City tax", amount: 2.88, currencyCode: "EUR" }],
+  })
+  taxesAtProperty?: Array<{
+    name: string;
+    amount: number;
+    currencyCode: string | null;
+  }>;
 }
 
 export class HotelAllocationHotelDto {
@@ -53,7 +64,10 @@ export class HotelAllocationHotelDto {
   @ApiProperty({ description: "Only for SUCCESS (else 0)", example: 264 })
   totalPrice: number;
 
-  @ApiProperty({ type: [HotelAllocationRoomDto], description: "Only for SUCCESS" })
+  @ApiProperty({
+    type: [HotelAllocationRoomDto],
+    description: "Only for SUCCESS",
+  })
   rooms: HotelAllocationRoomDto[];
 }
 
@@ -117,7 +131,8 @@ export class HotelAllocationsDto {
   status: string;
 
   @ApiProperty({
-    description: "True while an allocation run is booking hotels in the background",
+    description:
+      "True while an allocation run is booking hotels in the background",
     example: false,
   })
   running: boolean;
@@ -185,4 +200,60 @@ export class HotelAllocationsDto {
 
   @ApiProperty({ example: "EUR" })
   currency: string;
+}
+
+export class HotelAllocationProgressDto {
+  @ApiProperty({ description: "ID of the cancelled flight", example: 1 })
+  cancelledFlightId: number;
+
+  @ApiProperty({
+    description: "Flight status",
+    example: "hotel_allocation_in_progress",
+  })
+  status: string;
+
+  @ApiProperty({
+    description:
+      "True while an allocation run is booking hotels in the background",
+    example: true,
+  })
+  running: boolean;
+
+  @ApiPropertyOptional({
+    description: "Why the last allocation run stopped early, if it did",
+    nullable: true,
+    example: null,
+  })
+  lastRunError: string | null;
+
+  @ApiProperty({ example: 15 })
+  totalPnrs: number;
+
+  @ApiProperty({
+    description:
+      "PNRs with a final outcome: successful + failed + manual check",
+    example: 10,
+  })
+  processedPnrs: number;
+
+  @ApiProperty({ example: 8 })
+  successfulPnrs: number;
+
+  @ApiProperty({ example: 2 })
+  pendingPnrs: number;
+
+  @ApiProperty({ example: 1 })
+  failedPnrs: number;
+
+  @ApiProperty({ example: 1 })
+  manualCheckPnrs: number;
+
+  @ApiProperty({ example: 3 })
+  notStartedPnrs: number;
+
+  @ApiProperty({
+    description: "True only when every PNR is SUCCESS",
+    example: false,
+  })
+  fullyBooked: boolean;
 }

@@ -19,19 +19,24 @@ import {
   HotelBookingOutcomeUnknownError,
   HotelCandidate,
   HotelContentDetails,
+  HotelPolicies,
+  TaxAtProperty,
   HotelProvider,
   HotelRateCheck,
   RoomOccupancy,
+  SupplierSearchOptions,
 } from "../hotel-provider.interface";
 
 /** Everything needed to re-find a search rate at booking time (search_hash is not issued on our contract). */
 interface RatehawkRateKey {
   hid: number;
-  matchHash: string;
   checkin: string;
   checkout: string;
   adults: number;
   childrenAges: number[];
+  roomName?: string | null;
+  meal?: string | null;
+  roomGroup?: string | null;
 }
 
 /**
@@ -46,6 +51,7 @@ interface RatehawkBookingRequest {
   contactEmail?: string;
   contactPhone?: string;
   userIp?: string;
+  onSupplierOrderCreated?: (reference: string) => Promise<void>;
 }
 
 /** Same shape as HotelbedsProvider.bookHotel's result, plus ETG's order number. */
@@ -125,6 +131,8 @@ class SlidingWindowLimiter {
 }
 
 const RATE_KEY_PREFIX = "rh1.";
+const CONTENT_API_PREFIX = "content/";
+const PREBOOKED_KEY_PREFIX = "rhpb1.";
 const LANGUAGE = "en";
 
 const MEAL_NAMES: Record<string, string> = {
@@ -148,9 +156,11 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
   private readonly keyId = config.hotelProvider.ratehawk.userId;
   private readonly apiKey = config.hotelProvider.ratehawk.apiKey;
   private readonly useSandbox = config.hotelProvider.useSandbox;
-  private readonly baseUrl = config.hotelProvider.useSandbox
-    ? "https://api-sandbox.ratehawk.com/api/b2b/v3/"
-    : "https://api.ratehawk.com/api/b2b/v3/";
+  private readonly flyvoidEmail = config.flyvoid.email;
+  private readonly apiRoot = config.hotelProvider.useSandbox
+    ? "https://api-sandbox.ratehawk.com/api/"
+    : "https://api.ratehawk.com/api/";
+  private readonly baseUrl = `${this.apiRoot}b2b/v3/`;
 
   private readonly maxConcurrency = 3;
   private readonly maxAttempts = 3; // 1 initial try + 2 retries
@@ -175,7 +185,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         ["search/serp/geo/", 10, 60],
         ["search/serp/hotels/", 150, 60],
         ["search/hp/", 10, 60],
-        ["hotel/info/", 30, 60],
+        ["content/v1/hotel_content_by_ids/", 1200, 60],
         ["hotel/prebook/", 30, 60],
         ["hotel/order/booking/form/", 30, 60],
         ["hotel/order/booking/finish/", 30, 60],
@@ -188,8 +198,6 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
       new SlidingWindowLimiter(requests, seconds * 1000),
     ]),
   );
-
-  private readonly contentCache = new Map<number, any>();
 
   // Dev-only mirror of hotelbeds-cache: raw per-occupancy search responses,
   // read when config.hotelSearch.isAllowSearchAPI is false.
@@ -212,6 +220,15 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
 
   private hasCredentials(): boolean {
     return !!this.keyId && !!this.apiKey;
+  }
+
+  /** Production bookings must carry FlyVoid's corporate email, never the airline's (B2B prices). */
+  private assertFlyvoidEmail(): void {
+    if (!this.useSandbox && !this.flyvoidEmail) {
+      throw new ServiceUnavailableException(
+        "FLYVOID_EMAIL (FlyVoid corporate email) is not configured; RateHawk bookings are disabled",
+      );
+    }
   }
 
   private assertCredentials(requestLogger?: RhLogger): void {
@@ -280,7 +297,9 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     } = {},
   ): Promise<RatehawkEnvelope<T>> {
     const log = requestLogger ?? this.logFor();
-    const url = `${this.baseUrl}${endpoint}`;
+    const url = endpoint.startsWith(CONTENT_API_PREFIX)
+      ? `${this.apiRoot}${endpoint}`
+      : `${this.baseUrl}${endpoint}`;
     const attempts = retry ? this.maxAttempts : 1;
     const limiter = this.limiters.get(endpoint);
     let lastError: Error | null = null;
@@ -458,6 +477,11 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     ];
   }
 
+  /** ETG expects a lowercase ISO 3166-1 alpha-2 code ("us"). */
+  private residencyFor(options?: SupplierSearchOptions): string | null {
+    return options?.residency?.toLowerCase() || null;
+  }
+
   private radiusInMeters(radius: number): number {
     const unit = String(config.hotelSearch.unit).toLowerCase();
     const meters =
@@ -493,6 +517,50 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     return (
       RATE_KEY_PREFIX + Buffer.from(JSON.stringify(key)).toString("base64url")
     );
+  }
+
+  private encodePrebookedKey(prebooked: {
+    key: RatehawkRateKey;
+    bookHash: string;
+    payment: any;
+  }): string {
+    const payment = prebooked.payment
+      ? {
+          amount: prebooked.payment.amount,
+          commission_info: {
+            show: { amount_net: prebooked.payment.commission_info?.show?.amount_net },
+            charge: { amount_net: prebooked.payment.commission_info?.charge?.amount_net },
+          },
+        }
+      : null;
+    return (
+      PREBOOKED_KEY_PREFIX +
+      Buffer.from(
+        JSON.stringify({ key: prebooked.key, bookHash: prebooked.bookHash, payment }),
+      ).toString("base64url")
+    );
+  }
+
+  private decodePrebookedKey(bookingKey: string): {
+    key: RatehawkRateKey;
+    bookHash: string;
+    payment: any;
+    priceChanged: boolean;
+  } {
+    try {
+      const decoded = JSON.parse(
+        Buffer.from(
+          bookingKey.slice(PREBOOKED_KEY_PREFIX.length),
+          "base64url",
+        ).toString("utf-8"),
+      );
+      if (!decoded?.key || !decoded?.bookHash) {
+        throw new Error("missing fields");
+      }
+      return { ...decoded, priceChanged: false };
+    } catch {
+      throw new BadRequestException("Malformed RateHawk booking key");
+    }
   }
 
   decodeRateKey(rateKey: string): RatehawkRateKey {
@@ -542,7 +610,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
   /**
    * Search results carry no hotel name, only the slug `id`
    * ("maison_privee_frond_villa_d"), so use a title-cased version of it.
-   * checkRate/bookHotel return the exact name from hotel/info.
+   * Booked hotels get the exact name from the Content API.
    */
   private nameFromSlug(id: unknown, hid: number): string {
     const words = String(id ?? "")
@@ -564,6 +632,20 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
   }
 
   /** Taxes ETG says are payable at the hotel must be shown to the guest. */
+  private taxesAtProperty(payment: any): TaxAtProperty[] {
+    const taxes = Array.isArray(payment?.tax_data?.taxes)
+      ? payment.tax_data.taxes
+      : [];
+    return taxes
+      .filter((tax: any) => tax && tax.included_by_supplier === false)
+      .map((tax: any) => ({
+        name: this.humanize(String(tax.name ?? "tax")),
+        amount: Number(tax.amount ?? 0),
+        currencyCode: tax.currency_code ? String(tax.currency_code) : null,
+      }))
+      .filter((tax: TaxAtProperty) => Number.isFinite(tax.amount));
+  }
+
   private taxComments(payment: any): string | null {
     const taxes = Array.isArray(payment?.tax_data?.taxes)
       ? payment.tax_data.taxes
@@ -576,19 +658,18 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     return atHotel.length ? `Payable at hotel - ${atHotel.join("; ")}` : null;
   }
 
-  private async fetchHotelContent(
-    hid: number,
+  private async fetchHotelContentByIds(
+    hids: number[],
     requestLogger?: RhLogger,
-  ): Promise<any | null> {
-    const cached = this.contentCache.get(hid);
-    if (cached) return cached;
+  ): Promise<any[]> {
     const data = await this.call<any>(
-      "hotel/info/",
-      { hid, language: LANGUAGE },
+      "content/v1/hotel_content_by_ids/",
+      { hids, language: LANGUAGE },
       requestLogger,
     );
-    if (data) this.contentCache.set(hid, data);
-    return data ?? null;
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data?.hotels)) return data.hotels;
+    return [];
   }
 
   /** Raw ETG hotels whose rates are tagged with the occupancy they were searched for. */
@@ -617,7 +698,6 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         const category = this.categoryFor(stars);
 
         const rates: AvailabilityRoomRate[] = (hotel.rates ?? [])
-          .filter((rate: any) => !!rate?.match_hash)
           .map((rate: any) => {
             const occupancy: RoomOccupancy = rate.__occupancy;
             const childrenAges = this.childrenAgesFor(occupancy);
@@ -638,11 +718,13 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
               boardName: this.mealName(rate.meal),
               rateKey: this.encodeRateKey({
                 hid,
-                matchHash: String(rate.match_hash),
                 checkin,
                 checkout,
                 adults: Number(occupancy.adults),
                 childrenAges,
+                roomName: rate.room_name ? String(rate.room_name) : null,
+                meal: rate.meal ? String(rate.meal) : null,
+                roomGroup: this.roomGroupSignature(rate.rg_ext),
               }),
               // ETG rates always need a hotelpage + prebook before booking.
               rateType: "RECHECK",
@@ -650,7 +732,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
               netPrice: this.netAmounts(payment).shown,
               buyingPrice: this.netAmounts(payment).charged,
               currency: String(
-                payment.show_currency_code ?? payment.currency_code ?? "USD",
+                payment.show_currency_code ?? payment.currency_code ?? config.currency,
               ),
               allotment:
                 rate.allotment !== undefined && rate.allotment !== null
@@ -701,6 +783,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     checkout: string,
     occupancy: RoomOccupancy,
     requestLogger: Logger,
+    residency: string | null,
   ): Promise<any[]> {
     const data = await this.call<{ hotels?: any[] }>(
       "search/serp/geo/",
@@ -709,6 +792,8 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         checkout,
         language: LANGUAGE,
         guests: this.guestsFor(occupancy),
+        ...(residency ? { residency } : {}),
+        currency: config.currency,
         latitude: Number(airport.latitude),
         longitude: Number(airport.longitude),
         radius: this.radiusInMeters(radius),
@@ -725,6 +810,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     checkout: string,
     occupancy: RoomOccupancy,
     requestLogger: Logger,
+    residency: string | null,
     filter?: { star_rating: number[] },
   ): Promise<any[]> {
     const chunks: number[][] = [];
@@ -741,6 +827,8 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
             checkout,
             language: LANGUAGE,
             guests: this.guestsFor(occupancy),
+            ...(residency ? { residency } : {}),
+            currency: config.currency,
             hids: chunk,
             ...(filter ? { filter } : {}),
           },
@@ -762,6 +850,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     occupancy: RoomOccupancy,
     starsByHid: Map<number, number>,
     requestLogger: Logger,
+    residency: string | null,
   ): Promise<void> {
     const unknown = hids.filter((hid) => !starsByHid.has(hid));
     if (!unknown.length) return;
@@ -776,6 +865,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
           checkout,
           occupancy,
           requestLogger,
+          residency,
           {
             star_rating: [star],
           },
@@ -795,6 +885,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     occupancies: RoomOccupancy[],
     requestId: string,
     requestLogger: Logger,
+    options?: SupplierSearchOptions,
   ): Promise<AvailabilityHotel[]> {
     if (!config.hotelSearch.isAllowSearchAPI) {
       return await this.searchNearbyHotelsWithOccupanciesFromJson(
@@ -831,10 +922,12 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
       }
     };
 
+    const residency = this.residencyFor(options);
     requestLogger.info("Fetching hotel availability from RateHawk API", {
       context: this.context,
       airportCode: airport.iataCode,
       occupancyCount: dedupedOccupancies.length,
+      residency,
       useSandbox: this.useSandbox,
     });
 
@@ -859,6 +952,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
           checkOutDate,
           probe,
           requestLogger,
+          residency,
         );
         const hids = geoHotels
           .map((hotel) => Number(hotel.hid))
@@ -876,6 +970,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
             probe,
             starsByHid,
             requestLogger,
+            residency,
           );
         }
 
@@ -890,6 +985,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
                 checkOutDate,
                 occupancy,
                 requestLogger,
+                residency,
               ),
           );
           priced.forEach((hotels, i) => {
@@ -1096,7 +1192,146 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
 
   // ------------------------------------------------------------ content
 
-  // Best-effort hotel profile lookup via /hotel/info/; never blocks allocation on failure.
+  private static readonly POLICY_LABELS: Record<string, string> = {
+    deposit: "Deposit",
+    add_fee: "Additional fees",
+    extra_bed: "Extra bed",
+    cot: "Cot",
+    children: "Children",
+    children_meal: "Children's meals",
+    meal: "Meals",
+    pets: "Pets",
+    parking: "Parking",
+    internet: "Internet",
+    shuttle: "Shuttle / transfer",
+    check_in_check_out: "Early check-in / late check-out",
+    no_show: "No-show",
+    visa: "Visa support",
+  };
+
+  private parsePolicies(hotel: any): HotelPolicies | null {
+    const struct = hotel?.metapolicy_struct;
+    const items: HotelPolicies["items"] = [];
+    if (struct && typeof struct === "object") {
+      for (const [key, value] of Object.entries(struct)) {
+        const entries = Array.isArray(value) ? value : [value];
+        const details = entries
+          .map((entry) => this.policyText(entry))
+          .filter((text): text is string => !!text);
+        if (details.length) {
+          items.push({
+            category: RatehawkProvider.POLICY_LABELS[key] ?? this.humanize(key),
+            details,
+          });
+        }
+      }
+    }
+    const extraInfo = this.plainText(hotel?.metapolicy_extra_info);
+    const time = (value: unknown) =>
+      typeof value === "string" && value ? value.slice(0, 5) : null;
+    const policies: HotelPolicies = {
+      checkInTime: time(hotel?.check_in_time),
+      checkOutTime: time(hotel?.check_out_time),
+      extraInfo,
+      items,
+      raw: struct ?? null,
+    };
+    return items.length || extraInfo || policies.checkInTime || policies.checkOutTime
+      ? policies
+      : null;
+  }
+
+  private policyText(entry: unknown): string | null {
+    if (!entry || typeof entry !== "object") {
+      return null;
+    }
+    const isEmpty = (value: unknown) =>
+      value === null || value === undefined || value === "" || value === "unspecified";
+    const record = entry as Record<string, unknown>;
+    const parts: string[] = [];
+    if (!isEmpty(record.price)) {
+      const currency = record.currency ?? record.currency_code;
+      const unit = isEmpty(record.price_unit)
+        ? ""
+        : ` ${String(record.price_unit).replace(/_/g, " ")}`;
+      parts.push(`${currency ? `${currency} ` : ""}${record.price}${unit}`);
+    }
+    for (const [key, value] of Object.entries(record)) {
+      if (
+        ["price", "currency", "currency_code", "price_unit"].includes(key) ||
+        isEmpty(value) ||
+        typeof value === "object"
+      ) {
+        continue;
+      }
+      if (key === "inclusion") {
+        parts.push(
+          value === "included"
+            ? "included in the price"
+            : value === "not_included"
+              ? "not included (payable at the property)"
+              : this.humanize(String(value)),
+        );
+        continue;
+      }
+      parts.push(`${this.humanize(key)}: ${this.humanize(String(value))}`);
+    }
+    return parts.length ? parts.join("; ") : null;
+  }
+
+  private humanize(value: string): string {
+    const text = value.replace(/_/g, " ").trim();
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+
+  private plainText(value: unknown): string | null {
+    if (typeof value !== "string") {
+      return null;
+    }
+    const text = value
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/(p|li|div|h\d)>/gi, "\n")
+      .replace(/<[^>]+>/g, "")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+    return text || null;
+  }
+
+  async getOrderInfo(
+    bookingReferences: string[],
+    requestId: string,
+  ): Promise<{ status: string | null; orders: unknown[] } | null> {
+    if (!this.hasCredentials() || bookingReferences.length === 0) {
+      return null;
+    }
+    const log = this.logFor(requestId);
+    const data = await this.call<{ orders?: any[] }>(
+      "hotel/order/info/",
+      {
+        ordering: { ordering_type: "desc", ordering_by: "created_at" },
+        pagination: {
+          page_size: String(Math.max(bookingReferences.length, 1)),
+          page_number: "1",
+        },
+        search: { partner_order_ids: bookingReferences },
+        language: LANGUAGE,
+      },
+      log,
+    );
+    const orders = Array.isArray(data?.orders) ? data.orders : [];
+    const statuses = [
+      ...new Set(
+        orders
+          .map((order: any) => order?.status)
+          .filter((status: unknown): status is string => !!status),
+      ),
+    ];
+    return { status: statuses.length ? statuses.join(",") : null, orders };
+  }
+
+  // Best-effort profile of a booked hotel via the Content API; never blocks booking on failure.
   async getHotelContentDetails(
     hotelCode: string,
     requestId: string,
@@ -1124,7 +1359,8 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     }
 
     try {
-      const hotel = await this.fetchHotelContent(hid, requestLogger);
+      const hotels = await this.fetchHotelContentByIds([hid], requestLogger);
+      const hotel = hotels.find((h: any) => Number(h?.hid) === hid) ?? hotels[0];
       if (!hotel) return null;
 
       const address = [hotel.address, hotel.region?.name]
@@ -1145,6 +1381,11 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         : [];
 
       return {
+        policies: this.parsePolicies(hotel),
+        name: hotel.name ? String(hotel.name) : null,
+        starRating: Number.isFinite(Number(hotel.star_rating))
+          ? Number(hotel.star_rating)
+          : null,
         address: address || null,
         contact: {
           phones: hotel.phone
@@ -1164,7 +1405,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
       };
     } catch (error: any) {
       requestLogger.error(
-        `Error querying RateHawk hotel/info for hotel '${hotelCode}': ${error.message}`,
+        `Error querying RateHawk hotel content for hotel '${hotelCode}': ${error.message}`,
         { context: this.context, stack: error.stack },
       );
       return null;
@@ -1173,8 +1414,24 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
 
   // ------------------------------------------------------ prebook / book
 
-  /** Re-prices a search rate: hotelpage (by match_hash) -> prebook. */
-  private async prebookRate(rateKey: string, log: RhLogger) {
+  /** Stable identity of a room across search and hotelpage (ETG rg_ext). */
+  private roomGroupSignature(rgExt: unknown): string | null {
+    if (!rgExt || typeof rgExt !== "object") {
+      return null;
+    }
+    return JSON.stringify(
+      Object.entries(rgExt as Record<string, unknown>).sort(([a], [b]) =>
+        a.localeCompare(b),
+      ),
+    );
+  }
+
+  /** Re-prices a search rate: hotelpage (by hotel id) -> same room and meal -> prebook. */
+  private async prebookRate(
+    rateKey: string,
+    log: RhLogger,
+    residency: string | null = null,
+  ) {
     const key = this.decodeRateKey(rateKey);
 
     const hotelpage = await this.call<{ hotels?: any[] }>(
@@ -1184,14 +1441,57 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         checkout: key.checkout,
         language: LANGUAGE,
         guests: [{ adults: key.adults, children: key.childrenAges }],
+        ...(residency ? { residency } : {}),
+        currency: config.currency,
         hid: key.hid,
-        match_hash: key.matchHash,
       },
       log,
     );
-    const hpRate = hotelpage?.hotels?.[0]?.rates?.find(
-      (rate: any) => rate.match_hash === key.matchHash,
-    );
+    const hpHotel = hotelpage?.hotels?.[0];
+    const bookable = (hpHotel?.rates ?? [])
+      .filter(
+        (rate: any) =>
+          !!rate?.book_hash &&
+          this.pickPaymentType(rate.payment_options?.payment_types)?.type ===
+            "deposit",
+      )
+      .sort(
+        (a: any, b: any) =>
+          this.netAmounts(this.pickPaymentType(a.payment_options?.payment_types))
+            .shown -
+          this.netAmounts(this.pickPaymentType(b.payment_options?.payment_types))
+            .shown,
+      );
+    const sameMeal = (rate: any) =>
+      (rate.meal ? String(rate.meal) : null) === (key.meal ?? null);
+    const byRoomGroup = key.roomGroup
+      ? bookable.find(
+          (rate: any) =>
+            this.roomGroupSignature(rate.rg_ext) === key.roomGroup &&
+            sameMeal(rate),
+        )
+      : undefined;
+    const byRoomName = byRoomGroup
+      ? undefined
+      : key.roomName
+        ? bookable.find(
+            (rate: any) =>
+              String(rate.room_name ?? "") === key.roomName && sameMeal(rate),
+          )
+        : undefined;
+    const hpRate = byRoomGroup ?? byRoomName ?? bookable[0];
+    log.info("Selected RateHawk hotelpage rate", {
+      context: this.context,
+      hid: key.hid,
+      matchedBy: byRoomGroup
+        ? "room_group_and_meal"
+        : byRoomName
+          ? "room_name_and_meal"
+          : hpRate
+            ? "cheapest_deposit_rate"
+            : "none",
+      bookableRates: bookable.length,
+    });
     if (!hpRate?.book_hash) {
       throw new ConflictException(
         "The selected RateHawk rate is no longer available",
@@ -1211,15 +1511,21 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
       key,
       rate,
       bookHash: String(rate.book_hash),
+      hotelSlug: hpHotel?.id,
       priceChanged: !!prebook.changes?.price_changed,
       payment: this.pickPaymentType(rate.payment_options?.payment_types),
     };
   }
 
   // HotelProvider.checkRate — hotelpage + prebook, then the hotel's real name/address.
-  async checkRate(rateKey: string, requestId: string): Promise<HotelRateCheck> {
+  async checkRate(
+    rateKey: string,
+    requestId: string,
+    options?: SupplierSearchOptions,
+  ): Promise<HotelRateCheck> {
     const log = this.logFor(requestId);
     this.assertCredentials(log);
+    this.assertFlyvoidEmail();
 
     try {
       this.logger.info(
@@ -1227,13 +1533,8 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         this.context,
         requestId,
       );
-      const { key, rate, priceChanged, payment } = await this.prebookRate(
-        rateKey,
-        log,
-      );
-      const content = await this.fetchHotelContent(key.hid, log).catch(
-        () => null,
-      );
+      const { key, rate, priceChanged, payment, bookHash, hotelSlug } =
+        await this.prebookRate(rateKey, log, this.residencyFor(options));
 
       this.logger.info(
         "Successfully validated rate with RateHawk",
@@ -1243,9 +1544,9 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
 
       return {
         hotelCode: String(key.hid),
-        hotelName: String(content?.name ?? ""),
-        category: this.categoryFor(Number(content?.star_rating ?? 0)),
-        address: content?.address ? String(content.address) : null,
+        hotelName: this.nameFromSlug(hotelSlug, key.hid),
+        category: "",
+        address: null,
         checkInDate: key.checkin,
         checkOutDate: key.checkout,
         roomName: String(rate.room_name ?? ""),
@@ -1255,7 +1556,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         netPrice: this.netAmounts(payment).shown,
         buyingPrice: this.netAmounts(payment).charged,
         currency: String(
-          payment?.show_currency_code ?? payment?.currency_code ?? "USD",
+          payment?.show_currency_code ?? payment?.currency_code ?? config.currency,
         ),
         cancellationPolicies: (payment?.cancellation_penalties?.policies ?? [])
           .filter((p: any) => Number(p.amount_show ?? p.amount_charge ?? 0) > 0)
@@ -1264,7 +1565,9 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
             from: String(p.start_at ?? new Date().toISOString()),
           })),
         rateComments: this.taxComments(payment),
+        taxesAtProperty: this.taxesAtProperty(payment),
         priceChanged,
+        bookingKey: this.encodePrebookedKey({ key, bookHash, payment }),
       };
     } catch (error: any) {
       this.logger.error(
@@ -1309,10 +1612,17 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
   ): Promise<RatehawkBookingResult> {
     const log = this.logFor(requestId);
     this.assertCredentials(log);
-    if (!bookingData.contactEmail || !bookingData.contactPhone) {
-      // ETG requires a contact on every booking (booking/finish `user`).
+    this.assertFlyvoidEmail();
+    const userEmail = this.flyvoidEmail || bookingData.contactEmail;
+    if (!this.flyvoidEmail) {
+      log.warn(
+        "FLYVOID_EMAIL not set; sandbox booking uses the airline email",
+        { context: this.context, bookingId: bookingData.bookingId },
+      );
+    }
+    if (!userEmail || !bookingData.contactPhone) {
       throw new BadRequestException(
-        "RateHawk bookings require contactEmail and contactPhone (the airline contact)",
+        "RateHawk bookings require a contact email and phone",
       );
     }
 
@@ -1322,7 +1632,9 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     let finishAttempted = false;
 
     try {
-      const checked = await this.prebookRate(rateKey, log);
+      const checked = rateKey.startsWith(PREBOOKED_KEY_PREFIX)
+        ? this.decodePrebookedKey(rateKey)
+        : await this.prebookRate(rateKey, log);
       const { key } = checked;
 
       this.logger.info(
@@ -1374,6 +1686,8 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         );
       }
 
+      await bookingData.onSupplierOrderCreated?.(partnerOrderId);
+
       // ETG wants one guest entry per person; only the lead passenger is named.
       const firstName = this.sanitizeName(bookingData.firstName, "Guest");
       const lastName = this.sanitizeName(bookingData.lastName, "Guest");
@@ -1396,7 +1710,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
           "hotel/order/booking/finish/",
           {
             user: {
-              email: bookingData.contactEmail,
+              email: userEmail,
               phone: bookingData.contactPhone,
             },
             partner: {
@@ -1447,9 +1761,6 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         await this.waitForBookingCompletion(partnerOrderId, requestId, log);
       }
 
-      const content = await this.fetchHotelContent(key.hid, log).catch(
-        () => null,
-      );
       // finish is paid with the form's `amount`; we record the show net as the
       // price and the charge net as our cost. booking/form carries no
       // commission_info, so read them from the prebook rate.
@@ -1466,8 +1777,8 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         bookingReference: partnerOrderId,
         supplierOrderId: String(form?.order_id ?? ""),
         status: HotelAllocationStatus.CONFIRMED,
-        hotelName: content?.name ?? "",
-        hotelAddress: content?.address ?? "",
+        hotelName: "",
+        hotelAddress: "",
         checkInDate: key.checkin,
         checkOutDate: key.checkout,
         totalRooms: 1,
@@ -1501,6 +1812,33 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         `RateHawk Bookings API failed: ${error.message}`,
       );
     }
+  }
+
+  /** One booking/finish/status check, used to confirm a webhook's reported status. */
+  async checkBookingStatus(
+    partnerOrderId: string,
+    requestId: string,
+  ): Promise<{ state: "booked" | "failed" | "processing"; code: string | null }> {
+    const log = this.logFor(requestId);
+    this.assertCredentials(log);
+    const envelope = await this.request<any>(
+      "hotel/order/booking/finish/status/",
+      { partner_order_id: partnerOrderId },
+      log,
+      { retry: false },
+    );
+    if (envelope?.status === "ok") {
+      return { state: "booked", code: null };
+    }
+    const code = envelope?.error ?? null;
+    if (
+      !envelope ||
+      envelope.status === "processing" ||
+      (!!code && RatehawkProvider.RETRYABLE_ERRORS.has(code))
+    ) {
+      return { state: "processing", code };
+    }
+    return { state: "failed", code };
   }
 
   /** Polls booking/finish/status until `ok`, a final error, or the booking timeout. */

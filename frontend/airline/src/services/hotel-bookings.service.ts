@@ -1,4 +1,5 @@
 import { apiClient, extractErrorMessage } from "../lib/api-client";
+import type { HotelPoliciesDto } from "./cancellation.service";
 
 export interface HotelBookingPassengerDTO {
   id: number;
@@ -90,6 +91,7 @@ export interface HotelBookingDetailRoomDTO {
   roomName: string;
   boardName: string;
   price: number;
+  taxesAtProperty?: Array<{ name: string; amount: number; currencyCode: string | null }>;
 }
 
 export interface HotelBookingDetailHotelDTO {
@@ -107,6 +109,7 @@ export interface HotelBookingDetailHotelDTO {
   imageUrl?: string | null;
   website?: string | null;
   amenities?: string[] | null;
+  hotelPolicies?: HotelPoliciesDto | null;
   checkInDate: string;
   checkOutDate: string;
   rooms: HotelBookingDetailRoomDTO[];

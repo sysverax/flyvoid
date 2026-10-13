@@ -316,6 +316,7 @@ export class HotelBookingsService {
         cancellationDate: formatDate(flight.cancellationDate),
       },
       hotel: {
+        policies: hotelBooking.hotelPolicies ?? null,
         name: hotelBooking.hotelName,
         rating: hotelBooking.category,
         address: hotelBooking.address ?? null,
@@ -341,6 +342,7 @@ export class HotelBookingsService {
           boardName: room.boardName,
           adults: room.adults,
           children: room.children,
+          taxesAtProperty: room.taxesAtProperty ?? [],
         })),
       },
       airlineName: flight.airline.name,
@@ -513,6 +515,7 @@ export class HotelBookingsService {
       imageUrl: hotelBooking.imageUrl ?? null,
       website: hotelBooking.website ?? null,
       amenities: hotelBooking.amenities ?? null,
+      hotelPolicies: hotelBooking.hotelPolicies ?? null,
       checkInDate: hotelBooking.checkInDate,
       checkOutDate: hotelBooking.checkOutDate,
       // rateKey is the supplier rate used to book; not part of this API.
@@ -571,6 +574,7 @@ export class HotelBookingsService {
         lastName: hotelBooking.booking.lastName,
         email: hotelBooking.booking.email,
         phone: hotelBooking.booking.phone,
+        residency: hotelBooking.booking.residency,
         travelClass: hotelBooking.booking.travelClass,
         adults: hotelBooking.booking.adults,
         children: hotelBooking.booking.children,
