@@ -23,6 +23,7 @@ import {
   TaxAtProperty,
   HotelProvider,
   HotelRateCheck,
+  HotelStaticContent,
   RoomOccupancy,
   SupplierSearchOptions,
 } from "../hotel-provider.interface";
@@ -100,21 +101,35 @@ export class RatehawkApiError extends Error {
 class SlidingWindowLimiter {
   private stamps: number[] = [];
   private chain: Promise<void> = Promise.resolve();
+  private blockedUntil = 0;
 
   constructor(
     private max: number,
     private windowMs: number,
   ) {}
 
+  get window(): number {
+    return this.windowMs;
+  }
+
   update(max: number, windowMs: number): void {
     this.max = max;
     this.windowMs = windowMs;
+  }
+
+  /** ETG said the limit is used up: hold every queued call until the window resets. */
+  pauseFor(ms: number): void {
+    this.blockedUntil = Math.max(this.blockedUntil, Date.now() + ms);
   }
 
   acquire(): Promise<void> {
     const turn = this.chain.then(async () => {
       for (;;) {
         const now = Date.now();
+        if (now < this.blockedUntil) {
+          await new Promise((r) => setTimeout(r, this.blockedUntil - now));
+          continue;
+        }
         this.stamps = this.stamps.filter((t) => now - t < this.windowMs);
         if (this.stamps.length < this.max) {
           this.stamps.push(now);
@@ -183,7 +198,6 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     (
       [
         ["search/serp/geo/", 10, 60],
-        ["search/serp/hotels/", 150, 60],
         ["search/hp/", 10, 60],
         ["content/v1/hotel_content_by_ids/", 1200, 60],
         ["hotel/prebook/", 30, 60],
@@ -276,6 +290,16 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     );
   }
 
+  /** ETG's Retry-After when given, otherwise one full limit window (60s on every endpoint). */
+  private rateLimitWaitMs(
+    retryAfter: string | null,
+    limiter: SlidingWindowLimiter | undefined,
+  ): number {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds) && seconds > 0) return seconds * 1000 + 250;
+    return (limiter?.window ?? 60000) + 250;
+  }
+
   private authHeader(): string {
     return `Basic ${Buffer.from(`${this.keyId}:${this.apiKey}`).toString("base64")}`;
   }
@@ -354,16 +378,25 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         envelope = null;
       }
 
-      if (response.ok && envelope) {
+      const code = envelope?.error ?? null;
+      const rateLimited =
+        response.status === 429 || code === "endpoint_exceeded_limit";
+      // Booking calls (retry off) get the envelope and handle the code themselves.
+      if (response.ok && envelope && !(retry && rateLimited)) {
         return envelope;
       }
 
-      const code = envelope?.error ?? null;
       lastError = new RatehawkApiError(endpoint, response.status, code, text);
       const willRetry =
         attempt < attempts &&
-        (RatehawkProvider.RETRYABLE_STATUS.has(response.status) ||
+        (rateLimited ||
+          RatehawkProvider.RETRYABLE_STATUS.has(response.status) ||
           (!!code && RatehawkProvider.RETRYABLE_ERRORS.has(code)));
+      // A short backoff lands in the same exhausted window, so wait it out.
+      const waitMs = rateLimited
+        ? this.rateLimitWaitMs(response.headers.get("retry-after"), limiter)
+        : this.backoffMs(attempt);
+      if (rateLimited) limiter?.pauseFor(waitMs);
 
       // Only place the full ETG status + body is logged.
       log.error(`RateHawk ${endpoint} returned an error response`, {
@@ -373,10 +406,11 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         attempt,
         body: text,
         willRetry,
+        ...(rateLimited ? { rateLimitWaitMs: waitMs } : {}),
       });
 
       if (!willRetry) break;
-      await this.sleep(this.backoffMs(attempt));
+      await this.sleep(waitMs);
     }
 
     throw lastError ?? new RatehawkApiError(endpoint, 0, null, "unknown error");
@@ -687,12 +721,12 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     rawHotels: any[],
     checkin: string,
     checkout: string,
-    starsByHid: Map<number, number>,
   ): AvailabilityHotel[] {
     return rawHotels
       .map((hotel: any) => {
         const hid = Number(hotel.hid);
-        const stars = starsByHid.get(hid) ?? 0;
+        // Stars and the real name come from our hotels table (Content API), not search.
+        const stars = 0;
         const hotelCode = String(hid);
         const hotelName = this.nameFromSlug(hotel.id, hid);
         const category = this.categoryFor(stars);
@@ -804,80 +838,6 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     return data?.hotels ?? [];
   }
 
-  private async searchByHids(
-    hids: number[],
-    checkin: string,
-    checkout: string,
-    occupancy: RoomOccupancy,
-    requestLogger: Logger,
-    residency: string | null,
-    filter?: { star_rating: number[] },
-  ): Promise<any[]> {
-    const chunks: number[][] = [];
-    for (let i = 0; i < hids.length; i += 100)
-      chunks.push(hids.slice(i, i + 100));
-    const results = await this.mapWithConcurrency(
-      chunks,
-      this.maxConcurrency,
-      (chunk) =>
-        this.call<{ hotels?: any[] }>(
-          "search/serp/hotels/",
-          {
-            checkin,
-            checkout,
-            language: LANGUAGE,
-            guests: this.guestsFor(occupancy),
-            ...(residency ? { residency } : {}),
-            currency: config.currency,
-            hids: chunk,
-            ...(filter ? { filter } : {}),
-          },
-          requestLogger,
-        ),
-    );
-    return results.flatMap((data) => data?.hotels ?? []);
-  }
-
-  /**
-   * Search results have no star rating, but serp/hotels filters by it: one
-   * call per star value (150/min limit) tells us which hids have it. Hotels
-   * matching none of 1-5 are unrated (0).
-   */
-  private async resolveStars(
-    hids: number[],
-    checkin: string,
-    checkout: string,
-    occupancy: RoomOccupancy,
-    starsByHid: Map<number, number>,
-    requestLogger: Logger,
-    residency: string | null,
-  ): Promise<void> {
-    const unknown = hids.filter((hid) => !starsByHid.has(hid));
-    if (!unknown.length) return;
-    const starValues = [1, 2, 3, 4, 5];
-    const matches = await this.mapWithConcurrency(
-      starValues,
-      this.maxConcurrency,
-      (star) =>
-        this.searchByHids(
-          unknown,
-          checkin,
-          checkout,
-          occupancy,
-          requestLogger,
-          residency,
-          {
-            star_rating: [star],
-          },
-        ),
-    );
-    for (const hid of unknown) starsByHid.set(hid, 0);
-    matches.forEach((hotels, i) => {
-      for (const hotel of hotels)
-        starsByHid.set(Number(hotel.hid), starValues[i]);
-    });
-  }
-
   async searchNearbyHotelsWithOccupancies(
     airport: { iataCode: string; latitude: number; longitude: number },
     checkInDate: string,
@@ -910,7 +870,6 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     );
 
     const mergedByHid = new Map<number, any>();
-    const starsByHid = new Map<number, number>();
     const merge = (occupancy: RoomOccupancy, hotels: any[]) => {
       for (const hotel of this.tagRates(hotels, occupancy)) {
         const hid = Number(hotel?.hid);
@@ -935,66 +894,34 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
       const { defaultRadius } = config.hotelSearch;
       const maxRadius = Math.max(defaultRadius, config.hotelSearch.maxRadius);
 
-      // serp/geo is limited to 10/min, so each round makes ONE geo call (for
-      // the first still-missing shape) to discover hotels, then prices the
-      // other missing shapes over those hids via serp/hotels (150/min).
+      // One serp/geo call per room type; the client-side limiter queues them
+      // within the endpoint's per-minute limit.
       let stillMissing = dedupedOccupancies;
       for (
         let radius = defaultRadius;
         radius <= maxRadius && stillMissing.length > 0;
         radius += 10
       ) {
-        const [probe, ...others] = stillMissing;
-        const geoHotels = await this.searchGeo(
-          airport,
-          radius,
-          checkInDate,
-          checkOutDate,
-          probe,
-          requestLogger,
-          residency,
+        const shapes = stillMissing;
+        const found = await this.mapWithConcurrency(
+          shapes,
+          this.maxConcurrency,
+          (occupancy) =>
+            this.searchGeo(
+              airport,
+              radius,
+              checkInDate,
+              checkOutDate,
+              occupancy,
+              requestLogger,
+              residency,
+            ),
         );
-        const hids = geoHotels
-          .map((hotel) => Number(hotel.hid))
-          .filter(Boolean);
         const nextMissing: RoomOccupancy[] = [];
-
-        if (geoHotels.length) merge(probe, geoHotels);
-        else nextMissing.push(probe);
-
-        if (hids.length) {
-          await this.resolveStars(
-            hids,
-            checkInDate,
-            checkOutDate,
-            probe,
-            starsByHid,
-            requestLogger,
-            residency,
-          );
-        }
-
-        if (hids.length && others.length) {
-          const priced = await this.mapWithConcurrency(
-            others,
-            this.maxConcurrency,
-            (occupancy) =>
-              this.searchByHids(
-                hids,
-                checkInDate,
-                checkOutDate,
-                occupancy,
-                requestLogger,
-                residency,
-              ),
-          );
-          priced.forEach((hotels, i) => {
-            if (hotels.length) merge(others[i], hotels);
-            else nextMissing.push(others[i]);
-          });
-        } else {
-          nextMissing.push(...others);
-        }
+        found.forEach((hotels, i) => {
+          if (hotels.length) merge(shapes[i], hotels);
+          else nextMissing.push(shapes[i]);
+        });
 
         stillMissing = nextMissing;
         if (stillMissing.length > 0) {
@@ -1020,7 +947,6 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         mergedRawHotels,
         checkInDate,
         checkOutDate,
-        starsByHid,
       );
     } catch (error: any) {
       requestLogger.error(`Error querying RateHawk API: ${error.message}`, {
@@ -1137,12 +1063,10 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         `No cached hotel data found near airport ${airport.iataCode} for the requested occupancies`,
       );
     }
-    // Saved responses carry no star rating; they read as unrated.
     return this.normalizeAvailabilityHotels(
       mergedRawHotels,
       checkInDate,
       checkOutDate,
-      new Map(),
     );
   }
 
@@ -1331,7 +1255,81 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     return { status: statuses.length ? statuses.join(",") : null, orders };
   }
 
-  // Best-effort profile of a booked hotel via the Content API; never blocks booking on failure.
+  /** Maps one Content API hotel to the static data we store. */
+  private toStaticContent(hotel: any): HotelStaticContent {
+    // ETG addresses usually end with the city already; add it only when missing.
+    const street = hotel.address ? String(hotel.address).trim() : "";
+    const city = hotel.region?.name ? String(hotel.region.name).trim() : "";
+    const address =
+      city && !street.toLowerCase().includes(city.toLowerCase())
+        ? [street, city].filter(Boolean).join(", ")
+        : street;
+    const imageTemplate: string | undefined =
+      hotel.images_ext?.[0]?.url ?? hotel.images?.[0];
+    const amenities: string[] = Array.isArray(hotel.amenity_groups)
+      ? Array.from(
+          new Set<string>(
+            hotel.amenity_groups.flatMap((group: any) =>
+              Array.isArray(group?.amenities) ? group.amenities.map(String) : [],
+            ),
+          ),
+        ).slice(0, 15)
+      : [];
+    const stars = Number(hotel.star_rating);
+    return {
+      hotelCode: String(hotel.hid),
+      name: hotel.name ? String(hotel.name) : null,
+      starRating: Number.isFinite(stars) && stars > 0 ? stars : null,
+      kind: hotel.kind ? String(hotel.kind) : null,
+      address: address || null,
+      postalCode: hotel.postal_code ? String(hotel.postal_code) : null,
+      countryCode: hotel.region?.country_code
+        ? String(hotel.region.country_code).toUpperCase()
+        : null,
+      isActive: !hotel.is_closed && !hotel.deleted,
+      latitude: hotel.latitude ?? null,
+      longitude: hotel.longitude ?? null,
+      contact: {
+        phones: hotel.phone
+          ? [{ phoneNumber: String(hotel.phone), phoneType: "PHONEHOTEL" }]
+          : [],
+        email: hotel.email ? String(hotel.email) : null,
+      },
+      website: null,
+      imageUrl: imageTemplate
+        ? imageTemplate.replace("{size}", "1024x768")
+        : null,
+      amenities,
+      policies: this.parsePolicies(hotel),
+    };
+  }
+
+  /** Content API, at most 100 hotels per call (ETG limit). */
+  async fetchHotelsStaticContent(
+    hotelCodes: string[],
+    requestId: string,
+  ): Promise<HotelStaticContent[]> {
+    const log = this.logFor(requestId);
+    this.assertCredentials(log);
+    const hids = [...new Set(hotelCodes.map(Number))].filter(
+      (hid) => Number.isInteger(hid) && hid > 0,
+    );
+    const chunks: number[][] = [];
+    for (let i = 0; i < hids.length; i += 100) {
+      chunks.push(hids.slice(i, i + 100));
+    }
+    const results = await this.mapWithConcurrency(
+      chunks,
+      this.maxConcurrency,
+      (chunk) => this.fetchHotelContentByIds(chunk, log),
+    );
+    return results
+      .flat()
+      .filter((hotel: any) => Number(hotel?.hid) > 0)
+      .map((hotel: any) => this.toStaticContent(hotel));
+  }
+
+  // Profile of one hotel via the Content API (callers prefer our stored hotels table).
   async getHotelContentDetails(
     hotelCode: string,
     requestId: string,
@@ -1362,47 +1360,15 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
       const hotels = await this.fetchHotelContentByIds([hid], requestLogger);
       const hotel = hotels.find((h: any) => Number(h?.hid) === hid) ?? hotels[0];
       if (!hotel) return null;
-
-      const address = [hotel.address, hotel.region?.name]
-        .filter(Boolean)
-        .join(", ");
-      const imageTemplate: string | undefined =
-        hotel.images_ext?.[0]?.url ?? hotel.images?.[0];
-      const amenities: string[] = Array.isArray(hotel.amenity_groups)
-        ? Array.from(
-            new Set<string>(
-              hotel.amenity_groups.flatMap((group: any) =>
-                Array.isArray(group?.amenities)
-                  ? group.amenities.map(String)
-                  : [],
-              ),
-            ),
-          ).slice(0, 15)
-        : [];
-
-      return {
-        policies: this.parsePolicies(hotel),
-        name: hotel.name ? String(hotel.name) : null,
-        starRating: Number.isFinite(Number(hotel.star_rating))
-          ? Number(hotel.star_rating)
-          : null,
-        address: address || null,
-        contact: {
-          phones: hotel.phone
-            ? [{ phoneNumber: String(hotel.phone), phoneType: "PHONEHOTEL" }]
-            : [],
-          email: hotel.email ? String(hotel.email) : null,
-        },
-        latitude: hotel.latitude ?? null,
-        longitude: hotel.longitude ?? null,
-        // ETG gives no airport distance; the caller has the airport, we don't.
-        distanceFromAirportKm: null,
-        imageUrl: imageTemplate
-          ? imageTemplate.replace("{size}", "1024x768")
-          : null,
-        website: null,
-        amenities,
-      };
+      const {
+        hotelCode,
+        kind,
+        postalCode,
+        countryCode,
+        isActive,
+        ...content
+      } = this.toStaticContent(hotel);
+      return { ...content, distanceFromAirportKm: null };
     } catch (error: any) {
       requestLogger.error(
         `Error querying RateHawk hotel content for hotel '${hotelCode}': ${error.message}`,

@@ -15,6 +15,7 @@ import { HotelSupplierWebhooksController } from "./hotel-supplier-webhooks.contr
 import { CancelledFlightsController } from "./cancelled-flights.controller";
 import { CancelledFlightsService } from "./cancelled-flights.service";
 import { HotelAllocationService } from "./hotel-allocation.service";
+import { HotelContentService } from "./hotel-content.service";
 import { CancelledFlightsRepository } from "./cancelled-flights.repository";
 import { AiService } from "../common/ai/ai.service";
 import { HOTEL_PROVIDER } from "./hotel-providers/hotel-provider.interface";
@@ -41,6 +42,7 @@ import { PdfService } from "../common/pdf/pdf.service";
   providers: [
     CancelledFlightsService,
     HotelAllocationService,
+    HotelContentService,
     CancelledFlightsRepository,
     AiService,
     hotelProviderRegistration,

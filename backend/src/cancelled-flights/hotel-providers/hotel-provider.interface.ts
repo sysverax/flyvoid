@@ -50,6 +50,30 @@ export interface AvailabilityHotel {
   rates: AvailabilityRoomRate[];
 }
 
+/** Static hotel data from a supplier's content API, stored in our hotels table. */
+export interface HotelStaticContent {
+  hotelCode: string;
+  name: string | null;
+  starRating: number | null;
+  /** Property type, e.g. hotel, apartment, hostel. */
+  kind: string | null;
+  address: string | null;
+  postalCode: string | null;
+  countryCode: string | null;
+  /** False when the supplier reports the hotel closed or removed. */
+  isActive: boolean;
+  latitude: number | null;
+  longitude: number | null;
+  contact: {
+    phones: Array<{ phoneNumber: string; phoneType: string }>;
+    email: string | null;
+  };
+  website: string | null;
+  imageUrl: string | null;
+  amenities: string[];
+  policies: HotelPolicies | null;
+}
+
 export interface TaxAtProperty {
   name: string;
   amount: number;
@@ -204,6 +228,15 @@ export interface HotelProvider {
     reference: string,
     requestId: string,
   ): Promise<{ state: "booked" | "failed" | "processing"; code: string | null }>;
+
+  /**
+   * Static content for hotels, for storing in our hotels table ahead of use.
+   * Suppliers without a content API leave this out and serve getHotelContentDetails.
+   */
+  fetchHotelsStaticContent?(
+    hotelCodes: string[],
+    requestId: string,
+  ): Promise<HotelStaticContent[]>;
 
   /** Latest supplier order details for confirmed bookings (by our booking references). */
   getOrderInfo?(

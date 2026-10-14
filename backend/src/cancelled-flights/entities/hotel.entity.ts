@@ -38,8 +38,18 @@ export class HotelEntity {
   @Column({ name: "star_rating", type: "integer", nullable: true })
   starRating?: number | null;
 
+  /** Property type from the supplier, e.g. hotel, apartment, hostel. */
+  @Column({ name: "kind", type: "varchar", length: 50, nullable: true })
+  kind?: string | null;
+
   @Column({ name: "address", type: "text", nullable: true })
   address?: string | null;
+
+  @Column({ name: "postal_code", type: "varchar", length: 20, nullable: true })
+  postalCode?: string | null;
+
+  @Column({ name: "country_code", type: "varchar", length: 2, nullable: true })
+  countryCode?: string | null;
 
   @Column({
     name: "latitude",
@@ -73,6 +83,10 @@ export class HotelEntity {
 
   @Column({ name: "policies", type: "jsonb", nullable: true })
   policies?: HotelPolicies | null;
+
+  /** False when the supplier reports the hotel closed or removed; never offered then. */
+  @Column({ name: "is_active", type: "boolean", default: true })
+  isActive!: boolean;
 
   @Column({ name: "content_updated_at", type: "timestamp", nullable: true })
   contentUpdatedAt?: Date | null;

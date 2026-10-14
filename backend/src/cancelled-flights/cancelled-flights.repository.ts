@@ -31,6 +31,7 @@ import {
 } from "./hotel-allocation.record";
 import { Logger } from "winston";
 import type { PnrBookingStatus } from "./dto/hotel-allocations.dto";
+import type { HotelStaticContent } from "./hotel-providers/hotel-provider.interface";
 
 /** A planned candidate hotel with its hotel details resolved. */
 export type HotelCandidate = HotelAllocationOptionEntity & {
@@ -748,6 +749,96 @@ export class CancelledFlightsRepository {
       where: { providerId, providerHotelId: In([...unique.keys()]) },
     });
     return new Map(rows.map((row) => [row.providerHotelId, row.id]));
+  }
+
+  // ── Static hotel data (hotels table) ──
+
+  async findHotelsByCodes(
+    provider: string,
+    hotelCodes: string[],
+  ): Promise<HotelEntity[]> {
+    if (hotelCodes.length === 0) return [];
+    const providerId = await this.providerIdFor(this.manager, provider);
+    return this.manager.getRepository(HotelEntity).find({
+      where: { providerId, providerHotelId: In([...new Set(hotelCodes)]) },
+    });
+  }
+
+  /** Stores supplier static content, replacing what we had for those hotels. */
+  async saveHotelContent(
+    provider: string,
+    contents: HotelStaticContent[],
+  ): Promise<void> {
+    if (contents.length === 0) return;
+    const providerId = await this.providerIdFor(this.manager, provider);
+    await this.manager
+      .getRepository(HotelEntity)
+      .createQueryBuilder()
+      .insert()
+      .values(
+        contents.map((content) => ({
+          providerId,
+          providerHotelId: content.hotelCode,
+          name: content.name ?? "",
+          starRating: content.starRating,
+          kind: content.kind,
+          address: content.address,
+          postalCode: content.postalCode,
+          countryCode: content.countryCode,
+          isActive: content.isActive,
+          latitude: content.latitude,
+          longitude: content.longitude,
+          contact: content.contact,
+          website: content.website,
+          imageUrl: content.imageUrl,
+          amenities: content.amenities,
+          policies: content.policies,
+          contentUpdatedAt: () => "now()",
+        })) as QueryDeepPartialEntity<HotelEntity>[],
+      )
+      .orUpdate(
+        [
+          "name",
+          "star_rating",
+          "kind",
+          "address",
+          "postal_code",
+          "country_code",
+          "is_active",
+          "latitude",
+          "longitude",
+          "contact",
+          "website",
+          "image_url",
+          "amenities",
+          "policies",
+          "content_updated_at",
+        ],
+        ["provider_id", "provider_hotel_id"],
+      )
+      .execute();
+  }
+
+  /** Hotels whose static content was never fetched or is older than `staleMs`, oldest first. */
+  async findStaleHotelCodes(
+    provider: string,
+    staleMs: number,
+    limit: number,
+  ): Promise<string[]> {
+    const providerId = await this.providerIdFor(this.manager, provider);
+    const rows = await this.manager
+      .getRepository(HotelEntity)
+      .createQueryBuilder("hotel")
+      .select("hotel.providerHotelId", "hotelCode")
+      .where("hotel.providerId = :providerId", { providerId })
+      .andWhere(
+        "(hotel.contentUpdatedAt IS NULL OR hotel.contentUpdatedAt < now() - (:staleMs * interval '1 millisecond'))",
+        { staleMs },
+      )
+      .orderBy("hotel.contentUpdatedAt", "ASC", "NULLS FIRST")
+      .limit(limit)
+      .getRawMany<{ hotelCode: string }>();
+    return rows.map((row) => row.hotelCode);
   }
 
   /** Allocation records for PNRs, each with the hotel booking it currently shows. */

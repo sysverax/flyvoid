@@ -15,6 +15,7 @@ import {
   isRebookableAllocation,
 } from "./cancelled-flights.repository";
 import { BookingEntity } from "./entities/booking.entity";
+import { HotelContentService } from "./hotel-content.service";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
 import { randomUUID } from "crypto";
 import { HotelBookingEntity } from "./entities/hotel-booking.entity";
@@ -144,6 +145,46 @@ interface BookingRecommendationResult {
   reason?: string;
 }
 
+/** Straight-line distance between two points, in km (haversine). */
+const distanceKm = (
+  from: { latitude: number; longitude: number },
+  to: { latitude: number; longitude: number },
+): number => {
+  const rad = (degrees: number) => (degrees * Math.PI) / 180;
+  const dLat = rad(to.latitude - from.latitude);
+  const dLon = rad(to.longitude - from.longitude);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(rad(from.latitude)) *
+      Math.cos(rad(to.latitude)) *
+      Math.sin(dLon / 2) ** 2;
+  return Math.round(6371 * 2 * Math.asin(Math.sqrt(a)) * 10) / 10;
+};
+
+/** Adds the distance to the airport when the supplier doesn't give one. */
+const withAirportDistance = (
+  content: HotelContentDetails | null,
+  airport?: { latitude: unknown; longitude: unknown } | null,
+): HotelContentDetails | null => {
+  if (
+    !content ||
+    content.distanceFromAirportKm != null ||
+    content.latitude == null ||
+    content.longitude == null ||
+    airport?.latitude == null ||
+    airport?.longitude == null
+  ) {
+    return content;
+  }
+  return {
+    ...content,
+    distanceFromAirportKm: distanceKm(
+      { latitude: Number(airport.latitude), longitude: Number(airport.longitude) },
+      { latitude: Number(content.latitude), longitude: Number(content.longitude) },
+    ),
+  };
+};
+
 /** Calendar date (YYYY-MM-DD) of a stay Date, in the server's local time. */
 const toDateOnly = (date: Date): string =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -269,6 +310,7 @@ export class HotelAllocationService {
     private readonly cancelledFlightsRepository: CancelledFlightsRepository,
     @Inject(HOTEL_PROVIDER) private readonly hotelProvider: HotelProvider,
     private readonly aiService: AiService,
+    private readonly hotelContentService: HotelContentService,
   ) {}
 
   // Duplicated from CancelledFlightsService (kept tiny and independent so
@@ -701,14 +743,18 @@ export class HotelAllocationService {
     requestLogger.info(`Querying hotel supplier for nearby hotels...`, {
       context: this.context,
     });
-    const candidateHotels = await this.hotelProvider.searchNearbyHotels(
-      {
-        iataCode: departureAirport.iataCode,
-        latitude: Number(departureAirport.latitude),
-        longitude: Number(departureAirport.longitude),
-      },
-      checkIn,
-      finalCheckOut,
+    const candidateHotels = await this.hotelContentService.enrichCandidates(
+      await this.hotelProvider.searchNearbyHotels(
+        {
+          iataCode: departureAirport.iataCode,
+          latitude: Number(departureAirport.latitude),
+          longitude: Number(departureAirport.longitude),
+        },
+        checkIn,
+        finalCheckOut,
+        requestId,
+        requestLogger,
+      ),
       requestId,
       requestLogger,
     );
@@ -977,6 +1023,11 @@ export class HotelAllocationService {
         requestId,
         requestLogger,
         { residency: this.majorityResidency(eligibleBookings) },
+      );
+      hotels = await this.hotelContentService.enrichSearchResults(
+        hotels,
+        requestId,
+        requestLogger,
       );
     } catch (error: any) {
       requestLogger.error("Hotel availability search failed", {
@@ -1524,6 +1575,11 @@ export class HotelAllocationService {
         requestId,
         requestLogger,
         { residency: this.majorityResidency(plans.map(({ booking }) => booking)) },
+      );
+      hotels = await this.hotelContentService.enrichSearchResults(
+        hotels,
+        requestId,
+        requestLogger,
       );
     } catch (error: any) {
       requestLogger.error("Hotel availability search failed", {
@@ -2083,11 +2139,14 @@ export class HotelAllocationService {
       return { kind: "unknown", reason };
     }
 
-    const content = await this.cachedHotelContent(
-      hotelCode,
-      input.contentCache,
-      requestId,
-      requestLogger,
+    const content = withAirportDistance(
+      await this.cachedHotelContent(
+        hotelCode,
+        input.contentCache,
+        requestId,
+        requestLogger,
+      ),
+      flight.departureAirport,
     );
     const row = this.buildAllocationRow(
       flight.id,
@@ -2606,8 +2665,8 @@ export class HotelAllocationService {
     requestLogger: Logger,
   ): Promise<HotelContentDetails | null> {
     const load = () =>
-      this.hotelProvider
-        .getHotelContentDetails(hotelCode, requestId, requestLogger)
+      this.hotelContentService
+        .getHotelDetails(hotelCode, requestId, requestLogger)
         .catch(() => null);
     if (!cache) {
       return load();
