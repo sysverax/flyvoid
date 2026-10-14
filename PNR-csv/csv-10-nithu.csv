@@ -1,4 +1,4 @@
-PNR,FirstName,LastName,Email,Phone,Residency,TravelClass,Adults,Children,SpecialNotes,AdditionalNotes
+PNR,First Name,Last Name,Email,Phone,Passport Country,Travel Class,Adults,Children,Special Notes,Additional Notes
 YYZ001,John,Smith,john.smith1@example.com,+14165550101,CA,economy,2,0,,
 YYZ002,Emily,Johnson,emily.johnson2@example.com,+14165550102,CA,economy,1,0,,
 YYZ003,Michael,Brown,michael.brown3@example.com,+14165550103,CA,economy,2,2,dietary_requirements,
