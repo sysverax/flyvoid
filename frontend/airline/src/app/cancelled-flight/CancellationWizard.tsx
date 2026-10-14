@@ -3205,9 +3205,9 @@ export default function CancellationWizard({
             ? allocationRunProgress.total - allocationRunProgress.done
             : 0;
           const allocationStages = [
-            "Analyzing booking requirements",
-            "Checking hotel availability",
-            "Optimizing room assignments",
+            "Reviewing passenger requirements",
+            "Finding available hotel rooms",
+            "Optimizing room costs",
             "Booking rooms",
           ];
           // Planning steps are 0–2; booking (3) starts once the server books a PNR.
