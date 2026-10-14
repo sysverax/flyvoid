@@ -11,17 +11,22 @@ import {
 import { Logger } from "winston";
 import {
   CancelledFlightsRepository,
+  HotelCandidate,
   isRebookableAllocation,
 } from "./cancelled-flights.repository";
 import { BookingEntity } from "./entities/booking.entity";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
 import { randomUUID } from "crypto";
-import { HotelAllocationEntity } from "./entities/hotel-allocation.entity";
+import { HotelBookingEntity } from "./entities/hotel-booking.entity";
 import {
-  HotelBookingAttemptEntity,
+  AllocationSuccess,
+  HotelAllocationRecord,
   ProviderOrder,
-} from "./entities/hotel-booking-attempt.entity";
-import { HotelBookingCandidateEntity } from "./entities/hotel-booking-candidate.entity";
+  bookingReferenceOf,
+  rateKeysOf,
+  starsLabel,
+  toProviderOrders,
+} from "./hotel-allocation.record";
 import {
   FlightStatus,
   HotelAllocationStatus,
@@ -102,7 +107,7 @@ export type SupplierWebhookOutcome = "processed" | "ignored" | "retry";
 type BookingAttemptOutcome =
   | {
       kind: "confirmed";
-      allocation: HotelAllocationEntity;
+      allocation: HotelAllocationRecord;
       references: string[];
       currency: string;
     }
@@ -138,6 +143,10 @@ interface BookingRecommendationResult {
   allocationStatus: AllocationStatus;
   reason?: string;
 }
+
+/** Calendar date (YYYY-MM-DD) of a stay Date, in the server's local time. */
+const toDateOnly = (date: Date): string =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
 const room = (adults: number, children = 0): RoomOccupancy => ({
   adults,
@@ -1355,11 +1364,6 @@ export class HotelAllocationService {
           processingOrder: index + 1,
           classPriority: classRank(booking.travelClass),
         })),
-        {
-          checkInDate: run.stay.checkInDate.toISOString(),
-          checkOutDate: run.stay.checkOutDate.toISOString(),
-          platformFeePercentage: run.platformFeePercentage,
-        },
         requestLogger,
       );
 
@@ -1456,7 +1460,7 @@ export class HotelAllocationService {
   private async planPendingBookings(
     run: AllocationRunContext,
     pending: BookingEntity[],
-    rows: HotelAllocationEntity[],
+    rows: HotelAllocationRecord[],
   ): Promise<void> {
     const { flight, stay, requestId, requestLogger } = run;
     const fresh = await this.cancelledFlightsRepository.findFreshPlanBookingIds(
@@ -1555,6 +1559,7 @@ export class HotelAllocationService {
     await this.cancelledFlightsRepository.savePnrPlans(
       flight.id,
       randomUUID(),
+      config.hotelProvider.name,
       entries.map(({ booking, needs }) => ({
         bookingId: booking.id,
         roomPlan: needs.map((need) => ({
@@ -1602,7 +1607,7 @@ export class HotelAllocationService {
       .filter(
         (
           entry,
-        ): entry is { booking: BookingEntity; row: HotelAllocationEntity } =>
+        ): entry is { booking: BookingEntity; row: HotelAllocationRecord } =>
           !!entry.row?.planId &&
           entry.row.status !== HotelAllocationStatus.FAILED &&
           isRebookableAllocation(entry.row),
@@ -1614,7 +1619,8 @@ export class HotelAllocationService {
           (c) => c.bookingId === booking.id && c.planId === row.planId,
         ),
         attempts: attempts.filter(
-          (a) => a.bookingId === booking.id && a.planId === row.planId,
+          (a) =>
+            a.bookingId === booking.id && a.candidate?.planId === row.planId,
         ),
       }))
       .sort(
@@ -1660,8 +1666,8 @@ export class HotelAllocationService {
   }
 
   private buildPlanLedger(
-    candidates: HotelBookingCandidateEntity[],
-    attempts: HotelBookingAttemptEntity[],
+    candidates: HotelCandidate[],
+    attempts: HotelBookingEntity[],
   ): AllotmentLedger {
     const snapshot = new Map<string, { allotment: number; planId: string }>();
     for (const candidate of [...candidates].sort((a, b) => a.id - b.id)) {
@@ -1681,8 +1687,8 @@ export class HotelAllocationService {
       if (attempt.status === HotelBookingAttemptStatus.FAILED) {
         continue;
       }
-      for (const rateKey of attempt.rateKeys) {
-        if (snapshot.get(rateKey)?.planId === attempt.planId) {
+      for (const rateKey of rateKeysOf(attempt.rooms)) {
+        if (snapshot.get(rateKey)?.planId === attempt.candidate?.planId) {
           remaining.set(rateKey, (remaining.get(rateKey) ?? 0) - 1);
         }
       }
@@ -1694,8 +1700,8 @@ export class HotelAllocationService {
     run: AllocationRunContext,
     planning: BookingPlanningState,
     booking: BookingEntity,
-    candidates: HotelBookingCandidateEntity[],
-    priorAttempts: HotelBookingAttemptEntity[],
+    candidates: HotelCandidate[],
+    priorAttempts: HotelBookingEntity[],
   ): Promise<void> {
     const { requestLogger } = run;
     const definiteFailures = priorAttempts.filter(
@@ -1704,7 +1710,7 @@ export class HotelAllocationService {
         a.failureCode !== HotelBookingFailureCode.INTERRUPTED_BEFORE_REQUEST,
     );
     const excludedRateKeys = new Set(
-      definiteFailures.flatMap((a) => a.rateKeys),
+      definiteFailures.flatMap((a) => rateKeysOf(a.rooms)),
     );
     const maxAttempts = Math.max(1, config.hotelBooking.maxAttemptsPerBooking);
     let failures = definiteFailures.length;
@@ -1722,7 +1728,7 @@ export class HotelAllocationService {
         }
 
         let selected: {
-          candidate: HotelBookingCandidateEntity;
+          candidate: HotelCandidate;
           picks: SelectedRate[];
           claim: LedgerClaim;
         } | null = null;
@@ -1772,7 +1778,6 @@ export class HotelAllocationService {
             category: candidate.category,
           },
           candidateId: candidate.id,
-          planId: candidate.planId,
           runId: run.runId,
           platformFeePercentage: run.platformFeePercentage,
           requestId: run.requestId,
@@ -1813,7 +1818,6 @@ export class HotelAllocationService {
     rooms: Array<{ rateKey: string; shape?: RoomOccupancy }>;
     hotel?: { hotelCode: string; hotelName: string; category: string };
     candidateId?: number | null;
-    planId?: string | null;
     runId?: string | null;
     paymentData?: unknown;
     platformFeePercentage: number;
@@ -1831,16 +1835,20 @@ export class HotelAllocationService {
           cancelledFlightId: flight.id,
           bookingId: booking.id,
           candidateId: input.candidateId ?? null,
-          planId: input.planId ?? null,
           runId: input.runId ?? null,
-          rateKeys,
+          rooms: rooms.map((room) => ({
+            rateKey: room.rateKey,
+            adults: room.shape?.adults ?? 0,
+            children: room.shape?.children ?? 0,
+          })),
           provider: config.hotelProvider.name,
           providerRequestId: randomUUID(),
           hotelCode: input.hotel?.hotelCode ?? null,
           hotelName: input.hotel?.hotelName ?? null,
           category: input.hotel?.category ?? null,
-          checkInDate: input.stay.checkInDate.toISOString(),
-          checkOutDate: input.stay.checkOutDate.toISOString(),
+          checkInDate: toDateOnly(input.stay.checkInDate),
+          checkOutDate: toDateOnly(input.stay.checkOutDate),
+          platformFeePercentage: input.platformFeePercentage,
         },
         requestLogger,
       );
@@ -1959,12 +1967,19 @@ export class HotelAllocationService {
             contactEmail: flight.airline?.contactEmail,
             contactPhone: booking.phone?.trim() || flight.airline?.contactPhone,
             onSupplierOrderCreated: async (reference) => {
+              const check = checks[index];
               const order: ProviderOrder = {
                 room: index + 1,
                 reference,
                 status: "pending",
                 rateKey,
-                check: checks[index],
+                roomName: check.roomName,
+                boardName: check.boardName,
+                adults: check.adults,
+                children: check.children,
+                price: Number(check.netPrice),
+                buyingPrice: Number(check.buyingPrice ?? check.netPrice),
+                taxesAtProperty: check.taxesAtProperty ?? [],
               };
               const recorded =
                 await this.cancelledFlightsRepository.recordProviderOrder(
@@ -1984,7 +1999,10 @@ export class HotelAllocationService {
           requestId,
         );
         const order = orders.find((entry) => entry.room === index + 1);
-        if (order) order.status = "booked";
+        if (order) {
+          order.status = "booked";
+          order.providerOrderId = result.supplierOrderId || null;
+        }
         booked.push({ check: checks[index], rateKey, result });
       }
     } catch (error: any) {
@@ -2033,10 +2051,6 @@ export class HotelAllocationService {
             ? HotelBookingFailureCode.OUTCOME_UNKNOWN
             : HotelBookingFailureCode.PARTIAL_BOOKING,
           failureReason: reason,
-          providerBookingReference: references.length
-            ? references.join(",")
-            : null,
-          providerIdempotencyKey: unknownReference,
           providerOrders: orders,
           responseReceived: !outcomeUnknown,
         },
@@ -2060,7 +2074,6 @@ export class HotelAllocationService {
           status: HotelBookingAttemptStatus.MANUAL_CHECK,
           failureCode: HotelBookingFailureCode.PROVIDER_UNCONFIRMED,
           failureReason: reason,
-          providerBookingReference: references.join(","),
           providerOrders: orders,
           responseReceived: true,
         },
@@ -2104,7 +2117,6 @@ export class HotelAllocationService {
           {
             status: HotelBookingAttemptStatus.SUCCESS,
             providerStatus: null,
-            providerBookingReference: references.join(","),
             providerOrders: orders,
             responseReceived: true,
           },
@@ -2172,7 +2184,6 @@ export class HotelAllocationService {
           status: HotelBookingAttemptStatus.MANUAL_CHECK,
           failureCode: HotelBookingFailureCode.SAVE_FAILED,
           failureReason: reason,
-          providerBookingReference: references.join(","),
           providerOrders: orders,
           responseReceived: true,
         },
@@ -2219,7 +2230,7 @@ export class HotelAllocationService {
       attempt.status === HotelBookingAttemptStatus.SUCCESS ||
       attempt.status === HotelBookingAttemptStatus.FAILED
     ) {
-      const knownStatus = attempt.providerOrders?.find(
+      const knownStatus = toProviderOrders(attempt.rooms).find(
         (order) => order.reference === reference,
       )?.status;
       const contradicts =
@@ -2280,20 +2291,18 @@ export class HotelAllocationService {
       );
     }
 
-    const orders = (attempt.providerOrders ?? []).map((order) => ({
-      ...order,
-    }));
+    const orders = toProviderOrders(attempt.rooms);
     const order = orders.find((entry) => entry.reference === reference);
     if (!order) return "ignored";
     order.status = confirmed.state;
     order.failureReason =
       confirmed.state === "failed" ? (confirmed.code ?? "failed") : null;
 
-    const totalRooms = Math.max(attempt.rateKeys?.length ?? 0, orders.length);
+    const totalRooms = Math.max(attempt.rooms?.length ?? 0, orders.length);
     const booked = orders.filter((entry) => entry.status === "booked");
     const pending = orders.filter((entry) => entry.status === "pending");
     const hotelName =
-      attempt.hotelName || order.check.hotelName || attempt.hotelCode || "";
+      attempt.hotel?.name || attempt.hotel?.providerHotelId || "";
 
     if (pending.length > 0) {
       await this.cancelledFlightsRepository.updateOpenAttemptOrders(
@@ -2368,7 +2377,7 @@ export class HotelAllocationService {
   }
 
   private async confirmAttemptFromWebhook(
-    attempt: HotelBookingAttemptEntity,
+    attempt: HotelBookingEntity,
     orders: ProviderOrder[],
     requestId: string,
     requestLogger: Logger,
@@ -2388,22 +2397,35 @@ export class HotelAllocationService {
       );
       return "ignored";
     }
-    const current =
-      await this.cancelledFlightsRepository.findAllocationByBookingId(
-        booking.id,
-        requestLogger,
-      );
     const platformFeePercentage = Number(
-      current?.platformFeePercentage ?? config.platformFeePercentage,
+      attempt.platformFeePercentage ?? config.platformFeePercentage,
     );
+    const hotelCode = attempt.hotel?.providerHotelId ?? "";
     const sorted = [...orders].sort((a, b) => a.room - b.room);
     const rooms = sorted.map((order) => ({
-      check: order.check,
+      check: {
+        hotelCode,
+        hotelName: attempt.hotel?.name ?? "",
+        category: starsLabel(attempt.hotel?.starRating),
+        address: null,
+        checkInDate: attempt.checkInDate ?? "",
+        checkOutDate: attempt.checkOutDate ?? "",
+        roomName: order.roomName,
+        boardName: order.boardName,
+        adults: order.adults,
+        children: order.children,
+        netPrice: order.price,
+        buyingPrice: order.buyingPrice,
+        currency: attempt.currency ?? config.currency,
+        cancellationPolicies: [],
+        rateComments: null,
+        priceChanged: false,
+        taxesAtProperty: order.taxesAtProperty,
+      } satisfies HotelRateCheck,
       rateKey: order.rateKey,
-      price: Number(order.check.netPrice),
-      buyingPrice: Number(order.check.buyingPrice ?? order.check.netPrice),
+      price: order.price,
+      buyingPrice: order.buyingPrice,
     }));
-    const hotelCode = rooms[0].check.hotelCode;
     const content = await this.cachedHotelContent(
       hotelCode,
       undefined,
@@ -2427,7 +2449,6 @@ export class HotelAllocationService {
         failureCode: null,
         failureReason: null,
         providerStatus: null,
-        providerBookingReference: references.join(","),
         providerOrders: orders,
         responseReceived: true,
       },
@@ -2508,7 +2529,7 @@ export class HotelAllocationService {
     for (const attempt of attempts) {
       await this.refreshOrderInfo(
         attempt.id,
-        (attempt.providerBookingReference ?? "").split(",").filter(Boolean),
+        bookingReferenceOf(attempt.rooms).split(",").filter(Boolean),
         requestId,
         requestLogger,
       );
@@ -2553,7 +2574,7 @@ export class HotelAllocationService {
     attemptId: number,
     bookingId: number,
     changes: Parameters<CancelledFlightsRepository["finishBookingAttempt"]>[2],
-    success: Partial<HotelAllocationEntity> | undefined,
+    success: AllocationSuccess | undefined,
     requestLogger: Logger,
   ): Promise<void> {
     await this.cancelledFlightsRepository
@@ -2612,7 +2633,7 @@ export class HotelAllocationService {
   }
 
   private toBookingStatus(
-    row: HotelAllocationEntity | undefined,
+    row: HotelAllocationRecord | undefined,
     attemptCount: number,
     running: boolean,
   ): PnrBookingStatus {
@@ -2638,8 +2659,8 @@ export class HotelAllocationService {
   private buildAllocationSummary(
     flight: CancelledFlightEntity,
     bookings: BookingEntity[],
-    rows: HotelAllocationEntity[],
-    attempts: HotelBookingAttemptEntity[],
+    rows: HotelAllocationRecord[],
+    attempts: HotelBookingEntity[],
     runState: { running: boolean; stale: boolean; error: string | null },
     platformFeePercentage: number,
   ): HotelAllocationsDto {
@@ -2689,7 +2710,7 @@ export class HotelAllocationService {
                 totalRooms: success ? (row!.totalRooms ?? 0) : 0,
                 totalPrice: success ? Number(row!.totalPrice ?? 0) : 0,
                 rooms: success
-                  ? (row!.rooms ?? []).map(({ rateKey, ...room }) => room)
+                  ? (row!.rooms ?? []).map(({ rateKey, buyingPrice, ...room }) => room)
                   : [],
               }
             : null,
@@ -2868,7 +2889,7 @@ export class HotelAllocationService {
       checkInDate: allocation.checkInDate,
       checkOutDate: allocation.checkOutDate,
       totalRooms: allocation.totalRooms,
-      rooms: (allocation.rooms ?? []).map(({ rateKey, ...room }) => room),
+      rooms: (allocation.rooms ?? []).map(({ rateKey, buyingPrice, ...room }) => room),
       totalPrice: allocation.totalPrice,
       currency: outcome.currency,
       bookingReference: allocation.bookingReference,
@@ -2879,7 +2900,7 @@ export class HotelAllocationService {
   private resolveRateKeys(
     dto: BookHotelRequestDto,
     bookingId: number,
-    existing: HotelAllocationEntity | null,
+    existing: HotelAllocationRecord | null,
   ): string[] {
     const allocatedRooms = existing?.rooms ?? [];
     const requested = dto.rateKeys?.length
@@ -2922,7 +2943,7 @@ export class HotelAllocationService {
     }>,
     platformFeePercentage: number,
     content?: HotelContentDetails | null,
-  ): Partial<HotelAllocationEntity> {
+  ): AllocationSuccess {
     const first = rooms[0];
     const price = rooms.reduce((sum, room) => sum + room.price, 0);
     const buyingPrice = rooms.reduce((sum, room) => sum + room.buyingPrice, 0);
@@ -2973,10 +2994,12 @@ export class HotelAllocationService {
         roomName: room.check.roomName,
         boardName: room.check.boardName,
         price: this.roundCurrency(room.price),
+        buyingPrice: this.roundCurrency(room.buyingPrice),
         rateKey: room.rateKey,
         taxesAtProperty: room.check.taxesAtProperty ?? [],
       })),
       totalRooms: rooms.length,
+      currency: first.check.currency || config.currency,
     };
   }
 

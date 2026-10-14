@@ -5,9 +5,11 @@ import { AirlineEntity } from "../airline/entities/airline.entity";
 import { AirportEntity } from "../airline/entities/airport.entity";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
 import { BookingEntity } from "./entities/booking.entity";
-import { HotelAllocationEntity } from "./entities/hotel-allocation.entity";
-import { HotelBookingCandidateEntity } from "./entities/hotel-booking-candidate.entity";
-import { HotelBookingAttemptEntity } from "./entities/hotel-booking-attempt.entity";
+import { HotelAllocationOptionEntity } from "./entities/hotel-allocation-option.entity";
+import { HotelBookingEntity } from "./entities/hotel-booking.entity";
+import { HotelBookingRoomEntity } from "./entities/hotel-booking-room.entity";
+import { HotelEntity } from "./entities/hotel.entity";
+import { ProviderEntity } from "./entities/provider.entity";
 import { SupplierWebhookTokenEntity } from "./entities/supplier-webhook-token.entity";
 import { HotelSupplierWebhooksController } from "./hotel-supplier-webhooks.controller";
 import { CancelledFlightsController } from "./cancelled-flights.controller";
@@ -25,9 +27,11 @@ import { PdfService } from "../common/pdf/pdf.service";
     TypeOrmModule.forFeature([
       CancelledFlightEntity,
       BookingEntity,
-      HotelAllocationEntity,
-      HotelBookingCandidateEntity,
-      HotelBookingAttemptEntity,
+      ProviderEntity,
+      HotelEntity,
+      HotelAllocationOptionEntity,
+      HotelBookingEntity,
+      HotelBookingRoomEntity,
       SupplierWebhookTokenEntity,
       AirlineEntity,
       AirportEntity,

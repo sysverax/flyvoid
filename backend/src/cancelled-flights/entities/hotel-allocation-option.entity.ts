@@ -9,6 +9,7 @@ import {
 } from "typeorm";
 import { BookingEntity } from "./booking.entity";
 import { CancelledFlightEntity } from "./cancelled-flight.entity";
+import { HotelEntity } from "./hotel.entity";
 
 export interface CandidateRateOption {
   rateKey: string;
@@ -26,13 +27,14 @@ export interface CandidateRoomPlan {
   rateOptions: CandidateRateOption[];
 }
 
-@Entity("hotel_booking_candidates")
+/** One hotel option planned for a PNR, tried in candidate_order until one books. */
+@Entity("hotel_allocation_options")
 @Index(
-  "uq_hotel_booking_candidates_plan_order",
+  "uq_hotel_allocation_options_plan_order",
   ["planId", "bookingId", "candidateOrder"],
   { unique: true },
 )
-export class HotelBookingCandidateEntity {
+export class HotelAllocationOptionEntity {
   @PrimaryGeneratedColumn({ type: "integer" })
   id!: number;
 
@@ -48,17 +50,8 @@ export class HotelBookingCandidateEntity {
   @Column({ name: "candidate_order", type: "integer" })
   candidateOrder!: number;
 
-  @Column({ name: "hotel_code", type: "varchar", length: 255 })
-  hotelCode!: string;
-
-  @Column({ name: "hotel_name", type: "varchar", length: 255 })
-  hotelName!: string;
-
-  @Column({ name: "category", type: "varchar", length: 255 })
-  category!: string;
-
-  @Column({ name: "stars", type: "integer" })
-  stars!: number;
+  @Column({ name: "hotel_id", type: "integer" })
+  hotelId!: number;
 
   @Column({ name: "tier", type: "varchar", length: 20 })
   tier!: "pool" | "overflow";
@@ -72,6 +65,10 @@ export class HotelBookingCandidateEntity {
   @Column({ name: "rooms", type: "jsonb" })
   rooms!: CandidateRoomPlan[];
 
+  /** Distance from the flight's departure airport, when the supplier gives it. */
+  @Column({ name: "distance_from_airport_km", type: "numeric", nullable: true })
+  distanceFromAirportKm?: number | null;
+
   @ManyToOne(() => CancelledFlightEntity, { onDelete: "CASCADE" })
   @JoinColumn({ name: "cancelled_flight_id" })
   cancelledFlight!: CancelledFlightEntity;
@@ -79,6 +76,10 @@ export class HotelBookingCandidateEntity {
   @ManyToOne(() => BookingEntity, { onDelete: "CASCADE" })
   @JoinColumn({ name: "booking_id" })
   booking!: BookingEntity;
+
+  @ManyToOne(() => HotelEntity)
+  @JoinColumn({ name: "hotel_id" })
+  hotel?: HotelEntity;
 
   @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;

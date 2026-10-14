@@ -52,7 +52,7 @@ import {
   buildHotelAllocationReportHtml,
   HotelAllocationReportRow,
 } from "./templates/hotel-allocation-report.template";
-import { HotelAllocationEntity } from "./entities/hotel-allocation.entity";
+import { HotelAllocationRecord } from "./hotel-allocation.record";
 
 @Injectable()
 export class CancelledFlightsService {
@@ -1482,7 +1482,7 @@ export class CancelledFlightsService {
   }
 
   private summarizeAllocationRooms(
-    rooms: HotelAllocationEntity["rooms"],
+    rooms: HotelAllocationRecord["rooms"],
   ): { adults: number; children: number; roomsSummary: string } {
     let adults = 0;
     let children = 0;

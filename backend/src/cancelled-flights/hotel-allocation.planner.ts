@@ -6,7 +6,7 @@ import {
 import {
   CandidateRateOption,
   CandidateRoomPlan,
-} from "./entities/hotel-booking-candidate.entity";
+} from "./entities/hotel-allocation-option.entity";
 import { HotelBookingAttemptStatus } from "./entities/enums";
 
 export const CLASS_RANK: Record<string, number> = {

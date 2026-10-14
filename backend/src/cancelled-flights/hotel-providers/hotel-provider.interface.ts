@@ -135,6 +135,8 @@ export interface HotelBookingResult {
   costPerRoom: number;
   price: number;
   buyingPrice: number;
+  /** The supplier's own order number, when it gives one (RateHawk order_id). */
+  supplierOrderId?: string;
 }
 
 /**
