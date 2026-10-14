@@ -13,7 +13,7 @@ import {
   FlightStatus,
   HotelAllocationStatus,
 } from "../cancelled-flights/entities/enums";
-import { HotelAllocationEntity } from "../cancelled-flights/entities/hotel-allocation.entity";
+import { HotelBookingRecord } from "../cancelled-flights/hotel-allocation.record";
 import { HotelBookingsRepository } from "./hotel-bookings.repository";
 import {
   GetHotelBookingsQueryDto,
@@ -458,7 +458,7 @@ export class HotelBookingsService {
     hotelBookingId: number,
     user: AuthenticatedUser,
     requestLogger: Logger,
-  ): Promise<HotelAllocationEntity> {
+  ): Promise<HotelBookingRecord> {
     const hotelBooking = await this.repository.findHotelBookingById(
       hotelBookingId,
       requestLogger,
@@ -497,7 +497,7 @@ export class HotelBookingsService {
   }
 
   private toDetailDto(
-    hotelBooking: HotelAllocationEntity,
+    hotelBooking: HotelBookingRecord,
     user: AuthenticatedUser,
   ): HotelBookingDetailResponseDto {
     const flight = hotelBooking.cancelledFlight;
@@ -519,7 +519,7 @@ export class HotelBookingsService {
       checkInDate: hotelBooking.checkInDate,
       checkOutDate: hotelBooking.checkOutDate,
       // rateKey is the supplier rate used to book; not part of this API.
-      rooms: (hotelBooking.rooms ?? []).map(({ rateKey, ...room }) => room),
+      rooms: (hotelBooking.rooms ?? []).map(({ rateKey, buyingPrice, ...room }) => room),
       totalRooms: hotelBooking.totalRooms,
       actualPrice: Number(hotelBooking.actualPrice),
       ...(includeMarginFields && {
@@ -587,7 +587,7 @@ export class HotelBookingsService {
     };
   }
 
-  private buildEmailBody(hotelBooking: HotelAllocationEntity): string {
+  private buildEmailBody(hotelBooking: HotelBookingRecord): string {
     const roomsSummary = (hotelBooking.rooms ?? [])
       .map(
         (room) =>

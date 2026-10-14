@@ -4,13 +4,11 @@ import {
   Entity,
   JoinColumn,
   ManyToOne,
-  OneToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from "typeorm";
 import { CancelledFlightEntity } from "./cancelled-flight.entity";
-import { SpecialNote, TravelClass } from "./enums";
-import { HotelAllocationEntity } from "./hotel-allocation.entity";
+import { HotelAllocationStatus, SpecialNote, TravelClass } from "./enums";
 
 @Entity("cancelled_flight_bookings")
 export class BookingEntity {
@@ -64,8 +62,44 @@ export class BookingEntity {
   @JoinColumn({ name: "cancelled_flight_id" })
   cancelledFlight!: CancelledFlightEntity;
 
-  @OneToOne(() => HotelAllocationEntity, (allocation) => allocation.booking)
-  hotelAllocation?: HotelAllocationEntity;
+  // ── Hotel allocation state for this PNR ──
+  @Column({
+    name: "allocation_status",
+    type: "varchar",
+    length: 50,
+    default: HotelAllocationStatus.DRAFT,
+  })
+  allocationStatus!: HotelAllocationStatus;
+
+  @Column({ name: "allocation_reason", type: "text", nullable: true })
+  allocationReason?: string | null;
+
+  /** The hotel_bookings row that is this PNR's confirmed hotel. */
+  @Column({
+    name: "confirmed_hotel_booking_id",
+    type: "integer",
+    nullable: true,
+  })
+  confirmedHotelBookingId?: number | null;
+
+  @Column({ name: "processing_order", type: "integer", nullable: true })
+  processingOrder?: number | null;
+
+  @Column({ name: "class_priority", type: "integer", nullable: true })
+  classPriority?: number | null;
+
+  @Column({ name: "plan_id", type: "varchar", length: 64, nullable: true })
+  planId?: string | null;
+
+  @Column({ name: "planned_at", type: "timestamp", nullable: true })
+  plannedAt?: Date | null;
+
+  @Column({ name: "room_plan", type: "jsonb", nullable: true })
+  roomPlan?: Array<{
+    adults: number;
+    children: number;
+    roomsNeeded: number;
+  }> | null;
 
   @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;

@@ -2,14 +2,24 @@ import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Brackets, Repository } from "typeorm";
 import { Logger } from "winston";
-import { HotelAllocationEntity } from "../cancelled-flights/entities/hotel-allocation.entity";
+import { HotelBookingEntity } from "../cancelled-flights/entities/hotel-booking.entity";
 import { CancelledFlightEntity } from "../cancelled-flights/entities/cancelled-flight.entity";
-import { HotelAllocationStatus } from "../cancelled-flights/entities/enums";
+import {
+  HotelAllocationStatus,
+  HotelBookingAttemptStatus,
+} from "../cancelled-flights/entities/enums";
+import {
+  HotelBookingRecord,
+  toAllocationRecord,
+} from "../cancelled-flights/hotel-allocation.record";
 
 const NOT_BOOKED_STATUSES = [
   HotelAllocationStatus.DRAFT,
   HotelAllocationStatus.FAILED,
 ];
+
+/** A PNR's live (non-failed) hotel booking, for PNRs that have a hotel. */
+const LIVE_BOOKING_CONDITION = `hotelBooking.status <> '${HotelBookingAttemptStatus.FAILED}' AND booking.allocation_status NOT IN (${NOT_BOOKED_STATUSES.map((status) => `'${status}'`).join(", ")})`;
 
 export interface HotelBookingFilters {
   page: number;
@@ -27,8 +37,8 @@ export class HotelBookingsRepository {
   private readonly context = "HotelBookingsRepository";
 
   constructor(
-    @InjectRepository(HotelAllocationEntity)
-    private readonly allocationRepo: Repository<HotelAllocationEntity>,
+    @InjectRepository(HotelBookingEntity)
+    private readonly hotelBookingRepo: Repository<HotelBookingEntity>,
     @InjectRepository(CancelledFlightEntity)
     private readonly cancelledFlightRepo: Repository<CancelledFlightEntity>,
   ) {}
@@ -36,7 +46,7 @@ export class HotelBookingsRepository {
   async findHotelBookingsWithPaginationAndFilters(
     filters: HotelBookingFilters,
     requestLogger: Logger,
-  ): Promise<{ hotelBookings: HotelAllocationEntity[]; totalCount: number }> {
+  ): Promise<{ hotelBookings: HotelBookingRecord[]; totalCount: number }> {
     requestLogger.debug("Querying hotel bookings with filters", {
       context: this.context,
       filters,
@@ -44,9 +54,12 @@ export class HotelBookingsRepository {
 
     const skip = (filters.page - 1) * filters.limit;
 
-    const qb = this.allocationRepo
+    const qb = this.hotelBookingRepo
       .createQueryBuilder("hotelBooking")
-      .leftJoinAndSelect("hotelBooking.booking", "booking")
+      .innerJoinAndSelect("hotelBooking.booking", "booking")
+      .leftJoinAndSelect("hotelBooking.hotel", "hotel")
+      .leftJoinAndSelect("hotelBooking.rooms", "room")
+      .leftJoinAndSelect("hotelBooking.candidate", "candidate")
       .leftJoinAndSelect("hotelBooking.cancelledFlight", "cancelledFlight")
       .leftJoinAndSelect("cancelledFlight.arrivalAirport", "arrivalAirport")
       .leftJoinAndSelect("cancelledFlight.airline", "airline")
@@ -56,9 +69,7 @@ export class HotelBookingsRepository {
       .addOrderBy("hotelBooking.id", "DESC")
       .skip(skip)
       .take(filters.limit)
-      .where("hotelBooking.status NOT IN (:...notBooked)", {
-        notBooked: NOT_BOOKED_STATUSES,
-      });
+      .where(LIVE_BOOKING_CONDITION);
 
     if (typeof filters.destinationAirportId === "number") {
       qb.andWhere("cancelledFlight.arrivalAirportId = :destinationAirportId", {
@@ -102,13 +113,16 @@ export class HotelBookingsRepository {
                 search,
               },
             )
-            .orWhere("hotelBooking.hotel_name ILIKE :search", { search })
+            .orWhere("hotel.name ILIKE :search", { search })
             .orWhere("booking.email ILIKE :search", { search });
         }),
       );
     }
 
-    const [hotelBookings, totalCount] = await qb.getManyAndCount();
+    const [rows, totalCount] = await qb.getManyAndCount();
+    const hotelBookings = rows.map(
+      (row) => toAllocationRecord(row.booking, row) as HotelBookingRecord,
+    );
 
     requestLogger.debug("Hotel booking query complete", {
       context: this.context,
@@ -145,7 +159,7 @@ export class HotelBookingsRepository {
     // (totalBooking/totalAdults/totalChildren/totalHotelRooms/totalPrice/
     // totalPlatformFee), kept up to date as passengers are confirmed and
     // hotels are allocated — so this is a single aggregate over that table,
-    // no joins to bookings/hotel_allocations needed.
+    // no joins to bookings/hotel_bookings needed.
     const summaryQb = this.cancelledFlightRepo
       .createQueryBuilder("cancelledFlight")
       .where("cancelledFlight.airlineId = :airlineId", { airlineId });
@@ -167,12 +181,11 @@ export class HotelBookingsRepository {
       const hotelBookingSubquery = summaryQb
         .subQuery()
         .select("1")
-        .from(HotelAllocationEntity, "hotelBooking")
-        .leftJoin("hotelBooking.booking", "booking")
+        .from(HotelBookingEntity, "hotelBooking")
+        .innerJoin("hotelBooking.booking", "booking")
+        .leftJoin("hotelBooking.hotel", "hotel")
         .where("hotelBooking.cancelledFlightId = cancelledFlight.id")
-        .andWhere(
-          `hotelBooking.status NOT IN (${NOT_BOOKED_STATUSES.map((status) => `'${status}'`).join(", ")})`,
-        );
+        .andWhere(LIVE_BOOKING_CONDITION);
 
       if (filters.startDate) {
         hotelBookingSubquery.andWhere("hotelBooking.checkInDate >= :startDate");
@@ -191,7 +204,7 @@ export class HotelBookingsRepository {
               .orWhere(
                 "CAST(cancelledFlight.flight_number AS TEXT) ILIKE :search",
               )
-              .orWhere("hotelBooking.hotel_name ILIKE :search")
+              .orWhere("hotel.name ILIKE :search")
               .orWhere("booking.email ILIKE :search");
           }),
         );
@@ -264,21 +277,31 @@ export class HotelBookingsRepository {
   async findHotelBookingById(
     id: number,
     requestLogger: Logger,
-  ): Promise<HotelAllocationEntity | null> {
+  ): Promise<HotelBookingRecord | null> {
     requestLogger.debug("Finding hotel booking by id", {
       context: this.context,
       id,
     });
 
-    return this.allocationRepo.findOne({
+    const hotelBooking = await this.hotelBookingRepo.findOne({
       where: { id },
-      relations: [
-        "booking",
-        "cancelledFlight",
-        "cancelledFlight.airline",
-        "cancelledFlight.departureAirport",
-        "cancelledFlight.arrivalAirport",
-      ],
+      relations: {
+        booking: true,
+        hotel: true,
+        rooms: true,
+        candidate: true,
+        cancelledFlight: {
+          airline: true,
+          departureAirport: true,
+          arrivalAirport: true,
+        },
+      },
     });
+    return hotelBooking
+      ? (toAllocationRecord(
+          hotelBooking.booking,
+          hotelBooking,
+        ) as HotelBookingRecord)
+      : null;
   }
 }
