@@ -1,0 +1,508 @@
+---
+title: FlyVoid Database ER Diagram
+---
+%% Generated from TypeORM entities in backend/src/**/entities/*.entity.ts
+%% Solid lines (--)  = FK constraint defined via @ManyToOne/@OneToOne + @JoinColumn
+%% Dotted lines (..) = logical reference column with no FK constraint in the entity
+erDiagram
+
+    %% ───────────── Platform admins & auth ─────────────
+
+    admins {
+        integer id PK
+        varchar first_name
+        varchar last_name
+        varchar email UK
+        varchar password_hash
+        enum role "AdminRole, default STAFF"
+        boolean is_active
+        boolean require_password_reset
+        timestamp last_login_at "nullable"
+        boolean two_factor_enabled
+        text two_factor_secret_encrypted "nullable"
+        text two_factor_temp_secret_encrypted "nullable"
+        json two_factor_recovery_code_hashes "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    platform_access_controls {
+        integer id PK
+        integer admin_id FK "UK(admin_id, asset, access_action)"
+        enum asset "PlatformAsset"
+        enum access_action "AccessAction"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    refresh_tokens {
+        integer id PK
+        integer admin_id FK
+        text token_hash
+        timestamp expires_at
+        boolean is_revoked
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    admin_password_reset_otps {
+        integer id PK
+        integer admin_id FK
+        text otp_hash
+        timestamp expires_at
+        integer attempt_count
+        boolean is_verified
+        boolean is_used
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    %% ───────────── Airlines, users & invitations ─────────────
+
+    airlines {
+        integer id PK
+        varchar name
+        varchar code UK
+        varchar country_code
+        varchar company_registration_number
+        varchar website "nullable"
+        varchar contact_email
+        varchar contact_phone
+        varchar timezone
+        varchar logo "nullable"
+        varchar address
+        varchar currency
+        decimal platform_fee_percentage
+        boolean is_active
+        boolean is_suspended
+        integer invitation_id FK "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    airline_users {
+        integer id PK
+        integer airline_id FK
+        varchar first_name
+        varchar last_name
+        varchar email UK
+        varchar job_title
+        varchar password_hash
+        enum role "AirlineRole, default AIRLINE_STAFF"
+        boolean is_active
+        boolean require_password_reset
+        timestamp last_login_at "nullable"
+        boolean two_factor_enabled
+        text two_factor_secret_encrypted "nullable"
+        text two_factor_temp_secret_encrypted "nullable"
+        json two_factor_recovery_code_hashes "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    airline_access_controls {
+        integer id PK
+        integer airline_user_id FK "UK(airline_user_id, asset, access_action)"
+        enum asset "AirlineAsset"
+        enum access_action "AccessAction"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    airline_refresh_tokens {
+        integer id PK
+        integer airline_user_id FK
+        text token_hash
+        timestamp expires_at
+        boolean is_revoked
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    airline_password_reset_otps {
+        integer id PK
+        integer airline_user_id FK
+        text otp_hash
+        timestamp expires_at
+        integer attempt_count
+        boolean is_verified
+        boolean is_used
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    meta_airline_invites {
+        integer id PK
+        varchar airline_name
+        varchar airline_code
+        varchar country_code
+        varchar company_registration_number
+        varchar website "nullable"
+        varchar contact_email
+        varchar contact_phone
+        varchar timezone
+        varchar currency
+        varchar address
+        varchar logo "nullable"
+        integer credit_limit
+        decimal platform_fee_percentage
+        varchar admin_first_name
+        varchar admin_last_name
+        varchar admin_email
+        varchar admin_job_title
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    airline_admin_invites {
+        integer id PK
+        integer airline_id FK "nullable"
+        integer meta_id FK, UK
+        integer invited_by_admin_id FK
+        varchar token_lookup UK
+        text token_hash
+        timestamp expires_at
+        enum status "AIRLINE_INVITATION_STATUSES, default PENDING"
+        timestamp accepted_at "nullable"
+        timestamp revoked_at "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    airline_admin_invite_history {
+        integer id PK
+        integer invitation_id FK
+        enum event "SENT | RESENT | REVOKED | ACCEPTED"
+        integer performed_by_admin_id FK "nullable"
+        timestamp created_at
+    }
+
+    %% ───────────── Airports ─────────────
+
+    airports {
+        integer id PK
+        varchar name
+        varchar iata_code UK
+        varchar icao_code UK
+        varchar country_code
+        varchar city
+        numeric latitude
+        numeric longitude
+        varchar timezone
+        boolean is_active
+        enum type "AirportType"
+        varchar address "nullable"
+        varchar postal_code
+        integer created_by FK
+        integer updated_by FK "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    airline_airports {
+        integer id PK
+        integer airline_id FK "UK(airline_id, airport_id)"
+        integer airport_id FK
+        boolean is_active
+        integer assigned_by_admin_id "logical ref admins.id"
+        timestamp assigned_at
+        integer disabled_by_admin_id "nullable, logical ref admins.id"
+        timestamp disabled_at "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    %% ───────────── Finance ─────────────
+
+    wallets {
+        integer id PK
+        integer airline_id FK, UK
+        decimal balance
+        decimal credit_limit
+        decimal locked_amount
+        varchar currency "default USD"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    wallet_transactions {
+        integer id PK
+        integer wallet_id FK
+        enum type "TRANSACTION_TYPES"
+        enum reference_type "TRANSACTION_REFERENCE_TYPES"
+        integer reference_id "polymorphic"
+        decimal amount
+        decimal balance_before
+        decimal balance_after
+        text description "nullable"
+        integer created_by "nullable"
+        timestamp created_at
+    }
+
+    payments {
+        integer id PK
+        integer wallet_id FK
+        decimal amount
+        varchar currency
+        enum method "PAYMENT_METHODS"
+        enum status "PAYMENT_STATUSES"
+        varchar reference_code "nullable"
+        integer transaction_id "nullable, logical ref wallet_transactions.id"
+        timestamp created_at
+    }
+
+    wallet_adjustments {
+        integer id PK
+        integer wallet_id FK
+        enum type "TRANSACTION_TYPES"
+        decimal amount
+        varchar reason
+        text notes "nullable"
+        integer adjusted_by_admin_id "logical ref admins.id"
+        timestamp created_at
+    }
+
+    wallet_credit_limit_history {
+        integer id PK
+        integer wallet_id FK
+        decimal previous_credit_limit
+        decimal new_credit_limit
+        varchar reason
+        integer changed_by_admin_id "logical ref admins.id"
+        timestamp created_at
+    }
+
+    %% ───────────── Cancelled flights & hotel allocation ─────────────
+
+    cancelled_flights {
+        integer id PK
+        varchar flight_number
+        integer airline_id FK
+        integer departure_airport_id FK
+        integer arrival_airport_id FK
+        date cancellation_date
+        varchar cancellation_reason "CancellationReason, nullable"
+        text cancellation_reason_text "nullable"
+        varchar status "FlightStatus, default draft"
+        integer total_booking
+        integer total_adults
+        integer total_children
+        integer allocated_bookings
+        integer failed_bookings
+        integer total_hotel_rooms
+        decimal total_actual_price
+        decimal total_buying_price
+        decimal total_selling_price
+        decimal total_discounts
+        decimal total_hotel_taxes
+        decimal platform_fee_percentage
+        decimal total_platform_fee
+        decimal total_price
+        decimal total_earnings
+        varchar hotel_allocation_run_id "nullable"
+        text hotel_allocation_error "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    cancelled_flight_bookings {
+        integer id PK
+        integer cancelled_flight_id FK
+        varchar pnr
+        varchar first_name
+        varchar last_name
+        varchar email
+        varchar phone
+        varchar residency
+        varchar travel_class "TravelClass"
+        integer adults
+        integer children
+        text special_notes "SpecialNote[], nullable"
+        text additional_notes "nullable"
+        varchar allocation_status "HotelAllocationStatus, default draft"
+        text allocation_reason "nullable"
+        integer confirmed_hotel_booking_id "nullable, logical ref hotel_bookings.id"
+        integer processing_order "nullable"
+        integer class_priority "nullable"
+        varchar plan_id "nullable"
+        timestamp planned_at "nullable"
+        jsonb room_plan "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    providers {
+        integer id PK
+        varchar code UK
+        varchar name
+        boolean is_active
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    hotels {
+        integer id PK
+        integer provider_id FK "UK(provider_id, provider_hotel_id)"
+        varchar provider_hotel_id
+        varchar name
+        integer star_rating "nullable"
+        varchar kind "nullable"
+        text address "nullable"
+        varchar postal_code "nullable"
+        varchar country_code "nullable"
+        numeric latitude "nullable"
+        numeric longitude "nullable"
+        jsonb contact "nullable"
+        text website "nullable"
+        text image_url "nullable"
+        jsonb amenities "nullable"
+        jsonb policies "nullable"
+        boolean is_active
+        timestamp content_updated_at "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    hotel_allocation_options {
+        integer id PK
+        integer cancelled_flight_id FK
+        integer booking_id FK "UK(plan_id, booking_id, candidate_order)"
+        varchar plan_id
+        integer candidate_order
+        integer hotel_id FK
+        varchar tier "pool | overflow"
+        decimal estimated_price
+        varchar currency "nullable"
+        jsonb rooms
+        numeric distance_from_airport_km "nullable"
+        timestamp created_at
+    }
+
+    hotel_bookings {
+        integer id PK
+        integer cancelled_flight_id FK
+        integer booking_id FK "UK(booking_id, attempt_order); UK(booking_id) where status != failed"
+        integer provider_id FK
+        integer hotel_id FK "nullable"
+        integer candidate_id FK "nullable"
+        varchar run_id "nullable"
+        integer attempt_order
+        varchar status "HotelBookingAttemptStatus"
+        date check_in_date "nullable"
+        date check_out_date "nullable"
+        varchar currency "nullable"
+        decimal actual_price
+        decimal buying_price
+        decimal platform_fee_percentage
+        decimal platform_fee
+        decimal total_price
+        decimal earnings
+        varchar provider_status "nullable"
+        varchar provider_request_id
+        timestamp provider_request_sent_at "nullable"
+        timestamp provider_response_received_at "nullable"
+        timestamp completed_at "nullable"
+        timestamp failed_at "nullable"
+        varchar failure_code "HotelBookingFailureCode, nullable"
+        text failure_reason "nullable"
+        jsonb provider_order_info "nullable"
+        timestamp provider_order_info_at "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    hotel_booking_rooms {
+        integer id PK
+        integer hotel_booking_id FK "UK(hotel_booking_id, room_no)"
+        integer room_no
+        text room_name
+        varchar board_name
+        integer adults
+        integer children
+        decimal price
+        decimal buying_price
+        text rate_key "nullable"
+        jsonb taxes_at_property "nullable"
+        varchar partner_order_id "nullable"
+        varchar provider_order_id "nullable"
+        varchar status "pending | booked | failed"
+        text failure_reason "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    supplier_webhook_tokens {
+        integer id PK
+        varchar provider "UK(provider, token)"
+        varchar token
+        timestamp received_at
+    }
+
+    %% ───────────── Standalone ─────────────
+
+    health_logs {
+        uuid id PK
+        timestamp checked_at
+        varchar status
+        integer uptime_seconds
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    %% ═════════════ Relationships ═════════════
+
+    %% Admins & auth
+    admins ||--o{ platform_access_controls : "has permissions"
+    admins ||--o{ refresh_tokens : "has"
+    admins ||--o{ admin_password_reset_otps : "requests"
+
+    %% Airline users & auth
+    airlines ||--o{ airline_users : "employs"
+    airline_users ||--o{ airline_access_controls : "has permissions"
+    airline_users ||--o{ airline_refresh_tokens : "has"
+    airline_users ||--o{ airline_password_reset_otps : "requests"
+
+    %% Invitations
+    meta_airline_invites ||--|| airline_admin_invites : "details for"
+    admins |o--o{ airline_admin_invites : "invites"
+    airline_admin_invites ||--o{ airline_admin_invite_history : "logs"
+    admins |o--o{ airline_admin_invite_history : "performed"
+    airlines |o--o| airline_admin_invites : "airline_id"
+    airline_admin_invites |o--o| airlines : "invitation_id"
+
+    %% Airports
+    admins ||--o{ airports : "created_by"
+    admins |o--o{ airports : "updated_by"
+    airlines ||--o{ airline_airports : "operates at"
+    airports ||--o{ airline_airports : "served by"
+    admins ||..o{ airline_airports : "assigned / disabled by"
+
+    %% Finance
+    airlines ||--|| wallets : "owns"
+    wallets ||--o{ wallet_transactions : "records"
+    wallets ||--o{ payments : "receives"
+    wallets ||--o{ wallet_adjustments : "adjusted by"
+    wallets ||--o{ wallet_credit_limit_history : "limit changes"
+    wallet_transactions |o..o| payments : "transaction_id"
+    admins ||..o{ wallet_adjustments : "adjusted_by"
+    admins ||..o{ wallet_credit_limit_history : "changed_by"
+
+    %% Cancelled flights
+    airlines ||--o{ cancelled_flights : "cancels"
+    airports ||--o{ cancelled_flights : "departure"
+    airports ||--o{ cancelled_flights : "arrival"
+    cancelled_flights ||--o{ cancelled_flight_bookings : "has passengers"
+
+    %% Hotel allocation
+    providers ||--o{ hotels : "supplies"
+    cancelled_flights ||--o{ hotel_allocation_options : "plans"
+    cancelled_flight_bookings ||--o{ hotel_allocation_options : "candidates"
+    hotels ||--o{ hotel_allocation_options : "offered in"
+
+    cancelled_flights ||--o{ hotel_bookings : "has"
+    cancelled_flight_bookings ||--o{ hotel_bookings : "attempts"
+    providers ||--o{ hotel_bookings : "booked via"
+    hotels |o--o{ hotel_bookings : "booked at"
+    hotel_allocation_options |o--o{ hotel_bookings : "chosen candidate"
+    hotel_bookings ||--o{ hotel_booking_rooms : "contains"
+    hotel_bookings |o..o| cancelled_flight_bookings : "confirmed_hotel_booking_id"

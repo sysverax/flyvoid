@@ -1,7 +1,7 @@
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { AuthModule } from "../auth/auth.module";
-import { HotelAllocationEntity } from "../cancelled-flights/entities/hotel-allocation.entity";
+import { HotelBookingEntity } from "../cancelled-flights/entities/hotel-booking.entity";
 import { BookingEntity } from "../cancelled-flights/entities/booking.entity";
 import { CancelledFlightEntity } from "../cancelled-flights/entities/cancelled-flight.entity";
 import { AirlineEntity } from "../airline/entities/airline.entity";
@@ -15,7 +15,7 @@ import { PdfService } from "../common/pdf/pdf.service";
   imports: [
     AuthModule,
     TypeOrmModule.forFeature([
-      HotelAllocationEntity,
+      HotelBookingEntity,
       BookingEntity,
       CancelledFlightEntity,
       AirlineEntity,

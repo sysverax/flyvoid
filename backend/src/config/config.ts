@@ -161,6 +161,22 @@ export const config = {
       userId: process.env.RATEHAWK_USER_ID ?? "",
     },
   },
+  hotelContent: {
+    // Static hotel data older than this is fetched again from the supplier's content API.
+    staleAfterMs: parseInt(
+      process.env.HOTEL_CONTENT_STALE_AFTER_MS ?? String(7 * 24 * 60 * 60 * 1000),
+      10,
+    ),
+    refreshIntervalMs: parseInt(
+      process.env.HOTEL_CONTENT_REFRESH_INTERVAL_MS ?? String(24 * 60 * 60 * 1000),
+      10,
+    ),
+    // Most hotels refreshed in one scheduled run.
+    refreshBatchLimit: parseInt(
+      process.env.HOTEL_CONTENT_REFRESH_LIMIT ?? "5000",
+      10,
+    ),
+  },
   hotelSearch: {
     defaultRadius: parseInt(process.env.HOTEL_SEARCH_RADIUS ?? "10", 10),
     unit: process.env.HOTEL_SEARCH_RADIUS_UNIT ?? "km",
