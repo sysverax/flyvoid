@@ -696,7 +696,6 @@ export function BookingDetailsDrawer({
                 const roomName =
                   roomData?.roomName ||
                   booking?.roomName ||
-                  booking?.roomType ||
                   hotel?.rooms?.[0]?.roomName ||
                   "N/A";
                 const guestCount = roomData

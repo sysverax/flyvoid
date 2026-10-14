@@ -686,12 +686,7 @@ export default function PublishedDetailView({
                               travelClass,
                               roomName:
                                 (hb as any).rooms?.[0]?.roomName ||
-                                (hb as any).rooms?.[0]?.name ||
-                                "Standard Twin Room",
-                              roomType:
-                                (hb as any).rooms?.[0]?.roomName ||
-                                (hb as any).rooms?.[0]?.name ||
-                                "Standard Twin Room",
+                                (hb as any).rooms?.[0]?.name,
                               checkInDate:
                                 (hb as any).checkInDate ||
                                 cancellationDateDisplay,
