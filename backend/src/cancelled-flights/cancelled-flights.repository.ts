@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { EntityManager, In, IsNull, Not, Repository } from "typeorm";
 import { QueryDeepPartialEntity } from "typeorm/query-builder/QueryPartialEntity";
+import { config } from "../config/config";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
 import { BookingEntity } from "./entities/booking.entity";
 import {
@@ -93,7 +94,7 @@ interface AllocationState {
 }
 
 /** The PNR allocation state its booking attempts imply, or null when unchanged. */
-export function effectiveAllocationState(
+function effectiveAllocationState(
   current: HotelAllocationStatus,
   attempts: Array<
     Pick<
@@ -1633,30 +1634,32 @@ export class CancelledFlightsRepository {
         { hotelCode: success.hotelCode },
       ]);
       hotelId = ids.get(success.hotelCode) ?? hotelId;
-      if (hotelId) {
+      // Fills hotels whose stored content is missing or stale (suppliers
+      // without a content API); fresh content-API hotels are left as they are.
+      if (hotelId && success.contact !== undefined) {
         const stars = starsFromCategory(success.category);
-        await hotels.update(
-          { id: hotelId },
-          {
+        await hotels
+          .createQueryBuilder()
+          .update()
+          .set({
             ...(success.hotelName ? { name: success.hotelName } : {}),
             ...(stars ? { starRating: stars } : {}),
-            ...(success.address !== undefined
-              ? { address: success.address }
-              : {}),
-            ...(success.contact !== undefined
-              ? {
-                  contact: success.contact,
-                  latitude: success.latitude ?? null,
-                  longitude: success.longitude ?? null,
-                  website: success.website ?? null,
-                  imageUrl: success.imageUrl ?? null,
-                  amenities: success.amenities ?? null,
-                  policies: success.hotelPolicies ?? null,
-                  contentUpdatedAt: () => "now()",
-                }
-              : {}),
-          } as QueryDeepPartialEntity<HotelEntity>,
-        );
+            address: success.address ?? null,
+            contact: success.contact,
+            latitude: success.latitude ?? null,
+            longitude: success.longitude ?? null,
+            website: success.website ?? null,
+            imageUrl: success.imageUrl ?? null,
+            amenities: success.amenities ?? null,
+            policies: success.hotelPolicies ?? null,
+            contentUpdatedAt: () => "now()",
+          } as QueryDeepPartialEntity<HotelEntity>)
+          .where("id = :hotelId", { hotelId })
+          .andWhere(
+            "(content_updated_at IS NULL OR content_updated_at < now() - (:staleMs * interval '1 millisecond'))",
+            { staleMs: config.hotelContent.staleAfterMs },
+          )
+          .execute();
       }
     }
     await manager.getRepository(HotelBookingEntity).update(
