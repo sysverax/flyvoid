@@ -113,7 +113,7 @@ export class HotelBookingsRepository {
                 search,
               },
             )
-            .orWhere("hotelBooking.hotel_name ILIKE :search", { search })
+            .orWhere("hotel.name ILIKE :search", { search })
             .orWhere("booking.email ILIKE :search", { search });
         }),
       );
@@ -183,6 +183,7 @@ export class HotelBookingsRepository {
         .select("1")
         .from(HotelBookingEntity, "hotelBooking")
         .innerJoin("hotelBooking.booking", "booking")
+        .leftJoin("hotelBooking.hotel", "hotel")
         .where("hotelBooking.cancelledFlightId = cancelledFlight.id")
         .andWhere(LIVE_BOOKING_CONDITION);
 
@@ -203,7 +204,7 @@ export class HotelBookingsRepository {
               .orWhere(
                 "CAST(cancelledFlight.flight_number AS TEXT) ILIKE :search",
               )
-              .orWhere("hotelBooking.hotel_name ILIKE :search")
+              .orWhere("hotel.name ILIKE :search")
               .orWhere("booking.email ILIKE :search");
           }),
         );
