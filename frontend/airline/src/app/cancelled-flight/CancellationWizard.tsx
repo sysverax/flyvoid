@@ -224,6 +224,14 @@ const HOTEL_BOOKING_STATUS_LABEL: Record<string, string> = {
   completed: "Completed",
 };
 
+const PNR_STATUS_TO_HOTEL_STATUS: Record<string, string> = {
+  SUCCESS: "confirmed",
+  FAILED: "failed",
+  MANUAL_CHECK: "manual_check",
+  PENDING: "in_progress",
+  NOT_STARTED: "draft",
+};
+
 export function getInitialStepFromStatus(
   status?: string,
   bookingsCount?: number,
@@ -1137,8 +1145,18 @@ export default function CancellationWizard({
         if (cancelled) return;
         if (data?.running) {
           startAllocationPolling(flightId);
-        } else if (data?.lastRunError) {
+          return;
+        }
+        if (data?.lastRunError) {
           setAllocationError(data.lastRunError);
+        }
+        // Show earlier results when allocation already ran for this flight.
+        if (data && data.notStartedPnrs < data.totalPnrs) {
+          return cancellationService
+            .getHotelAllocationStatus(flightId)
+            .then((full) => {
+              if (!cancelled) setHotelAllocations(full?.data || full);
+            });
         }
       })
       .catch(() => undefined)
@@ -3347,25 +3365,119 @@ export default function CancellationWizard({
               </div>
             </div>
 
+            {hotelAllocations && (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                  <span className="font-semibold text-gray-900">
+                    {hotelAllocations.successfulPnrs} of{" "}
+                    {hotelAllocations.totalPnrs} booking(s) confirmed
+                  </span>
+                  {hotelAllocations.failedPnrs > 0 && (
+                    <span className="text-red-600">
+                      {hotelAllocations.failedPnrs} failed
+                    </span>
+                  )}
+                  {hotelAllocations.manualCheckPnrs > 0 && (
+                    <span className="text-amber-600">
+                      {hotelAllocations.manualCheckPnrs} need manual check
+                    </span>
+                  )}
+                  {hotelAllocations.notStartedPnrs > 0 && (
+                    <span className="text-gray-500">
+                      {hotelAllocations.notStartedPnrs} not started
+                    </span>
+                  )}
+                </div>
+                <div className="border border-gray-200 rounded-xl overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="min-w-[100px]">PNR</TableHead>
+                        <TableHead className="min-w-[100px]">Class</TableHead>
+                        <TableHead className="min-w-[180px]">Hotel</TableHead>
+                        <TableHead className="min-w-[140px]">
+                          Booking Status
+                        </TableHead>
+                        <TableHead className="min-w-[80px]">Attempts</TableHead>
+                        <TableHead className="min-w-[240px]">Details</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {hotelAllocations.results.map((r) => (
+                        <TableRow key={r.bookingId}>
+                          <TableCell className="font-medium text-gray-900">
+                            {r.pnr}
+                          </TableCell>
+                          <TableCell className="capitalize">
+                            {ENUM_TO_TRAVEL_CLASS[r.travelClass] ||
+                              r.travelClass}
+                          </TableCell>
+                          <TableCell>{r.hotel?.hotelName || "-"}</TableCell>
+                          <TableCell>
+                            <StatusBadge
+                              status={
+                                HOTEL_BOOKING_STATUS_LABEL[
+                                  PNR_STATUS_TO_HOTEL_STATUS[r.bookingStatus]
+                                ] ?? r.bookingStatus
+                              }
+                            />
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {r.attempts}
+                          </TableCell>
+                          <TableCell className="text-xs text-gray-500 whitespace-normal">
+                            {r.reason || "-"}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            )}
+
             {allocationError && (
               <div className="w-full bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl text-sm text-left">
                 {allocationError}
               </div>
             )}
 
-            {hasPermission("edit") && (
-              <div className="flex items-center justify-end pt-2">
+            <div className="flex items-center justify-end gap-3 pt-2">
+              {hotelAllocations && hotelAllocations.successfulPnrs > 0 && (
                 <button
                   type="button"
-                  onClick={handleAllocateHotels}
-                  disabled={isAllocating || isCheckingAllocation}
-                  className="bg-[#2B3B67] hover:bg-[#1E2B4D] disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-medium py-2.5 px-6 rounded-lg transition-colors cursor-pointer text-sm inline-flex items-center gap-2"
+                  onClick={() => changeStep(5)}
+                  className="border border-gray-300 hover:bg-gray-50 text-[#374151] font-medium py-2.5 px-5 rounded-lg transition-colors cursor-pointer text-sm"
                 >
-                  <Building2 className="h-5 w-5" />
-                  <span>Allocate Hotel Reservations</span>
+                  View Booking Summary
                 </button>
-              </div>
-            )}
+              )}
+              {hotelAllocations &&
+                !hotelAllocations.fullyBooked &&
+                !hotelAllocations.canRetry && (
+                  <span className="text-sm text-gray-500">
+                    Retry already used for this flight. Contact support for the
+                    remaining bookings.
+                  </span>
+                )}
+              {hasPermission("edit") &&
+                !hotelAllocations?.fullyBooked &&
+                (hotelAllocations?.canRetry ?? true) && (
+                  <button
+                    type="button"
+                    onClick={handleAllocateHotels}
+                    disabled={isAllocating || isCheckingAllocation}
+                    className="bg-[#2B3B67] hover:bg-[#1E2B4D] disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-medium py-2.5 px-6 rounded-lg transition-colors cursor-pointer text-sm inline-flex items-center gap-2"
+                  >
+                    <Building2 className="h-5 w-5" />
+                    <span>
+                      {hotelAllocations
+                        ? "Retry Remaining Bookings"
+                        : "Allocate Hotel Reservations"}
+                    </span>
+                  </button>
+                )}
+            </div>
           </div>
         );
       case 5:

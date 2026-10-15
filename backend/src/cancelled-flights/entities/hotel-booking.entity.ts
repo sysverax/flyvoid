@@ -172,6 +172,13 @@ export class HotelBookingEntity {
   })
   providerOrderInfoAt?: Date | null;
 
+  /** Supplier status checks made by MANUAL_CHECK recovery. */
+  @Column({ name: "status_check_count", type: "integer", default: 0 })
+  statusCheckCount!: number;
+
+  @Column({ name: "last_status_check_at", type: "timestamp", nullable: true })
+  lastStatusCheckAt?: Date | null;
+
   @ManyToOne(() => CancelledFlightEntity, { onDelete: "CASCADE" })
   @JoinColumn({ name: "cancelled_flight_id" })
   cancelledFlight!: CancelledFlightEntity;

@@ -168,6 +168,13 @@ export class HotelAllocationsDto {
   })
   fullyBooked: boolean;
 
+  @ApiProperty({
+    description:
+      "False once the first allocation and its one retry have been used",
+    example: true,
+  })
+  canRetry: boolean;
+
   @ApiProperty({ type: [HotelAllocationBookingResultDto] })
   results: HotelAllocationBookingResultDto[];
 
