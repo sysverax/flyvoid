@@ -1388,6 +1388,18 @@ export class CancelledFlightsService {
       );
     }
 
+    if (
+      !(await this.cancelledFlightsRepository.areAllPnrsHotelBooked(flightId))
+    ) {
+      requestLogger.warn(
+        "Rejected payment processing: not every PNR has a confirmed hotel booking",
+        { context: this.context, flightId },
+      );
+      throw new BadRequestException(
+        `Cannot process payment for flight '${flightId}': every booking must have a confirmed hotel. Resolve failed or manual-check bookings first.`,
+      );
+    }
+
     const updatedFlight =
       await this.cancelledFlightsRepository.updateFlightStatus({
         cancelledFlightEntity: flight,

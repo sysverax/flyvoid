@@ -258,8 +258,12 @@ export function getMaxAllowedStep(flight: any, summary?: any): number {
   if (status === "allocated") {
     return 6;
   }
+  // A partially booked flight stays in passengers_booking_confirmed until every
+  // PNR is confirmed; it may view the summary (step 5) but not pay.
+  if (status === "passengers_booking_confirmed") {
+    return 5;
+  }
   if (
-    status === "passengers_booking_confirmed" ||
     status === "confirmed" ||
     status === "verified" ||
     status === "hotel_allocation_in_progress" ||
@@ -914,8 +918,27 @@ export default function CancellationWizard({
   const [step5CurrentPage, setStep5CurrentPage] = useState(1);
   const [step5ResultsPerPage, setStep5ResultsPerPage] = useState(10);
 
+  // Payment is only allowed once every PNR has a confirmed hotel booking.
+  const [step5BookingProgress, setStep5BookingProgress] =
+    useState<HotelAllocationProgressResponse | null>(null);
+  const [isLoadingStep5Progress, setIsLoadingStep5Progress] = useState(false);
+  const allPnrsBooked = step5BookingProgress?.fullyBooked === true;
+
   const isFetchingHotelSummaryRef = useRef(false);
   const isFetchingHotelBookingsRef = useRef(false);
+
+  const fetchStep5BookingProgress = async (fId: number) => {
+    setIsLoadingStep5Progress(true);
+    try {
+      const res = await cancellationService.getHotelAllocationProgress(fId);
+      setStep5BookingProgress(res?.data || res);
+    } catch (err: any) {
+      console.error("Failed to load hotel booking progress:", err);
+      setStep5BookingProgress(null);
+    } finally {
+      setIsLoadingStep5Progress(false);
+    }
+  };
 
   const fetchHotelSummary = async (fId: number) => {
     if (isFetchingHotelSummaryRef.current) return;
@@ -991,6 +1014,12 @@ export default function CancellationWizard({
       fetchHotelBookings(flightId, step5CurrentPage, step5ResultsPerPage);
     }
   }, [activeStep, flightId, step5CurrentPage, step5ResultsPerPage]);
+
+  useEffect(() => {
+    if (activeStep === 5 && flightId) {
+      fetchStep5BookingProgress(flightId);
+    }
+  }, [activeStep, flightId]);
 
   const ALLOCATION_POLL_MS = 3000;
   const ALLOCATION_POLL_MAX_MS = 8000;
@@ -1801,6 +1830,14 @@ export default function CancellationWizard({
       } else {
         changeStep(5);
       }
+    } else if (activeStep === 5) {
+      if (flightId && !allPnrsBooked) {
+        toast.error(
+          "All bookings must have a confirmed hotel before continuing to payment.",
+        );
+        return;
+      }
+      changeStep(6);
     } else if (activeStep === 6) {
       if (!flightId) {
         changeStep(7);
@@ -3373,6 +3410,59 @@ export default function CancellationWizard({
               )}
             </div>
 
+            {flightId &&
+              !isLoadingStep5Progress &&
+              step5BookingProgress &&
+              !allPnrsBooked && (
+                <div className="flex items-start gap-3 rounded-lg border border-[#FDE68A] bg-[#FFFBEB] p-4 text-sm text-[#92400E]">
+                  <Info className="h-5 w-5 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="font-semibold">
+                      {step5BookingProgress.successfulPnrs} of{" "}
+                      {step5BookingProgress.totalPnrs} booking(s) confirmed.
+                      Payment is available once every booking is confirmed.
+                    </p>
+                    <ul className="mt-1 list-disc pl-5 space-y-0.5">
+                      {step5BookingProgress.failedPnrs > 0 && (
+                        <li>
+                          {step5BookingProgress.failedPnrs} booking(s) failed.
+                          Run allocation again to retry them.
+                        </li>
+                      )}
+                      {step5BookingProgress.manualCheckPnrs > 0 && (
+                        <li>
+                          {step5BookingProgress.manualCheckPnrs} booking(s) need
+                          a manual check with the supplier.
+                        </li>
+                      )}
+                      {step5BookingProgress.pendingPnrs > 0 && (
+                        <li>
+                          {step5BookingProgress.pendingPnrs} booking(s) are
+                          still being confirmed.
+                        </li>
+                      )}
+                      {step5BookingProgress.notStartedPnrs > 0 && (
+                        <li>
+                          {step5BookingProgress.notStartedPnrs} booking(s) have
+                          no hotel yet.
+                        </li>
+                      )}
+                    </ul>
+                  </div>
+                  {hasPermission("edit") &&
+                    (step5BookingProgress.failedPnrs > 0 ||
+                      step5BookingProgress.notStartedPnrs > 0) && (
+                      <button
+                        type="button"
+                        onClick={() => changeStep(4)}
+                        className="shrink-0 rounded-lg border border-[#F59E0B] bg-white px-3 py-1.5 text-sm font-medium text-[#92400E] hover:bg-[#FEF3C7] transition-colors cursor-pointer"
+                      >
+                        Go to Allocation
+                      </button>
+                    )}
+                </div>
+              )}
+
             {/* Summary Cards */}
             <div className="grid grid-cols-3 gap-4">
               {/* Card 1 */}
@@ -4138,6 +4228,7 @@ export default function CancellationWizard({
                     isAllocating ||
                     isCheckingAllocation ||
                     isProcessingPayment ||
+                    (activeStep === 5 && !!flightId && !allPnrsBooked) ||
                     (activeStep === 6 && !paymentConfirmed)
                   }
                   className={cn(
@@ -4147,6 +4238,7 @@ export default function CancellationWizard({
                       isAllocating ||
                       isCheckingAllocation ||
                       isProcessingPayment ||
+                      (activeStep === 5 && !!flightId && !allPnrsBooked) ||
                       (activeStep === 6 && !paymentConfirmed)
                       ? "bg-[#9CA3AF] text-white cursor-not-allowed border-none"
                       : "bg-[#0F2757] hover:bg-[#162259] text-white",

@@ -1045,10 +1045,14 @@ export class CancelledFlightsRepository {
         manager,
         cancelledFlightId,
       );
-      const status =
-        totals.confirmedCount > 0
-          ? FlightStatus.ALLOCATED
-          : FlightStatus.PASSENGERS_BOOKING_CONFIRMED;
+      // Only ALLOCATED once every PNR is confirmed; failed or manual-check
+      // PNRs keep the flight open for another allocation run.
+      const status = (await this.areAllPnrsHotelBooked(
+        cancelledFlightId,
+        manager,
+      ))
+        ? FlightStatus.ALLOCATED
+        : FlightStatus.PASSENGERS_BOOKING_CONFIRMED;
       const { confirmedCount, ...columns } = totals;
       await manager.update(
         CancelledFlightEntity,
@@ -1182,6 +1186,34 @@ export class CancelledFlightsRepository {
       error: flight.error ?? null,
       counts,
     };
+  }
+
+  /**
+   * True when the flight has PNRs and every one has a confirmed hotel booking
+   * (same rule as the SUCCESS status in getAllocationProgress). A single
+   * failed, manual-check, pending or unbooked PNR makes it false.
+   */
+  async areAllPnrsHotelBooked(
+    cancelledFlightId: number,
+    manager: EntityManager = this.manager,
+  ): Promise<boolean> {
+    const [row]: Array<{ total: number; unbooked: number }> =
+      await manager.query(
+        `SELECT COUNT(*)::int AS "total",
+                COUNT(*) FILTER (
+                  WHERE b.allocation_status NOT IN ('confirmed', 'completed')
+                     OR (b.allocation_status = 'confirmed' AND EXISTS (
+                       SELECT 1 FROM hotel_booking_rooms r
+                        WHERE r.hotel_booking_id = b.confirmed_hotel_booking_id
+                          AND r.partner_order_id LIKE 'temp-%'
+                     ))
+                     OR b.allocation_status IS NULL
+                )::int AS "unbooked"
+           FROM cancelled_flight_bookings b
+          WHERE b.cancelled_flight_id = $1`,
+        [cancelledFlightId],
+      );
+    return Number(row?.total ?? 0) > 0 && Number(row?.unbooked ?? 0) === 0;
   }
 
   private async sumConfirmedAllocations(
@@ -1854,18 +1886,34 @@ export class CancelledFlightsRepository {
     });
   }
 
-  /** A booking confirmed after the run ended moves the flight to ALLOCATED. */
+  /**
+   * A booking confirmed after the run ended moves the flight to ALLOCATED,
+   * but only once every PNR on the flight is confirmed.
+   */
   async promoteFlightAfterLateConfirmation(
     cancelledFlightId: number,
   ): Promise<boolean> {
-    const result = await this.flightRepo.update(
-      {
-        id: cancelledFlightId,
-        status: FlightStatus.PASSENGERS_BOOKING_CONFIRMED,
-      },
-      { status: FlightStatus.ALLOCATED },
-    );
-    return (result.affected ?? 0) === 1;
+    return this.manager.transaction(async (manager) => {
+      await manager
+        .getRepository(CancelledFlightEntity)
+        .createQueryBuilder("flight")
+        .setLock("pessimistic_write")
+        .select("flight.id")
+        .where("flight.id = :id", { id: cancelledFlightId })
+        .getRawOne();
+      if (!(await this.areAllPnrsHotelBooked(cancelledFlightId, manager))) {
+        return false;
+      }
+      const result = await manager.update(
+        CancelledFlightEntity,
+        {
+          id: cancelledFlightId,
+          status: FlightStatus.PASSENGERS_BOOKING_CONFIRMED,
+        },
+        { status: FlightStatus.ALLOCATED },
+      );
+      return (result.affected ?? 0) === 1;
+    });
   }
 
   async isWebhookTokenUsed(provider: string, token: string): Promise<boolean> {
