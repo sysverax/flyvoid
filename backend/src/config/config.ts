@@ -145,28 +145,6 @@ export const config = {
       process.env.HOTEL_BOOKING_ATTEMPT_STALE_MS ?? String(60 * 60 * 1000),
       10,
     ),
-    // Scheduled recovery of MANUAL_CHECK bookings via the supplier status API.
-    recovery: {
-      enabled: process.env.HOTEL_RECOVERY_ENABLED !== "false",
-      intervalMs: parseInt(
-        process.env.HOTEL_RECOVERY_INTERVAL_MS ?? String(5 * 60 * 1000),
-        10,
-      ),
-      // Minimum gap between two status checks of the same attempt.
-      backoffMs: parseInt(
-        process.env.HOTEL_RECOVERY_BACKOFF_MS ?? String(5 * 60 * 1000),
-        10,
-      ),
-      maxStatusChecks: parseInt(
-        process.env.HOTEL_RECOVERY_MAX_STATUS_CHECKS ?? "12",
-        10,
-      ),
-      // Attempts older than this are left to ops.
-      maxAgeMs: parseInt(
-        process.env.HOTEL_RECOVERY_MAX_AGE_MS ?? String(24 * 60 * 60 * 1000),
-        10,
-      ),
-    },
   },
 
   // Active hotel supplier (HOTEL_PROVIDER) and each supplier's credentials;

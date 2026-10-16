@@ -6,9 +6,11 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  OnApplicationBootstrap,
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { Logger } from "winston";
+import { winstonInstance } from "../logger/logger.config";
 import {
   CancelledFlightsRepository,
   HotelCandidate,
@@ -96,8 +98,6 @@ interface AllocationRunContext {
   requestId: string;
   requestLogger: Logger;
   runId: string;
-  /** "recovery" (scheduler) only resolves MANUAL_CHECK attempts; default "full". */
-  mode?: "full" | "recovery";
   /** Caps new booking attempts per PNR in this pass (recovery pass: 1). */
   maxNewAttemptsPerPnr?: number;
 }
@@ -307,7 +307,7 @@ const ROOM_SPLIT_RULES: Record<string, RoomSplitPlan> = {
 };
 
 @Injectable()
-export class HotelAllocationService {
+export class HotelAllocationService implements OnApplicationBootstrap {
   private readonly context = "HotelAllocationService";
 
   constructor(
@@ -1454,7 +1454,7 @@ export class HotelAllocationService {
         },
       );
 
-      if (run.mode !== "recovery" && pending.length > 0) {
+      if (pending.length > 0) {
         await this.planPendingBookings(run, pending, rows);
         await this.bookPlannedBookings(run, pending);
       }
@@ -1487,73 +1487,128 @@ export class HotelAllocationService {
             error: error?.message,
           }),
         );
+      this.schedulePostRunCheck(flight.id, run.requestId, requestLogger);
     }
   }
 
   /**
-   * Scheduler entry point: resolves a flight's MANUAL_CHECK attempts under the
-   * same flight lease as a user run. Skips the flight when a run is active or
-   * it is no longer awaiting allocation.
+   * Runs stopped by a backend stop/crash are finished once after startup,
+   * when their lease has expired; this does not count as a user retry.
    */
-  async startRecoveryRun(
+  onApplicationBootstrap(): void {
+    const timer = setTimeout(
+      () => void this.resumeInterruptedRuns(),
+      config.hotelBooking.allocationRunLeaseMs,
+    );
+    timer.unref();
+  }
+
+  private async resumeInterruptedRuns(): Promise<void> {
+    const requestId = randomUUID();
+    const requestLogger = winstonInstance.child({ requestId });
+    const leaseMs = config.hotelBooking.allocationRunLeaseMs;
+    const flightIds = await this.cancelledFlightsRepository
+      .findInterruptedRunFlightIds(leaseMs)
+      .catch(() => [] as number[]);
+    for (const flightId of flightIds) {
+      try {
+        const flight =
+          await this.cancelledFlightsRepository.findFlightWithRelations(
+            flightId,
+            requestLogger,
+          );
+        if (!flight?.departureAirport) continue;
+        const stay = this.resolveStayDates(flight, requestLogger);
+        const bookings =
+          await this.cancelledFlightsRepository.findBookingsByFlightId(
+            flightId,
+            requestLogger,
+          );
+        const runId = randomUUID();
+        const claim =
+          await this.cancelledFlightsRepository.claimFlightAllocationRun(
+            flightId,
+            [FlightStatus.HOTEL_ALLOCATION_IN_PROGRESS],
+            leaseMs,
+            runId,
+            requestLogger,
+          );
+        if (!claim.claimed) continue;
+        requestLogger.info("Resuming interrupted hotel allocation run", {
+          context: this.context,
+          flightId,
+          runId,
+        });
+        await this.executeAllocationRun(
+          {
+            flight,
+            stay,
+            platformFeePercentage: Number(
+              flight.platformFeePercentage ?? config.platformFeePercentage,
+            ),
+            requestId,
+            requestLogger,
+            runId,
+          },
+          bookings,
+        );
+      } catch (error: any) {
+        requestLogger.error("Could not resume interrupted allocation run", {
+          context: this.context,
+          flightId,
+          error: error?.message,
+          stack: error?.stack,
+        });
+      }
+    }
+  }
+
+  /**
+   * MANUAL_CHECK bookings left after a run are checked again with the
+   * supplier: 3 min after the run, then 5 min later. Still no final status
+   * after the last check: marked FAILED (partial bookings stay MANUAL_CHECK).
+   */
+  private static readonly POST_RUN_CHECK_DELAYS_MS = [
+    3 * 60 * 1000,
+    5 * 60 * 1000,
+  ];
+
+  private schedulePostRunCheck(
     flightId: number,
     requestId: string,
     requestLogger: Logger,
-  ): Promise<void> {
-    const flight = await this.cancelledFlightsRepository.findFlightWithRelations(
-      flightId,
-      requestLogger,
-    );
-    if (!flight?.departureAirport) {
-      return;
-    }
-    const stay = this.resolveStayDates(flight, requestLogger);
-    const bookings =
-      await this.cancelledFlightsRepository.findBookingsByFlightId(
-        flightId,
-        requestLogger,
-      );
-    const runId = randomUUID();
-    // Paid / published flights are never claimed, so their totals stay as paid.
-    // An in-progress flight is only claimed once its lease expired.
-    const claim = await this.cancelledFlightsRepository.claimFlightAllocationRun(
-      flightId,
-      [
-        FlightStatus.PASSENGERS_BOOKING_CONFIRMED,
-        FlightStatus.HOTEL_ALLOCATION_IN_PROGRESS,
-      ],
-      config.hotelBooking.allocationRunLeaseMs,
-      runId,
-      requestLogger,
-    );
-    if (!claim.claimed) {
-      requestLogger.info("Skipped MANUAL_CHECK recovery for flight", {
-        context: this.context,
-        flightId,
-        reason: claim.reason,
-      });
-      return;
-    }
-    await this.executeAllocationRun(
-      {
-        flight,
-        stay,
-        platformFeePercentage: Number(
-          flight.platformFeePercentage ?? config.platformFeePercentage,
-        ),
-        requestId,
-        requestLogger,
-        runId,
-        mode: "recovery",
-      },
-      bookings,
-    );
+    check = 0,
+  ): void {
+    const delays = HotelAllocationService.POST_RUN_CHECK_DELAYS_MS;
+    const timer = setTimeout(() => {
+      const last = check === delays.length - 1;
+      this.reconcileManualChecks(flightId, requestId, requestLogger, last)
+        .then((unresolved) => {
+          if (unresolved > 0 && !last) {
+            this.schedulePostRunCheck(
+              flightId,
+              requestId,
+              requestLogger,
+              check + 1,
+            );
+          }
+        })
+        .catch((error: any) =>
+          requestLogger.error("Post-run MANUAL_CHECK check failed", {
+            context: this.context,
+            flightId,
+            check: check + 1,
+            error: error?.message,
+          }),
+        );
+    }, delays[check]);
+    timer.unref();
   }
 
   /**
    * End-of-run recovery: resolve MANUAL_CHECK attempts with the supplier, then
    * give FAILED PNRs one more booking attempt from a current recommendation
-   * list. A recovery run only retries PNRs whose attempt it just failed.
+   * list.
    */
   private async runRecoveryPass(
     run: AllocationRunContext,
@@ -1561,7 +1616,7 @@ export class HotelAllocationService {
   ): Promise<void> {
     const { flight, requestLogger } = run;
     try {
-      const failedNow = await this.reconcileManualChecks(run);
+      await this.reconcileManualChecks(flight.id, run.requestId, requestLogger);
       const rows =
         await this.cancelledFlightsRepository.findAllocationsByFlightId(
           flight.id,
@@ -1569,11 +1624,7 @@ export class HotelAllocationService {
         );
       const retryIds = new Set(
         rows
-          .filter(
-            (row) =>
-              row.status === HotelAllocationStatus.FAILED &&
-              (run.mode !== "recovery" || failedNow.has(row.bookingId)),
-          )
+          .filter((row) => row.status === HotelAllocationStatus.FAILED)
           .map((row) => row.bookingId),
       );
       const retry = bookings.filter((booking) => retryIds.has(booking.id));
@@ -1581,8 +1632,6 @@ export class HotelAllocationService {
         context: this.context,
         flightId: flight.id,
         runId: run.runId,
-        mode: run.mode ?? "full",
-        resolvedAsFailed: failedNow.size,
         retrying: retry.length,
       });
       if (retry.length === 0) {
@@ -1604,36 +1653,35 @@ export class HotelAllocationService {
 
   /**
    * Checks each MANUAL_CHECK attempt's open supplier orders and settles it
-   * when the outcome is known. Partial bookings and orders still processing
-   * stay MANUAL_CHECK. Returns the PNRs whose attempt settled as not booked.
+   * when the outcome is known. Partial bookings stay MANUAL_CHECK. On the
+   * last check, an attempt with no final status is marked FAILED. Returns
+   * how many attempts are still open.
    */
   private async reconcileManualChecks(
-    run: AllocationRunContext,
-  ): Promise<Set<number>> {
-    const { flight, requestId, requestLogger } = run;
-    const failedPnrs = new Set<number>();
+    flightId: number,
+    requestId: string,
+    requestLogger: Logger,
+    lastCheck = false,
+  ): Promise<number> {
     if (!this.hotelProvider.checkBookingStatus) {
-      return failedPnrs;
+      return 0;
     }
-    const { maxStatusChecks, maxAgeMs } = config.hotelBooking.recovery;
     const attempts =
       await this.cancelledFlightsRepository.findManualCheckAttempts(
-        flight.id,
+        flightId,
         config.hotelProvider.name,
-        maxStatusChecks,
-        maxAgeMs,
       );
+    let unresolved = 0;
     for (const attempt of attempts) {
       const attemptMeta = {
         context: this.context,
-        flightId: flight.id,
-        runId: run.runId,
+        flightId,
         attemptId: attempt.id,
         bookingId: attempt.bookingId,
         failureCode: attempt.failureCode,
       };
+      const orders = toProviderOrders(attempt.rooms);
       try {
-        const orders = toProviderOrders(attempt.rooms);
         let failureDetail: string | null = null;
         for (const order of orders) {
           if (order.status !== "pending") continue;
@@ -1653,8 +1701,6 @@ export class HotelAllocationService {
             confirmed.state === "failed" ? (confirmed.code ?? "failed") : null;
           failureDetail ??= order.failureReason;
         }
-        const checks =
-          await this.cancelledFlightsRepository.recordStatusCheck(attempt.id);
         // No recorded order means the booking call was never sent: the order is
         // recorded before it (providers with a status check), so nothing booked.
         await this.settleAttemptFromSupplier(
@@ -1666,65 +1712,74 @@ export class HotelAllocationService {
           requestId,
           requestLogger,
         );
-        // Same outcome rule as settleAttemptFromSupplier.
-        const booked = orders.filter((o) => o.status === "booked").length;
-        const settled =
-          !orders.some((o) => o.status === "pending") &&
-          (booked === 0 ||
-            booked === Math.max(attempt.rooms?.length ?? 0, orders.length));
-        if (settled && booked === 0) {
-          failedPnrs.add(attempt.bookingId);
-        }
-        if (!settled) {
-          this.alertIfRecoveryExhausted(
-            attempt,
-            checks,
-            attemptMeta,
-            requestLogger,
-          );
-        }
       } catch (error: any) {
-        // Status API errors leave the attempt MANUAL_CHECK for the next check.
+        // Status API errors leave the orders open for the next check.
         requestLogger.warn("Could not reconcile MANUAL_CHECK attempt", {
           ...attemptMeta,
           error: error?.message,
         });
-        const checks = await this.cancelledFlightsRepository
-          .recordStatusCheck(attempt.id)
-          .catch(() => 0);
-        this.alertIfRecoveryExhausted(
-          attempt,
-          checks,
-          attemptMeta,
-          requestLogger,
-        );
+      }
+      // Same outcome rule as settleAttemptFromSupplier.
+      const booked = orders.filter((o) => o.status === "booked").length;
+      const open = orders.some((o) => o.status === "pending");
+      if (open && booked === 0 && lastCheck) {
+        await this.failUnansweredAttempt(attempt, orders, requestLogger);
+      } else if (
+        open ||
+        (booked > 0 &&
+          booked < Math.max(attempt.rooms?.length ?? 0, orders.length))
+      ) {
+        unresolved += 1;
       }
     }
-    return failedPnrs;
+    return unresolved;
   }
 
-  /** Alerts ops once, on the last check recovery will make for an attempt. */
-  private alertIfRecoveryExhausted(
+  /** Last post-run check got no final status: mark the attempt FAILED. */
+  private async failUnansweredAttempt(
     attempt: HotelBookingEntity,
-    checks: number,
-    attemptMeta: Record<string, unknown>,
+    orders: ProviderOrder[],
     requestLogger: Logger,
-  ): void {
-    const { maxStatusChecks, maxAgeMs, backoffMs } =
-      config.hotelBooking.recovery;
-    const ageMs = Date.now() - attempt.createdAt.getTime();
-    if (checks < maxStatusChecks && ageMs < maxAgeMs - backoffMs) {
-      return;
-    }
-    requestLogger.error(
-      "MANUAL_CHECK booking could not be resolved automatically; check with the supplier",
+  ): Promise<void> {
+    const hotelName =
+      attempt.hotel?.name || attempt.hotel?.providerHotelId || "the hotel";
+    const sentAt = (attempt.providerRequestSentAt ?? attempt.createdAt)
+      .toISOString()
+      .replace("T", " ")
+      .slice(0, 16);
+    const waitedMin =
+      HotelAllocationService.POST_RUN_CHECK_DELAYS_MS.reduce((a, b) => a + b) /
+      60000;
+    const reason =
+      `Booking at ${hotelName} was sent to the supplier at ${sentAt} UTC, but no ` +
+      `final status came back within ${waitedMin} minutes after the allocation run; ` +
+      `marked as failed (refs: ${orders.map((o) => o.reference).join(", ") || "none"}).`;
+    const settled = await this.cancelledFlightsRepository.finishBookingAttempt(
+      attempt.id,
+      attempt.bookingId,
       {
-        ...attemptMeta,
-        alert: "hotel_manual_check_exhausted",
-        statusChecks: checks,
-        references: toProviderOrders(attempt.rooms).map((o) => o.reference),
+        status: HotelBookingAttemptStatus.FAILED,
+        failureCode: HotelBookingFailureCode.NO_FINAL_STATUS,
+        failureReason: reason,
+        providerOrders: orders,
+        responseReceived: false,
       },
+      undefined,
+      requestLogger,
     );
+    if (settled.updated) {
+      await this.cancelledFlightsRepository.markPnrFailed(
+        attempt.bookingId,
+        reason,
+      );
+      requestLogger.warn("MANUAL_CHECK booking marked failed: no final status", {
+        context: this.context,
+        flightId: attempt.cancelledFlightId,
+        attemptId: attempt.id,
+        bookingId: attempt.bookingId,
+        reason,
+      });
+    }
   }
 
   private resolveStayDates(

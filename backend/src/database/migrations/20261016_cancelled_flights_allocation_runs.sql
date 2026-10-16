@@ -1,8 +1,3 @@
--- MANUAL_CHECK recovery: how often the supplier status of an attempt was checked.
-ALTER TABLE public.hotel_bookings
-  ADD COLUMN IF NOT EXISTS status_check_count integer NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS last_status_check_at timestamp without time zone;
-
 -- User-started allocation runs per flight: the first run plus one retry.
 ALTER TABLE public.cancelled_flights
   ADD COLUMN IF NOT EXISTS hotel_allocation_runs integer NOT NULL DEFAULT 0;

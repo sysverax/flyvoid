@@ -1915,12 +1915,26 @@ export class CancelledFlightsRepository {
     return !!row;
   }
 
-  /** A flight's MANUAL_CHECK attempts that recovery may still check. */
+  /** Flights whose allocation run stopped without finishing (lease expired). */
+  async findInterruptedRunFlightIds(leaseMs: number): Promise<number[]> {
+    const rows: Array<{ id: number }> = await this.flightRepo
+      .createQueryBuilder("flight")
+      .select("flight.id", "id")
+      .where("flight.status = :status", {
+        status: FlightStatus.HOTEL_ALLOCATION_IN_PROGRESS,
+      })
+      .andWhere(
+        "flight.updated_at < now() - (:leaseMs * interval '1 millisecond')",
+        { leaseMs },
+      )
+      .getRawMany();
+    return rows.map((row) => Number(row.id));
+  }
+
+  /** A flight's MANUAL_CHECK attempts with this provider. */
   async findManualCheckAttempts(
     cancelledFlightId: number,
     provider: string,
-    maxStatusChecks: number,
-    maxAgeMs: number,
   ): Promise<HotelBookingEntity[]> {
     return this.manager
       .getRepository(HotelBookingEntity)
@@ -1935,72 +1949,7 @@ export class CancelledFlightsRepository {
         status: HotelBookingAttemptStatus.MANUAL_CHECK,
       })
       .andWhere("provider.code = :provider", { provider })
-      .andWhere("attempt.status_check_count < :maxStatusChecks", {
-        maxStatusChecks,
-      })
-      .andWhere(
-        "attempt.created_at > now() - (:maxAgeMs * interval '1 millisecond')",
-        { maxAgeMs },
-      )
       .getMany();
-  }
-
-  /**
-   * Flights awaiting allocation with a MANUAL_CHECK attempt due for a status
-   * check, plus flights whose run lease expired (backend stopped mid-run).
-   * Live runs, allocated, paid and published flights are left out.
-   */
-  async findFlightsDueForRecovery(
-    provider: string,
-    maxStatusChecks: number,
-    backoffMs: number,
-    maxAgeMs: number,
-    leaseMs: number,
-  ): Promise<number[]> {
-    const rows: Array<{ id: number }> = await this.manager.query(
-      `SELECT DISTINCT a.cancelled_flight_id AS "id"
-         FROM hotel_bookings a
-         JOIN providers p ON p.id = a.provider_id
-         JOIN cancelled_flights f ON f.id = a.cancelled_flight_id
-        WHERE a.status = $1
-          AND p.code = $2
-          AND f.status = $3
-          AND a.status_check_count < $4
-          AND a.created_at > now() - ($5 * interval '1 millisecond')
-          AND (a.last_status_check_at IS NULL
-               OR a.last_status_check_at < now() - ($6 * interval '1 millisecond'))
-       UNION
-       SELECT f.id AS "id"
-         FROM cancelled_flights f
-        WHERE f.status = $7
-          AND f.updated_at < now() - ($8 * interval '1 millisecond')`,
-      [
-        HotelBookingAttemptStatus.MANUAL_CHECK,
-        provider,
-        FlightStatus.PASSENGERS_BOOKING_CONFIRMED,
-        maxStatusChecks,
-        maxAgeMs,
-        backoffMs,
-        FlightStatus.HOTEL_ALLOCATION_IN_PROGRESS,
-        leaseMs,
-      ],
-    );
-    return rows.map((row) => Number(row.id));
-  }
-
-  /** Counts one supplier status check; returns the new count. */
-  async recordStatusCheck(attemptId: number): Promise<number> {
-    const result = await this.manager
-      .createQueryBuilder()
-      .update(HotelBookingEntity)
-      .set({
-        statusCheckCount: () => "status_check_count + 1",
-        lastStatusCheckAt: () => "now()",
-      })
-      .where("id = :attemptId", { attemptId })
-      .returning("status_check_count")
-      .execute();
-    return Number(result.raw?.[0]?.status_check_count ?? 0);
   }
 
   /** Updates per-room supplier statuses; the attempt stays open as MANUAL_CHECK. */
