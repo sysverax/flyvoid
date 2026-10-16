@@ -196,6 +196,8 @@ export interface HotelAllocationsResponse {
   notStartedPnrs: number;
   fullyBooked: boolean;
   canRetry: boolean;
+  awaitingSupplierCheck: boolean;
+  nextSupplierCheckAt: string | null;
   results: HotelAllocationBookingResult[];
   totalPrice: number;
   totalRooms: number;

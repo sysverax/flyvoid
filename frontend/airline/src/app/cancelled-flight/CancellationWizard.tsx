@@ -1169,6 +1169,41 @@ export default function CancellationWizard({
     };
   }, [activeStep, flightId]);
 
+  // Refresh once just after the next supplier check is due, so retry unlocks.
+  const SUPPLIER_CHECK_BUFFER_MS = 10000;
+  const SUPPLIER_CHECK_LATE_RETRY_MS = 30000;
+  useEffect(() => {
+    if (
+      activeStep !== 4 ||
+      !flightId ||
+      isAllocating ||
+      !hotelAllocations?.awaitingSupplierCheck
+    ) {
+      return;
+    }
+    const untilDue =
+      Date.parse(hotelAllocations.nextSupplierCheckAt ?? "") - Date.now();
+    const delay =
+      untilDue > 0
+        ? untilDue + SUPPLIER_CHECK_BUFFER_MS
+        : SUPPLIER_CHECK_LATE_RETRY_MS;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      cancellationService
+        .getHotelAllocationStatus(flightId)
+        .then((full) => {
+          if (!cancelled) setHotelAllocations(full?.data || full);
+        })
+        .catch(() => {
+          if (!cancelled) setHotelAllocations((prev) => prev && { ...prev });
+        });
+    }, delay);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [activeStep, flightId, isAllocating, hotelAllocations]);
+
   const handleAllocateHotels = async () => {
     if (isPollingAllocationRef.current) return;
     setIsAllocating(true);
@@ -3460,13 +3495,25 @@ export default function CancellationWizard({
                     remaining bookings.
                   </span>
                 )}
+              {hotelAllocations?.awaitingSupplierCheck &&
+                !hotelAllocations.fullyBooked &&
+                hotelAllocations.canRetry && (
+                  <span className="text-sm text-amber-600">
+                    Waiting for the hotel supplier to confirm pending bookings.
+                    Retry is available once that check is done.
+                  </span>
+                )}
               {hasPermission("edit") &&
                 !hotelAllocations?.fullyBooked &&
                 (hotelAllocations?.canRetry ?? true) && (
                   <button
                     type="button"
                     onClick={handleAllocateHotels}
-                    disabled={isAllocating || isCheckingAllocation}
+                    disabled={
+                      isAllocating ||
+                      isCheckingAllocation ||
+                      !!hotelAllocations?.awaitingSupplierCheck
+                    }
                     className="bg-[#2B3B67] hover:bg-[#1E2B4D] disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-medium py-2.5 px-6 rounded-lg transition-colors cursor-pointer text-sm inline-flex items-center gap-2"
                   >
                     <Building2 className="h-5 w-5" />

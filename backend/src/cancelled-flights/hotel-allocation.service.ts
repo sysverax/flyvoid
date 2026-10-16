@@ -1280,6 +1280,12 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       );
     }
 
+    if ((await this.getSupplierCheckState(flightId)).awaiting) {
+      throw new BadRequestException(
+        `Some bookings for flight '${flightId}' are still waiting for the supplier's status; retry once the check is done`,
+      );
+    }
+
     const runId = randomUUID();
     const run = await this.cancelledFlightsRepository.claimFlightAllocationRun(
       flightId,
@@ -1339,21 +1345,23 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       user,
       requestLogger,
     );
-    const [bookings, rows, attempts, runState] = await Promise.all([
-      this.cancelledFlightsRepository.findBookingsByFlightId(
-        flightId,
-        requestLogger,
-      ),
-      this.cancelledFlightsRepository.findAllocationsByFlightId(
-        flightId,
-        requestLogger,
-      ),
-      this.cancelledFlightsRepository.findAttemptsByFlightId(flightId),
-      this.cancelledFlightsRepository.getFlightAllocationRunState(
-        flightId,
-        config.hotelBooking.allocationRunLeaseMs,
-      ),
-    ]);
+    const [bookings, rows, attempts, runState, supplierCheck] =
+      await Promise.all([
+        this.cancelledFlightsRepository.findBookingsByFlightId(
+          flightId,
+          requestLogger,
+        ),
+        this.cancelledFlightsRepository.findAllocationsByFlightId(
+          flightId,
+          requestLogger,
+        ),
+        this.cancelledFlightsRepository.findAttemptsByFlightId(flightId),
+        this.cancelledFlightsRepository.getFlightAllocationRunState(
+          flightId,
+          config.hotelBooking.allocationRunLeaseMs,
+        ),
+        this.getSupplierCheckState(flightId),
+      ]);
     const platformFeePercentage = Number(
       flight.platformFeePercentage ??
         user.platformFeePercentage ??
@@ -1366,6 +1374,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       attempts,
       runState,
       platformFeePercentage,
+      supplierCheck,
     );
   }
 
@@ -1629,29 +1638,149 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     requestLogger: Logger,
     check = 0,
   ): void {
+    const dueAt = Date.now() + config.hotelBooking.postRunCheckIntervalMs;
+    this.nextSupplierCheckAt.set(flightId, dueAt);
+    const clearDue = () => {
+      if (this.nextSupplierCheckAt.get(flightId) === dueAt) {
+        this.nextSupplierCheckAt.delete(flightId);
+      }
+    };
     const timer = setTimeout(() => {
       const last = check === HotelAllocationService.postRunCheckCount() - 1;
-      this.reconcileManualChecks(flightId, requestId, requestLogger, last)
+      this.runPostRunCheck(flightId, requestId, requestLogger, last)
         .then((unresolved) => {
-          if (unresolved > 0 && !last) {
+          if (unresolved !== null && unresolved > 0 && !last) {
             this.schedulePostRunCheck(
               flightId,
               requestId,
               requestLogger,
               check + 1,
             );
+            return;
           }
+          clearDue();
         })
-        .catch((error: any) =>
+        .catch((error: any) => {
+          clearDue();
           requestLogger.error("Post-run MANUAL_CHECK check failed", {
             context: this.context,
             flightId,
             check: check + 1,
             error: error?.message,
-          }),
-        );
+          });
+        });
     }, config.hotelBooking.postRunCheckIntervalMs);
     timer.unref();
+  }
+
+  private readonly nextSupplierCheckAt = new Map<number, number>();
+
+  /** Post-run check under the flight's run lock; null when it could not be claimed. */
+  private async runPostRunCheck(
+    flightId: number,
+    requestId: string,
+    requestLogger: Logger,
+    lastCheck: boolean,
+  ): Promise<number | null> {
+    const open = await this.cancelledFlightsRepository.findManualCheckAttempts(
+      flightId,
+      config.hotelProvider.name,
+    );
+    if (open.length === 0) return 0;
+    const flight =
+      await this.cancelledFlightsRepository.findFlightWithRelations(
+        flightId,
+        requestLogger,
+      );
+    if (!flight) return null;
+    const runId = randomUUID();
+    const claim =
+      await this.cancelledFlightsRepository.claimFlightAllocationRun(
+        flightId,
+        [FlightStatus.PASSENGERS_BOOKING_CONFIRMED, FlightStatus.ALLOCATED],
+        config.hotelBooking.allocationRunLeaseMs,
+        runId,
+        requestLogger,
+        undefined,
+        true,
+      );
+    if (!claim.claimed) {
+      requestLogger.info("Skipped post-run MANUAL_CHECK check", {
+        context: this.context,
+        flightId,
+        reason: claim.reason,
+        status: claim.status,
+      });
+      return null;
+    }
+    const heartbeat = setInterval(
+      () =>
+        void this.cancelledFlightsRepository.touchFlightAllocationRun(
+          flightId,
+          runId,
+          requestLogger,
+        ),
+      Math.max(1000, Math.floor(config.hotelBooking.allocationRunLeaseMs / 5)),
+    );
+    heartbeat.unref();
+    try {
+      return await this.reconcileManualChecks(
+        flightId,
+        requestId,
+        requestLogger,
+        lastCheck,
+      );
+    } finally {
+      clearInterval(heartbeat);
+      await this.cancelledFlightsRepository.completeFlightAllocationRun(
+        flightId,
+        runId,
+        Number(flight.platformFeePercentage ?? config.platformFeePercentage),
+        undefined,
+        requestLogger,
+      );
+    }
+  }
+
+  /**
+   * Retry waits while a MANUAL_CHECK attempt with nothing booked is inside the
+   * post-run check window. nextCheckAt falls back to an estimate when the
+   * timer runs on another instance.
+   */
+  private async getSupplierCheckState(
+    flightId: number,
+  ): Promise<{ awaiting: boolean; nextCheckAt: Date | null }> {
+    if (!this.hotelProvider.checkBookingStatus) {
+      return { awaiting: false, nextCheckAt: null };
+    }
+    const intervalMs = config.hotelBooking.postRunCheckIntervalMs;
+    const windowMs =
+      HotelAllocationService.postRunCheckCount() * intervalMs +
+      config.hotelBooking.allocationRunLeaseMs;
+    const attempts =
+      await this.cancelledFlightsRepository.findManualCheckAttempts(
+        flightId,
+        config.hotelProvider.name,
+      );
+    const waiting = attempts.filter(
+      (attempt) =>
+        Date.now() - new Date(attempt.updatedAt).getTime() < windowMs &&
+        !toProviderOrders(attempt.rooms).some(
+          (order) => order.status === "booked",
+        ),
+    );
+    if (waiting.length === 0) {
+      return { awaiting: false, nextCheckAt: null };
+    }
+    const estimated = Math.min(
+      ...waiting.map(
+        (attempt) => new Date(attempt.updatedAt).getTime() + intervalMs,
+      ),
+    );
+    return {
+      awaiting: true,
+      nextCheckAt: new Date(this.nextSupplierCheckAt.get(flightId) ?? estimated),
+    };
   }
 
   /**
@@ -3111,6 +3240,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     attempts: HotelBookingEntity[],
     runState: { running: boolean; stale: boolean; error: string | null },
     platformFeePercentage: number,
+    supplierCheck: { awaiting: boolean; nextCheckAt: Date | null },
   ): HotelAllocationsDto {
     const rowByBooking = new Map(rows.map((row) => [row.bookingId, row]));
     const attemptsByBooking = new Map<number, number>();
@@ -3192,6 +3322,8 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       canRetry:
         Number(flight.hotelAllocationRuns ?? 0) <
         HotelAllocationService.MAX_USER_ALLOCATION_RUNS,
+      awaitingSupplierCheck: supplierCheck.awaiting,
+      nextSupplierCheckAt: supplierCheck.nextCheckAt?.toISOString() ?? null,
       results,
       totalRooms: Number(flight.totalHotelRooms ?? 0),
       totalActualPrice: Number(flight.totalActualPrice ?? 0),

@@ -934,6 +934,7 @@ export class CancelledFlightsRepository {
      * The run itself is counted in completeFlightAllocationRun.
      */
     maxUserRuns?: number,
+    keepError = false,
   ): Promise<
     | { claimed: true; previousStatus: FlightStatus }
     | {
@@ -996,7 +997,7 @@ export class CancelledFlightsRepository {
         {
           status: FlightStatus.HOTEL_ALLOCATION_IN_PROGRESS,
           hotelAllocationRunId: runId,
-          hotelAllocationError: null,
+          ...(!keepError && { hotelAllocationError: null }),
         },
       );
       return { claimed: true as const, previousStatus: row.status };
@@ -1046,18 +1047,34 @@ export class CancelledFlightsRepository {
     requestLogger: Logger,
   ): Promise<FlightHotelTotals> {
     return this.manager.transaction(async (manager) => {
-      await manager
+      const flight = await manager
         .getRepository(CancelledFlightEntity)
         .createQueryBuilder("flight")
         .setLock("pessimistic_write")
-        .select("flight.id")
+        .select("flight.status", "status")
         .where("flight.id = :id", { id: cancelledFlightId })
-        .getRawOne();
+        .getRawOne<{ status: FlightStatus }>();
       const totals = await this.sumConfirmedAllocations(
         manager,
         cancelledFlightId,
       );
       const { confirmedCount, ...columns } = totals;
+      if (
+        flight?.status === FlightStatus.PAID ||
+        flight?.status === FlightStatus.PUBLISHED
+      ) {
+        requestLogger.error(
+          "Booking confirmed on a paid flight; totals not changed, check with the supplier",
+          {
+            context: this.context,
+            cancelledFlightId,
+            status: flight.status,
+            confirmedCount,
+            totalPrice: totals.totalPrice,
+          },
+        );
+        return totals;
+      }
       await manager.update(
         CancelledFlightEntity,
         { id: cancelledFlightId },
@@ -1080,7 +1097,7 @@ export class CancelledFlightsRepository {
     cancelledFlightId: number,
     runId: string,
     platformFeePercentage: number,
-    runError: string | null,
+    runError: string | null | undefined,
     requestLogger: Logger,
     /** User-started run: counted toward the retry limit if it reached the supplier. */
     countUserRun = false,
@@ -1138,7 +1155,7 @@ export class CancelledFlightsRepository {
           platformFeePercentage,
           status,
           hotelAllocationRunId: null,
-          hotelAllocationError: runError,
+          ...(runError !== undefined && { hotelAllocationError: runError }),
           ...(counted && {
             hotelAllocationRuns: () => "hotel_allocation_runs + 1",
           }),
