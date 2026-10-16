@@ -64,4 +64,5 @@ export enum HotelBookingFailureCode {
   SAVE_FAILED = "save_failed",
   INTERRUPTED_BEFORE_REQUEST = "interrupted_before_request",
   INTERRUPTED_AFTER_REQUEST = "interrupted_after_request",
+  NO_FINAL_STATUS = "no_final_status",
 }

@@ -181,6 +181,13 @@ export class CancelledFlightEntity {
   })
   hotelAllocationRunId?: string | null;
 
+  /**
+   * User-started allocation runs (first run + one retry) that sent at least
+   * one booking to the supplier; startup-resumed runs are excluded.
+   */
+  @Column({ name: "hotel_allocation_runs", type: "integer", default: 0 })
+  hotelAllocationRuns!: number;
+
   @Column({ name: "hotel_allocation_error", type: "text", nullable: true })
   hotelAllocationError?: string | null;
 

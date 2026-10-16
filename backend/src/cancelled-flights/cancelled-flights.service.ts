@@ -829,13 +829,17 @@ export class CancelledFlightsService {
     });
 
     const pagination = { currentPage: page, limit, totalCount };
+    const allocationStarted =
+      await this.cancelledFlightsRepository.findFlightIdsWithHotelBookings(
+        flights.map((flight) => flight.id),
+      );
 
     // Platform users get the owning airline (id, name) on each item; airline
     // users already know their own airline, so they get the base shape.
     if (user.userType === UserType.PLATFORM) {
       return {
         cancelledFlights: flights.map((flight) => ({
-          ...this.toCancelledFlightListItem(flight),
+          ...this.toCancelledFlightListItem(flight, allocationStarted),
           airline: {
             id: flight.airline.id,
             name: flight.airline.name,
@@ -847,7 +851,7 @@ export class CancelledFlightsService {
 
     return {
       cancelledFlights: flights.map((flight) =>
-        this.toCancelledFlightListItem(flight),
+        this.toCancelledFlightListItem(flight, allocationStarted),
       ) satisfies CancelledFlightListItemDto[],
       pagination,
     };
@@ -855,6 +859,7 @@ export class CancelledFlightsService {
 
   private toCancelledFlightListItem(
     flight: CancelledFlightEntity,
+    allocationStarted: Set<number>,
   ): CancelledFlightListItemDto {
     return {
       id: flight.id,
@@ -873,7 +878,12 @@ export class CancelledFlightsService {
       totalBookings: flight.totalBooking ?? 0,
       totalPassengers: (flight.totalAdults ?? 0) + (flight.totalChildren ?? 0),
       totalCost: Number(flight.totalPrice ?? 0),
-      status: flight.status,
+      // Allocation started but not every PNR booked yet: list it as in progress.
+      status:
+        flight.status === FlightStatus.PASSENGERS_BOOKING_CONFIRMED &&
+        allocationStarted.has(flight.id)
+          ? FlightStatus.HOTEL_ALLOCATION_IN_PROGRESS
+          : flight.status,
     };
   }
 
@@ -1443,6 +1453,18 @@ export class CancelledFlightsService {
       );
       throw new BadRequestException(
         `Cannot process payment for flight '${flightId}' from status '${flight.status}'. Flight must be in 'allocated' status.`,
+      );
+    }
+
+    if (
+      !(await this.cancelledFlightsRepository.areAllPnrsHotelBooked(flightId))
+    ) {
+      requestLogger.warn(
+        "Rejected payment processing: not every PNR has a confirmed hotel booking",
+        { context: this.context, flightId },
+      );
+      throw new BadRequestException(
+        `Cannot process payment for flight '${flightId}': every booking must have a confirmed hotel. Resolve failed or manual-check bookings first.`,
       );
     }
 

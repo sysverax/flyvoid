@@ -192,6 +192,17 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     "unknown",
     "endpoint_exceeded_limit",
   ]);
+  // booking/finish/status errors that prove the order was not booked. Other
+  // errors (credentials, limits, lock, order_not_found...) say nothing about it.
+  private static readonly BOOKING_FAILED_ERRORS = new Set([
+    "soldout",
+    "book_limit",
+    "provider",
+    "block",
+    "charge",
+    "3ds",
+    "booking_finish_did_not_succeed",
+  ]);
 
   // Defaults from the sandbox /overview/ response; refreshed from /overview/ on init.
   private readonly limiters = new Map<string, SlidingWindowLimiter>(
@@ -1797,14 +1808,11 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
       return { state: "booked", code: null };
     }
     const code = envelope?.error ?? null;
-    if (
-      !envelope ||
-      envelope.status === "processing" ||
-      (!!code && RatehawkProvider.RETRYABLE_ERRORS.has(code))
-    ) {
-      return { state: "processing", code };
+    if (!!code && RatehawkProvider.BOOKING_FAILED_ERRORS.has(code)) {
+      return { state: "failed", code };
     }
-    return { state: "failed", code };
+    // Still processing, or an error that does not settle the outcome.
+    return { state: "processing", code };
   }
 
   /** Polls booking/finish/status until `ok`, a final error, or the booking timeout. */
