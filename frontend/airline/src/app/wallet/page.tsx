@@ -18,6 +18,7 @@ import { FiltersCard } from "@/src/components/ui/FiltersCard";
 import { Dropdown } from "@/src/components/ui/Dropdown";
 import { DatePicker } from "@/src/components/ui/DatePicker";
 import { StatusBadge } from "@/src/components/ui/StatusBadge";
+import { TruncatedTooltip } from "@/src/components/ui/TruncatedTooltip";
 import {
   walletService,
   WalletBalanceDTO,
@@ -26,12 +27,13 @@ import {
 
 export interface WalletTransaction {
   id: string;
+  rawId: number;
   date: string;
   rawDate: string;
-  openingBalance: string;
+  openingBalance: number;
   amount: number;
-  closingBalance: string;
-  creditLimit: string;
+  closingBalance: number;
+  creditLimit: number;
   reason: string;
   status: "Success" | "Pending" | "Failed";
 }
@@ -109,29 +111,18 @@ export default function WalletPage() {
 
           const isCredit = tx.transactionType === "CREDIT";
           const numericAmount = isCredit
-            ? Math.abs(tx.transactionAmount)
-            : -Math.abs(tx.transactionAmount);
+            ? Math.abs(Number(tx.transactionAmount || 0))
+            : -Math.abs(Number(tx.transactionAmount || 0));
 
           return {
             id: `WTX-${tx.id}`,
+            rawId: Number(tx.id || 0),
             date: formattedDate,
             rawDate: tx.createdAt,
-            openingBalance: `$${tx.openingBalance.toLocaleString("en-US", {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}`,
+            openingBalance: Number(tx.openingBalance || 0),
             amount: numericAmount,
-            closingBalance: `$${tx.closingBalance.toLocaleString("en-US", {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}`,
-            creditLimit: `$${(tx.creditLimit || 100000).toLocaleString(
-              "en-US",
-              {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              }
-            )}`,
+            closingBalance: Number(tx.closingBalance || 0),
+            creditLimit: Number(tx.creditLimit || 100000),
             reason: tx.reason || (isCredit ? "Wallet top-up" : "Deduction"),
             status:
               tx.status === "SUCCESS"
@@ -185,7 +176,24 @@ export default function WalletPage() {
 
   // Sort transactions
   const sortedTransactions = useMemo(() => {
-    return sortData(filteredTransactions, sortField, sortOrder, ["rawDate"]);
+    if (!sortField) return filteredTransactions;
+
+    if (sortField === "id") {
+      return [...filteredTransactions].sort((a, b) => {
+        const diff = (a.rawId ?? 0) - (b.rawId ?? 0);
+        return sortOrder === "asc" ? diff : -diff;
+      });
+    }
+
+    if (sortField === "date") {
+      return [...filteredTransactions].sort((a, b) => {
+        const timeA = a.rawDate ? new Date(a.rawDate).getTime() : 0;
+        const timeB = b.rawDate ? new Date(b.rawDate).getTime() : 0;
+        return sortOrder === "asc" ? timeA - timeB : timeB - timeA;
+      });
+    }
+
+    return sortData(filteredTransactions, sortField, sortOrder, ["rawDate", "date"]);
   }, [filteredTransactions, sortField, sortOrder]);
 
   const totalPages = Math.max(1, Math.ceil(totalResults / resultsPerPage));
@@ -210,6 +218,12 @@ export default function WalletPage() {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
+    if (amount === 0) {
+      return {
+        text: `$${absFormatted}`,
+        color: "#6B7280",
+      };
+    }
     return {
       text: `${isPositive ? "+" : "–"} $${absFormatted}`,
       color: isPositive ? "#278D68" : "#C83833",
@@ -238,19 +252,23 @@ export default function WalletPage() {
           </div>
 
           {/* Wallet balance top badge */}
-          <div className="flex items-center gap-2.5 rounded-[10px] border border-[#E5E7EB] bg-white px-3.5 py-2 shadow-xs shrink-0">
-            <div className="flex h-9 w-9 items-center justify-center rounded-[8px] bg-[#F3F4F6] text-[#4B5563]">
+          <div className="flex items-center gap-2.5 rounded-[10px] border border-[#E5E7EB] bg-white px-3.5 py-2 shadow-xs shrink-0 max-w-[280px]">
+            <div className="flex h-9 w-9 items-center justify-center rounded-[8px] bg-[#F3F4F6] text-[#4B5563] shrink-0">
               <WalletIcon className="h-5 w-5" />
             </div>
-            <div>
-              <div className="text-[10px] font-bold uppercase tracking-wider text-[#6B7280]">
+            <div className="min-w-0 flex-1">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-[#6B7280] truncate">
                 WALLET BALANCE
               </div>
-              <div className="text-[16px] font-bold text-[#1F2937]">
+              <div className="text-[16px] font-bold text-[#1F2937] truncate">
                 {isLoadingBalance ? (
                   <Loader2 className="h-4 w-4 animate-spin text-gray-500 my-0.5" />
                 ) : (
-                  `$${formattedBalanceStr}`
+                  <TruncatedTooltip text={`$${formattedBalanceStr}`} side="top">
+                    <span className="truncate block cursor-default">
+                      ${formattedBalanceStr}
+                    </span>
+                  </TruncatedTooltip>
                 )}
               </div>
             </div>
@@ -427,29 +445,87 @@ export default function WalletPage() {
                   const formatted = formatAmount(tx.amount);
                   return (
                     <TableRow key={tx.id}>
-                      <TableCell className="text-[#6B7280] whitespace-nowrap font-figtree">
-                        {tx.date}
+                      <TableCell className="text-[#6B7280] font-figtree">
+                        <TruncatedTooltip text={tx.date} side="top">
+                          <div className="max-w-[170px] truncate cursor-default">
+                            {tx.date}
+                          </div>
+                        </TruncatedTooltip>
                       </TableCell>
-                      <TableCell className="text-[#1F2937] whitespace-nowrap font-medium">
-                        {tx.id}
+                      <TableCell className="text-[#1F2937] font-medium">
+                        <TruncatedTooltip text={tx.id} side="top">
+                          <div className="max-w-[140px] truncate cursor-default">
+                            {tx.id}
+                          </div>
+                        </TruncatedTooltip>
                       </TableCell>
-                      <TableCell className="text-[#6B7280] whitespace-nowrap font-figtree">
-                        {tx.openingBalance}
+                      <TableCell className="text-[#6B7280] font-figtree">
+                        <TruncatedTooltip
+                          text={`$${tx.openingBalance.toLocaleString("en-US", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}`}
+                          side="top"
+                        >
+                          <div className="max-w-[140px] truncate cursor-default">
+                            $
+                            {tx.openingBalance.toLocaleString("en-US", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </div>
+                        </TruncatedTooltip>
                       </TableCell>
                       <TableCell
-                        className="whitespace-nowrap font-semibold font-figtree"
+                        className="font-semibold font-figtree"
                         style={{ color: formatted.color }}
                       >
-                        {formatted.text}
+                        <TruncatedTooltip text={formatted.text} side="top">
+                          <div className="max-w-[140px] truncate cursor-default">
+                            {formatted.text}
+                          </div>
+                        </TruncatedTooltip>
                       </TableCell>
-                      <TableCell className="font-semibold text-[#1F2937] whitespace-nowrap font-figtree">
-                        {tx.closingBalance}
+                      <TableCell className="font-semibold text-[#1F2937] font-figtree">
+                        <TruncatedTooltip
+                          text={`$${tx.closingBalance.toLocaleString("en-US", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}`}
+                          side="top"
+                        >
+                          <div className="max-w-[140px] truncate cursor-default">
+                            $
+                            {tx.closingBalance.toLocaleString("en-US", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </div>
+                        </TruncatedTooltip>
                       </TableCell>
-                      <TableCell className="text-[#6B7280] whitespace-nowrap font-figtree">
-                        {tx.creditLimit}
+                      <TableCell className="text-[#6B7280] font-figtree">
+                        <TruncatedTooltip
+                          text={`$${tx.creditLimit.toLocaleString("en-US", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}`}
+                          side="top"
+                        >
+                          <div className="max-w-[140px] truncate cursor-default">
+                            $
+                            {tx.creditLimit.toLocaleString("en-US", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </div>
+                        </TruncatedTooltip>
                       </TableCell>
-                      <TableCell className="text-[#1F2937] whitespace-nowrap">
-                        {tx.reason}
+                      <TableCell className="text-[#1F2937]">
+                        <TruncatedTooltip text={tx.reason} side="top">
+                          <div className="max-w-[200px] truncate cursor-default">
+                            {tx.reason}
+                          </div>
+                        </TruncatedTooltip>
                       </TableCell>
                       <TableCell className="whitespace-nowrap">
                         <StatusBadge status={tx.status} />

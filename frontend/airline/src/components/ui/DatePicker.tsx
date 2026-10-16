@@ -126,7 +126,7 @@ export function DatePicker({ value, onChange, placeholder, align = "left", class
       <div
         onClick={handleToggleOpen}
         className={cn(
-          "relative cursor-pointer select-none flex items-center pr-12 text-left",
+          "relative cursor-pointer select-none flex items-center pr-16 text-left",
           className
             ? className.replace("block", "flex")
             : "h-11 w-full rounded-[8px] border border-[#D1D5DB] bg-[#F3F4F6] py-3 pl-4 text-gray-600 hover:bg-slate-100/80 transition-colors"
