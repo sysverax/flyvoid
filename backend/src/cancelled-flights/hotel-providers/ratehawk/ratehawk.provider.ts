@@ -18,6 +18,7 @@ import {
   AvailabilityRoomRate,
   HotelBookingOutcomeUnknownError,
   HotelCandidate,
+  HotelGroupBookingRestrictedError,
   HotelContentDetails,
   HotelPolicies,
   TaxAtProperty,
@@ -38,6 +39,8 @@ interface RatehawkRateKey {
   roomName?: string | null;
   meal?: string | null;
   roomGroup?: string | null;
+  /** Multiroom order: each room's guests in booking order (adults/childrenAges are then totals). */
+  rooms?: Array<{ adults: number; childrenAges: number[] }>;
 }
 
 /**
@@ -504,6 +507,29 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     return `${occupancy.adults}_${occupancy.children}_${ages}`;
   }
 
+  private guestListKey(rooms: RoomOccupancy[]): string {
+    return rooms.map((room) => this.occupancyKey(room)).join("+");
+  }
+
+  /** Larger rooms first, so a combination is always searched and booked in the same room order. */
+  private orderedRooms(rooms: RoomOccupancy[]): RoomOccupancy[] {
+    return [...rooms].sort(
+      (a, b) =>
+        b.adults - a.adults ||
+        b.children - a.children ||
+        this.occupancyKey(a).localeCompare(this.occupancyKey(b)),
+    );
+  }
+
+  /** Each room's guests of a rate key, in booking order. */
+  private keyRooms(
+    key: RatehawkRateKey,
+  ): Array<{ adults: number; childrenAges: number[] }> {
+    return key.rooms?.length
+      ? key.rooms
+      : [{ adults: key.adults, childrenAges: key.childrenAges }];
+  }
+
   /** ETG takes one age per child (0-17); pad missing ages like the Hotelbeds adapter does. */
   private childrenAgesFor(occupancy: RoomOccupancy): number[] {
     const count = Number(occupancy.children ?? 0);
@@ -513,13 +539,11 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     return Array.from({ length: count }, (_, i) => ages[i] ?? 6);
   }
 
-  private guestsFor(occupancy: RoomOccupancy) {
-    return [
-      {
-        adults: Number(occupancy.adults),
-        children: this.childrenAgesFor(occupancy),
-      },
-    ];
+  private guestsFor(rooms: RoomOccupancy[]) {
+    return rooms.map((occupancy) => ({
+      adults: Number(occupancy.adults),
+      children: this.childrenAgesFor(occupancy),
+    }));
   }
 
   /** ETG expects a lowercase ISO 3166-1 alpha-2 code ("us"). */
@@ -717,13 +741,13 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     return [];
   }
 
-  /** Raw ETG hotels whose rates are tagged with the occupancy they were searched for. */
-  private tagRates(hotels: any[], occupancy: RoomOccupancy): any[] {
+  /** Raw ETG hotels whose rates are tagged with the rooms they were searched for. */
+  private tagRates(hotels: any[], rooms: RoomOccupancy[]): any[] {
     return (hotels ?? []).map((hotel) => ({
       ...hotel,
       rates: (hotel.rates ?? []).map((rate: any) => ({
         ...rate,
-        __occupancy: occupancy,
+        __rooms: rooms,
       })),
     }));
   }
@@ -744,8 +768,13 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
 
         const rates: AvailabilityRoomRate[] = (hotel.rates ?? [])
           .map((rate: any) => {
-            const occupancy: RoomOccupancy = rate.__occupancy;
-            const childrenAges = this.childrenAgesFor(occupancy);
+            const rooms: RoomOccupancy[] = rate.__rooms;
+            const keyRooms = rooms.map((room) => ({
+              adults: Number(room.adults),
+              childrenAges: this.childrenAgesFor(room),
+            }));
+            const adults = keyRooms.reduce((sum, room) => sum + room.adults, 0);
+            const childrenAges = keyRooms.flatMap((room) => room.childrenAges);
             const payment = this.pickPaymentType(
               rate.payment_options?.payment_types,
             );
@@ -765,11 +794,12 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
                 hid,
                 checkin,
                 checkout,
-                adults: Number(occupancy.adults),
+                adults,
                 childrenAges,
                 roomName: rate.room_name ? String(rate.room_name) : null,
                 meal: rate.meal ? String(rate.meal) : null,
                 roomGroup: this.roomGroupSignature(rate.rg_ext),
+                ...(rooms.length > 1 ? { rooms: keyRooms } : {}),
               }),
               // ETG rates always need a hotelpage + prebook before booking.
               rateType: "RECHECK",
@@ -783,7 +813,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
                 rate.allotment !== undefined && rate.allotment !== null
                   ? Number(rate.allotment)
                   : null,
-              adults: Number(occupancy.adults),
+              adults,
               children: childrenAges.length,
               childrenAges,
               cancellationPolicies: policies
@@ -799,6 +829,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
                 })),
               rateComments: this.taxComments(payment),
               paymentType: payment.type ? String(payment.type) : null,
+              ...(rooms.length > 1 ? { rooms } : {}),
             } satisfies AvailabilityRoomRate;
           })
           .filter(
@@ -826,7 +857,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     radius: number,
     checkin: string,
     checkout: string,
-    occupancy: RoomOccupancy,
+    rooms: RoomOccupancy[],
     requestLogger: Logger,
     residency: string | null,
   ): Promise<any[]> {
@@ -836,7 +867,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         checkin,
         checkout,
         language: LANGUAGE,
-        guests: this.guestsFor(occupancy),
+        guests: this.guestsFor(rooms),
         ...(residency ? { residency } : {}),
         currency: config.currency,
         latitude: Number(airport.latitude),
@@ -858,31 +889,78 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     requestLogger: Logger,
     options?: SupplierSearchOptions,
   ): Promise<AvailabilityHotel[]> {
-    if (!config.hotelSearch.isAllowSearchAPI) {
-      return await this.searchNearbyHotelsWithOccupanciesFromJson(
-        airport,
-        checkInDate,
-        checkOutDate,
-        occupancies,
-        requestId,
-        requestLogger,
-      );
-    }
-    this.assertCredentials(requestLogger);
-
     if (!occupancies.length) {
       throw new BadRequestException(
         "At least one occupancy is required for hotel availability search",
       );
     }
-
-    const dedupedOccupancies = Array.from(
-      new Map(occupancies.map((o) => [this.occupancyKey(o), o])).values(),
+    return this.searchGuestLists(
+      airport,
+      checkInDate,
+      checkOutDate,
+      occupancies.map((occupancy) => [occupancy]),
+      requestLogger,
+      options,
     );
+  }
+
+  // HotelProvider.searchMultiRoomOrders — one serp/geo call per combination, all rooms in `guests`.
+  async searchMultiRoomOrders(
+    airport: { iataCode: string; latitude: number; longitude: number },
+    checkInDate: string,
+    checkOutDate: string,
+    combinations: RoomOccupancy[][],
+    requestId: string,
+    requestLogger: Logger,
+    options?: SupplierSearchOptions,
+  ): Promise<AvailabilityHotel[]> {
+    // ETG multiroom search takes 2 to 9 rooms per request.
+    if (
+      !combinations.length ||
+      combinations.some((rooms) => rooms.length < 2 || rooms.length > 9)
+    ) {
+      throw new BadRequestException(
+        "A multiroom search needs 2 to 9 rooms per combination",
+      );
+    }
+    return this.searchGuestLists(
+      airport,
+      checkInDate,
+      checkOutDate,
+      combinations.map((rooms) => this.orderedRooms(rooms)),
+      requestLogger,
+      options,
+    );
+  }
+
+  /** One serp/geo search per guest list (one entry per room), widening the radius for lists with no hotels. */
+  private async searchGuestLists(
+    airport: { iataCode: string; latitude: number; longitude: number },
+    checkInDate: string,
+    checkOutDate: string,
+    guestLists: RoomOccupancy[][],
+    requestLogger: Logger,
+    options?: SupplierSearchOptions,
+  ): Promise<AvailabilityHotel[]> {
+    const dedupedLists = Array.from(
+      new Map(
+        guestLists.map((rooms) => [this.guestListKey(rooms), rooms]),
+      ).values(),
+    );
+    if (!config.hotelSearch.isAllowSearchAPI) {
+      return await this.searchGuestListsFromJson(
+        airport,
+        checkInDate,
+        checkOutDate,
+        dedupedLists,
+        requestLogger,
+      );
+    }
+    this.assertCredentials(requestLogger);
 
     const mergedByHid = new Map<number, any>();
-    const merge = (occupancy: RoomOccupancy, hotels: any[]) => {
-      for (const hotel of this.tagRates(hotels, occupancy)) {
+    const merge = (rooms: RoomOccupancy[], hotels: any[]) => {
+      for (const hotel of this.tagRates(hotels, rooms)) {
         const hid = Number(hotel?.hid);
         if (!hid) continue;
         const existing = mergedByHid.get(hid);
@@ -896,7 +974,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     requestLogger.info("Fetching hotel availability from RateHawk API", {
       context: this.context,
       airportCode: airport.iataCode,
-      occupancyCount: dedupedOccupancies.length,
+      occupancyCount: dedupedLists.length,
       residency,
       useSandbox: this.useSandbox,
     });
@@ -905,33 +983,33 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
       const { defaultRadius } = config.hotelSearch;
       const maxRadius = Math.max(defaultRadius, config.hotelSearch.maxRadius);
 
-      // One serp/geo call per room type; the client-side limiter queues them
+      // One serp/geo call per guest list; the client-side limiter queues them
       // within the endpoint's per-minute limit.
-      let stillMissing = dedupedOccupancies;
+      let stillMissing = dedupedLists;
       for (
         let radius = defaultRadius;
         radius <= maxRadius && stillMissing.length > 0;
         radius += 10
       ) {
-        const shapes = stillMissing;
+        const lists = stillMissing;
         const found = await this.mapWithConcurrency(
-          shapes,
+          lists,
           this.maxConcurrency,
-          (occupancy) =>
+          (rooms) =>
             this.searchGeo(
               airport,
               radius,
               checkInDate,
               checkOutDate,
-              occupancy,
+              rooms,
               requestLogger,
               residency,
             ),
         );
-        const nextMissing: RoomOccupancy[] = [];
+        const nextMissing: RoomOccupancy[][] = [];
         found.forEach((hotels, i) => {
-          if (hotels.length) merge(shapes[i], hotels);
-          else nextMissing.push(shapes[i]);
+          if (hotels.length) merge(lists[i], hotels);
+          else nextMissing.push(lists[i]);
         });
 
         stillMissing = nextMissing;
@@ -975,12 +1053,12 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     }
   }
 
-  /** Reads `ratehawk-cache/<runId>/<occupancyKey>.json` (newest run first). */
+  /** Reads `ratehawk-cache/<runId>/<guestListKey>.json` (newest run first). */
   private async loadCachedOccupancyResponse(
-    occupancy: RoomOccupancy,
+    rooms: RoomOccupancy[],
     requestLogger: Logger,
   ): Promise<any[]> {
-    const fileName = `${this.occupancyKey(occupancy)}.json`;
+    const fileName = `${this.guestListKey(rooms)}.json`;
     let runDirNames: string[];
     try {
       runDirNames = await fs.readdir(this.occupancyCacheDir);
@@ -1026,39 +1104,30 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     return [];
   }
 
-  async searchNearbyHotelsWithOccupanciesFromJson(
+  private async searchGuestListsFromJson(
     airport: { iataCode: string; latitude: number; longitude: number },
     checkInDate: string,
     checkOutDate: string,
-    occupancies: RoomOccupancy[],
-    requestId: string,
+    guestLists: RoomOccupancy[][],
     requestLogger: Logger,
   ): Promise<AvailabilityHotel[]> {
-    if (!occupancies.length) {
-      throw new BadRequestException(
-        "At least one occupancy is required for hotel availability search",
-      );
-    }
-    const dedupedOccupancies = Array.from(
-      new Map(occupancies.map((o) => [this.occupancyKey(o), o])).values(),
-    );
     requestLogger.info(
       "Loading hotel availability from cached RateHawk responses",
       {
         context: this.context,
         airportCode: airport.iataCode,
-        occupancyCount: dedupedOccupancies.length,
+        occupancyCount: guestLists.length,
         cacheDir: this.occupancyCacheDir,
       },
     );
 
     const mergedByHid = new Map<number, any>();
-    for (const occupancy of dedupedOccupancies) {
+    for (const rooms of guestLists) {
       const hotels = await this.loadCachedOccupancyResponse(
-        occupancy,
+        rooms,
         requestLogger,
       );
-      for (const hotel of this.tagRates(hotels, occupancy)) {
+      for (const hotel of this.tagRates(hotels, rooms)) {
         const hid = Number(hotel?.hid);
         if (!hid) continue;
         const existing = mergedByHid.get(hid);
@@ -1417,7 +1486,10 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         checkin: key.checkin,
         checkout: key.checkout,
         language: LANGUAGE,
-        guests: [{ adults: key.adults, children: key.childrenAges }],
+        guests: this.keyRooms(key).map((room) => ({
+          adults: room.adults,
+          children: room.childrenAges,
+        })),
         ...(residency ? { residency } : {}),
         currency: config.currency,
         hid: key.hid,
@@ -1545,6 +1617,14 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         taxesAtProperty: this.taxesAtProperty(payment),
         priceChanged,
         bookingKey: this.encodePrebookedKey({ key, bookHash, payment }),
+        ...(key.rooms && key.rooms.length > 1
+          ? {
+              rooms: key.rooms.map((room) => ({
+                adults: room.adults,
+                children: room.childrenAges.length,
+              })),
+            }
+          : {}),
       };
     } catch (error: any) {
       this.logger.error(
@@ -1665,22 +1745,25 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
 
       await bookingData.onSupplierOrderCreated?.(partnerOrderId);
 
-      // ETG wants one guest entry per person; only the lead passenger is named.
+      // ETG wants one guest entry per person, rooms in the hotelpage order;
+      // only the lead passenger is named.
       const firstName = this.sanitizeName(bookingData.firstName, "Guest");
       const lastName = this.sanitizeName(bookingData.lastName, "Guest");
-      const guests = [
-        { first_name: firstName, last_name: lastName },
-        ...Array.from({ length: Math.max(0, key.adults - 1) }, () => ({
-          first_name: "Guest",
-          last_name: lastName,
-        })),
-        ...key.childrenAges.map((age) => ({
-          first_name: "Guest",
-          last_name: lastName,
-          is_child: true,
-          age,
-        })),
-      ];
+      const rooms = this.keyRooms(key).map((room) => ({
+        guests: [
+          { first_name: firstName, last_name: lastName },
+          ...Array.from({ length: Math.max(0, room.adults - 1) }, () => ({
+            first_name: "Guest",
+            last_name: lastName,
+          })),
+          ...room.childrenAges.map((age) => ({
+            first_name: "Guest",
+            last_name: lastName,
+            is_child: true,
+            age,
+          })),
+        ],
+      }));
 
       const sendFinish = () =>
         this.call(
@@ -1695,7 +1778,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
               comment: `PNR ${bookingData.pnr} / booking ${bookingData.bookingId}`,
             },
             language: LANGUAGE,
-            rooms: [{ guests }],
+            rooms,
             payment_type: {
               type: payment.type,
               amount: String(payment.amount),
@@ -1758,8 +1841,8 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         hotelAddress: "",
         checkInDate: key.checkin,
         checkOutDate: key.checkout,
-        totalRooms: 1,
-        costPerRoom: shown,
+        totalRooms: rooms.length,
+        costPerRoom: shown / rooms.length,
         price: shown,
         buyingPrice: charged,
       };
@@ -1777,6 +1860,14 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         throw new HotelBookingOutcomeUnknownError(
           `RateHawk booking ${partnerOrderId} outcome unknown: ${error.message}`,
           partnerOrderId,
+        );
+      }
+      if (
+        error instanceof RatehawkApiError &&
+        error.code === "unauthorized_group_booking"
+      ) {
+        throw new HotelGroupBookingRestrictedError(
+          `RateHawk refused the booking as a group booking: ${error.message}`,
         );
       }
       if (
