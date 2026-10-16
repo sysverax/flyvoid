@@ -168,6 +168,27 @@ export class HotelAllocationsDto {
   })
   fullyBooked: boolean;
 
+  @ApiProperty({
+    description:
+      "False once the first allocation and its one retry have been used",
+    example: true,
+  })
+  canRetry: boolean;
+
+  @ApiProperty({
+    description: "Retry is blocked while bookings wait for the supplier check",
+    example: false,
+  })
+  awaitingSupplierCheck: boolean;
+
+  @ApiProperty({
+    description: "When the next supplier check is due",
+    example: "2026-10-16T10:05:00.000Z",
+    nullable: true,
+    type: String,
+  })
+  nextSupplierCheckAt: string | null;
+
   @ApiProperty({ type: [HotelAllocationBookingResultDto] })
   results: HotelAllocationBookingResultDto[];
 

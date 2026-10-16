@@ -377,16 +377,13 @@ export default function CancellationPage() {
         {statsConfig.map((card, idx) => (
           <div
             key={idx}
-            className="flex items-start justify-between rounded-[12px] border border-[#E5E7EB] bg-white p-3.5 relative -top-0.5"
+            className="flex items-start justify-between rounded-[12px] border border-[#E5E7EB] bg-white p-5 relative -top-0.5"
           >
-            <div>
+            <div className="flex flex-col gap-1.5">
               <p className="text-[16px] text-[#6B7280]">{card.title}</p>
               <h3 className="text-[24px] font-semibold text-[#1F2937] -ml-0.5">
                 {card.value}
               </h3>
-              <p className="text-[14px] text-[#6B7280] mt-2.5">
-                {card.description}
-              </p>
             </div>
 
             <div className="rounded-[8px] bg-[#F3F4F6] p-2.5 text-[#0F2757] flex items-center justify-center h-11 w-11 shrink-0">

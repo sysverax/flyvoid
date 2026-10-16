@@ -1,4 +1,5 @@
 import * as dotenv from "dotenv";
+import { HotelProviderCode } from "../common/constants/hotel-provider.constants";
 
 const envFileByCommand: Record<string, string> = {
   dev: ".env.local",
@@ -133,6 +134,16 @@ export const config = {
       process.env.HOTEL_BOOKING_PLAN_TTL_MS ?? String(60 * 60 * 1000),
       10,
     ),
+    // MANUAL_CHECK bookings are re-checked with the supplier this long after
+    // a run, and again after each interval, this many times in total.
+    postRunCheckIntervalMs: parseInt(
+      process.env.HOTEL_POST_RUN_CHECK_INTERVAL_MS ?? String(5 * 60 * 1000),
+      10,
+    ),
+    postRunCheckCount: parseInt(
+      process.env.HOTEL_POST_RUN_CHECK_COUNT ?? "2",
+      10,
+    ),
     orderInfoDelayMs: parseInt(
       process.env.HOTEL_ORDER_INFO_DELAY_MS ?? String(90 * 1000),
       10,
@@ -150,7 +161,9 @@ export const config = {
   // Active hotel supplier (HOTEL_PROVIDER) and each supplier's credentials;
   // HOTEL_USE_SANDBOX applies to whichever supplier is active.
   hotelProvider: {
-    name: (process.env.HOTEL_PROVIDER || "hotelbeds").trim().toLowerCase(),
+    name: (process.env.HOTEL_PROVIDER || HotelProviderCode.HOTELBEDS)
+      .trim()
+      .toLowerCase(),
     useSandbox: process.env.HOTEL_USE_SANDBOX !== "false",
     hotelbeds: {
       apiKey: process.env.HOTELBEDS_API_KEY ?? "",
@@ -185,9 +198,14 @@ export const config = {
     isAllowSearchAPI: true,
     isAllowFetchHotelDetails: true,
   },
-  flyvoid: {
-    // Corporate email sent to hotel suppliers on every booking; receives the B2B-priced booking documents.
-    email: (process.env.FLYVOID_EMAIL ?? "").trim(),
+  // FlyVoid inbox sent to hotel suppliers on every booking; receives the
+  // booking confirmations and B2B-priced booking documents.
+  bookingConfirmationEmail: (
+    process.env.BOOKING_CONFIRMATION_EMAIL ?? ""
+  ).trim(),
+  booking: {
+    // Standard airline PNRs hold at most 9 passengers; larger groups use separate PNRs.
+    maxPassengersPerPnr: parseInt(process.env.MAX_PASSENGERS_PER_PNR ?? "9", 10),
   },
   /** All hotel prices, totals and invoices are in this currency. */
   currency: "USD",

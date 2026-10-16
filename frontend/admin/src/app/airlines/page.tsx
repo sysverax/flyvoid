@@ -12,6 +12,8 @@ import {
   Plus,
   Minus,
   Wallet,
+  Plane,
+  CreditCard,
 } from "lucide-react";
 import {
   Table,
@@ -145,7 +147,7 @@ export default function AirlinesPage() {
         Math.max(
           0,
           (airlines.find((a) => a.id === airlineId)?.spend ?? 0) -
-            deductedAmount,
+          deductedAmount,
         );
 
       setAirlines((prev) =>
@@ -283,7 +285,7 @@ export default function AirlinesPage() {
 
       toast.success(
         response.message ||
-          `Successfully ${targetIsActive ? "enabled" : "disabled"} ${airline.airlineName}`,
+        `Successfully ${targetIsActive ? "enabled" : "disabled"} ${airline.airlineName}`,
       );
 
       if (response?.data) {
@@ -296,14 +298,14 @@ export default function AirlinesPage() {
           prev.map((item) =>
             item.id === airline.id
               ? {
-                  ...item,
-                  isActive: targetIsActive,
-                  status: item.isSuspended
-                    ? "Suspended"
-                    : targetIsActive
-                      ? "Active"
-                      : "Disabled",
-                }
+                ...item,
+                isActive: targetIsActive,
+                status: item.isSuspended
+                  ? "Suspended"
+                  : targetIsActive
+                    ? "Active"
+                    : "Disabled",
+              }
               : item,
           ),
         );
@@ -337,7 +339,7 @@ export default function AirlinesPage() {
 
       toast.success(
         response.message ||
-          `Successfully suspended ${suspendTarget.airlineName}`,
+        `Successfully suspended ${suspendTarget.airlineName}`,
       );
       setSuspendTarget(null);
       fetchAirlines();
@@ -419,6 +421,39 @@ export default function AirlinesPage() {
     }
   };
 
+  const statsConfig = [
+    {
+      title: "Total Active Airlines",
+      value:
+        walletSummary?.totalActiveAirlines !== undefined
+          ? walletSummary.totalActiveAirlines
+          : "N/A",
+      icon: <Plane className="h-5 w-5" />,
+    },
+    {
+      title: "Total Wallet Balance",
+      value: `$${(walletSummary?.totalWalletBalance ?? 0).toLocaleString(
+        "en-US",
+        {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        },
+      )}`,
+      icon: <Wallet className="h-5 w-5" />,
+    },
+    {
+      title: "Total Credit Limit",
+      value: `$${(walletSummary?.totalCreditIssued ?? 0).toLocaleString(
+        "en-US",
+        {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        },
+      )}`,
+      icon: <CreditCard className="h-5 w-5" />,
+    },
+  ];
+
   return (
     <div className="flex min-h-screen flex-1 flex-col pb-16 lg:w-full lg:max-w-[calc(100vw-304px)]">
       <div className="space-y-7">
@@ -431,39 +466,6 @@ export default function AirlinesPage() {
             <p className="text-[14px] text-[#6B7280] mt-1">
               Manage all registered airlines
             </p>
-          </div>
-
-          <div className="flex items-center rounded-[10px] border border-[#E5E7EB] bg-white px-4 py-2 shadow-2xs divide-x divide-[#E5E7EB] shrink-0">
-            <div className="pr-4">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-[#6B7280]">
-                TOTAL WALLET BALANCE
-              </div>
-              <div className="text-[18px] font-bold text-[#203663]">
-                $
-                {(walletSummary?.totalWalletBalance ?? 0).toLocaleString(
-                  "en-US",
-                  {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  },
-                )}
-              </div>
-            </div>
-            <div className="pl-4">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-[#6B7280]">
-                TOTAL CREDIT LIMIT
-              </div>
-              <div className="text-[18px] font-bold text-[#203663]">
-                $
-                {(walletSummary?.totalCreditIssued ?? 0).toLocaleString(
-                  "en-US",
-                  {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  },
-                )}
-              </div>
-            </div>
           </div>
         </div>
 
@@ -503,6 +505,27 @@ export default function AirlinesPage() {
             searchable
           />
         </FiltersCard>
+
+        {/* Stats Cards Grid */}
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+          {statsConfig.map((card, idx) => (
+            <div
+              key={idx}
+              className="flex items-start justify-between rounded-[12px] border border-[#E5E7EB] bg-white p-5 relative -top-0.5"
+            >
+              <div className="flex flex-col gap-1.5">
+                <p className="text-[16px] text-[#6B7280]">{card.title}</p>
+                <h3 className="text-[24px] font-semibold text-[#1F2937] -ml-0.5">
+                  {card.value}
+                </h3>
+              </div>
+
+              <div className="rounded-[8px] bg-[#F3F4F6] p-2.5 text-[#0F2757] flex items-center justify-center h-11 w-11 shrink-0">
+                {card.icon}
+              </div>
+            </div>
+          ))}
+        </div>
 
         {/* Airlines Table */}
         <div className="overflow-hidden rounded-[12px] border border-[#E5E7EB] bg-white mb-6">

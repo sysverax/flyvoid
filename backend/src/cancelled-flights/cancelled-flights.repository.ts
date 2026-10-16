@@ -1,6 +1,13 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { EntityManager, In, IsNull, Not, Repository } from "typeorm";
+import {
+  EntityManager,
+  In,
+  IsNull,
+  Not,
+  Repository,
+  SelectQueryBuilder,
+} from "typeorm";
 import { QueryDeepPartialEntity } from "typeorm/query-builder/QueryPartialEntity";
 import { config } from "../config/config";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
@@ -313,9 +320,7 @@ export class CancelledFlightsRepository {
       qb.andWhere("flight.airlineId = :airlineId", { airlineId });
     }
 
-    if (status) {
-      qb.andWhere("flight.status = :status", { status });
-    }
+    this.applyListStatusFilter(qb, status);
 
     if (search?.trim()) {
       qb.andWhere("CAST(flight.flight_number AS TEXT) ILIKE :search", {
@@ -333,6 +338,48 @@ export class CancelledFlightsRepository {
 
     const [flights, totalCount] = await qb.getManyAndCount();
     return { flights, totalCount };
+  }
+
+  /**
+   * List status filter. A flight awaiting allocation that already has hotel
+   * booking attempts is listed as HOTEL_ALLOCATION_IN_PROGRESS, not as
+   * PASSENGERS_BOOKING_CONFIRMED (see findFlightIdsWithHotelBookings).
+   */
+  private applyListStatusFilter(
+    qb: SelectQueryBuilder<CancelledFlightEntity>,
+    status?: FlightStatus,
+  ): void {
+    if (!status) return;
+    const started =
+      "EXISTS (SELECT 1 FROM hotel_bookings hb WHERE hb.cancelled_flight_id = flight.id)";
+    const params = {
+      listStatus: status,
+      awaitingStatus: FlightStatus.PASSENGERS_BOOKING_CONFIRMED,
+    };
+    if (status === FlightStatus.HOTEL_ALLOCATION_IN_PROGRESS) {
+      qb.andWhere(
+        `(flight.status = :listStatus OR (flight.status = :awaitingStatus AND ${started}))`,
+        params,
+      );
+    } else if (status === FlightStatus.PASSENGERS_BOOKING_CONFIRMED) {
+      qb.andWhere(`flight.status = :listStatus AND NOT ${started}`, params);
+    } else {
+      qb.andWhere("flight.status = :listStatus", params);
+    }
+  }
+
+  /** Flights (of these ids) that have at least one hotel booking attempt. */
+  async findFlightIdsWithHotelBookings(
+    cancelledFlightIds: number[],
+  ): Promise<Set<number>> {
+    if (cancelledFlightIds.length === 0) return new Set();
+    const rows: Array<{ id: number }> = await this.manager.query(
+      `SELECT DISTINCT cancelled_flight_id AS "id"
+         FROM hotel_bookings
+        WHERE cancelled_flight_id = ANY($1)`,
+      [cancelledFlightIds],
+    );
+    return new Set(rows.map((row) => Number(row.id)));
   }
 
   async getCancelledFlightsSummary(
@@ -377,9 +424,7 @@ export class CancelledFlightsRepository {
       qb.andWhere("flight.airlineId = :airlineId", { airlineId });
     }
 
-    if (status) {
-      qb.andWhere("flight.status = :status", { status });
-    }
+    this.applyListStatusFilter(qb, status);
 
     if (search?.trim()) {
       qb.andWhere("CAST(flight.flight_number AS TEXT) ILIKE :search", {
@@ -884,11 +929,17 @@ export class CancelledFlightsRepository {
     leaseMs: number,
     runId: string,
     requestLogger: Logger,
+    /**
+     * Set for user-started runs: refused once this many runs were counted.
+     * The run itself is counted in completeFlightAllocationRun.
+     */
+    maxUserRuns?: number,
+    keepError = false,
   ): Promise<
     | { claimed: true; previousStatus: FlightStatus }
     | {
         claimed: false;
-        reason: "running" | "status" | "missing";
+        reason: "running" | "status" | "missing" | "limit";
         status?: FlightStatus;
       }
   > {
@@ -902,12 +953,17 @@ export class CancelledFlightsRepository {
         .createQueryBuilder("flight")
         .setLock("pessimistic_write")
         .select("flight.status", "status")
+        .addSelect("flight.hotel_allocation_runs", "runs")
         .addSelect(
           "EXTRACT(EPOCH FROM (now() - flight.updated_at)) * 1000",
           "ageMs",
         )
         .where("flight.id = :id", { id: cancelledFlightId })
-        .getRawOne<{ status: FlightStatus; ageMs: string | number }>();
+        .getRawOne<{
+          status: FlightStatus;
+          runs: number;
+          ageMs: string | number;
+        }>();
       if (!row) {
         return { claimed: false as const, reason: "missing" as const };
       }
@@ -928,13 +984,20 @@ export class CancelledFlightsRepository {
           status: row.status,
         };
       }
+      if (maxUserRuns !== undefined && Number(row.runs) >= maxUserRuns) {
+        return {
+          claimed: false as const,
+          reason: "limit" as const,
+          status: row.status,
+        };
+      }
       await manager.update(
         CancelledFlightEntity,
         { id: cancelledFlightId },
         {
           status: FlightStatus.HOTEL_ALLOCATION_IN_PROGRESS,
           hotelAllocationRunId: runId,
-          hotelAllocationError: null,
+          ...(!keepError && { hotelAllocationError: null }),
         },
       );
       return { claimed: true as const, previousStatus: row.status };
@@ -984,18 +1047,34 @@ export class CancelledFlightsRepository {
     requestLogger: Logger,
   ): Promise<FlightHotelTotals> {
     return this.manager.transaction(async (manager) => {
-      await manager
+      const flight = await manager
         .getRepository(CancelledFlightEntity)
         .createQueryBuilder("flight")
         .setLock("pessimistic_write")
-        .select("flight.id")
+        .select("flight.status", "status")
         .where("flight.id = :id", { id: cancelledFlightId })
-        .getRawOne();
+        .getRawOne<{ status: FlightStatus }>();
       const totals = await this.sumConfirmedAllocations(
         manager,
         cancelledFlightId,
       );
       const { confirmedCount, ...columns } = totals;
+      if (
+        flight?.status === FlightStatus.PAID ||
+        flight?.status === FlightStatus.PUBLISHED
+      ) {
+        requestLogger.error(
+          "Booking confirmed on a paid flight; totals not changed, check with the supplier",
+          {
+            context: this.context,
+            cancelledFlightId,
+            status: flight.status,
+            confirmedCount,
+            totalPrice: totals.totalPrice,
+          },
+        );
+        return totals;
+      }
       await manager.update(
         CancelledFlightEntity,
         { id: cancelledFlightId },
@@ -1018,8 +1097,10 @@ export class CancelledFlightsRepository {
     cancelledFlightId: number,
     runId: string,
     platformFeePercentage: number,
-    runError: string | null,
+    runError: string | null | undefined,
     requestLogger: Logger,
+    /** User-started run: counted toward the retry limit if it reached the supplier. */
+    countUserRun = false,
   ): Promise<void> {
     await this.manager.transaction(async (manager) => {
       const flight = await manager
@@ -1045,10 +1126,26 @@ export class CancelledFlightsRepository {
         manager,
         cancelledFlightId,
       );
-      const status =
-        totals.confirmedCount > 0
-          ? FlightStatus.ALLOCATED
-          : FlightStatus.PASSENGERS_BOOKING_CONFIRMED;
+      // Only ALLOCATED once every PNR is confirmed; failed or manual-check
+      // PNRs keep the flight open for another allocation run.
+      const status = (await this.areAllPnrsHotelBooked(
+        cancelledFlightId,
+        manager,
+      ))
+        ? FlightStatus.ALLOCATED
+        : FlightStatus.PASSENGERS_BOOKING_CONFIRMED;
+      // A run that never sent a booking to the supplier (search outage,
+      // credentials error...) does not use up a retry.
+      const counted =
+        countUserRun &&
+        (
+          await manager.query(
+            `SELECT 1 FROM hotel_bookings
+              WHERE run_id = $1 AND provider_request_sent_at IS NOT NULL
+              LIMIT 1`,
+            [runId],
+          )
+        ).length > 0;
       const { confirmedCount, ...columns } = totals;
       await manager.update(
         CancelledFlightEntity,
@@ -1058,7 +1155,10 @@ export class CancelledFlightsRepository {
           platformFeePercentage,
           status,
           hotelAllocationRunId: null,
-          hotelAllocationError: runError,
+          ...(runError !== undefined && { hotelAllocationError: runError }),
+          ...(counted && {
+            hotelAllocationRuns: () => "hotel_allocation_runs + 1",
+          }),
         },
       );
       requestLogger.info("Completed hotel allocation run", {
@@ -1066,6 +1166,7 @@ export class CancelledFlightsRepository {
         cancelledFlightId,
         runId,
         status,
+        countedAsUserRun: counted,
         confirmedCount,
         totalPrice: totals.totalPrice,
         runError,
@@ -1184,6 +1285,34 @@ export class CancelledFlightsRepository {
     };
   }
 
+  /**
+   * True when the flight has PNRs and every one has a confirmed hotel booking
+   * (same rule as the SUCCESS status in getAllocationProgress). A single
+   * failed, manual-check, pending or unbooked PNR makes it false.
+   */
+  async areAllPnrsHotelBooked(
+    cancelledFlightId: number,
+    manager: EntityManager = this.manager,
+  ): Promise<boolean> {
+    const [row]: Array<{ total: number; unbooked: number }> =
+      await manager.query(
+        `SELECT COUNT(*)::int AS "total",
+                COUNT(*) FILTER (
+                  WHERE b.allocation_status NOT IN ('confirmed', 'completed')
+                     OR (b.allocation_status = 'confirmed' AND EXISTS (
+                       SELECT 1 FROM hotel_booking_rooms r
+                        WHERE r.hotel_booking_id = b.confirmed_hotel_booking_id
+                          AND r.partner_order_id LIKE 'temp-%'
+                     ))
+                     OR b.allocation_status IS NULL
+                )::int AS "unbooked"
+           FROM cancelled_flight_bookings b
+          WHERE b.cancelled_flight_id = $1`,
+        [cancelledFlightId],
+      );
+    return Number(row?.total ?? 0) > 0 && Number(row?.unbooked ?? 0) === 0;
+  }
+
   private async sumConfirmedAllocations(
     manager: EntityManager,
     cancelledFlightId: number,
@@ -1240,10 +1369,9 @@ export class CancelledFlightsRepository {
         cancelledFlightId,
       })
       .andWhere("pnr.planId IS NOT NULL")
-      .andWhere(
-        "pnr.plannedAt > now() - (:ttlMs * interval '1 millisecond')",
-        { ttlMs },
-      )
+      .andWhere("pnr.plannedAt > now() - (:ttlMs * interval '1 millisecond')", {
+        ttlMs,
+      })
       .getRawMany<{ bookingId: number }>();
     return new Set(rows.map((row) => Number(row.bookingId)));
   }
@@ -1662,22 +1790,19 @@ export class CancelledFlightsRepository {
           .execute();
       }
     }
-    await manager.getRepository(HotelBookingEntity).update(
-      { id: attempt.id },
-      {
-        hotelId,
-        checkInDate: success.checkInDate ?? attempt.checkInDate,
-        checkOutDate: success.checkOutDate ?? attempt.checkOutDate,
-        currency: success.currency ?? attempt.currency ?? null,
-        actualPrice: success.actualPrice ?? 0,
-        buyingPrice: success.buyingPrice ?? 0,
-        platformFeePercentage:
-          success.platformFeePercentage ?? attempt.platformFeePercentage,
-        platformFee: success.platformFee ?? 0,
-        totalPrice: success.totalPrice ?? 0,
-        earnings: success.earnings ?? 0,
-      } as QueryDeepPartialEntity<HotelBookingEntity>,
-    );
+    await manager.getRepository(HotelBookingEntity).update({ id: attempt.id }, {
+      hotelId,
+      checkInDate: success.checkInDate ?? attempt.checkInDate,
+      checkOutDate: success.checkOutDate ?? attempt.checkOutDate,
+      currency: success.currency ?? attempt.currency ?? null,
+      actualPrice: success.actualPrice ?? 0,
+      buyingPrice: success.buyingPrice ?? 0,
+      platformFeePercentage:
+        success.platformFeePercentage ?? attempt.platformFeePercentage,
+      platformFee: success.platformFee ?? 0,
+      totalPrice: success.totalPrice ?? 0,
+      earnings: success.earnings ?? 0,
+    } as QueryDeepPartialEntity<HotelBookingEntity>);
     if (attempt.candidateId && success.distanceFromAirportKm != null) {
       await manager
         .getRepository(HotelAllocationOptionEntity)
@@ -1821,6 +1946,65 @@ export class CancelledFlightsRepository {
     return !!row;
   }
 
+  /** Flights whose allocation run stopped without finishing (lease expired). */
+  async findInterruptedRunFlightIds(leaseMs: number): Promise<number[]> {
+    const rows: Array<{ id: number }> = await this.flightRepo
+      .createQueryBuilder("flight")
+      .select("flight.id", "id")
+      .where("flight.status = :status", {
+        status: FlightStatus.HOTEL_ALLOCATION_IN_PROGRESS,
+      })
+      .andWhere(
+        "flight.updated_at < now() - (:leaseMs * interval '1 millisecond')",
+        { leaseMs },
+      )
+      .getRawMany();
+    return rows.map((row) => Number(row.id));
+  }
+
+  /**
+   * Flights (not mid-run) with MANUAL_CHECK attempts at this provider; their
+   * in-memory post-run checks are lost when the backend restarts.
+   */
+  async findFlightIdsWithManualCheckAttempts(
+    provider: string,
+  ): Promise<number[]> {
+    const rows: Array<{ id: number }> = await this.manager.query(
+      `SELECT DISTINCT hb.cancelled_flight_id AS "id"
+         FROM hotel_bookings hb
+         JOIN providers p ON p.id = hb.provider_id
+         JOIN cancelled_flights f ON f.id = hb.cancelled_flight_id
+        WHERE hb.status = $1 AND p.code = $2 AND f.status <> $3`,
+      [
+        HotelBookingAttemptStatus.MANUAL_CHECK,
+        provider,
+        FlightStatus.HOTEL_ALLOCATION_IN_PROGRESS,
+      ],
+    );
+    return rows.map((row) => Number(row.id));
+  }
+
+  /** A flight's MANUAL_CHECK attempts with this provider. */
+  async findManualCheckAttempts(
+    cancelledFlightId: number,
+    provider: string,
+  ): Promise<HotelBookingEntity[]> {
+    return this.manager
+      .getRepository(HotelBookingEntity)
+      .createQueryBuilder("attempt")
+      .innerJoin("attempt.provider", "provider")
+      .leftJoinAndSelect("attempt.rooms", "room")
+      .leftJoinAndSelect("attempt.hotel", "hotel")
+      .where("attempt.cancelled_flight_id = :cancelledFlightId", {
+        cancelledFlightId,
+      })
+      .andWhere("attempt.status = :status", {
+        status: HotelBookingAttemptStatus.MANUAL_CHECK,
+      })
+      .andWhere("provider.code = :provider", { provider })
+      .getMany();
+  }
+
   /** Updates per-room supplier statuses; the attempt stays open as MANUAL_CHECK. */
   async updateOpenAttemptOrders(
     attemptId: number,
@@ -1854,18 +2038,34 @@ export class CancelledFlightsRepository {
     });
   }
 
-  /** A booking confirmed after the run ended moves the flight to ALLOCATED. */
+  /**
+   * A booking confirmed after the run ended moves the flight to ALLOCATED,
+   * but only once every PNR on the flight is confirmed.
+   */
   async promoteFlightAfterLateConfirmation(
     cancelledFlightId: number,
   ): Promise<boolean> {
-    const result = await this.flightRepo.update(
-      {
-        id: cancelledFlightId,
-        status: FlightStatus.PASSENGERS_BOOKING_CONFIRMED,
-      },
-      { status: FlightStatus.ALLOCATED },
-    );
-    return (result.affected ?? 0) === 1;
+    return this.manager.transaction(async (manager) => {
+      await manager
+        .getRepository(CancelledFlightEntity)
+        .createQueryBuilder("flight")
+        .setLock("pessimistic_write")
+        .select("flight.id")
+        .where("flight.id = :id", { id: cancelledFlightId })
+        .getRawOne();
+      if (!(await this.areAllPnrsHotelBooked(cancelledFlightId, manager))) {
+        return false;
+      }
+      const result = await manager.update(
+        CancelledFlightEntity,
+        {
+          id: cancelledFlightId,
+          status: FlightStatus.PASSENGERS_BOOKING_CONFIRMED,
+        },
+        { status: FlightStatus.ALLOCATED },
+      );
+      return (result.affected ?? 0) === 1;
+    });
   }
 
   async isWebhookTokenUsed(provider: string, token: string): Promise<boolean> {

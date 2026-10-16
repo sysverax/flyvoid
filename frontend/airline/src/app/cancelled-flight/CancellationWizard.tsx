@@ -224,6 +224,14 @@ const HOTEL_BOOKING_STATUS_LABEL: Record<string, string> = {
   completed: "Completed",
 };
 
+const PNR_STATUS_TO_HOTEL_STATUS: Record<string, string> = {
+  SUCCESS: "confirmed",
+  FAILED: "failed",
+  MANUAL_CHECK: "manual_check",
+  PENDING: "in_progress",
+  NOT_STARTED: "draft",
+};
+
 export function getInitialStepFromStatus(
   status?: string,
   bookingsCount?: number,
@@ -258,8 +266,12 @@ export function getMaxAllowedStep(flight: any, summary?: any): number {
   if (status === "allocated") {
     return 6;
   }
+  // A partially booked flight stays in passengers_booking_confirmed until every
+  // PNR is confirmed; it may view the summary (step 5) but not pay.
+  if (status === "passengers_booking_confirmed") {
+    return 5;
+  }
   if (
-    status === "passengers_booking_confirmed" ||
     status === "confirmed" ||
     status === "verified" ||
     status === "hotel_allocation_in_progress" ||
@@ -852,7 +864,6 @@ export default function CancellationWizard({
   const [selectedHotels, setSelectedHotels] = useState<string[]>([]);
   const [isAutoAllocate, setIsAutoAllocate] = useState(true);
   const [isAllocating, setIsAllocating] = useState(false);
-  const [allocationProgress, setAllocationProgress] = useState(0);
   const [hotelAllocations, setHotelAllocations] =
     useState<HotelAllocationsResponse | null>(null);
   const [allocationError, setAllocationError] = useState<string | null>(null);
@@ -860,11 +871,13 @@ export default function CancellationWizard({
   const [allocationRunProgress, setAllocationRunProgress] = useState<{
     done: number;
     total: number;
+    booked: number;
+    manualReview: number;
+    failed: number;
+    // False while the server is still searching hotels and planning rooms.
+    isBooking: boolean;
   } | null>(null);
   const allocationPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
-  const allocationAnimationRef = useRef<ReturnType<typeof setInterval> | null>(
     null,
   );
   const isPollingAllocationRef = useRef(false);
@@ -914,8 +927,27 @@ export default function CancellationWizard({
   const [step5CurrentPage, setStep5CurrentPage] = useState(1);
   const [step5ResultsPerPage, setStep5ResultsPerPage] = useState(10);
 
+  // Payment is only allowed once every PNR has a confirmed hotel booking.
+  const [step5BookingProgress, setStep5BookingProgress] =
+    useState<HotelAllocationProgressResponse | null>(null);
+  const [isLoadingStep5Progress, setIsLoadingStep5Progress] = useState(false);
+  const allPnrsBooked = step5BookingProgress?.fullyBooked === true;
+
   const isFetchingHotelSummaryRef = useRef(false);
   const isFetchingHotelBookingsRef = useRef(false);
+
+  const fetchStep5BookingProgress = async (fId: number) => {
+    setIsLoadingStep5Progress(true);
+    try {
+      const res = await cancellationService.getHotelAllocationProgress(fId);
+      setStep5BookingProgress(res?.data || res);
+    } catch (err: any) {
+      console.error("Failed to load hotel booking progress:", err);
+      setStep5BookingProgress(null);
+    } finally {
+      setIsLoadingStep5Progress(false);
+    }
+  };
 
   const fetchHotelSummary = async (fId: number) => {
     if (isFetchingHotelSummaryRef.current) return;
@@ -992,29 +1024,38 @@ export default function CancellationWizard({
     }
   }, [activeStep, flightId, step5CurrentPage, step5ResultsPerPage]);
 
+  useEffect(() => {
+    if (activeStep === 5 && flightId) {
+      fetchStep5BookingProgress(flightId);
+    }
+  }, [activeStep, flightId]);
+
   const ALLOCATION_POLL_MS = 3000;
   const ALLOCATION_POLL_MAX_MS = 8000;
   const MAX_ALLOCATION_POLL_ERRORS = 5;
   const allocationPollDelayRef = useRef(ALLOCATION_POLL_MS);
   const allocationLastProcessedRef = useRef(-1);
+  // PNRs already processed when polling started (e.g. booked in an earlier run).
+  const allocationStartProcessedRef = useRef(-1);
+  // The server doesn't report planning sub-steps, so they advance on a timer
+  // and the last one stays active until booking starts.
+  const ALLOCATION_PLANNING_STEP_MS = 4000;
+  const [allocationPlanningStep, setAllocationPlanningStep] = useState(0);
+  const isAllocationBooking = allocationRunProgress?.isBooking ?? false;
 
-  const startAllocationAnimation = () => {
-    if (allocationAnimationRef.current) return;
-    setAllocationProgress(1);
-    allocationAnimationRef.current = setInterval(() => {
-      setAllocationProgress((prev) => (prev < 4 ? prev + 1 : 1));
-    }, 1200);
-  };
+  useEffect(() => {
+    if (!isAllocating || isAllocationBooking) return;
+    const timer = setInterval(() => {
+      setAllocationPlanningStep((step) => Math.min(step + 1, 2));
+    }, ALLOCATION_PLANNING_STEP_MS);
+    return () => clearInterval(timer);
+  }, [isAllocating, isAllocationBooking]);
 
   const stopAllocationPolling = () => {
     isPollingAllocationRef.current = false;
     if (allocationPollTimerRef.current) {
       clearTimeout(allocationPollTimerRef.current);
       allocationPollTimerRef.current = null;
-    }
-    if (allocationAnimationRef.current) {
-      clearInterval(allocationAnimationRef.current);
-      allocationAnimationRef.current = null;
     }
   };
 
@@ -1023,7 +1064,6 @@ export default function CancellationWizard({
   const finishAllocation = (allocData: HotelAllocationsResponse) => {
     stopAllocationPolling();
     setIsAllocating(false);
-    setAllocationProgress(0);
     setAllocationRunProgress(null);
     const anythingBooked = (allocData.successfulPnrs ?? 0) > 0;
     if (allocData.lastRunError) {
@@ -1054,7 +1094,22 @@ export default function CancellationWizard({
           return;
         }
         const done = progress.processedPnrs ?? 0;
-        setAllocationRunProgress({ done, total: progress.totalPnrs ?? 0 });
+        const total = progress.totalPnrs ?? 0;
+        if (allocationStartProcessedRef.current < 0) {
+          allocationStartProcessedRef.current = done;
+        }
+        // Booking has started once a PNR is being booked or newly processed.
+        const bookingStarted =
+          (progress.pendingPnrs ?? 0) > 0 ||
+          done > allocationStartProcessedRef.current;
+        setAllocationRunProgress((prev) => ({
+          done,
+          total,
+          booked: progress.successfulPnrs ?? 0,
+          manualReview: progress.manualCheckPnrs ?? 0,
+          failed: progress.failedPnrs ?? 0,
+          isBooking: (prev?.isBooking ?? false) || bookingStarted,
+        }));
         allocationPollDelayRef.current =
           done === allocationLastProcessedRef.current
             ? Math.min(
@@ -1069,7 +1124,6 @@ export default function CancellationWizard({
         if (nextErrors >= MAX_ALLOCATION_POLL_ERRORS) {
           stopAllocationPolling();
           setIsAllocating(false);
-          setAllocationProgress(0);
           setAllocationError(
             "Lost connection while checking hotel allocation progress. Booking continues on the server; reopen this flight to see the latest status.",
           );
@@ -1088,9 +1142,11 @@ export default function CancellationWizard({
     isPollingAllocationRef.current = true;
     allocationPollDelayRef.current = ALLOCATION_POLL_MS;
     allocationLastProcessedRef.current = -1;
+    allocationStartProcessedRef.current = -1;
+    setAllocationRunProgress(null);
+    setAllocationPlanningStep(0);
     setIsAllocating(true);
     setAllocationError(null);
-    startAllocationAnimation();
     allocationPollTimerRef.current = setTimeout(
       () => pollAllocationStatus(fId),
       ALLOCATION_POLL_MS,
@@ -1108,8 +1164,18 @@ export default function CancellationWizard({
         if (cancelled) return;
         if (data?.running) {
           startAllocationPolling(flightId);
-        } else if (data?.lastRunError) {
+          return;
+        }
+        if (data?.lastRunError) {
           setAllocationError(data.lastRunError);
+        }
+        // Show earlier results when allocation already ran for this flight.
+        if (data && data.notStartedPnrs < data.totalPnrs) {
+          return cancellationService
+            .getHotelAllocationStatus(flightId)
+            .then((full) => {
+              if (!cancelled) setHotelAllocations(full?.data || full);
+            });
         }
       })
       .catch(() => undefined)
@@ -1122,17 +1188,50 @@ export default function CancellationWizard({
     };
   }, [activeStep, flightId]);
 
+  // Refresh once just after the next supplier check is due, so retry unlocks.
+  const SUPPLIER_CHECK_BUFFER_MS = 10000;
+  const SUPPLIER_CHECK_LATE_RETRY_MS = 30000;
+  useEffect(() => {
+    if (
+      activeStep !== 4 ||
+      !flightId ||
+      isAllocating ||
+      !hotelAllocations?.awaitingSupplierCheck
+    ) {
+      return;
+    }
+    const untilDue =
+      Date.parse(hotelAllocations.nextSupplierCheckAt ?? "") - Date.now();
+    const delay =
+      untilDue > 0
+        ? untilDue + SUPPLIER_CHECK_BUFFER_MS
+        : SUPPLIER_CHECK_LATE_RETRY_MS;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      cancellationService
+        .getHotelAllocationStatus(flightId)
+        .then((full) => {
+          if (!cancelled) setHotelAllocations(full?.data || full);
+        })
+        .catch(() => {
+          if (!cancelled) setHotelAllocations((prev) => prev && { ...prev });
+        });
+    }, delay);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [activeStep, flightId, isAllocating, hotelAllocations]);
+
   const handleAllocateHotels = async () => {
     if (isPollingAllocationRef.current) return;
     setIsAllocating(true);
     setAllocationError(null);
-    startAllocationAnimation();
 
     if (!flightId) {
       setTimeout(() => {
         stopAllocationPolling();
         setIsAllocating(false);
-        setAllocationProgress(0);
         setActiveStep(5);
       }, 1500);
       return;
@@ -1153,7 +1252,6 @@ export default function CancellationWizard({
       }
       stopAllocationPolling();
       setIsAllocating(false);
-      setAllocationProgress(0);
       setAllocationError(error.message || "Failed to allocate hotels");
       toast.error(error.message || "Failed to allocate hotels");
     }
@@ -1801,6 +1899,14 @@ export default function CancellationWizard({
       } else {
         changeStep(5);
       }
+    } else if (activeStep === 5) {
+      if (flightId && !allPnrsBooked) {
+        toast.error(
+          "All bookings must have a confirmed hotel before continuing to payment.",
+        );
+        return;
+      }
+      changeStep(6);
     } else if (activeStep === 6) {
       if (!flightId) {
         changeStep(7);
@@ -3178,69 +3284,151 @@ export default function CancellationWizard({
         );
       case 4:
         if (isAllocating) {
+          const isBooking = allocationRunProgress?.isBooking ?? false;
+          const processedPercentage = allocationRunProgress?.total
+            ? Math.round(
+                (allocationRunProgress.done / allocationRunProgress.total) *
+                  100,
+              )
+            : 0;
+          const remainingPnrs = allocationRunProgress
+            ? allocationRunProgress.total - allocationRunProgress.done
+            : 0;
+          const allocationStages = [
+            "Reviewing passenger requirements",
+            "Finding available hotel rooms",
+            "Optimizing room costs",
+            "Booking rooms",
+          ];
+          // Planning steps are 0–2; booking (3) starts once the server books a PNR.
+          const currentStage = isBooking ? 3 : allocationPlanningStep;
+
           return (
-            <div className="flex flex-col items-center justify-center py-6 space-y-6 animate-in fade-in zoom-in duration-300">
-              <div className="flex flex-col items-center gap-4">
-                <Loader2 className="h-10 w-10 text-[#0F2757] animate-spin" />
+            <div className="flex flex-col items-center justify-center -mt-2 space-y-4 animate-in fade-in duration-300">
+              <div className="flex flex-col items-center gap-2">
+                <div className="flex size-10 items-center justify-center rounded-full bg-[#0F2757]/5">
+                  <Loader2 className="h-5 w-5 text-[#0F2757] animate-spin" />
+                </div>
                 <div className="text-center">
-                  <h3 className="text-xl font-semibold text-gray-900 font-figtree">
-                    Booking Hotels...
+                  <h3 className="text-lg font-semibold text-gray-900 font-figtree">
+                    Hotel allocation in progress
                   </h3>
                   <p className="text-sm text-gray-500 mt-1">
-                    {allocationRunProgress && allocationRunProgress.total > 0
-                      ? `${allocationRunProgress.done} of ${allocationRunProgress.total} bookings processed`
-                      : "Finding and booking the best hotels for your passengers..."}
+                    {!isBooking
+                      ? remainingPnrs > 0
+                        ? `Searching hotels and planning rooms for ${remainingPnrs} PNR${remainingPnrs === 1 ? "" : "s"}.`
+                        : "Searching hotels and planning rooms."
+                      : `${allocationRunProgress?.done ?? 0} of ${allocationRunProgress?.total ?? 0} PNRs processed`}
                   </p>
                 </div>
               </div>
 
-              <div className="w-full max-w-md bg-white border border-gray-100 shadow-sm rounded-xl p-5 space-y-4">
-                {[
-                  { step: 1, label: "Analyzing booking requirements" },
-                  { step: 2, label: "Checking hotel availability" },
-                  { step: 3, label: "Optimizing room assignments" },
-                  { step: 4, label: "Calculating costs" },
-                ].map((item) => {
-                  const isCompleted = allocationProgress >= item.step;
-                  const isCurrent = allocationProgress === item.step - 1;
-
-                  return (
-                    <div
-                      key={item.step}
-                      className="flex items-center gap-3 text-sm font-medium transition-all duration-200"
-                    >
-                      {isCompleted ? (
-                        <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
-                      ) : isCurrent ? (
-                        <Loader2 className="h-5 w-5 text-[#0F2757] animate-spin shrink-0" />
-                      ) : (
-                        <Circle className="h-5 w-5 text-gray-300 shrink-0" />
-                      )}
-                      <span
-                        className={
-                          isCompleted
-                            ? "text-gray-900 font-medium"
-                            : isCurrent
-                              ? "text-gray-900 font-semibold"
-                              : "text-gray-400"
-                        }
+              <div className="w-full max-w-xl bg-white border border-gray-200 shadow-sm rounded-xl p-5 space-y-5">
+                <div className="space-y-3">
+                  {allocationStages.map((label, index) => {
+                    const isDone = index < currentStage;
+                    const isActive = index === currentStage;
+                    return (
+                      <div
+                        key={label}
+                        className="flex items-center gap-3 text-sm"
                       >
-                        {item.label}
+                        {isDone ? (
+                          <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
+                        ) : isActive ? (
+                          <Loader2 className="h-5 w-5 text-[#0F2757] animate-spin shrink-0" />
+                        ) : (
+                          <Circle className="h-5 w-5 text-gray-300 shrink-0" />
+                        )}
+                        <span
+                          className={
+                            isActive
+                              ? "font-semibold text-gray-900"
+                              : isDone
+                                ? "font-medium text-gray-900"
+                                : "text-gray-400"
+                          }
+                        >
+                          {label}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div>
+                  <div className="mb-2 flex items-center justify-between text-xs font-medium">
+                    <span className="text-gray-600">PNRs processed</span>
+                    {isBooking && (
+                      <span className="text-gray-900">
+                        {processedPercentage}%
                       </span>
-                    </div>
-                  );
-                })}
+                    )}
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-gray-100">
+                    {isBooking ? (
+                      <div
+                        className="h-full rounded-full bg-[#0F2757] transition-all duration-500"
+                        style={{ width: `${processedPercentage}%` }}
+                      />
+                    ) : (
+                      <div className="h-full w-full rounded-full bg-[#0F2757]/30 animate-pulse" />
+                    )}
+                  </div>
+                </div>
+
+                {isBooking && (
+                  <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3">
+                    {[
+                      {
+                        label: "Successfully booked",
+                        value: allocationRunProgress?.booked ?? 0,
+                        valueClass: "text-emerald-700",
+                        dotClass: "bg-emerald-500",
+                      },
+                      {
+                        label: "Manual check needed",
+                        value: allocationRunProgress?.manualReview ?? 0,
+                        valueClass: "text-amber-700",
+                        dotClass: "bg-amber-500",
+                      },
+                      {
+                        label: "Failed",
+                        value: allocationRunProgress?.failed ?? 0,
+                        valueClass: "text-red-700",
+                        dotClass: "bg-red-500",
+                      },
+                    ].map((status) => (
+                        <div
+                          key={status.label}
+                          className="rounded-lg border border-gray-100 bg-gray-50/60 px-3 py-3"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`size-2 rounded-full ${status.dotClass}`}
+                            />
+                            <span className="text-xs font-medium text-gray-500">
+                              {status.label}
+                            </span>
+                          </div>
+                          <p
+                            className={`mt-2 text-xl font-semibold tabular-nums ${status.valueClass}`}
+                          >
+                            {status.value}
+                          </p>
+                        </div>
+                      ))}
+                  </div>
+                )}
               </div>
 
-              <div className="w-full max-w-md bg-gray-50 rounded-xl p-4 flex items-start gap-3 border border-gray-200">
-                <Info className="h-5 w-5 text-gray-500 shrink-0 mt-0.5" />
+              <div className="w-full max-w-xl rounded-lg bg-gray-50 px-4 py-3 flex items-start gap-3 border border-gray-200">
+                <Info className="h-4 w-4 text-gray-500 shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-sm font-semibold text-gray-900">
-                    You can safely navigate away
-                  </p>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    This process continues in the background. We'll notify you
-                    when allocation is complete.
+                  <p className="text-xs text-gray-600">
+                    You can leave this page. Booking will continue in the
+                    background. Failed means no hotel could be booked for that
+                    PNR in this run; you can run allocation again to retry.
                   </p>
                 </div>
               </div>
@@ -3310,25 +3498,131 @@ export default function CancellationWizard({
               </div>
             </div>
 
+            {hotelAllocations && (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                  <span className="font-semibold text-gray-900">
+                    {hotelAllocations.successfulPnrs} of{" "}
+                    {hotelAllocations.totalPnrs} booking(s) confirmed
+                  </span>
+                  {hotelAllocations.failedPnrs > 0 && (
+                    <span className="text-red-600">
+                      {hotelAllocations.failedPnrs} failed
+                    </span>
+                  )}
+                  {hotelAllocations.manualCheckPnrs > 0 && (
+                    <span className="text-amber-600">
+                      {hotelAllocations.manualCheckPnrs} need manual check
+                    </span>
+                  )}
+                  {hotelAllocations.notStartedPnrs > 0 && (
+                    <span className="text-gray-500">
+                      {hotelAllocations.notStartedPnrs} not started
+                    </span>
+                  )}
+                </div>
+                <div className="border border-gray-200 rounded-xl overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="min-w-[100px]">PNR</TableHead>
+                        <TableHead className="min-w-[100px]">Class</TableHead>
+                        <TableHead className="min-w-[180px]">Hotel</TableHead>
+                        <TableHead className="min-w-[140px]">
+                          Booking Status
+                        </TableHead>
+                        <TableHead className="min-w-[80px]">Attempts</TableHead>
+                        <TableHead className="min-w-[240px]">Details</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {hotelAllocations.results.map((r) => (
+                        <TableRow key={r.bookingId}>
+                          <TableCell className="font-medium text-gray-900">
+                            {r.pnr}
+                          </TableCell>
+                          <TableCell className="capitalize">
+                            {ENUM_TO_TRAVEL_CLASS[r.travelClass] ||
+                              r.travelClass}
+                          </TableCell>
+                          <TableCell>{r.hotel?.hotelName || "-"}</TableCell>
+                          <TableCell>
+                            <StatusBadge
+                              status={
+                                HOTEL_BOOKING_STATUS_LABEL[
+                                  PNR_STATUS_TO_HOTEL_STATUS[r.bookingStatus]
+                                ] ?? r.bookingStatus
+                              }
+                            />
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {r.attempts}
+                          </TableCell>
+                          <TableCell className="text-xs text-gray-500 whitespace-normal">
+                            {r.reason || "-"}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            )}
+
             {allocationError && (
               <div className="w-full bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl text-sm text-left">
                 {allocationError}
               </div>
             )}
 
-            {hasPermission("edit") && (
-              <div className="flex items-center justify-end pt-2">
+            <div className="flex items-center justify-end gap-3 pt-2">
+              {hotelAllocations && hotelAllocations.successfulPnrs > 0 && (
                 <button
                   type="button"
-                  onClick={handleAllocateHotels}
-                  disabled={isAllocating || isCheckingAllocation}
-                  className="bg-[#2B3B67] hover:bg-[#1E2B4D] disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-medium py-2.5 px-6 rounded-lg transition-colors cursor-pointer text-sm inline-flex items-center gap-2"
+                  onClick={() => changeStep(5)}
+                  className="border border-gray-300 hover:bg-gray-50 text-[#374151] font-medium py-2.5 px-5 rounded-lg transition-colors cursor-pointer text-sm"
                 >
-                  <Building2 className="h-5 w-5" />
-                  <span>Allocate Hotel Reservations</span>
+                  View Booking Summary
                 </button>
-              </div>
-            )}
+              )}
+              {hotelAllocations &&
+                !hotelAllocations.fullyBooked &&
+                !hotelAllocations.canRetry && (
+                  <span className="text-sm text-gray-500">
+                    Retry already used for this flight. Contact support for the
+                    remaining bookings.
+                  </span>
+                )}
+              {hotelAllocations?.awaitingSupplierCheck &&
+                !hotelAllocations.fullyBooked &&
+                hotelAllocations.canRetry && (
+                  <span className="text-sm text-amber-600">
+                    Waiting for the hotel supplier to confirm pending bookings.
+                    Retry is available once that check is done.
+                  </span>
+                )}
+              {hasPermission("edit") &&
+                !hotelAllocations?.fullyBooked &&
+                (hotelAllocations?.canRetry ?? true) && (
+                  <button
+                    type="button"
+                    onClick={handleAllocateHotels}
+                    disabled={
+                      isAllocating ||
+                      isCheckingAllocation ||
+                      !!hotelAllocations?.awaitingSupplierCheck
+                    }
+                    className="bg-[#2B3B67] hover:bg-[#1E2B4D] disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-medium py-2.5 px-6 rounded-lg transition-colors cursor-pointer text-sm inline-flex items-center gap-2"
+                  >
+                    <Building2 className="h-5 w-5" />
+                    <span>
+                      {hotelAllocations
+                        ? "Retry Remaining Bookings"
+                        : "Allocate Hotel Reservations"}
+                    </span>
+                  </button>
+                )}
+            </div>
           </div>
         );
       case 5:
@@ -3372,6 +3666,59 @@ export default function CancellationWizard({
                 </button>
               )}
             </div>
+
+            {flightId &&
+              !isLoadingStep5Progress &&
+              step5BookingProgress &&
+              !allPnrsBooked && (
+                <div className="flex items-start gap-3 rounded-lg border border-[#FDE68A] bg-[#FFFBEB] p-4 text-sm text-[#92400E]">
+                  <Info className="h-5 w-5 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="font-semibold">
+                      {step5BookingProgress.successfulPnrs} of{" "}
+                      {step5BookingProgress.totalPnrs} booking(s) confirmed.
+                      Payment is available once every booking is confirmed.
+                    </p>
+                    <ul className="mt-1 list-disc pl-5 space-y-0.5">
+                      {step5BookingProgress.failedPnrs > 0 && (
+                        <li>
+                          {step5BookingProgress.failedPnrs} booking(s) failed.
+                          Run allocation again to retry them.
+                        </li>
+                      )}
+                      {step5BookingProgress.manualCheckPnrs > 0 && (
+                        <li>
+                          {step5BookingProgress.manualCheckPnrs} booking(s) need
+                          a manual check with the supplier.
+                        </li>
+                      )}
+                      {step5BookingProgress.pendingPnrs > 0 && (
+                        <li>
+                          {step5BookingProgress.pendingPnrs} booking(s) are
+                          still being confirmed.
+                        </li>
+                      )}
+                      {step5BookingProgress.notStartedPnrs > 0 && (
+                        <li>
+                          {step5BookingProgress.notStartedPnrs} booking(s) have
+                          no hotel yet.
+                        </li>
+                      )}
+                    </ul>
+                  </div>
+                  {hasPermission("edit") &&
+                    (step5BookingProgress.failedPnrs > 0 ||
+                      step5BookingProgress.notStartedPnrs > 0) && (
+                      <button
+                        type="button"
+                        onClick={() => changeStep(4)}
+                        className="shrink-0 rounded-lg border border-[#F59E0B] bg-white px-3 py-1.5 text-sm font-medium text-[#92400E] hover:bg-[#FEF3C7] transition-colors cursor-pointer"
+                      >
+                        Go to Allocation
+                      </button>
+                    )}
+                </div>
+              )}
 
             {/* Summary Cards */}
             <div className="grid grid-cols-3 gap-4">
@@ -4138,6 +4485,7 @@ export default function CancellationWizard({
                     isAllocating ||
                     isCheckingAllocation ||
                     isProcessingPayment ||
+                    (activeStep === 5 && !!flightId && !allPnrsBooked) ||
                     (activeStep === 6 && !paymentConfirmed)
                   }
                   className={cn(
@@ -4147,6 +4495,7 @@ export default function CancellationWizard({
                       isAllocating ||
                       isCheckingAllocation ||
                       isProcessingPayment ||
+                      (activeStep === 5 && !!flightId && !allPnrsBooked) ||
                       (activeStep === 6 && !paymentConfirmed)
                       ? "bg-[#9CA3AF] text-white cursor-not-allowed border-none"
                       : "bg-[#0F2757] hover:bg-[#162259] text-white",

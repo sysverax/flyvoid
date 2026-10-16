@@ -184,6 +184,7 @@ export interface WalletSummaryDTO {
   totalWalletBalance: number;
   totalCreditIssued: number;
   totalCreditUsed: number;
+  totalActiveAirlines?: number;
 }
 
 export const airlinesService = {
