@@ -133,6 +133,16 @@ export const config = {
       process.env.HOTEL_BOOKING_PLAN_TTL_MS ?? String(60 * 60 * 1000),
       10,
     ),
+    // MANUAL_CHECK bookings are re-checked with the supplier this long after
+    // a run, and again after each interval, this many times in total.
+    postRunCheckIntervalMs: parseInt(
+      process.env.HOTEL_POST_RUN_CHECK_INTERVAL_MS ?? String(5 * 60 * 1000),
+      10,
+    ),
+    postRunCheckCount: parseInt(
+      process.env.HOTEL_POST_RUN_CHECK_COUNT ?? "2",
+      10,
+    ),
     orderInfoDelayMs: parseInt(
       process.env.HOTEL_ORDER_INFO_DELAY_MS ?? String(90 * 1000),
       10,

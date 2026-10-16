@@ -929,7 +929,10 @@ export class CancelledFlightsRepository {
     leaseMs: number,
     runId: string,
     requestLogger: Logger,
-    /** Set for user-started runs: the run is counted and capped at this. */
+    /**
+     * Set for user-started runs: refused once this many runs were counted.
+     * The run itself is counted in completeFlightAllocationRun.
+     */
     maxUserRuns?: number,
   ): Promise<
     | { claimed: true; previousStatus: FlightStatus }
@@ -994,9 +997,6 @@ export class CancelledFlightsRepository {
           status: FlightStatus.HOTEL_ALLOCATION_IN_PROGRESS,
           hotelAllocationRunId: runId,
           hotelAllocationError: null,
-          ...(maxUserRuns !== undefined && {
-            hotelAllocationRuns: () => "hotel_allocation_runs + 1",
-          }),
         },
       );
       return { claimed: true as const, previousStatus: row.status };
@@ -1082,6 +1082,8 @@ export class CancelledFlightsRepository {
     platformFeePercentage: number,
     runError: string | null,
     requestLogger: Logger,
+    /** User-started run: counted toward the retry limit if it reached the supplier. */
+    countUserRun = false,
   ): Promise<void> {
     await this.manager.transaction(async (manager) => {
       const flight = await manager
@@ -1115,6 +1117,18 @@ export class CancelledFlightsRepository {
       ))
         ? FlightStatus.ALLOCATED
         : FlightStatus.PASSENGERS_BOOKING_CONFIRMED;
+      // A run that never sent a booking to the supplier (search outage,
+      // credentials error...) does not use up a retry.
+      const counted =
+        countUserRun &&
+        (
+          await manager.query(
+            `SELECT 1 FROM hotel_bookings
+              WHERE run_id = $1 AND provider_request_sent_at IS NOT NULL
+              LIMIT 1`,
+            [runId],
+          )
+        ).length > 0;
       const { confirmedCount, ...columns } = totals;
       await manager.update(
         CancelledFlightEntity,
@@ -1125,6 +1139,9 @@ export class CancelledFlightsRepository {
           status,
           hotelAllocationRunId: null,
           hotelAllocationError: runError,
+          ...(counted && {
+            hotelAllocationRuns: () => "hotel_allocation_runs + 1",
+          }),
         },
       );
       requestLogger.info("Completed hotel allocation run", {
@@ -1132,6 +1149,7 @@ export class CancelledFlightsRepository {
         cancelledFlightId,
         runId,
         status,
+        countedAsUserRun: counted,
         confirmedCount,
         totalPrice: totals.totalPrice,
         runError,
@@ -1334,10 +1352,9 @@ export class CancelledFlightsRepository {
         cancelledFlightId,
       })
       .andWhere("pnr.planId IS NOT NULL")
-      .andWhere(
-        "pnr.plannedAt > now() - (:ttlMs * interval '1 millisecond')",
-        { ttlMs },
-      )
+      .andWhere("pnr.plannedAt > now() - (:ttlMs * interval '1 millisecond')", {
+        ttlMs,
+      })
       .getRawMany<{ bookingId: number }>();
     return new Set(rows.map((row) => Number(row.bookingId)));
   }
@@ -1756,22 +1773,19 @@ export class CancelledFlightsRepository {
           .execute();
       }
     }
-    await manager.getRepository(HotelBookingEntity).update(
-      { id: attempt.id },
-      {
-        hotelId,
-        checkInDate: success.checkInDate ?? attempt.checkInDate,
-        checkOutDate: success.checkOutDate ?? attempt.checkOutDate,
-        currency: success.currency ?? attempt.currency ?? null,
-        actualPrice: success.actualPrice ?? 0,
-        buyingPrice: success.buyingPrice ?? 0,
-        platformFeePercentage:
-          success.platformFeePercentage ?? attempt.platformFeePercentage,
-        platformFee: success.platformFee ?? 0,
-        totalPrice: success.totalPrice ?? 0,
-        earnings: success.earnings ?? 0,
-      } as QueryDeepPartialEntity<HotelBookingEntity>,
-    );
+    await manager.getRepository(HotelBookingEntity).update({ id: attempt.id }, {
+      hotelId,
+      checkInDate: success.checkInDate ?? attempt.checkInDate,
+      checkOutDate: success.checkOutDate ?? attempt.checkOutDate,
+      currency: success.currency ?? attempt.currency ?? null,
+      actualPrice: success.actualPrice ?? 0,
+      buyingPrice: success.buyingPrice ?? 0,
+      platformFeePercentage:
+        success.platformFeePercentage ?? attempt.platformFeePercentage,
+      platformFee: success.platformFee ?? 0,
+      totalPrice: success.totalPrice ?? 0,
+      earnings: success.earnings ?? 0,
+    } as QueryDeepPartialEntity<HotelBookingEntity>);
     if (attempt.candidateId && success.distanceFromAirportKm != null) {
       await manager
         .getRepository(HotelAllocationOptionEntity)
@@ -1928,6 +1942,28 @@ export class CancelledFlightsRepository {
         { leaseMs },
       )
       .getRawMany();
+    return rows.map((row) => Number(row.id));
+  }
+
+  /**
+   * Flights (not mid-run) with MANUAL_CHECK attempts at this provider; their
+   * in-memory post-run checks are lost when the backend restarts.
+   */
+  async findFlightIdsWithManualCheckAttempts(
+    provider: string,
+  ): Promise<number[]> {
+    const rows: Array<{ id: number }> = await this.manager.query(
+      `SELECT DISTINCT hb.cancelled_flight_id AS "id"
+         FROM hotel_bookings hb
+         JOIN providers p ON p.id = hb.provider_id
+         JOIN cancelled_flights f ON f.id = hb.cancelled_flight_id
+        WHERE hb.status = $1 AND p.code = $2 AND f.status <> $3`,
+      [
+        HotelBookingAttemptStatus.MANUAL_CHECK,
+        provider,
+        FlightStatus.HOTEL_ALLOCATION_IN_PROGRESS,
+      ],
+    );
     return rows.map((row) => Number(row.id));
   }
 

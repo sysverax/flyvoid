@@ -100,6 +100,8 @@ interface AllocationRunContext {
   runId: string;
   /** Caps new booking attempts per PNR in this pass (recovery pass: 1). */
   maxNewAttemptsPerPnr?: number;
+  /** Started by a user: counts toward the retry limit if it reached the supplier. */
+  userStarted?: boolean;
 }
 
 interface BookingPlanningState {
@@ -183,8 +185,14 @@ const withAirportDistance = (
   return {
     ...content,
     distanceFromAirportKm: distanceKm(
-      { latitude: Number(airport.latitude), longitude: Number(airport.longitude) },
-      { latitude: Number(content.latitude), longitude: Number(content.longitude) },
+      {
+        latitude: Number(airport.latitude),
+        longitude: Number(airport.longitude),
+      },
+      {
+        latitude: Number(content.latitude),
+        longitude: Number(content.longitude),
+      },
     ),
   };
 };
@@ -350,8 +358,9 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       counts.set(residency, (counts.get(residency) ?? 0) + 1);
     }
     return (
-      [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] ??
-      null
+      [...counts].sort(
+        (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+      )[0]?.[0] ?? null
     );
   }
 
@@ -1305,7 +1314,15 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       runId,
     });
     void this.executeAllocationRun(
-      { flight, stay, platformFeePercentage, requestId, requestLogger, runId },
+      {
+        flight,
+        stay,
+        platformFeePercentage,
+        requestId,
+        requestLogger,
+        runId,
+        userStarted: true,
+      },
       bookings,
     );
 
@@ -1478,6 +1495,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
           run.platformFeePercentage,
           runError,
           requestLogger,
+          run.userStarted === true,
         )
         .catch((error: any) =>
           requestLogger.error("Could not complete the hotel allocation run", {
@@ -1501,6 +1519,38 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       config.hotelBooking.allocationRunLeaseMs,
     );
     timer.unref();
+    void this.resumeManualCheckChecks();
+  }
+
+  /**
+   * Post-run checks are in-memory timers; after a restart they are scheduled
+   * again for every flight that still has MANUAL_CHECK attempts. Flights
+   * mid-run are skipped: their run schedules its own checks when it ends.
+   */
+  private async resumeManualCheckChecks(): Promise<void> {
+    if (!this.hotelProvider.checkBookingStatus) return;
+    const requestId = randomUUID();
+    const requestLogger = winstonInstance.child({ requestId });
+    try {
+      const flightIds =
+        await this.cancelledFlightsRepository.findFlightIdsWithManualCheckAttempts(
+          config.hotelProvider.name,
+        );
+      for (const flightId of flightIds) {
+        this.schedulePostRunCheck(flightId, requestId, requestLogger);
+      }
+      if (flightIds.length > 0) {
+        requestLogger.info("Rescheduled MANUAL_CHECK post-run checks", {
+          context: this.context,
+          flightIds,
+        });
+      }
+    } catch (error: any) {
+      requestLogger.error("Could not reschedule MANUAL_CHECK post-run checks", {
+        context: this.context,
+        error: error?.message,
+      });
+    }
   }
 
   private async resumeInterruptedRuns(): Promise<void> {
@@ -1565,13 +1615,13 @@ export class HotelAllocationService implements OnApplicationBootstrap {
 
   /**
    * MANUAL_CHECK bookings left after a run are checked again with the
-   * supplier: 3 min after the run, then 5 min later. Still no final status
-   * after the last check: marked FAILED (partial bookings stay MANUAL_CHECK).
+   * supplier every postRunCheckIntervalMs, postRunCheckCount times (default:
+   * every 5 min, twice). Still no final status after the last check: marked
+   * FAILED (partial bookings stay MANUAL_CHECK).
    */
-  private static readonly POST_RUN_CHECK_DELAYS_MS = [
-    3 * 60 * 1000,
-    5 * 60 * 1000,
-  ];
+  private static postRunCheckCount(): number {
+    return Math.max(1, config.hotelBooking.postRunCheckCount);
+  }
 
   private schedulePostRunCheck(
     flightId: number,
@@ -1579,9 +1629,8 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     requestLogger: Logger,
     check = 0,
   ): void {
-    const delays = HotelAllocationService.POST_RUN_CHECK_DELAYS_MS;
     const timer = setTimeout(() => {
-      const last = check === delays.length - 1;
+      const last = check === HotelAllocationService.postRunCheckCount() - 1;
       this.reconcileManualChecks(flightId, requestId, requestLogger, last)
         .then((unresolved) => {
           if (unresolved > 0 && !last) {
@@ -1601,7 +1650,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
             error: error?.message,
           }),
         );
-    }, delays[check]);
+    }, config.hotelBooking.postRunCheckIntervalMs);
     timer.unref();
   }
 
@@ -1748,7 +1797,8 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       .replace("T", " ")
       .slice(0, 16);
     const waitedMin =
-      HotelAllocationService.POST_RUN_CHECK_DELAYS_MS.reduce((a, b) => a + b) /
+      (HotelAllocationService.postRunCheckCount() *
+        config.hotelBooking.postRunCheckIntervalMs) /
       60000;
     const reason =
       `Booking at ${hotelName} was sent to the supplier at ${sentAt} UTC, but no ` +
@@ -1772,13 +1822,16 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         attempt.bookingId,
         reason,
       );
-      requestLogger.warn("MANUAL_CHECK booking marked failed: no final status", {
-        context: this.context,
-        flightId: attempt.cancelledFlightId,
-        attemptId: attempt.id,
-        bookingId: attempt.bookingId,
-        reason,
-      });
+      requestLogger.warn(
+        "MANUAL_CHECK booking marked failed: no final status",
+        {
+          context: this.context,
+          flightId: attempt.cancelledFlightId,
+          attemptId: attempt.id,
+          bookingId: attempt.bookingId,
+          reason,
+        },
+      );
     }
   }
 
@@ -1881,7 +1934,11 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         uniqueOccupancies,
         requestId,
         requestLogger,
-        { residency: this.majorityResidency(plans.map(({ booking }) => booking)) },
+        {
+          residency: this.majorityResidency(
+            plans.map(({ booking }) => booking),
+          ),
+        },
       );
       hotels = await this.hotelContentService.enrichSearchResults(
         hotels,
@@ -3101,7 +3158,9 @@ export class HotelAllocationService implements OnApplicationBootstrap {
                 totalRooms: success ? (row!.totalRooms ?? 0) : 0,
                 totalPrice: success ? Number(row!.totalPrice ?? 0) : 0,
                 rooms: success
-                  ? (row!.rooms ?? []).map(({ rateKey, buyingPrice, ...room }) => room)
+                  ? (row!.rooms ?? []).map(
+                      ({ rateKey, buyingPrice, ...room }) => room,
+                    )
                   : [],
               }
             : null,
@@ -3283,7 +3342,9 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       checkInDate: allocation.checkInDate,
       checkOutDate: allocation.checkOutDate,
       totalRooms: allocation.totalRooms,
-      rooms: (allocation.rooms ?? []).map(({ rateKey, buyingPrice, ...room }) => room),
+      rooms: (allocation.rooms ?? []).map(
+        ({ rateKey, buyingPrice, ...room }) => room,
+      ),
       totalPrice: allocation.totalPrice,
       currency: outcome.currency,
       bookingReference: allocation.bookingReference,
