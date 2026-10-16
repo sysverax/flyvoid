@@ -1,5 +1,6 @@
 import { Provider } from "@nestjs/common";
 import { config } from "../../config/config";
+import { HotelProviderCode } from "../../common/constants/hotel-provider.constants";
 import { HOTEL_PROVIDER } from "./hotel-provider.interface";
 import { HotelbedsProvider } from "./hotelbeds/hotelbeds.provider";
 import { RatehawkProvider } from "./ratehawk/ratehawk.provider";
@@ -7,8 +8,8 @@ import { RatehawkProvider } from "./ratehawk/ratehawk.provider";
 // Every hotel supplier adapter. To add one, implement HotelProvider in its
 // own folder and list it here; HOTEL_PROVIDER in the env picks the active one.
 const HOTEL_PROVIDERS = {
-  hotelbeds: HotelbedsProvider,
-  ratehawk: RatehawkProvider,
+  [HotelProviderCode.HOTELBEDS]: HotelbedsProvider,
+  [HotelProviderCode.RATEHAWK]: RatehawkProvider,
 } as const;
 
 type HotelProviderName = keyof typeof HOTEL_PROVIDERS;

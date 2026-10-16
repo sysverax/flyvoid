@@ -259,6 +259,14 @@ export class CancelledFlightsService {
   ): Promise<BookingResponseDto> {
     const flight = await this.requireFlight(flightId, requestLogger);
 
+    this.assertPassengerLimit(
+      dto.pnr,
+      dto.adults,
+      dto.children,
+      flightId,
+      requestLogger,
+    );
+
     const duplicate =
       await this.cancelledFlightsRepository.findBookingByPnrAndFlight(
         dto.pnr,
@@ -304,6 +312,28 @@ export class CancelledFlightsService {
     });
 
     return this.toBookingResponse(booking);
+  }
+
+  private assertPassengerLimit(
+    pnr: string,
+    adults: number,
+    children: number,
+    flightId: number,
+    requestLogger: Logger,
+  ): void {
+    const passengers = adults + children;
+    if (passengers <= config.booking.maxPassengersPerPnr) return;
+
+    requestLogger.warn("Rejected booking: PNR exceeds passenger limit", {
+      context: this.context,
+      flightId,
+      pnr,
+      passengers,
+      maxPassengers: config.booking.maxPassengersPerPnr,
+    });
+    throw new BadRequestException(
+      `PNR '${pnr}' has ${passengers} passengers. A single PNR can include a maximum of ${config.booking.maxPassengersPerPnr} passengers (adults and children combined). Please split larger groups across separate PNRs.`,
+    );
   }
 
   // Minimal RFC4180 parser: handles quoted fields (so a comma-separated
@@ -394,6 +424,7 @@ export class CancelledFlightsService {
     }[] = [];
     const errorsList: { row: number; errors: string[] }[] = [];
     const badResidencyRows: string[] = [];
+    const oversizedPnrRows: string[] = [];
     let validCount = 0;
     let errorCount = 0;
 
@@ -451,6 +482,11 @@ export class CancelledFlightsService {
       if (isNaN(childrenRaw) || childrenRaw < 0) {
         errors.push("Children must be a number >= 0");
       }
+      if (adultsRaw + childrenRaw > config.booking.maxPassengersPerPnr) {
+        oversizedPnrRows.push(
+          `row ${rowNumber} (PNR '${pnr}', ${adultsRaw + childrenRaw} passengers)`,
+        );
+      }
 
       const validSpecialNotes = Object.values(SpecialNote) as string[];
       const specialNotes: SpecialNote[] = specialNotesRaw
@@ -500,6 +536,18 @@ export class CancelledFlightsService {
       });
       throw new BadRequestException(
         `Passport Country is missing or not a recognised country in row(s) ${badResidencyRows.join(", ")}. Use a country name or 2-letter code (e.g. United States or US). Nothing was imported; fix the file and upload it again.`,
+      );
+    }
+
+    if (oversizedPnrRows.length > 0) {
+      requestLogger.warn("Rejected booking import: PNRs exceed passenger limit", {
+        context: this.context,
+        flightId,
+        rows: oversizedPnrRows,
+        maxPassengers: config.booking.maxPassengersPerPnr,
+      });
+      throw new BadRequestException(
+        `A single PNR can include a maximum of ${config.booking.maxPassengersPerPnr} passengers (adults and children combined). The following exceed this limit: ${oversizedPnrRows.join(", ")}. Nothing was imported; split larger groups across separate PNRs and upload the file again.`,
       );
     }
 
@@ -604,6 +652,16 @@ export class CancelledFlightsService {
       flightId,
       requestLogger,
     );
+
+    if (dto.adults !== undefined || dto.children !== undefined) {
+      this.assertPassengerLimit(
+        dto.pnr ?? booking.pnr,
+        dto.adults ?? booking.adults,
+        dto.children ?? booking.children,
+        flightId,
+        requestLogger,
+      );
+    }
 
     if (dto.pnr && dto.pnr !== booking.pnr) {
       const conflict =

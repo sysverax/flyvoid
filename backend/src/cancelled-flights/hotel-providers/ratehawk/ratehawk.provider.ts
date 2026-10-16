@@ -171,7 +171,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
   private readonly keyId = config.hotelProvider.ratehawk.userId;
   private readonly apiKey = config.hotelProvider.ratehawk.apiKey;
   private readonly useSandbox = config.hotelProvider.useSandbox;
-  private readonly flyvoidEmail = config.flyvoid.email;
+  private readonly bookingConfirmationEmail = config.bookingConfirmationEmail;
   private readonly apiRoot = config.hotelProvider.useSandbox
     ? "https://api-sandbox.ratehawk.com/api/"
     : "https://api.ratehawk.com/api/";
@@ -236,11 +236,11 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     return !!this.keyId && !!this.apiKey;
   }
 
-  /** Production bookings must carry FlyVoid's corporate email, never the airline's (B2B prices). */
-  private assertFlyvoidEmail(): void {
-    if (!this.useSandbox && !this.flyvoidEmail) {
+  /** Production bookings must carry FlyVoid's booking confirmation email, never the airline's (B2B prices). */
+  private assertBookingConfirmationEmail(): void {
+    if (!this.useSandbox && !this.bookingConfirmationEmail) {
       throw new ServiceUnavailableException(
-        "FLYVOID_EMAIL (FlyVoid corporate email) is not configured; RateHawk bookings are disabled",
+        "BOOKING_CONFIRMATION_EMAIL is not configured; RateHawk bookings are disabled",
       );
     }
   }
@@ -1491,7 +1491,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
   ): Promise<HotelRateCheck> {
     const log = this.logFor(requestId);
     this.assertCredentials(log);
-    this.assertFlyvoidEmail();
+    this.assertBookingConfirmationEmail();
 
     try {
       this.logger.info(
@@ -1578,11 +1578,11 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
   ): Promise<RatehawkBookingResult> {
     const log = this.logFor(requestId);
     this.assertCredentials(log);
-    this.assertFlyvoidEmail();
-    const userEmail = this.flyvoidEmail || bookingData.contactEmail;
-    if (!this.flyvoidEmail) {
+    this.assertBookingConfirmationEmail();
+    const userEmail = this.bookingConfirmationEmail || bookingData.contactEmail;
+    if (!this.bookingConfirmationEmail) {
       log.warn(
-        "FLYVOID_EMAIL not set; sandbox booking uses the airline email",
+        "BOOKING_CONFIRMATION_EMAIL not set; sandbox booking uses the airline email",
         { context: this.context, bookingId: bookingData.bookingId },
       );
     }

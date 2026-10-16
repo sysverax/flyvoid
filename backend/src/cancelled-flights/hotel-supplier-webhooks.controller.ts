@@ -11,6 +11,7 @@ import {
 import { ApiExcludeController } from "@nestjs/swagger";
 import { Logger } from "winston";
 import { config } from "../config/config";
+import { HotelProviderCode } from "../common/constants/hotel-provider.constants";
 import { RequestId } from "../common/decorators/request-id.decorator";
 import { RequestLogger } from "../common/decorators/request-logger.decorator";
 import { CancelledFlightsRepository } from "./cancelled-flights.repository";
@@ -19,8 +20,6 @@ import {
   isValidRatehawkSignature,
   parseRatehawkBookingWebhook,
 } from "./hotel-providers/ratehawk/ratehawk-webhook";
-
-const RATEHAWK = "ratehawk";
 
 /** Public: called by suppliers, authenticated by their signature instead of a user login. */
 @ApiExcludeController()
@@ -73,7 +72,7 @@ export class HotelSupplierWebhooksController {
     }
     if (
       await this.cancelledFlightsRepository.isWebhookTokenUsed(
-        RATEHAWK,
+        HotelProviderCode.RATEHAWK,
         webhook.token,
       )
     ) {
@@ -85,7 +84,7 @@ export class HotelSupplierWebhooksController {
     let outcome;
     try {
       outcome = await this.hotelAllocationService.handleSupplierBookingStatus({
-        provider: RATEHAWK,
+        provider: HotelProviderCode.RATEHAWK,
         reference: webhook.partnerOrderId,
         reportedStatus: webhook.status,
         requestId,
@@ -107,7 +106,7 @@ export class HotelSupplierWebhooksController {
       );
     }
     await this.cancelledFlightsRepository.saveWebhookToken(
-      RATEHAWK,
+      HotelProviderCode.RATEHAWK,
       webhook.token,
     );
     return { status: "ok" };
