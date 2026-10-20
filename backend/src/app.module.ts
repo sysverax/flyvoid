@@ -15,6 +15,7 @@ import { AirlineModule } from "./airline/airline.module";
 import { AirportModule } from "./airline/airport.module";
 import { CancelledFlightsModule } from "./cancelled-flights/cancelled-flights.module";
 import { HotelBookingsModule } from "./hotel-bookings/hotel-bookings.module";
+import { DashboardModule } from "./dashboard/dashboard.module";
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { HotelBookingsModule } from "./hotel-bookings/hotel-bookings.module";
     AirportModule,
     CancelledFlightsModule,
     HotelBookingsModule,
+    DashboardModule,
   ],
 })
 export class AppModule implements NestModule {
