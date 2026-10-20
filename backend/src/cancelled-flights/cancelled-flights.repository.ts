@@ -1528,7 +1528,7 @@ export class CancelledFlightsRepository {
   ): Promise<HotelBookingEntity[]> {
     return this.manager.getRepository(HotelBookingEntity).find({
       where: { cancelledFlightId },
-      relations: { rooms: true, candidate: true },
+      relations: { rooms: true, candidate: true, hotel: true },
       order: { bookingId: "ASC", attemptOrder: "ASC" },
     });
   }
@@ -1817,7 +1817,8 @@ export class CancelledFlightsRepository {
       attempt.id,
       (success.rooms ?? []).map((room, index) => ({
         room: index + 1,
-        reference: references[index] ?? "",
+        reference:
+          references.length === 1 ? references[0] : (references[index] ?? ""),
         status: "booked",
         rateKey: room.rateKey ?? "",
         roomName: room.roomName,
@@ -1898,17 +1899,17 @@ export class CancelledFlightsRepository {
     });
   }
 
-  /** Saves a room's supplier order before its booking request is sent; false if the attempt is no longer pending. */
+  /** Saves the rooms of a supplier order before its booking request is sent; false if the attempt is no longer pending. */
   async recordProviderOrder(
     attemptId: number,
-    order: ProviderOrder,
+    orders: ProviderOrder[],
   ): Promise<boolean> {
     return this.manager.transaction(async (manager) => {
       const pending = await manager.getRepository(HotelBookingEntity).exists({
         where: { id: attemptId, status: HotelBookingAttemptStatus.PENDING },
       });
       if (!pending) return false;
-      await this.saveRoomOrders(manager, attemptId, [order]);
+      await this.saveRoomOrders(manager, attemptId, orders);
       return true;
     });
   }

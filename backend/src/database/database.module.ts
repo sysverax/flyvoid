@@ -102,6 +102,9 @@ import { config } from "../config/config";
           extra: {
             max: 10,
 
+            // Session time zone for now(); timestamp columns hold UTC (see config/timezone.ts).
+            options: "-c timezone=UTC",
+
             /**
              * Aurora Serverless v2 can pause after inactivity
              * (your cluster is set to pause after 5 min idle).

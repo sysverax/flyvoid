@@ -42,6 +42,23 @@ export const shapeKey = (occupancy: {
   children: number;
 }): string => `${occupancy.adults}_${occupancy.children}`;
 
+/** Order-insensitive key of a room combination ("2_0+2_0+1_0"). */
+export const combinationKey = (rooms: RoomOccupancy[]): string =>
+  rooms.map(shapeKey).sort().join("+");
+
+/** Order rates of a hotel that book exactly these rooms and have allotment for all of them. */
+export const orderRatesFor = (
+  hotel: Pick<AvailabilityHotel, "rates">,
+  rooms: RoomOccupancy[],
+) =>
+  hotel.rates.filter(
+    (rate) =>
+      !!rate.rooms &&
+      combinationKey(rate.rooms) === combinationKey(rooms) &&
+      rate.allotment !== null &&
+      rate.allotment >= rooms.length,
+  );
+
 const isExactFit = (rate: AvailabilityRoomRate, shape: RoomOccupancy) =>
   rate.adults === shape.adults && rate.children === shape.children;
 
@@ -88,6 +105,7 @@ export function toRoomNeeds(rooms: RoomOccupancy[]): RoomNeed[] {
 export function chooseRoomSplit(
   plan: RoomSplitPlan,
   hotels: AvailabilityHotel[],
+  orderHotels?: AvailabilityHotel[],
 ): RoomOccupancy[] {
   const hotelsByShape = new Map<string, Set<string>>();
   const cheapestByShape = new Map<string, number>();
@@ -111,6 +129,21 @@ export function chooseRoomSplit(
   const ranked = [plan.preferred, ...plan.fallbacks]
     .map((rooms) => {
       const needs = toRoomNeeds(rooms);
+      if (orderHotels && rooms.length > 1) {
+        const prices = orderHotels.flatMap((hotel) =>
+          orderRatesFor(hotel, rooms).map((rate) => rate.netPrice),
+        );
+        return {
+          rooms,
+          coverable: prices.length > 0,
+          oneHotel: prices.length > 0,
+          estimatedPrice: prices.length
+            ? Math.min(...prices)
+            : Number.POSITIVE_INFINITY,
+          distinctShapes: needs.length,
+          roomCount: rooms.length,
+        };
+      }
       const perShape = needs.map(
         (need) => hotelsByShape.get(shapeKey(need.shape)) ?? new Set<string>(),
       );
@@ -305,6 +338,9 @@ export function selectCandidateRates(
   ledger: AllotmentLedger,
   excludedRateKeys: ReadonlySet<string> = new Set(),
 ): SelectedRate[] | null {
+  if (candidate.rooms[0]?.rateOptions.some((o) => o.orderRooms)) {
+    return selectOrderRate(candidate, ledger, excludedRateKeys);
+  }
   const used = new Map<string, number>();
   const picks: SelectedRate[] = [];
   for (const room of candidate.rooms) {
@@ -327,6 +363,84 @@ export function selectCandidateRates(
     });
   }
   return picks.length > 0 ? picks : null;
+}
+
+/** One multiroom order rate for every room plan of the candidate, with allotment for all its rooms. */
+function selectOrderRate(
+  candidate: { rooms: CandidateRoomPlan[] },
+  ledger: AllotmentLedger,
+  excludedRateKeys: ReadonlySet<string>,
+): SelectedRate[] | null {
+  const totalRooms = candidate.rooms.reduce(
+    (sum, room) => sum + room.roomsNeeded,
+    0,
+  );
+  const option = candidate.rooms[0].rateOptions.find(
+    (o) =>
+      o.orderRooms === totalRooms &&
+      !excludedRateKeys.has(o.rateKey) &&
+      ledger.available(o.rateKey) >= totalRooms &&
+      candidate.rooms.every((room) =>
+        room.rateOptions.some((other) => other.rateKey === o.rateKey),
+      ),
+  );
+  if (!option) {
+    return null;
+  }
+  return candidate.rooms.map((room) => ({
+    rateKey: option.rateKey,
+    roomsNeeded: room.roomsNeeded,
+    shape: { adults: room.adults, children: room.children },
+    netPrice: option.netPrice,
+    inPool: option.inPool,
+  }));
+}
+
+/** Candidates for a PNR booked as one multiroom order; estimatedPrice is the order total. */
+export function buildOrderCandidatePlan(
+  orderHotels: AvailabilityHotel[],
+  rooms: RoomOccupancy[],
+): PlannedCandidate[] {
+  const needs = toRoomNeeds(rooms);
+  const candidates: PlannedCandidate[] = [];
+  for (const hotel of orderHotels) {
+    const rates = orderRatesFor(hotel, rooms).sort(
+      (a, b) => a.netPrice - b.netPrice || a.rateKey.localeCompare(b.rateKey),
+    );
+    if (rates.length === 0) {
+      continue;
+    }
+    const rateOptions: CandidateRateOption[] = rates.map((r) => ({
+      rateKey: r.rateKey,
+      adults: r.adults,
+      children: r.children,
+      netPrice: r.netPrice,
+      allotment: r.allotment ?? 0,
+      inPool: true,
+      orderRooms: rooms.length,
+    }));
+    candidates.push({
+      hotelCode: hotel.hotelCode,
+      hotelName: hotel.hotelName,
+      category: hotel.category,
+      stars: hotel.stars,
+      tier: "pool",
+      estimatedPrice: rates[0].netPrice,
+      currency: rates[0].currency,
+      rooms: needs.map((need) => ({
+        adults: need.shape.adults,
+        children: need.shape.children,
+        roomsNeeded: need.roomsNeeded,
+        rateOptions,
+      })),
+    });
+  }
+  return candidates.sort(
+    (a, b) =>
+      b.stars - a.stars ||
+      a.estimatedPrice - b.estimatedPrice ||
+      a.hotelCode.localeCompare(b.hotelCode),
+  );
 }
 
 export function buildCandidatePlan(

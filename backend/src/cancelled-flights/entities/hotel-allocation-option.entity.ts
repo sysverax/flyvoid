@@ -18,6 +18,8 @@ export interface CandidateRateOption {
   netPrice: number;
   allotment: number;
   inPool: boolean;
+  /** Set on a multiroom order rate: it books this many rooms (all room plans) as one supplier order. */
+  orderRooms?: number;
 }
 
 export interface CandidateRoomPlan {
