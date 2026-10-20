@@ -14,6 +14,7 @@ import {
   Min,
   MinLength,
 } from "class-validator";
+import { IsIanaTimeZone } from "../../../common/validator/time-zone.validator";
 
 export class AdminInviteAirlineAdminRequestDto {
   @ApiProperty({
@@ -113,7 +114,7 @@ export class AdminInviteAirlineAdminRequestDto {
   contactPhone!: string;
 
   @ApiProperty({
-    description: "Airline timezone",
+    description: 'Airline timezone as an IANA name, e.g. "Asia/Dubai" or "UTC"',
     example: "Asia/Dubai",
   })
   @IsString()
@@ -122,6 +123,7 @@ export class AdminInviteAirlineAdminRequestDto {
   )
   @IsNotEmpty()
   @MaxLength(100)
+  @IsIanaTimeZone()
   timezone!: string;
 
   @ApiProperty({

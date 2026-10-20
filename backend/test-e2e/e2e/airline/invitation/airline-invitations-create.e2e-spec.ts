@@ -489,6 +489,10 @@ describe("POST /api/v1/airline/invitations", () => {
       validInvitePayload({ countryCode: "AAA" }),
       validInvitePayload({ currency: "A".repeat(11) }),
       validInvitePayload({ timezone: "" }),
+      // Must be a named IANA timezone, not an offset label or raw offset.
+      validInvitePayload({ timezone: "UTC+5:30" }),
+      validInvitePayload({ timezone: "+05:30" }),
+      validInvitePayload({ timezone: "Mars/Olympus_Mons" }),
       validInvitePayload({ airlineCode: "BAD CODE" }),
       validInvitePayload({ companyRegistrationNumber: "@@@@@@" }),
     ];

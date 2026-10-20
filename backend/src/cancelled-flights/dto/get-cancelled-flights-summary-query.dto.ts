@@ -10,6 +10,10 @@ import {
   Min,
 } from "class-validator";
 import { FlightStatus } from "../entities/enums";
+import {
+  TIME_FRAME,
+  TimeFrame,
+} from "../../common/constants/time-frame.constants";
 
 // Same filters as GetCancelledFlightsQueryDto, minus pagination - a summary
 // is a single aggregate row, not a page of results.
@@ -40,7 +44,8 @@ export class GetCancelledFlightsSummaryQueryDto {
   search?: string;
 
   @ApiPropertyOptional({
-    description: "Filter by airline id (platform users only)",
+    description:
+      "Filter by airline id (platform users only; ignored for airline users, who are always scoped to their own airline)",
     example: 12,
   })
   @Transform(({ value }: { value: unknown }) => {
@@ -76,4 +81,17 @@ export class GetCancelledFlightsSummaryQueryDto {
   @IsDateString()
   @IsOptional()
   endDate?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "Relative reporting window in the airline's timezone (UTC for platform users). Cannot be combined with startDate/endDate.",
+    enum: TIME_FRAME,
+    example: TIME_FRAME.MONTH,
+  })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === "string" ? value.trim().toLowerCase() : value,
+  )
+  @IsEnum(TIME_FRAME)
+  @IsOptional()
+  timeFrame?: TimeFrame;
 }

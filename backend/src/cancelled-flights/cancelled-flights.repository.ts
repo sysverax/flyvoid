@@ -11,6 +11,12 @@ import {
 import { QueryDeepPartialEntity } from "typeorm/query-builder/QueryPartialEntity";
 import { config } from "../config/config";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
+import {
+  RAISED_FLIGHT_STATUSES,
+  REPORTING_DATE_COLUMN,
+  SPEND_FLIGHT_STATUSES,
+  toUtcTimestampParam,
+} from "./cancelled-flight-reporting.constants";
 import { BookingEntity } from "./entities/booking.entity";
 import {
   FlightStatus,
@@ -389,12 +395,19 @@ export class CancelledFlightsRepository {
       airlineId,
       startDate,
       endDate,
+      timeFrameRange,
     }: {
       status?: FlightStatus;
       search?: string;
       airlineId?: number;
       startDate?: string;
       endDate?: string;
+      /**
+       * A resolved timeFrame. Filters on the reporting timestamp instead of
+       * cancellationDate and applies the same status rules as the dashboard
+       * trends, so the totals equal the trend sums.
+       */
+      timeFrameRange?: { startUtc: Date; endUtc: Date };
     },
     requestLogger: Logger,
   ): Promise<{
@@ -416,6 +429,8 @@ export class CancelledFlightsRepository {
       airlineId,
       startDate,
       endDate,
+      timeFrameStartUtc: timeFrameRange?.startUtc.toISOString(),
+      timeFrameEndUtc: timeFrameRange?.endUtc.toISOString(),
     });
 
     const qb = this.flightRepo.createQueryBuilder("flight");
@@ -440,13 +455,32 @@ export class CancelledFlightsRepository {
       qb.andWhere("flight.cancellationDate <= :endDate", { endDate });
     }
 
+    // With a timeFrame, counts cover every raised (non-draft) flight and
+    // money only settled ones - the same rules as the dashboard trends.
+    if (timeFrameRange) {
+      qb.andWhere(`${REPORTING_DATE_COLUMN} >= :timeFrameStart`, {
+        timeFrameStart: toUtcTimestampParam(timeFrameRange.startUtc),
+      })
+        .andWhere(`${REPORTING_DATE_COLUMN} < :timeFrameEnd`, {
+          timeFrameEnd: toUtcTimestampParam(timeFrameRange.endUtc),
+        })
+        .andWhere("flight.status IN (:...raisedStatuses)", {
+          raisedStatuses: RAISED_FLIGHT_STATUSES,
+        })
+        .setParameter("spendStatuses", SPEND_FLIGHT_STATUSES);
+    }
+    const excludeUnsettled = timeFrameRange
+      ? " OR flight.status NOT IN (:...spendStatuses)"
+      : "";
+
     // Postgres numeric uniquely allows storing NaN (distinct from NULL), and
     // SUM() propagates it through the whole aggregate - COALESCE alone
     // doesn't catch it, since it only substitutes for NULL. The CASE guards
     // below treat a poisoned row as a 0 contribution instead of silently
     // NaN-ing (and, once serialized to JSON, null-ing) this entire summary.
-    const sumIgnoringNaN = (column: string) =>
-      `COALESCE(SUM(CASE WHEN ${column} = 'NaN' THEN 0 ELSE ${column} END), 0)`;
+    // With a timeFrame, unsettled flights also contribute 0.
+    const sumMoney = (column: string) =>
+      `COALESCE(SUM(CASE WHEN ${column} = 'NaN'${excludeUnsettled} THEN 0 ELSE ${column} END), 0)`;
 
     const raw = await qb
       .select("COUNT(flight.id)", "totalCancelFlights")
@@ -454,11 +488,11 @@ export class CancelledFlightsRepository {
       .addSelect("COALESCE(SUM(flight.totalChildren), 0)", "totalChildren")
       .addSelect("COALESCE(SUM(flight.totalBooking), 0)", "totalBookings")
       .addSelect("COALESCE(SUM(flight.totalHotelRooms), 0)", "totalRooms")
-      .addSelect(sumIgnoringNaN("flight.totalSellingPrice"), "totalHotelCost")
-      .addSelect(sumIgnoringNaN("flight.totalHotelTaxes"), "totalHotelTax")
-      .addSelect(sumIgnoringNaN("flight.totalDiscounts"), "totalDiscount")
-      .addSelect(sumIgnoringNaN("flight.totalPrice"), "totalCost")
-      .addSelect(sumIgnoringNaN("flight.totalPlatformFee"), "totalPlatformFee")
+      .addSelect(sumMoney("flight.totalSellingPrice"), "totalHotelCost")
+      .addSelect(sumMoney("flight.totalHotelTaxes"), "totalHotelTax")
+      .addSelect(sumMoney("flight.totalDiscounts"), "totalDiscount")
+      .addSelect(sumMoney("flight.totalPrice"), "totalCost")
+      .addSelect(sumMoney("flight.totalPlatformFee"), "totalPlatformFee")
       .getRawOne<{
         totalCancelFlights: string;
         totalAdults: string;
