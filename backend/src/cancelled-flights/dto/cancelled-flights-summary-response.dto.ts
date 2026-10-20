@@ -60,4 +60,13 @@ export class CancelledFlightsSummaryResponseDto {
     example: 420.05,
   })
   totalPlatformFee!: number;
+
+  @ApiProperty({
+    description:
+      "Current platform fee rate (%) of the airline user's airline. Always null for platform users.",
+    example: 10,
+    nullable: true,
+    type: Number,
+  })
+  platformFeePercentage!: number | null;
 }

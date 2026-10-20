@@ -12,6 +12,7 @@ import {
   MinLength,
   ValidateIf,
 } from "class-validator";
+import { IsIanaTimeZone } from "../../common/validator/time-zone.validator";
 
 export class UpdateAirlineRequestDto {
   @ApiPropertyOptional({ example: "SkyJet Airways", minLength: 2, maxLength: 150 })
@@ -65,10 +66,18 @@ export class UpdateAirlineRequestDto {
   @MaxLength(30)
   contactPhone?: string;
 
-  @ApiPropertyOptional({ example: "Asia/Dubai", maxLength: 100 })
+  @ApiPropertyOptional({
+    description: 'IANA timezone name, e.g. "Asia/Dubai" or "UTC"',
+    example: "Asia/Dubai",
+    maxLength: 100,
+  })
   @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === "string" ? value.trim() : value,
+  )
   @IsString()
   @MaxLength(100)
+  @IsIanaTimeZone()
   timezone?: string;
 
   @ApiPropertyOptional({

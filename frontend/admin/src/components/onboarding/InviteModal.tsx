@@ -7,21 +7,13 @@ import { InviteFormState, Invitation } from "@/src/types/onboarding";
 import { cn } from "@/src/lib/utils";
 import { Dropdown, DropdownOption } from "@/src/components/ui/Dropdown";
 import { countries } from "countries-list";
+import { DEFAULT_TIMEZONE, timezoneOptionsWith } from "@/src/lib/timezones";
 
 const COUNTRIES: DropdownOption[] = [
   { value: "", label: "Select Country" },
   ...Object.entries(countries)
     .map(([code, c]) => ({ value: code, label: c.name }))
     .sort((a, b) => a.label.localeCompare(b.label)),
-];
-
-const TIMEZONES: DropdownOption[] = [
-  { value: "UTC", label: "UTC" },
-  { value: "UTC+1", label: "UTC+1" },
-  { value: "UTC+2", label: "UTC+2" },
-  { value: "UTC+5:30", label: "UTC+5:30" },
-  { value: "UTC+9", label: "UTC+9" },
-  { value: "UTC+10", label: "UTC+10" },
 ];
 
 const CURRENCIES: DropdownOption[] = [
@@ -276,15 +268,18 @@ export function InviteModal({
                 {/* Timezone — custom Dropdown */}
                 <Field label="Timezone" required>
                   <Dropdown
-                    value={formState.timezone || TIMEZONES[0].value}
+                    value={formState.timezone || DEFAULT_TIMEZONE}
                     onChange={setField("timezone")}
-                    options={TIMEZONES}
+                    options={timezoneOptionsWith(formState.timezone)}
                     widthClass="w-full"
                     triggerWidthClass="w-full"
                     heightClass="h-[49px]"
                     bgClass="bg-white"
                     disabled={isLoading}
+                    maxListHeightClass="max-h-[296px]"
                     error={!!(errors["timezone"] && touched["timezone"])}
+                    searchable
+                    searchMatch="includes"
                   />
                 </Field>
 

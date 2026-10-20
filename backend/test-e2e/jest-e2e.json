@@ -6,7 +6,7 @@
     ],
     "rootDir": "..",
     "testEnvironment": "node",
-    "testRegex": "test/e2e/.*\\.e2e-spec\\.ts$",
+    "testRegex": "test-e2e/e2e/.*\\.e2e-spec\\.ts$",
     "transform": {
         "^.+\\.(t|j)s$": [
             "ts-jest",
@@ -16,7 +16,7 @@
         ]
     },
     "setupFiles": [
-        "<rootDir>/test/setup/jest.setup.ts"
+        "<rootDir>/test-e2e/setup/jest.setup.ts"
     ],
     "testTimeout": 30000,
     "verbose": true

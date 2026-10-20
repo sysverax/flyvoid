@@ -41,6 +41,7 @@ import { PaginationQueryDto } from "../common/dto/pagination-query.dto";
 import { Logger } from "winston";
 import { AuthenticatedUser } from "../auth/interfaces/authenticated-request.interface";
 import { UserType } from "../common/constants/user.constants";
+import { resolveTimeFrameRange } from "../common/utils/time-frame.util";
 import { GetCancelledFlightsQueryDto } from "./dto/get-cancelled-flights-query.dto";
 import { GetCancelledFlightsSummaryQueryDto } from "./dto/get-cancelled-flights-summary-query.dto";
 import { CancelledFlightsSummaryResponseDto } from "./dto/cancelled-flights-summary-response.dto";
@@ -896,6 +897,17 @@ export class CancelledFlightsService {
     const startDate = query.startDate;
     const endDate = query.endDate;
 
+    // No silent precedence between the two ways of picking a range.
+    if (query.timeFrame && (startDate || endDate)) {
+      requestLogger.warn(
+        "Rejected cancelled flights summary query: timeFrame combined with startDate/endDate",
+        { context: this.context, timeFrame: query.timeFrame, startDate, endDate },
+      );
+      throw new BadRequestException(
+        "timeFrame cannot be combined with startDate or endDate; send one or the other",
+      );
+    }
+
     if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
       requestLogger.warn(
         "Rejected cancelled flights summary query: startDate after endDate",
@@ -905,6 +917,7 @@ export class CancelledFlightsService {
     }
 
     let airlineScopeId: number | undefined;
+    let platformFeePercentage: number | null = null;
 
     if (user.userType === UserType.AIRLINE) {
       airlineScopeId = user.airlineId;
@@ -919,22 +932,36 @@ export class CancelledFlightsService {
         );
       }
 
-      if (query.airlineId && query.airlineId !== airlineScopeId) {
-        requestLogger.warn(
-          "Rejected cancelled flights summary query: airlineId filter for another airline",
+      // Airline users are always scoped to their own airline, so the
+      // platform-only airlineId filter is ignored rather than rejected.
+      if (query.airlineId !== undefined) {
+        requestLogger.debug(
+          "Ignoring airlineId filter on cancelled flights summary for airline user",
           {
             context: this.context,
             requestedAirlineId: query.airlineId,
             ownAirlineId: airlineScopeId,
           },
         );
-        throw new BadRequestException(
-          "airlineId filter is not allowed for other airlines",
-        );
       }
+
+      platformFeePercentage =
+        user.platformFeePercentage !== undefined &&
+        user.platformFeePercentage !== null
+          ? Number(user.platformFeePercentage)
+          : null;
     } else {
       airlineScopeId = query.airlineId;
     }
+
+    // Same range as the dashboard trends: the airline's timezone for airline
+    // users, UTC for platform users.
+    const timeFrameRange = query.timeFrame
+      ? resolveTimeFrameRange(
+          query.timeFrame,
+          user.userType === UserType.AIRLINE ? user.airlineTimezone : undefined,
+        )
+      : undefined;
 
     requestLogger.info("Fetching cancelled flights summary", {
       context: this.context,
@@ -943,6 +970,8 @@ export class CancelledFlightsService {
       airlineId: airlineScopeId,
       startDate,
       endDate,
+      timeFrame: query.timeFrame,
+      timezone: timeFrameRange?.timeZone,
     });
 
     const summary =
@@ -953,6 +982,7 @@ export class CancelledFlightsService {
           airlineId: airlineScopeId,
           startDate,
           endDate,
+          timeFrameRange,
         },
         requestLogger,
       );
@@ -960,9 +990,10 @@ export class CancelledFlightsService {
     requestLogger.info("Cancelled flights summary fetched", {
       context: this.context,
       ...summary,
+      platformFeePercentage,
     });
 
-    return summary;
+    return { ...summary, platformFeePercentage };
   }
 
   // ── List bookings ────────────────────────────────────────────────────────
