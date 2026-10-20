@@ -3135,7 +3135,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
           reason,
         );
         requestLogger.info(
-          "Hotel booking failed per supplier webhook",
+          "Hotel booking failed per supplier status",
           attemptMeta,
         );
       }
@@ -3159,7 +3159,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         failureReason: reason,
       },
     );
-    requestLogger.warn("Hotel booking partially booked per supplier webhook", {
+    requestLogger.warn("Hotel booking partially booked per supplier status", {
       ...attemptMeta,
       reason,
     });
@@ -3264,7 +3264,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       await this.cancelledFlightsRepository.promoteFlightAfterLateConfirmation(
         attempt.cancelledFlightId,
       );
-    requestLogger.info("Hotel booking confirmed per supplier webhook", {
+    requestLogger.info("Hotel booking confirmed per supplier status", {
       context: this.context,
       attemptId: attempt.id,
       bookingId: booking.id,

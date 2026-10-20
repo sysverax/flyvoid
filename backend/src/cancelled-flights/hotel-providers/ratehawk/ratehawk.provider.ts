@@ -186,6 +186,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
   private readonly requestTimeoutMs = 30000;
   // booking/finish can run long on the supplier side; aborting early loses the call.
   private readonly bookingFinishTimeoutMs = 120000;
+  private readonly bookingFormTimeoutMs = 60000;
   private readonly bookingStatusPollMs = 2500;
   private readonly geoHotelsLimit = 100;
   private readonly bookingStatusTimeoutMs = 180000;
@@ -1723,7 +1724,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
               user_ip: bookingData.userIp || "127.0.0.1",
             },
             log,
-            { retry: false },
+            { retry: false, timeoutMs: this.bookingFormTimeoutMs },
           );
         } catch (error: any) {
           if (!this.isTransient(error) || attempt === this.maxAttempts) {
