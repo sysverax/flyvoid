@@ -8,6 +8,7 @@ import {
   fillTrendBuckets,
   formatInTimeZone,
   getTimeZoneOffsetMinutes,
+  isIanaTimeZone,
   localDateTimeToUtc,
   resolveTimeFrameRange,
   resolveTimeZone,
@@ -24,6 +25,13 @@ describe("time-frame.util", () => {
       expect(resolveTimeZone(COLOMBO)).toBe(COLOMBO);
     });
 
+    it("falls back to UTC for raw offsets and legacy offset labels", () => {
+      // Postgres would read "+05:30" with the opposite sign.
+      expect(resolveTimeZone("+05:30")).toBe("UTC");
+      expect(resolveTimeZone("-04:00")).toBe("UTC");
+      expect(resolveTimeZone("UTC+5:30")).toBe("UTC");
+    });
+
     it("falls back to UTC for empty, missing or unknown timezones", () => {
       expect(resolveTimeZone("")).toBe("UTC");
       expect(resolveTimeZone("   ")).toBe("UTC");
@@ -31,6 +39,22 @@ describe("time-frame.util", () => {
       expect(resolveTimeZone(undefined)).toBe("UTC");
       expect(resolveTimeZone("Mars/Olympus_Mons")).toBe("UTC");
     });
+  });
+
+  describe("isIanaTimeZone", () => {
+    it.each(["UTC", "Asia/Colombo", "America/New_York", "Asia/Calcutta"])(
+      "accepts %s",
+      (zone) => {
+        expect(isIanaTimeZone(zone)).toBe(true);
+      },
+    );
+
+    it.each(["", "+05:30", "-04:00", "UTC+5:30", "UTC+1", "Mars/Olympus_Mons"])(
+      "rejects %j",
+      (zone) => {
+        expect(isIanaTimeZone(zone)).toBe(false);
+      },
+    );
   });
 
   describe("timezone conversion", () => {

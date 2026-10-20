@@ -23,6 +23,8 @@ export interface DropdownProps {
   maxListHeightClass?: string;
   error?: boolean;
   searchable?: boolean;
+  /** How the search text matches labels: from the start (default) or anywhere. */
+  searchMatch?: "startsWith" | "includes";
 }
 
 export function Dropdown({
@@ -38,6 +40,7 @@ export function Dropdown({
   maxListHeightClass,
   error = false,
   searchable = false,
+  searchMatch = "startsWith",
 }: DropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -146,7 +149,9 @@ export function Dropdown({
               const filteredOptions = options.filter((option) => {
                 if (option.value === "") return false;
                 if (!searchable) return true;
-                return option.label.toLowerCase().startsWith(searchQuery.toLowerCase());
+                const label = option.label.toLowerCase();
+                const query = searchQuery.toLowerCase();
+                return searchMatch === "includes" ? label.includes(query) : label.startsWith(query);
               });
 
               if (filteredOptions.length === 0) {

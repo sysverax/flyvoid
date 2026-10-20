@@ -94,21 +94,35 @@ const pad = (value: number, length = 2): string =>
   String(value).padStart(length, "0");
 
 /**
+ * True for a named IANA timezone such as "Asia/Colombo" or "UTC" (aliases
+ * included). Raw offsets like "+05:30" are rejected even though newer Node
+ * versions accept them: Postgres AT TIME ZONE reads their sign the opposite
+ * way, which would shift every range by twice the offset.
+ */
+export function isIanaTimeZone(value: string): boolean {
+  if (!value || /^[+-]/.test(value)) {
+    return false;
+  }
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Returns a valid IANA timezone, falling back to UTC when the value is empty
- * or unknown to the runtime (e.g. a typo saved on the airline record).
+ * or not a named IANA timezone (e.g. "UTC+5:30" saved on an older record).
  */
 export function resolveTimeZone(timeZone?: string | null): string {
   const candidate = timeZone?.trim();
-  if (!candidate) {
+  if (!candidate || !isIanaTimeZone(candidate)) {
     return DEFAULT_TIME_ZONE;
   }
-  try {
-    return new Intl.DateTimeFormat("en-US", {
-      timeZone: candidate,
-    }).resolvedOptions().timeZone;
-  } catch {
-    return DEFAULT_TIME_ZONE;
-  }
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: candidate,
+  }).resolvedOptions().timeZone;
 }
 
 export function toLocalDateTime(

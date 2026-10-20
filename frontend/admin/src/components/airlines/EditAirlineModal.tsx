@@ -19,25 +19,13 @@ import {
 } from "@/src/components/ui/table";
 
 import { countries } from "countries-list";
+import { DEFAULT_TIMEZONE, timezoneOptionsWith } from "@/src/lib/timezones";
 
 const COUNTRIES: DropdownOption[] = [
   { value: "", label: "Select Country" },
   ...Object.entries(countries)
     .map(([_, c]) => ({ value: c.name, label: c.name }))
     .sort((a, b) => a.label.localeCompare(b.label)),
-];
-
-const TIMEZONES: DropdownOption[] = [
-  { value: "UTC", label: "UTC" },
-  { value: "EST", label: "EST" },
-  { value: "CST", label: "CST" },
-  { value: "PST", label: "PST" },
-  { value: "GMT", label: "GMT" },
-  { value: "UTC+1", label: "UTC+1" },
-  { value: "UTC+2", label: "UTC+2" },
-  { value: "UTC+5:30", label: "UTC+5:30" },
-  { value: "UTC+9", label: "UTC+9" },
-  { value: "UTC+10", label: "UTC+10" },
 ];
 
 const CURRENCIES: DropdownOption[] = [
@@ -486,14 +474,17 @@ export function EditAirlineModal({
                 {/* Timezone — custom Dropdown */}
                 <Field label="Timezone" required>
                   <Dropdown
-                    value={editFormState.timezone || TIMEZONES[0].value}
+                    value={editFormState.timezone || DEFAULT_TIMEZONE}
                     onChange={setField("timezone")}
-                    options={TIMEZONES}
+                    options={timezoneOptionsWith(editFormState.timezone)}
                     widthClass="w-full"
                     triggerWidthClass="w-full"
                     heightClass="h-[49px]"
                     bgClass="bg-white"
                     error={!!(errors["timezone"] && touched["timezone"])}
+                    maxListHeightClass="max-h-[296px]"
+                    searchable
+                    searchMatch="includes"
                   />
                   {err("timezone")}
                 </Field>
