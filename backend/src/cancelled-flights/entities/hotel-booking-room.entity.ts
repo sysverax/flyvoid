@@ -13,7 +13,7 @@ import type { TaxAtProperty } from "../hotel-providers/hotel-provider.interface"
 
 export type HotelBookingRoomStatus = "pending" | "booked" | "failed";
 
-/** One room of a hotel booking; with RateHawk each room is its own supplier order. */
+/** One room of a hotel booking; rooms booked in one supplier order share its partner_order_id. */
 @Entity("hotel_booking_rooms")
 @Index("uq_hotel_booking_rooms_room", ["hotelBookingId", "roomNo"], {
   unique: true,

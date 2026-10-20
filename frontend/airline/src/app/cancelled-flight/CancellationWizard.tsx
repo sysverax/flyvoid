@@ -3881,6 +3881,8 @@ export default function CancellationWizard({
                   ) : hotelBookings.length > 0 ? (
                     hotelBookings.map((hb) => {
                       const pb = hb.passengerBooking;
+                      // id 0: the PNR has no hotel booking yet (e.g. failed before any supplier booking).
+                      const hasHotelBooking = hb.id > 0;
                       const hotelBookingId = String(hb.id);
                       const pnr = pb?.pnr || "-";
                       const contactName =
@@ -3915,9 +3917,9 @@ export default function CancellationWizard({
                       const bookingCost = Number(hb.totalCost) || 0;
 
                       return (
-                        <TableRow key={hb.id}>
+                        <TableRow key={pb?.id ?? hb.id}>
                           <TableCell className="font-medium text-gray-900">
-                            {hotelBookingId}
+                            {hasHotelBooking ? hotelBookingId : "-"}
                           </TableCell>
                           <TableCell className="font-medium text-gray-900">
                             {pnr}
@@ -3988,29 +3990,31 @@ export default function CancellationWizard({
                             })}
                           </TableCell>
                           <TableCell>
-                            <button
-                              type="button"
-                              disabled={loadingEyeBookingId === hb.id}
-                              onClick={() =>
-                                handleOpenBookingDetails(
-                                  hb,
-                                  pb,
-                                  hotelBookingId,
-                                  hotelName,
-                                  hb.rating,
-                                  rooms,
-                                  bookingCost,
-                                  travelClass,
-                                )
-                              }
-                              className="p-1.5 text-gray-400 hover:text-[#0F2757] hover:bg-gray-100 rounded transition-colors cursor-pointer disabled:opacity-80"
-                            >
-                              {loadingEyeBookingId === hb.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin text-[#0F2757]" />
-                              ) : (
-                                <Eye className="h-4 w-4" />
-                              )}
-                            </button>
+                            {hasHotelBooking && (
+                              <button
+                                type="button"
+                                disabled={loadingEyeBookingId === hb.id}
+                                onClick={() =>
+                                  handleOpenBookingDetails(
+                                    hb,
+                                    pb,
+                                    hotelBookingId,
+                                    hotelName,
+                                    hb.rating,
+                                    rooms,
+                                    bookingCost,
+                                    travelClass,
+                                  )
+                                }
+                                className="p-1.5 text-gray-400 hover:text-[#0F2757] hover:bg-gray-100 rounded transition-colors cursor-pointer disabled:opacity-80"
+                              >
+                                {loadingEyeBookingId === hb.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin text-[#0F2757]" />
+                                ) : (
+                                  <Eye className="h-4 w-4" />
+                                )}
+                              </button>
+                            )}
                           </TableCell>
                         </TableRow>
                       );

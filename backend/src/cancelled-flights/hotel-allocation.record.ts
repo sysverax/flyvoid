@@ -85,7 +85,7 @@ export type AllocationSuccess = Partial<
   >
 >;
 
-/** A room's supplier order while it is being booked (one order per room). */
+/** A room's supplier order while it is being booked; rooms of a multiroom order share its reference. */
 export interface ProviderOrder {
   room: number;
   reference: string;
@@ -112,14 +112,17 @@ export function rateKeysOf(rooms: HotelBookingRoomEntity[] | undefined): string[
     .filter(Boolean);
 }
 
-/** A booking's supplier order references, comma-separated in room order. */
+/** A booking's distinct supplier order references, comma-separated in room order. */
 export function bookingReferenceOf(
   rooms: HotelBookingRoomEntity[] | undefined,
 ): string {
-  return byRoomNo(rooms)
-    .map((room) => room.partnerOrderId ?? "")
-    .filter(Boolean)
-    .join(",");
+  return [
+    ...new Set(
+      byRoomNo(rooms)
+        .map((room) => room.partnerOrderId ?? "")
+        .filter(Boolean),
+    ),
+  ].join(",");
 }
 
 export function toProviderOrders(

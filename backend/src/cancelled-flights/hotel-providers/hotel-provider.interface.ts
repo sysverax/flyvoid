@@ -39,6 +39,8 @@ export interface AvailabilityRoomRate {
   cancellationPolicies: Array<{ amount: number; from: string }>;
   rateComments: string | null;
   paymentType: string | null;
+  /** Multiroom order rate: the rooms booked as one order; prices are the order total. */
+  rooms?: RoomOccupancy[];
 }
 
 export interface AvailabilityHotel {
@@ -146,6 +148,8 @@ export interface HotelRateCheck {
   bookingKey?: string;
   /** Taxes not included in the price; collected by the hotel from the guest. */
   taxesAtProperty?: TaxAtProperty[];
+  /** Set when the rate books several rooms as one order; prices are the order total. */
+  rooms?: Array<{ adults: number; children: number }>;
 }
 
 export interface HotelBookingResult {
@@ -179,6 +183,14 @@ export class HotelBookingOutcomeUnknownError extends Error {
   }
 }
 
+/** The supplier refused the booking under its group booking rules (RateHawk unauthorized_group_booking); nothing was booked. */
+export class HotelGroupBookingRestrictedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "HotelGroupBookingRestrictedError";
+  }
+}
+
 /** DI token for the active hotel supplier adapter (see hotel-providers/<supplier>/). */
 export const HOTEL_PROVIDER = Symbol("HOTEL_PROVIDER");
 
@@ -189,6 +201,17 @@ export interface HotelProvider {
     checkInDate: string,
     checkOutDate: string,
     occupancies: RoomOccupancy[],
+    requestId: string,
+    requestLogger: Logger,
+    options?: SupplierSearchOptions,
+  ): Promise<AvailabilityHotel[]>;
+
+  /** Rates that book all rooms of a combination as one supplier order; suppliers without multiroom orders leave this out. */
+  searchMultiRoomOrders?(
+    airport: { iataCode: string; latitude: number; longitude: number },
+    checkInDate: string,
+    checkOutDate: string,
+    combinations: RoomOccupancy[][],
     requestId: string,
     requestLogger: Logger,
     options?: SupplierSearchOptions,

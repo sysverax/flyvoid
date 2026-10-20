@@ -196,7 +196,7 @@ export class AirlineUserRepository {
 
     if (query.search) {
       queryBuilder.andWhere(
-        "(airlineUser.firstName ILIKE :search OR airlineUser.lastName ILIKE :search OR airlineUser.email ILIKE :search)",
+        "(airlineUser.firstName ILIKE :search OR airlineUser.lastName ILIKE :search OR airlineUser.email ILIKE :search OR airlineUser.id::text ILIKE :search)",
         { search: `%${query.search}%` },
       );
     }

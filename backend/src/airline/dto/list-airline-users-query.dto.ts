@@ -4,7 +4,7 @@ import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
 
 export class ListAirlineUsersQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({
-    description: "Search by first name, last name, or email",
+    description: "Search by first name, last name, userId, or email",
     example: "John",
   })
   @IsOptional()
