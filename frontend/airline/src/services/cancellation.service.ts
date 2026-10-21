@@ -224,6 +224,42 @@ export interface HotelAllocationProgressResponse {
   fullyBooked: boolean;
 }
 
+export interface RoomOccupancy {
+  adults: number;
+  children: number;
+}
+
+export interface HotelOptionRoom extends RoomOccupancy {
+  rateKey: string;
+  roomName: string;
+  boardName: string;
+  price: number;
+  currency: string;
+}
+
+export interface HotelRecommendation {
+  hotelCode: string;
+  hotelName: string;
+  stars: number;
+  address: string | null;
+  totalPrice: number;
+  currency: string;
+  rooms: HotelOptionRoom[];
+}
+
+export interface HotelRecommendationsResponse {
+  bookingId: number;
+  pnr: string;
+  adults: number;
+  children: number;
+  radius: number;
+  radiusUnit: string;
+  maxRadius: number;
+  rooms: RoomOccupancy[];
+  splitOptions: Array<{ rooms: RoomOccupancy[]; recommended: boolean }>;
+  options: HotelRecommendation[];
+}
+
 export interface HotelSummaryCancelledFlightSummaryDto {
   totalBookings: number;
   totalAdults: number;
@@ -571,6 +607,55 @@ export const cancellationService = {
     } catch (error: unknown) {
       throw new Error(
         extractErrorMessage(error, "Failed to load hotel allocation progress"),
+      );
+    }
+  },
+
+  async getHotelRecommendations(
+    flightId: number | string,
+    bookingId: number | string,
+    params?: { radius?: number; rooms?: RoomOccupancy[] },
+  ): Promise<{ success: boolean; data: HotelRecommendationsResponse }> {
+    try {
+      const response = await apiClient.get(
+        `/cancelled-flights/${flightId}/bookings/${bookingId}/hotel-recommendations`,
+        {
+          params: {
+            radius: params?.radius,
+            rooms: params?.rooms
+              ?.map((room) => `${room.adults}-${room.children}`)
+              .join(","),
+          },
+        },
+      );
+      return response.data;
+    } catch (error: unknown) {
+      throw new Error(
+        extractErrorMessage(error, "Failed to load hotel recommendations"),
+      );
+    }
+  },
+
+  async bookRecommendedHotel(
+    flightId: number | string,
+    bookingId: number | string,
+    option: HotelRecommendation,
+  ) {
+    try {
+      const response = await apiClient.post(
+        `/cancelled-flights/${flightId}/bookings/${bookingId}/book-hotel`,
+        {
+          rateKeys: option.rooms.map((room) => room.rateKey),
+          rooms: option.rooms.map(({ adults, children }) => ({
+            adults,
+            children,
+          })),
+        },
+      );
+      return response.data;
+    } catch (error: unknown) {
+      throw new Error(
+        extractErrorMessage(error, "Failed to book the selected hotel"),
       );
     }
   },

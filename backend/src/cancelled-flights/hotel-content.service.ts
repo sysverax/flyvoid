@@ -14,7 +14,6 @@ import { starsLabel } from "./hotel-allocation.record";
 import {
   AvailabilityHotel,
   HOTEL_PROVIDER,
-  HotelCandidate,
   HotelContentDetails,
   HotelProvider,
 } from "./hotel-providers/hotel-provider.interface";
@@ -164,35 +163,6 @@ export class HotelContentService
         rates: hotel.rates.map((rate) => ({ ...rate, hotelName, category })),
       };
     });
-  }
-
-  /** Same as enrichSearchResults, for single-PNR candidates (ids are "rh-<hotel code>"). */
-  async enrichCandidates(
-    candidates: HotelCandidate[],
-    requestId: string,
-    requestLogger: Logger,
-  ): Promise<HotelCandidate[]> {
-    if (!this.usesStoredContent || candidates.length === 0) return candidates;
-    const codeOf = (candidate: HotelCandidate) =>
-      candidate.id.replace(/^rh-/, "");
-    const stored = await this.ensureHotelContent(
-      candidates.map(codeOf),
-      requestId,
-      requestLogger,
-    );
-    return candidates
-      .filter((candidate) => stored.get(codeOf(candidate))?.isActive !== false)
-      .map((candidate) => {
-        const content = stored.get(codeOf(candidate));
-        return content
-          ? {
-              ...candidate,
-              name: content.name || candidate.name,
-              stars: content.starRating ?? 0,
-              address: content.address ?? candidate.address,
-            }
-          : candidate;
-      });
   }
 
   /** A booked hotel's profile from the hotels table (the supplier's own lookup when it has no content API). */

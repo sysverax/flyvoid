@@ -15,11 +15,11 @@ import {
   AvailabilityHotel,
   AvailabilityRoomRate,
   HotelBookingOutcomeUnknownError,
-  HotelCandidate,
   HotelContentDetails,
   HotelProvider,
   HotelRateCheck,
   RoomOccupancy,
+  SupplierSearchOptions,
 } from "../hotel-provider.interface";
 
 @Injectable()
@@ -377,6 +377,7 @@ export class HotelbedsProvider implements HotelProvider {
     occupancies: RoomOccupancy[],
     requestId: string,
     requestLogger: Logger,
+    options?: SupplierSearchOptions,
   ): Promise<AvailabilityHotel[]> {
     if (!config.hotelSearch.isAllowSearchAPI) {
       return await this.searchNearbyHotelsWithOccupanciesFromJson(
@@ -526,8 +527,10 @@ export class HotelbedsProvider implements HotelProvider {
     });
 
     try {
-      const { defaultRadius } = config.hotelSearch;
-      const maxRadius = Math.max(defaultRadius, config.hotelSearch.maxRadius);
+      const defaultRadius = options?.radius ?? config.hotelSearch.defaultRadius;
+      const maxRadius =
+        options?.radius ??
+        Math.max(defaultRadius, config.hotelSearch.maxRadius);
 
       // Widen while ANY shape has zero hits, not just when the total is
       // zero - otherwise a rare shape can starve while common ones already
@@ -685,50 +688,6 @@ export class HotelbedsProvider implements HotelProvider {
     }
 
     return this.normalizeAvailabilityHotels(mergedRawHotels);
-  }
-
-  async searchNearbyHotels(
-    airport: { iataCode: string; latitude: number; longitude: number },
-    checkInDate: string,
-    checkOutDate: string,
-    requestId: string,
-    requestLogger: Logger,
-  ): Promise<HotelCandidate[]> {
-    const hotels = await this.searchNearbyHotelsWithOccupancies(
-      airport,
-      checkInDate,
-      checkOutDate,
-      [{ adults: 1, children: 0 }],
-      requestId,
-      requestLogger,
-    );
-
-    return hotels.slice(0, 10).map((hotel) => {
-      const minPrice = hotel.rates.reduce(
-        (acc, rate) => (rate.netPrice < acc ? rate.netPrice : acc),
-        Number.POSITIVE_INFINITY,
-      );
-      const amenities = ["WiFi"];
-      if (hotel.stars >= 4) {
-        amenities.push("Business Center", "Elevator", "Wheelchair Accessible");
-      }
-      if (hotel.stars >= 5) {
-        amenities.push("Spa", "Swimming Pool", "24-hour Room Service");
-      } else {
-        amenities.push("Free Shuttle");
-      }
-
-      return {
-        id: `hb-${hotel.hotelCode}`,
-        name: hotel.hotelName,
-        address: hotel.address,
-        stars: hotel.stars,
-        amenities,
-        pricePerNight: Number.isFinite(minPrice) ? minPrice : 120,
-        description: `Enjoy a comfortable stay at ${hotel.hotelName}, a quality ${hotel.stars}-star hotel near the airport area.`,
-        rateKey: hotel.rates[0]?.rateKey ?? null,
-      };
-    });
   }
 
   // Facility groups that are administrative facts, not guest amenities.

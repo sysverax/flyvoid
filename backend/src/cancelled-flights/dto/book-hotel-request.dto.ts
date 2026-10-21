@@ -8,6 +8,8 @@ import {
   ValidateNested,
   IsEmail,
   IsObject,
+  IsInt,
+  Min,
 } from "class-validator";
 import { Type } from "class-transformer";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
@@ -65,6 +67,18 @@ export class PaymentDataDto {
   contactData!: ContactDataDto;
 }
 
+export class BookHotelRoomDto {
+  @ApiProperty({ example: 2 })
+  @IsInt()
+  @Min(1)
+  adults!: number;
+
+  @ApiProperty({ example: 0 })
+  @IsInt()
+  @Min(0)
+  children!: number;
+}
+
 export class BookHotelRequestDto {
   @ApiPropertyOptional({
     description:
@@ -89,6 +103,19 @@ export class BookHotelRequestDto {
   @IsString({ each: true })
   @IsNotEmpty({ each: true })
   rateKeys?: string[];
+
+  @ApiPropertyOptional({
+    description:
+      "Who stays in each room, in rateKeys order; must add up to the booking's adults and children.",
+    type: [BookHotelRoomDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(9)
+  @ValidateNested({ each: true })
+  @Type(() => BookHotelRoomDto)
+  rooms?: BookHotelRoomDto[];
 
   @ApiPropertyOptional({ type: PaymentDataDto })
   @IsOptional()
