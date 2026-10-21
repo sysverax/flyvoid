@@ -89,6 +89,7 @@ import { AuthenticatedRequest } from "../auth/interfaces/authenticated-request.i
 import { RequestLogger } from "../common/decorators/request-logger.decorator";
 import { Logger } from "winston";
 import { GetCancelledFlightsQueryDto } from "./dto/get-cancelled-flights-query.dto";
+import { HotelRecommendationsQueryDto } from "./dto/hotel-recommendations-query.dto";
 import { GetCancelledFlightsSummaryQueryDto } from "./dto/get-cancelled-flights-summary-query.dto";
 import { CancelledFlightsSummaryResponseDto } from "./dto/cancelled-flights-summary-response.dto";
 
@@ -1210,9 +1211,9 @@ export class CancelledFlightsController {
     },
   })
   @ApiOperation({
-    summary: "Get AI-recommended hotels for a passenger on a cancelled flight",
+    summary: "Get hotel options for one PNR on a cancelled flight",
     description:
-      "Fetches a list of local candidate hotels and scores them dynamically using the configured AI model based on the passenger's class and special needs.",
+      "Searches hotels with the PNR's room split (or the given one) within the given radius and returns each hotel's total price and rooms for the whole PNR.",
   })
   @ApiParam({ name: "id", description: "Cancelled flight UUID" })
   @ApiParam({ name: "bookingId", description: "Booking UUID" })
@@ -1223,21 +1224,31 @@ export class CancelledFlightsController {
     ),
   })
   async getHotelRecommendations(
+    @Req() request: AuthenticatedRequest,
     @Param("id", ParseIntPipe) id: number,
     @Param("bookingId", ParseIntPipe) bookingId: number,
+    @Query() query: HotelRecommendationsQueryDto,
     @RequestId() requestId: string,
     @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<object>> {
     const data = await this.hotelAllocationService.getHotelRecommendations(
       id,
       bookingId,
+      {
+        radius: query.radius,
+        rooms: query.rooms?.split(",").map((room) => {
+          const [adults, children] = room.split("-").map(Number);
+          return { adults, children };
+        }),
+      },
+      request.user,
       requestId,
       requestLogger,
     );
     return BaseResponseDto.success(
       data,
       requestId,
-      "AI Hotel recommendations fetched successfully",
+      "Hotel options fetched successfully",
     );
   }
 
@@ -1326,6 +1337,7 @@ export class CancelledFlightsController {
 
   // ── POST /cancelled-flights/:id/bookings/:bookingId/book-hotel ────────────
   @Post(":id/bookings/:bookingId/book-hotel")
+  @HttpCode(HttpStatus.ACCEPTED)
   @RequireAccessControl({
     airline: {
       asset: AirlineAsset.CANCELLED_FLIGHTS,
@@ -1333,9 +1345,9 @@ export class CancelledFlightsController {
     },
   })
   @ApiOperation({
-    summary: "Perform live hotel reservation and allocate it to the booking",
+    summary: "Start a live hotel reservation for the booking",
     description:
-      "Re-validates every room's rate, books them with the active hotel supplier, then stores the confirmed reservation on the booking's hotel allocation. Only for flights that are allocated, paid or published.",
+      "Records the booking attempt (the PNR shows as in progress) and returns; re-validating the rates and booking with the supplier continue in the background, and the outcome appears in the flight's hotel allocation status. Only for flights that are allocated, paid or published, or for a PNR the allocation run could not place.",
   })
   @ApiParam({ name: "id", description: "Cancelled flight id" })
   @ApiParam({ name: "bookingId", description: "Booking id" })
@@ -1375,7 +1387,7 @@ export class CancelledFlightsController {
     return BaseResponseDto.success(
       data,
       requestId,
-      "Hotel booked and allocated successfully",
+      "Hotel booking started",
     );
   }
 }
