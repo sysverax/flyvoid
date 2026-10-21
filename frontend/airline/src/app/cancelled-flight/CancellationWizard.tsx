@@ -45,6 +45,7 @@ import {
 import { useAuth } from "@/src/hooks/useAuth";
 import { BookingDetailsDrawer } from "@/src/components/ui/BookingDetailsDrawer";
 import { PassengerBookingDetailDrawer } from "@/src/components/ui/PassengerBookingDetailDrawer";
+import { FailedBookingHotelDrawer } from "@/src/components/ui/FailedBookingHotelDrawer";
 import { PLATFORM_FEE_PERCENT } from "@/src/lib/constants";
 import {
   Table,
@@ -69,6 +70,7 @@ import {
   BookingDTO,
   ReviewFlightResponse,
   HotelAllocationsResponse,
+  HotelAllocationBookingResult,
   HotelAllocationProgressResponse,
   HotelSummaryCancelledFlightSummaryDto,
   HotelBookingItemDTO,
@@ -867,6 +869,8 @@ export default function CancellationWizard({
   const [hotelAllocations, setHotelAllocations] =
     useState<HotelAllocationsResponse | null>(null);
   const [allocationError, setAllocationError] = useState<string | null>(null);
+  const [failedBookingForHotel, setFailedBookingForHotel] =
+    useState<HotelAllocationBookingResult | null>(null);
   const [isCheckingAllocation, setIsCheckingAllocation] = useState(false);
   const [allocationRunProgress, setAllocationRunProgress] = useState<{
     done: number;
@@ -1072,7 +1076,7 @@ export default function CancellationWizard({
       if (!anythingBooked) return;
     }
     setHotelAllocations(allocData);
-    changeStep(5);
+    if (allocData.fullyBooked) changeStep(5);
     showAllocationOutcome(allocData);
   };
 
@@ -1222,6 +1226,47 @@ export default function CancellationWizard({
       clearTimeout(timer);
     };
   }, [activeStep, flightId, isAllocating, hotelAllocations]);
+
+  // Drawer bookings run in the background; refresh until none is in progress.
+  const PENDING_BOOKING_REFRESH_MS = 5000;
+  const hasPendingBooking = !!hotelAllocations?.results?.some(
+    (r) => r.bookingStatus === "PENDING",
+  );
+  useEffect(() => {
+    if (activeStep !== 4 || !flightId || isAllocating || !hasPendingBooking) {
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      cancellationService
+        .getHotelAllocationStatus(flightId)
+        .then((full) => {
+          if (!cancelled) setHotelAllocations(full?.data || full);
+        })
+        .catch(() => {
+          if (!cancelled) setHotelAllocations((prev) => prev && { ...prev });
+        });
+    }, PENDING_BOOKING_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [activeStep, flightId, isAllocating, hasPendingBooking, hotelAllocations]);
+
+  // Go to the summary when the last PNR gets booked while this step is open.
+  const wasFullyBookedRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (activeStep !== 4 || !hotelAllocations) {
+      wasFullyBookedRef.current = null;
+      return;
+    }
+    const fullyBooked = hotelAllocations.fullyBooked;
+    if (fullyBooked && wasFullyBookedRef.current === false) {
+      toast.success("All bookings confirmed");
+      changeStep(5);
+    }
+    wasFullyBookedRef.current = fullyBooked;
+  }, [activeStep, hotelAllocations]);
 
   const handleAllocateHotels = async () => {
     if (isPollingAllocationRef.current) return;
@@ -3533,6 +3578,9 @@ export default function CancellationWizard({
                         </TableHead>
                         <TableHead className="min-w-[80px]">Attempts</TableHead>
                         <TableHead className="min-w-[240px]">Details</TableHead>
+                        <TableHead className="w-[72px] text-right">
+                          Action
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -3560,6 +3608,20 @@ export default function CancellationWizard({
                           </TableCell>
                           <TableCell className="text-xs text-gray-500 whitespace-normal">
                             {r.reason || "-"}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {r.bookingStatus === "FAILED" &&
+                              hasPermission("edit") && (
+                                <button
+                                  type="button"
+                                  onClick={() => setFailedBookingForHotel(r)}
+                                  className="inline-flex size-8 items-center justify-center rounded-lg border border-gray-200 text-[#0F2757] transition-colors hover:border-[#0F2757]/30 hover:bg-[#0F2757]/5"
+                                  title="Find and book a hotel"
+                                  aria-label={`Find a hotel for PNR ${r.pnr}`}
+                                >
+                                  <Building2 className="h-4 w-4" />
+                                </button>
+                              )}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -3706,17 +3768,15 @@ export default function CancellationWizard({
                       )}
                     </ul>
                   </div>
-                  {hasPermission("edit") &&
-                    (step5BookingProgress.failedPnrs > 0 ||
-                      step5BookingProgress.notStartedPnrs > 0) && (
-                      <button
-                        type="button"
-                        onClick={() => changeStep(4)}
-                        className="shrink-0 rounded-lg border border-[#F59E0B] bg-white px-3 py-1.5 text-sm font-medium text-[#92400E] hover:bg-[#FEF3C7] transition-colors cursor-pointer"
-                      >
-                        Go to Allocation
-                      </button>
-                    )}
+                  {hasPermission("edit") && (
+                    <button
+                      type="button"
+                      onClick={() => changeStep(4)}
+                      className="shrink-0 rounded-lg border border-[#F59E0B] bg-white px-3 py-1.5 text-sm font-medium text-[#92400E] hover:bg-[#FEF3C7] transition-colors cursor-pointer"
+                    >
+                      Go to Allocation
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -4572,6 +4632,19 @@ export default function CancellationWizard({
         hotelBookingId={selectedDrawerHotelBookingId}
         detailData={selectedDrawerDetailData}
         downloadType="download"
+      />
+
+      <FailedBookingHotelDrawer
+        isOpen={!!failedBookingForHotel}
+        flightId={flightId}
+        booking={failedBookingForHotel}
+        onClose={() => setFailedBookingForHotel(null)}
+        onBooked={async () => {
+          if (!flightId) return;
+          const response =
+            await cancellationService.getHotelAllocationStatus(flightId);
+          setHotelAllocations(response?.data || response);
+        }}
       />
     </div>
   );

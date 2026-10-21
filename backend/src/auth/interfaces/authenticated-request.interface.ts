@@ -25,4 +25,7 @@ export interface AuthenticatedUser {
   airlineId?: number;
   accessControls: UserAccessControlEntry[];
   platformFeePercentage?: number;
+  // Airline users only: the airline's IANA timezone, loaded by JwtAuthGuard
+  // with the airline record.
+  airlineTimezone?: string;
 }

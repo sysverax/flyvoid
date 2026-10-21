@@ -9,8 +9,8 @@
 import * as dotenv from "dotenv";
 import * as path from "path";
 
-// Load automation_test.env from the backend root.
-dotenv.config({ path: path.resolve(__dirname, "../../automation_test.env") });
+// Load .env.automation_test from the backend root.
+dotenv.config({ path: path.resolve(__dirname, "../../.env.automation_test") });
 
 // Derive BASE_URL if not explicitly provided.
 if (!process.env.BASE_URL) {

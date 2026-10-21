@@ -6,7 +6,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "dev": "ts-node-dev --respawn --transpile-only src/main.ts",
-    "test:e2e": "cross-env E2E_USE_RUNNING_APP=false jest -c test/jest-e2e.json",
+    "test:unit": "jest -c jest-unit.json",
+    "test:e2e": "cross-env E2E_USE_RUNNING_APP=false jest -c test-e2e/jest-e2e.json",
     "start": "node dist/main.js",
     "start:dev": "ts-node-dev --respawn --transpile-only src/main.ts",
     "start:test": "ts-node-dev --respawn --transpile-only src/main.ts",

@@ -30,6 +30,7 @@ import {
   ApiOperation,
   ApiParam,
   ApiProduces,
+  ApiQuery,
   ApiTags,
   ApiConflictResponse,
   ApiUnauthorizedResponse,
@@ -49,6 +50,7 @@ import {
   PlatformAsset,
 } from "../common/constants/access-control.constants";
 import { UserType } from "../common/constants/user.constants";
+import { TIME_FRAME } from "../common/constants/time-frame.constants";
 import { BaseResponseDto } from "../common/dto/base-response.dto";
 import { RequestId } from "../common/decorators/request-id.decorator";
 import {
@@ -87,6 +89,7 @@ import { AuthenticatedRequest } from "../auth/interfaces/authenticated-request.i
 import { RequestLogger } from "../common/decorators/request-logger.decorator";
 import { Logger } from "winston";
 import { GetCancelledFlightsQueryDto } from "./dto/get-cancelled-flights-query.dto";
+import { HotelRecommendationsQueryDto } from "./dto/hotel-recommendations-query.dto";
 import { GetCancelledFlightsSummaryQueryDto } from "./dto/get-cancelled-flights-summary-query.dto";
 import { CancelledFlightsSummaryResponseDto } from "./dto/cancelled-flights-summary-response.dto";
 
@@ -202,15 +205,24 @@ export class CancelledFlightsController {
       asset: PlatformAsset.CANCELLED_FLIGHTS,
       access: [AccessAction.VIEW],
     },
+    // Also backs the airline portal dashboard KPI cards.
     airline: {
-      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      asset: [AirlineAsset.CANCELLED_FLIGHTS, AirlineAsset.DASHBOARD],
       access: [AccessAction.VIEW],
     },
   })
   @ApiOperation({
     summary: "Get cancelled flights summary",
     description:
-      "Returns aggregate totals (flights, adults, children, bookings, rooms, hotel cost, hotel tax, discount, total cost, platform fee) for cancelled flights matching the same filters as GET /cancelled-flights: status, search, airlineId, startDate, endDate. Platform users can view all airlines and can filter by airlineId; airline users only see totals for their own airline.",
+      "Returns aggregate totals (flights, adults, children, bookings, rooms, hotel cost, hotel tax, discount, total cost, platform fee) for cancelled flights matching the same filters as GET /cancelled-flights: status, search, airlineId, startDate, endDate. Platform users can view all airlines and can filter by airlineId. Airline users are always scoped to their own airline from the access token: airlineId is ignored, and platformFeePercentage returns their airline's current fee rate.\n\n" +
+      "timeFrame (optional) picks the same range as the airline dashboard trends, in the airline's timezone (UTC for platform users), and filters on the flight's creation time instead of cancellationDate. With timeFrame, counts exclude draft flights and money totals only include allocated, paid and published flights, so totalCancelFlights and totalCost equal the sums of the cancelled-flights and hotel-spend trends. Without timeFrame the behaviour is unchanged. Sending timeFrame together with startDate or endDate returns 400.",
+  })
+  @ApiQuery({
+    name: "timeFrame",
+    required: false,
+    enum: TIME_FRAME,
+    description:
+      "today: 00:00 today to now; yesterday: 00:00-23:59:59 yesterday; week: the last 7 days including today; month: the last 12 calendar months including this one; year: the last 6 years including this one. Cannot be combined with startDate/endDate (400).",
   })
   @ApiOkResponse({
     schema: {
@@ -1199,9 +1211,9 @@ export class CancelledFlightsController {
     },
   })
   @ApiOperation({
-    summary: "Get AI-recommended hotels for a passenger on a cancelled flight",
+    summary: "Get hotel options for one PNR on a cancelled flight",
     description:
-      "Fetches a list of local candidate hotels and scores them dynamically using the configured AI model based on the passenger's class and special needs.",
+      "Searches hotels with the PNR's room split (or the given one) within the given radius and returns each hotel's total price and rooms for the whole PNR.",
   })
   @ApiParam({ name: "id", description: "Cancelled flight UUID" })
   @ApiParam({ name: "bookingId", description: "Booking UUID" })
@@ -1212,21 +1224,31 @@ export class CancelledFlightsController {
     ),
   })
   async getHotelRecommendations(
+    @Req() request: AuthenticatedRequest,
     @Param("id", ParseIntPipe) id: number,
     @Param("bookingId", ParseIntPipe) bookingId: number,
+    @Query() query: HotelRecommendationsQueryDto,
     @RequestId() requestId: string,
     @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<object>> {
     const data = await this.hotelAllocationService.getHotelRecommendations(
       id,
       bookingId,
+      {
+        radius: query.radius,
+        rooms: query.rooms?.split(",").map((room) => {
+          const [adults, children] = room.split("-").map(Number);
+          return { adults, children };
+        }),
+      },
+      request.user,
       requestId,
       requestLogger,
     );
     return BaseResponseDto.success(
       data,
       requestId,
-      "AI Hotel recommendations fetched successfully",
+      "Hotel options fetched successfully",
     );
   }
 
@@ -1315,6 +1337,7 @@ export class CancelledFlightsController {
 
   // ── POST /cancelled-flights/:id/bookings/:bookingId/book-hotel ────────────
   @Post(":id/bookings/:bookingId/book-hotel")
+  @HttpCode(HttpStatus.ACCEPTED)
   @RequireAccessControl({
     airline: {
       asset: AirlineAsset.CANCELLED_FLIGHTS,
@@ -1322,9 +1345,9 @@ export class CancelledFlightsController {
     },
   })
   @ApiOperation({
-    summary: "Perform live hotel reservation and allocate it to the booking",
+    summary: "Start a live hotel reservation for the booking",
     description:
-      "Re-validates every room's rate, books them with the active hotel supplier, then stores the confirmed reservation on the booking's hotel allocation. Only for flights that are allocated, paid or published.",
+      "Records the booking attempt (the PNR shows as in progress) and returns; re-validating the rates and booking with the supplier continue in the background, and the outcome appears in the flight's hotel allocation status. Only for flights that are allocated, paid or published, or for a PNR the allocation run could not place.",
   })
   @ApiParam({ name: "id", description: "Cancelled flight id" })
   @ApiParam({ name: "bookingId", description: "Booking id" })
@@ -1364,7 +1387,7 @@ export class CancelledFlightsController {
     return BaseResponseDto.success(
       data,
       requestId,
-      "Hotel booked and allocated successfully",
+      "Hotel booking started",
     );
   }
 }

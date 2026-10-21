@@ -1,17 +1,6 @@
 import { Logger } from "winston";
 import { HotelAllocationStatus } from "../entities/enums";
 
-export interface HotelCandidate {
-  id: string;
-  name: string;
-  address: string;
-  stars: number;
-  amenities: string[];
-  pricePerNight: number;
-  description: string;
-  rateKey?: string | null;
-}
-
 export interface RoomOccupancy {
   adults: number;
   children: number;
@@ -122,6 +111,8 @@ export interface HotelBookingRequest {
 /** Guest's passport country (ISO 3166-1 alpha-2); suppliers price by it. */
 export interface SupplierSearchOptions {
   residency?: string | null;
+  /** Search only this radius (in config.hotelSearch.unit) instead of widening from the default. */
+  radius?: number;
 }
 
 /** Supplier-neutral result of re-validating a rate before booking. */
@@ -216,14 +207,6 @@ export interface HotelProvider {
     requestLogger: Logger,
     options?: SupplierSearchOptions,
   ): Promise<AvailabilityHotel[]>;
-
-  searchNearbyHotels(
-    airport: { iataCode: string; latitude: number; longitude: number },
-    checkInDate: string,
-    checkOutDate: string,
-    requestId: string,
-    requestLogger: Logger,
-  ): Promise<HotelCandidate[]>;
 
   getHotelContentDetails(
     hotelCode: string,

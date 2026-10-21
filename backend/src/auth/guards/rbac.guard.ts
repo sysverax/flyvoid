@@ -7,6 +7,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
+import { winstonInstance } from "../../logger/logger.config";
 import { AuthRepository } from "../repositories/auth.repository";
 import {
   AdminRole,
@@ -58,7 +59,9 @@ export class RbacGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
-    const requestLogger = request.logger;
+    // request.logger is not attached by the registered middleware; fall back
+    // like @RequestLogger() does, so denials return 403 instead of a 500.
+    const requestLogger = request.logger ?? winstonInstance;
     const user = request.user as AuthenticatedUser;
 
     if (!user) {

@@ -130,65 +130,6 @@ Ensure the recommendations are sorted by suitability score in descending order.`
     return null;
   }
 
-  async getHotelRecommendations(
-    booking: {
-      firstName: string;
-      lastName: string;
-      travelClass: string;
-      adults: number;
-      children: number;
-      specialNotes?: string[];
-      additionalNotes?: string | null;
-    },
-    hotels: Array<{
-      id: string;
-      name: string;
-      address: string;
-      stars: number;
-      amenities: string[];
-      pricePerNight: number;
-      description: string;
-    }>,
-    requestId: string,
-  ): Promise<any> {
-    if (!this.apiKey) {
-      this.logger.warn(
-        "AI API Key is not configured.",
-        "AiService",
-        requestId,
-      );
-      throw new ServiceUnavailableException("AI API Key is not configured");
-    }
-
-    const userPrompt = `Passenger details:
-- Name: ${booking.firstName} ${booking.lastName}
-- Travel Class: ${booking.travelClass}
-- Party Size: ${booking.adults} Adults, ${booking.children} Children
-- Special Requirements: ${booking.specialNotes?.join(", ") || "None"}
-- Additional Notes: ${booking.additionalNotes || "None"}
-
-Candidate Hotels:
-${JSON.stringify(hotels, null, 2)}`;
-
-    try {
-      return await this.requestJsonFromAi(
-        this.buildHotelRecommendationSystemPrompt(),
-        userPrompt,
-        requestId,
-      );
-    } catch (error: any) {
-      this.logger.error(
-        `Failed to fetch hotel recommendations from AI API: ${error.message}`,
-        "AiService",
-        requestId,
-        { stack: error.stack },
-      );
-      throw new ServiceUnavailableException(
-        `AI API recommendation failed: ${error.message}`,
-      );
-    }
-  }
-
   async rankHotelsForPassengerGroup(
     groupContext: {
       travelClass: string;
