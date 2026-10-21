@@ -1,0 +1,10 @@
+PNR,First Name,Last Name,Email,Phone,Passport Country,Travel Class,Adults,Children,Special Notes,Additional Notes
+PS9001,Amara,Gunawardena,amara.gunawardena.ps9001@example.com,+94771239001,LK,first_class,2,0,,
+PS9002,Sunil,Rajapaksa,sunil.rajapaksa.ps9002@example.com,+94771239002,LK,first_class,1,0,,
+PS9003,Tharushi,Bandara,tharushi.bandara.ps9003@example.com,+94771239003,LK,first_class,2,2,,
+PS9004,Chamara,Dissanayake,chamara.dissanayake.ps9004@example.com,+94771239004,LK,business,3,0,,
+PS9005,Nadeesha,Herath,nadeesha.herath.ps9005@example.com,+94771239005,LK,business,1,1,,
+PS9006,Pradeep,Kumara,pradeep.kumara.ps9006@example.com,+94771239006,LK,business,2,0,,
+PS9007,Ishara,Senanayake,ishara.senanayake.ps9007@example.com,+94771239007,LK,economy,4,0,,
+PS9008,Lahiru,Mendis,lahiru.mendis.ps9008@example.com,+94771239008,LK,economy,1,0,,
+PS9009,Sanduni,Ekanayake,sanduni.ekanayake.ps9009@example.com,+94771239009,LK,economy,3,1,,
