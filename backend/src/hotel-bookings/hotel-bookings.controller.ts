@@ -118,7 +118,7 @@ export class HotelBookingsController {
   @RequireUserTypes(UserType.AIRLINE)
   @RequireAccessControl({
     airline: {
-      asset: AirlineAsset.BOOKINGS,
+      asset: [AirlineAsset.BOOKINGS, AirlineAsset.DASHBOARD],
       access: [AccessAction.VIEW],
     },
   })
