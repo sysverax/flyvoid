@@ -209,13 +209,13 @@ export class AirlineUserController {
   }
 
   @Get("profile")
-  @RequireUserRoles(AirlineRole.AIRLINE_ADMIN)
+  @RequireUserRoles(AirlineRole.AIRLINE_ADMIN, AirlineRole.AIRLINE_STAFF)
   @ApiBearerAuth("access-token")
   @ApiOperation({
     summary: "Airline profile",
     description: `
     Returns the airline profile associated with the authenticated airline admin's account.
-      Access: AIRLINE_ADMIN only. Requires userType=AIRLINE.
+      Access: AIRLINE_ADMIN and AIRLINE_STAFF. Requires userType=AIRLINE.
       Business logic validations:
         1. Authenticated user must be an active airline user (401 if not found or inactive)
         2. Associated airline must be active (401 if not found or inactive)`,
@@ -238,7 +238,7 @@ export class AirlineUserController {
   })
   @ApiForbiddenResponse({
     description:
-      "Insufficient permissions. AIRLINE_ADMIN role is required for this endpoint.",
+      "Insufficient permissions. AIRLINE_ADMIN and AIRLINE_STAFF roles are required for this endpoint.",
   })
   @ApiUnauthorizedResponse({
     schema: createUnauthorizedErrorSchema(
