@@ -4,6 +4,15 @@ import { endPool } from "../../../helpers/db-client.helper";
 import { deleteAdminsByEmailPattern } from "../../../helpers/db-cleanup.helper";
 import { getAdminTokens } from "../../../helpers/auth.helper";
 import { getAirlineTokens } from "../../../helpers/airline-auth.helper";
+import {
+  Granularity,
+  TimeFrame,
+  bucketKey,
+  offsetSuffix,
+  rangeFor,
+  wallClock,
+  zonedToUtc,
+} from "../../../helpers/time-zone.helper";
 import { insertActiveAdmin } from "../../../seeders/admin.seeder";
 import { insertAirlineUserRow } from "../../../seeders/airline-invitation.seeder";
 import {
@@ -19,13 +28,14 @@ const EMAIL_PATTERN = "%@e2e-dashboard.test";
 const TEST_PASSWORD = "Password@123";
 const BASE_PATH = "/api/v1/dashboard/airline";
 
-// Airline A uses Colombo: UTC+05:30 all year (no DST), so expected local
-// buckets can be computed with a fixed offset.
+// Airline A's stored timezone. Requests also use other timezones: the
+// request `timezone` must always win over the airline's.
 const COLOMBO = "Asia/Colombo";
-const COLOMBO_OFFSET_MS = 330 * 60_000;
-const HOUR_MS = 60 * 60_000;
+const NEW_YORK = "America/New_York";
+const KATHMANDU = "Asia/Kathmandu"; // +05:45, non-whole-hour offset
+const REQUEST_ZONES = [COLOMBO, NEW_YORK, KATHMANDU];
+const SECOND_MS = 1000;
 
-type Granularity = "hour" | "day" | "month" | "year";
 type Metric = "spend" | "passengers" | "flights";
 
 interface SeededFlight {
@@ -42,7 +52,7 @@ const ENDPOINTS: { path: string; field: Metric }[] = [
   { path: "cancelled-flights-trend", field: "flights" },
 ];
 
-const TIME_FRAMES: { timeFrame: string; granularity: Granularity }[] = [
+const TIME_FRAMES: { timeFrame: TimeFrame; granularity: Granularity }[] = [
   { timeFrame: "today", granularity: "hour" },
   { timeFrame: "yesterday", granularity: "hour" },
   { timeFrame: "week", granularity: "day" },
@@ -55,29 +65,6 @@ const SPEND_STATUSES: DashboardFlightStatus[] = [
   "paid",
   "published",
 ];
-
-const pad = (value: number) => String(value).padStart(2, "0");
-
-/** Colombo wall clock, read through the UTC getters of the returned Date. */
-const colomboWallClock = (instant: Date) =>
-  new Date(instant.getTime() + COLOMBO_OFFSET_MS);
-
-function colomboBucketKey(instant: Date, granularity: Granularity): string {
-  const local = colomboWallClock(instant);
-  const year = String(local.getUTCFullYear());
-  const month = `${year}-${pad(local.getUTCMonth() + 1)}`;
-  const day = `${month}-${pad(local.getUTCDate())}`;
-  switch (granularity) {
-    case "hour":
-      return `${day}T${pad(local.getUTCHours())}:00`;
-    case "day":
-      return day;
-    case "month":
-      return month;
-    case "year":
-      return year;
-  }
-}
 
 const WEEKDAYS = [
   "Sunday",
@@ -127,33 +114,43 @@ function metricValue(flight: SeededFlight, metric: Metric): number {
   return metric === "passengers" ? flight.adults + flight.children : 1;
 }
 
+/** Expected value per bucket for flights inside the time frame, in `zone`. */
 function expectedValues(
   flights: SeededFlight[],
   metric: Metric,
+  timeFrame: TimeFrame,
   granularity: Granularity,
+  zone: string,
+  now: Date,
 ): Map<string, number> {
+  const { start, end } = rangeFor(timeFrame, now, zone);
   const values = new Map<string, number>();
   for (const flight of flights) {
-    const key = colomboBucketKey(flight.createdAt, granularity);
+    const at = flight.createdAt.getTime();
+    if (at < start || at >= end) continue;
+    const key = bucketKey(flight.createdAt, granularity, zone);
     values.set(key, (values.get(key) ?? 0) + metricValue(flight, metric));
   }
   return values;
 }
 
-function expectedBucketCount(timeFrame: string, now: Date): number {
+function expectedBucketCount(timeFrame: TimeFrame, now: Date, zone: string): number {
   switch (timeFrame) {
     case "today":
-      return colomboWallClock(now).getUTCHours() + 1;
+      return wallClock(zone, now).hour + 1;
     case "yesterday":
       return 24;
     case "week":
       return 7;
     case "month":
       return 12;
-    default:
+    case "year":
       return 6;
   }
 }
+
+const sumOf = (points: Record<string, number>[], field: Metric) =>
+  points.reduce((sum, point) => sum + point[field], 0);
 
 describe("Airline dashboard trends", () => {
   const airlineIds: number[] = [];
@@ -165,9 +162,6 @@ describe("Airline dashboard trends", () => {
   let staffWithoutDashboardTokenA = "";
   let adminTokenB = "";
   let platformToken = "";
-
-  let currentHourStart: Date;
-  let yesterdayTenAm: Date;
 
   beforeAll(async () => {
     const suffix = `${Date.now()}`.slice(-8);
@@ -242,28 +236,14 @@ describe("Airline dashboard trends", () => {
         ])
       ).map((tokens) => tokens.accessToken);
 
-    // Seed relative to "now" in Colombo: one second into the current local
-    // hour (today) and 10:00 local yesterday.
     const now = new Date();
-    const local = colomboWallClock(now);
-    currentHourStart = new Date(
-      Date.UTC(
-        local.getUTCFullYear(),
-        local.getUTCMonth(),
-        local.getUTCDate(),
-        local.getUTCHours(),
-      ) - COLOMBO_OFFSET_MS,
-    );
-    const currentHourFlightTime = new Date(currentHourStart.getTime() + 1000);
-    yesterdayTenAm = new Date(
-      Date.UTC(
-        local.getUTCFullYear(),
-        local.getUTCMonth(),
-        local.getUTCDate() - 1,
-        10,
-      ) - COLOMBO_OFFSET_MS,
-    );
 
+    // Status mix one second into the current Colombo hour.
+    const local = wallClock(COLOMBO, now);
+    const currentHourFlightTime = new Date(
+      zonedToUtc(COLOMBO, local.year, local.month, local.day, local.hour) +
+        SECOND_MS,
+    );
     flightsA.push(
       { status: "published", createdAt: currentHourFlightTime, adults: 2, children: 1, price: 100.5 },
       { status: "allocated", createdAt: currentHourFlightTime, adults: 3, children: 0, price: 200 },
@@ -271,8 +251,20 @@ describe("Airline dashboard trends", () => {
       { status: "in_progress", createdAt: currentHourFlightTime, adults: 4, children: 0, price: 999 },
       // Excluded from every trend.
       { status: "draft", createdAt: currentHourFlightTime, adults: 5, children: 0, price: 500 },
-      { status: "paid", createdAt: yesterdayTenAm, adults: 1, children: 1, price: 50 },
     );
+
+    // A flight on each request timezone's local midnight (today) and one
+    // second before it (yesterday). These instants differ per timezone, so
+    // the same data falls into different time frames and buckets per zone.
+    // Distinct prices make any wrongly bucketed flight visible.
+    let price = 1;
+    for (const zone of REQUEST_ZONES) {
+      const todayStart = rangeFor("today", now, zone).start;
+      for (const at of [todayStart, todayStart - SECOND_MS]) {
+        flightsA.push({ status: "paid", createdAt: new Date(at), adults: 1, children: 1, price });
+        price *= 2;
+      }
+    }
 
     for (const flight of flightsA) {
       await insertDashboardCancelledFlight({
@@ -306,104 +298,102 @@ describe("Airline dashboard trends", () => {
 
   describe.each(ENDPOINTS)("GET /dashboard/airline/$path", ({ path, field }) => {
     const url = `${BASE_PATH}/${path}`;
+    const getTrend = (token: string, query: Record<string, unknown>) =>
+      api.get(url).query(query).set("Authorization", `Bearer ${token}`);
 
-    it.each(TIME_FRAMES)(
-      "timeFrame=$timeFrame returns every bucket with the airline's own values, zero-filled",
-      async ({ timeFrame, granularity }) => {
-        const before = new Date();
-        const res = await api
-          .get(url)
-          .query({ timeFrame })
-          .set("Authorization", `Bearer ${adminTokenA}`);
-        const after = new Date();
+    describe.each(REQUEST_ZONES)("timezone=%s", (timezone) => {
+      it.each(TIME_FRAMES)(
+        "timeFrame=$timeFrame returns every bucket in the request timezone, zero-filled",
+        async ({ timeFrame, granularity }) => {
+          const before = new Date();
+          const res = await getTrend(adminTokenA, { timeFrame, timezone });
+          const after = new Date();
 
-        expect(res.status).toBe(200);
-        expect(res.body.success).toBe(true);
+          expect(res.status).toBe(200);
+          expect(res.body.success).toBe(true);
 
-        const data = res.body.data;
-        expect(data.timeFrame).toBe(timeFrame);
-        expect(data.granularity).toBe(granularity);
-        expect(data.timezone).toBe(COLOMBO);
-        expect(data.startDate).toMatch(/\+05:30$/);
-        expect(data.endDate).toMatch(/T23:59:59\+05:30$/);
-        // The platform bills everything in USD, so no currency is returned.
-        expect(data.currency).toBeUndefined();
+          const data = res.body.data;
+          const { start, end } = rangeFor(timeFrame, before, timezone);
+          expect(data.timeFrame).toBe(timeFrame);
+          expect(data.granularity).toBe(granularity);
+          expect(data.timezone).toBe(timezone);
+          expect(data.startDate.endsWith(offsetSuffix(timezone, start))).toBe(true);
+          expect(data.endDate).toMatch(/T23:59:59[+-]\d{2}:\d{2}$/);
+          expect(data.endDate.endsWith(offsetSuffix(timezone, end - SECOND_MS))).toBe(true);
+          expect(data.currency).toBeUndefined();
 
-        // "today" grows by one bucket per hour; tolerate an hour rollover
-        // between building the expectation and the response.
-        expect([
-          expectedBucketCount(timeFrame, before),
-          expectedBucketCount(timeFrame, after),
-        ]).toContain(data.points.length);
+          // "today" grows by one bucket per hour; tolerate an hour rollover
+          // between building the expectation and the response.
+          expect([
+            expectedBucketCount(timeFrame, before, timezone),
+            expectedBucketCount(timeFrame, after, timezone),
+          ]).toContain(data.points.length);
 
-        const expected = expectedValues(flightsA, field, granularity);
-        const buckets = new Set<string>();
-        for (const point of data.points) {
-          expect(typeof point[field]).toBe("number");
-          expect(point.label).toBe(expectedLabel(point.bucket, granularity));
-          expect(point[field]).toBeCloseTo(expected.get(point.bucket) ?? 0, 2);
-          buckets.add(point.bucket);
-        }
-        expect(buckets.size).toBe(data.points.length);
-      },
-    );
-
-    it("puts today's flights in the current local hour and leaves earlier hours at 0", async () => {
-      const res = await api
-        .get(url)
-        .query({ timeFrame: "today" })
-        .set("Authorization", `Bearer ${adminTokenA}`);
-
-      expect(res.status).toBe(200);
-      const points: { bucket: string }[] = res.body.data.points;
-      const currentKey = colomboBucketKey(currentHourStart, "hour");
-      const expectedCurrent = { spend: 300.5, passengers: 10, flights: 3 }[
-        field
-      ];
-
-      const current = points.find((point) => point.bucket === currentKey) as
-        | Record<string, number>
-        | undefined;
-      expect(current?.[field]).toBeCloseTo(expectedCurrent, 2);
-      for (const point of points) {
-        if (point.bucket !== currentKey) {
-          expect((point as Record<string, unknown>)[field]).toBe(0);
-        }
-      }
+          const expected = expectedValues(
+            flightsA,
+            field,
+            timeFrame,
+            granularity,
+            timezone,
+            before,
+          );
+          const buckets = new Set<string>();
+          for (const point of data.points) {
+            expect(typeof point[field]).toBe("number");
+            expect(point.label).toBe(expectedLabel(point.bucket, granularity));
+            expect(point[field]).toBeCloseTo(expected.get(point.bucket) ?? 0, 2);
+            buckets.add(point.bucket);
+          }
+          expect(buckets.size).toBe(data.points.length);
+          expect(sumOf(data.points, field)).toBeCloseTo(
+            [...expected.values()].reduce((sum, value) => sum + value, 0),
+            2,
+          );
+        },
+      );
     });
 
-    it("puts yesterday's flight in its local hour bucket", async () => {
-      const res = await api
-        .get(url)
-        .query({ timeFrame: "yesterday" })
-        .set("Authorization", `Bearer ${adminTokenA}`);
+    it("gives different results for the same data in different timezones", async () => {
+      const now = new Date();
+      const [colombo, newYork] = await Promise.all([
+        getTrend(adminTokenA, { timeFrame: "today", timezone: COLOMBO }),
+        getTrend(adminTokenA, { timeFrame: "today", timezone: NEW_YORK }),
+      ]);
 
+      expect(colombo.status).toBe(200);
+      expect(newYork.status).toBe(200);
+      const expectedToday = (zone: string) =>
+        [...expectedValues(flightsA, field, "today", "hour", zone, now).values()]
+          .reduce((sum, value) => sum + value, 0);
+
+      // Each zone matches its own expectation, and "today" covers a different
+      // set of flights per zone: the midnight-boundary flights fall on
+      // different sides.
+      expect(sumOf(colombo.body.data.points, field)).toBeCloseTo(expectedToday(COLOMBO), 2);
+      expect(sumOf(newYork.body.data.points, field)).toBeCloseTo(expectedToday(NEW_YORK), 2);
+      const included = (zone: string) => {
+        const { start, end } = rangeFor("today", now, zone);
+        return flightsA
+          .map((f, index) => (f.createdAt.getTime() >= start && f.createdAt.getTime() < end ? index : -1))
+          .filter((index) => index >= 0);
+      };
+      expect(included(COLOMBO)).not.toEqual(included(NEW_YORK));
+    });
+
+    it("uses the request timezone, not the airline's stored timezone", async () => {
+      // Airline A is stored as Asia/Colombo.
+      const res = await getTrend(adminTokenA, { timeFrame: "week", timezone: NEW_YORK });
       expect(res.status).toBe(200);
-      const points: Record<string, number | string>[] = res.body.data.points;
-      const tenAm = points.find(
-        (point) => point.bucket === colomboBucketKey(yesterdayTenAm, "hour"),
-      );
-      expect(tenAm?.[field]).toBeCloseTo(
-        { spend: 50, passengers: 2, flights: 1 }[field],
-        2,
-      );
-      expect(String(points[0].bucket)).toMatch(/T00:00$/);
-      expect(String(points[23].bucket)).toMatch(/T23:00$/);
+      expect(res.body.data.timezone).toBe(NEW_YORK);
+      expect(res.body.data.startDate).toMatch(/-0[45]:00$/);
     });
 
     it("scopes airline B to its own data only", async () => {
-      const res = await api
-        .get(url)
-        .query({ timeFrame: "week" })
-        .set("Authorization", `Bearer ${adminTokenB}`);
+      const res = await getTrend(adminTokenB, { timeFrame: "week", timezone: "UTC" });
 
       expect(res.status).toBe(200);
       expect(res.body.data.timezone).toBe("UTC");
-      const total = (res.body.data.points as Record<string, number>[]).reduce(
-        (sum, point) => sum + point[field],
-        0,
-      );
-      expect(total).toBeCloseTo(
+      expect(sumOf(res.body.data.points, field)).toBeCloseTo(
         { spend: 1000, passengers: 7, flights: 1 }[field],
         2,
       );
@@ -412,55 +402,57 @@ describe("Airline dashboard trends", () => {
     it("rejects an airlineId query param with 400", async () => {
       // Scope always comes from the token; the global ValidationPipe
       // (forbidNonWhitelisted) rejects the unsupported param.
-      const res = await api
-        .get(url)
-        .query({ timeFrame: "week", airlineId: airlineIds[1] })
-        .set("Authorization", `Bearer ${adminTokenA}`);
+      const res = await getTrend(adminTokenA, {
+        timeFrame: "week",
+        timezone: COLOMBO,
+        airlineId: airlineIds[1],
+      });
       expect(res.status).toBe(400);
     });
 
     it("allows AIRLINE_STAFF with DASHBOARD VIEW", async () => {
-      const res = await api
-        .get(url)
-        .query({ timeFrame: "week" })
-        .set("Authorization", `Bearer ${staffDashboardTokenA}`);
+      const res = await getTrend(staffDashboardTokenA, { timeFrame: "week", timezone: COLOMBO });
       expect(res.status).toBe(200);
     });
 
     it("returns 401 without a token", async () => {
-      const res = await api.get(url).query({ timeFrame: "week" });
+      const res = await api.get(url).query({ timeFrame: "week", timezone: COLOMBO });
       expect(res.status).toBe(401);
     });
 
     it("returns 403 for AIRLINE_STAFF without DASHBOARD permission", async () => {
-      const res = await api
-        .get(url)
-        .query({ timeFrame: "week" })
-        .set("Authorization", `Bearer ${staffWithoutDashboardTokenA}`);
+      const res = await getTrend(staffWithoutDashboardTokenA, { timeFrame: "week", timezone: COLOMBO });
       expect(res.status).toBe(403);
     });
 
     it("returns 403 for platform users", async () => {
-      const res = await api
-        .get(url)
-        .query({ timeFrame: "week" })
-        .set("Authorization", `Bearer ${platformToken}`);
+      const res = await getTrend(platformToken, { timeFrame: "week", timezone: COLOMBO });
       expect(res.status).toBe(403);
     });
 
     it("returns 400 when timeFrame is missing", async () => {
-      const res = await api
-        .get(url)
-        .set("Authorization", `Bearer ${adminTokenA}`);
+      const res = await getTrend(adminTokenA, { timezone: COLOMBO });
       expect(res.status).toBe(400);
     });
 
     it("returns 400 for an invalid timeFrame", async () => {
-      const res = await api
-        .get(url)
-        .query({ timeFrame: "decade" })
-        .set("Authorization", `Bearer ${adminTokenA}`);
+      const res = await getTrend(adminTokenA, { timeFrame: "decade", timezone: COLOMBO });
       expect(res.status).toBe(400);
     });
+
+    it("returns 400 when timezone is missing", async () => {
+      const res = await getTrend(adminTokenA, { timeFrame: "week" });
+      expect(res.status).toBe(400);
+      expect(JSON.stringify(res.body)).toMatch(/timezone is required/);
+    });
+
+    it.each(["", "+05:30", "UTC+5:30", "Invalid/Zone"])(
+      "returns 400 for timezone %j",
+      async (timezone) => {
+        const res = await getTrend(adminTokenA, { timeFrame: "week", timezone });
+        expect(res.status).toBe(400);
+        expect(JSON.stringify(res.body)).toMatch(/valid IANA timezone/);
+      },
+    );
   });
 });

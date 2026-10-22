@@ -114,6 +114,7 @@ export function isIanaTimeZone(value: string): boolean {
 /**
  * Returns a valid IANA timezone, falling back to UTC when the value is empty
  * or not a named IANA timezone (e.g. "UTC+5:30" saved on an older record).
+ * Not for request input: time-frame APIs reject invalid timezones with 400.
  */
 export function resolveTimeZone(timeZone?: string | null): string {
   const candidate = timeZone?.trim();
@@ -332,28 +333,64 @@ function defineTimeFrame(
 }
 
 /**
- * Resolves a time frame to its UTC range in `timeZone`'s calendar (an empty
- * or unknown timezone falls back to UTC). Shared by every time-frame filter
- * so totals and trends always cover exactly the same rows.
+ * Guards the time-frame helpers: request timezones are validated by
+ * TimezoneField, so an invalid value here is a programming error. These
+ * helpers never fall back to UTC or the airline's timezone.
+ */
+function assertIanaTimeZone(timeZone: string): void {
+  if (!isIanaTimeZone(timeZone)) {
+    throw new RangeError(`Invalid IANA timezone: ${JSON.stringify(timeZone)}`);
+  }
+}
+
+/**
+ * Resolves a time frame to its UTC range in `timeZone`'s calendar. Shared
+ * by every time-frame filter so totals and trends always cover exactly the
+ * same rows. `timeZone` must be a validated IANA name; it is returned as is.
  */
 export function resolveTimeFrameRange(
   timeFrame: TimeFrame,
-  timeZone: string | null | undefined,
+  timeZone: string,
   now: Date = new Date(),
 ): TimeFrameRange {
-  const zone = resolveTimeZone(timeZone);
-  const { start, end } = defineTimeFrame(timeFrame, zone, now);
+  assertIanaTimeZone(timeZone);
+  const { start, end } = defineTimeFrame(timeFrame, timeZone, now);
   return {
-    timeZone: zone,
-    startUtc: localDateTimeToUtc(start, zone),
-    endUtc: localDateTimeToUtc(end, zone),
+    timeZone,
+    startUtc: localDateTimeToUtc(start, timeZone),
+    endUtc: localDateTimeToUtc(end, timeZone),
+  };
+}
+
+export interface TimeFrameRangeDescription {
+  timeFrame: TimeFrame;
+  timezone: string;
+  /** Range start in `timezone`, with offset: "2026-10-16T00:00:00+05:30". */
+  startDate: string;
+  /** Last second inside the range (exclusive end minus 1 second), with offset. */
+  endDate: string;
+}
+
+/** The response fields that tell the frontend exactly which range was used. */
+export function describeTimeFrameRange(
+  timeFrame: TimeFrame,
+  range: TimeFrameRange,
+): TimeFrameRangeDescription {
+  return {
+    timeFrame,
+    timezone: range.timeZone,
+    startDate: formatInTimeZone(range.startUtc, range.timeZone),
+    endDate: formatInTimeZone(
+      new Date(range.endUtc.getTime() - 1000),
+      range.timeZone,
+    ),
   };
 }
 
 /** The range of resolveTimeFrameRange() plus its full list of chart buckets. */
 export function buildTrendWindow(
   timeFrame: TimeFrame,
-  timeZone: string | null | undefined,
+  timeZone: string,
   now: Date = new Date(),
 ): TrendWindow {
   const range = resolveTimeFrameRange(timeFrame, timeZone, now);

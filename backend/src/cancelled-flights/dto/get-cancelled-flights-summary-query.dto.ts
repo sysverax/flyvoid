@@ -8,12 +8,15 @@ import {
   IsString,
   MaxLength,
   Min,
+  ValidateIf,
 } from "class-validator";
 import { FlightStatus } from "../entities/enums";
+import { TimeFrame } from "../../common/constants/time-frame.constants";
 import {
-  TIME_FRAME,
-  TimeFrame,
-} from "../../common/constants/time-frame.constants";
+  TIMEZONE_DESCRIPTION,
+  TimeFrameField,
+  TimezoneField,
+} from "../../common/dto/time-frame-query.dto";
 
 // Same filters as GetCancelledFlightsQueryDto, minus pagination - a summary
 // is a single aggregate row, not a page of results.
@@ -82,16 +85,16 @@ export class GetCancelledFlightsSummaryQueryDto {
   @IsOptional()
   endDate?: string;
 
-  @ApiPropertyOptional({
-    description:
-      "Relative reporting window in the airline's timezone (UTC for platform users). Cannot be combined with startDate/endDate.",
-    enum: TIME_FRAME,
-    example: TIME_FRAME.MONTH,
-  })
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === "string" ? value.trim().toLowerCase() : value,
-  )
-  @IsEnum(TIME_FRAME)
-  @IsOptional()
+  // Cannot be combined with startDate/endDate (checked in the service).
+  @TimeFrameField({ required: false })
   timeFrame?: TimeFrame;
+
+  // Required with timeFrame. Without timeFrame it is ignored and not
+  // validated, so the frontend can always send it.
+  @ValidateIf((query: GetCancelledFlightsSummaryQueryDto) => query.timeFrame !== undefined)
+  @TimezoneField({
+    required: true,
+    description: `${TIMEZONE_DESCRIPTION} Required when timeFrame is sent; ignored otherwise.`,
+  })
+  timezone?: string;
 }

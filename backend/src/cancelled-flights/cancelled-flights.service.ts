@@ -41,7 +41,10 @@ import { PaginationQueryDto } from "../common/dto/pagination-query.dto";
 import { Logger } from "winston";
 import { AuthenticatedUser } from "../auth/interfaces/authenticated-request.interface";
 import { UserType } from "../common/constants/user.constants";
-import { resolveTimeFrameRange } from "../common/utils/time-frame.util";
+import {
+  describeTimeFrameRange,
+  resolveTimeFrameRange,
+} from "../common/utils/time-frame.util";
 import { GetCancelledFlightsQueryDto } from "./dto/get-cancelled-flights-query.dto";
 import { GetCancelledFlightsSummaryQueryDto } from "./dto/get-cancelled-flights-summary-query.dto";
 import { CancelledFlightsSummaryResponseDto } from "./dto/cancelled-flights-summary-response.dto";
@@ -954,14 +957,12 @@ export class CancelledFlightsService {
       airlineScopeId = query.airlineId;
     }
 
-    // Same range as the dashboard trends: the airline's timezone for airline
-    // users, UTC for platform users.
-    const timeFrameRange = query.timeFrame
-      ? resolveTimeFrameRange(
-          query.timeFrame,
-          user.userType === UserType.AIRLINE ? user.airlineTimezone : undefined,
-        )
-      : undefined;
+    // Same range as the dashboard trends, in the request timezone for every
+    // user type. The DTO requires a valid timezone whenever timeFrame is set.
+    const timeFrameRange =
+      query.timeFrame && query.timezone
+        ? resolveTimeFrameRange(query.timeFrame, query.timezone)
+        : undefined;
 
     requestLogger.info("Fetching cancelled flights summary", {
       context: this.context,
@@ -993,7 +994,15 @@ export class CancelledFlightsService {
       platformFeePercentage,
     });
 
-    return { ...summary, platformFeePercentage };
+    // With a timeFrame, also echo the exact range used (same format as the
+    // trend APIs); without one the response is unchanged.
+    return {
+      ...summary,
+      platformFeePercentage,
+      ...(query.timeFrame && timeFrameRange
+        ? describeTimeFrameRange(query.timeFrame, timeFrameRange)
+        : {}),
+    };
   }
 
   // ── List bookings ────────────────────────────────────────────────────────
