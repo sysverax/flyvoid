@@ -7,7 +7,7 @@ export const NAVIGATION_ITEMS = [
   { title: "Payments", path: "/payments", key: "payments" },
   { title: "Onboarding", path: "/onboarding", key: "invitesOnboarding" },
   { title: "Audit Logs", path: "/audit-logs", key: "auditLogs" },
-  { title: "Manage Users", path: "/manage-users", key: "systemSettings" },
+  { title: "Manage Users", path: "/manage-users", key: "manageUsers" },
   { title: "Admin Profile", path: "/profile", key: "profile" },
 ];
 

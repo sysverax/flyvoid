@@ -125,12 +125,12 @@ export default function LoginPage() {
         <div className="w-16 h-16 bg-primary rounded-[12px] flex items-center justify-center mb-6">
           <img
             src="/icons/plane1.svg"
-            alt="FlyVoid Logo"
+            alt="Flyverax Logo"
             className="h-8 w-8"
           />
         </div>
         <h1 className="text-gray-800 text-[24px] font-bold leading-[100%] py-1">
-          FlyVoid Admin
+          Flyverax Admin
         </h1>
         <p className="text-gray-500 text-[14px] font-normal mt-1 font-figtree">
           Disruption Hotel Allocation Platform
@@ -162,7 +162,7 @@ export default function LoginPage() {
               <Mail className="w-4 h-4 text-gray-400 shrink-0 transition-colors" />
               <input
                 type="email"
-                placeholder="you@flyvoid.com"
+                placeholder="you@flyverax.com"
                 value={email}
                 onChange={(e) => handleEmailChange(e.target.value)}
                 onBlur={() => handleBlur("email")}

@@ -141,7 +141,7 @@ function OnboardForm() {
         <div className="w-16 h-16 bg-[#0F2757] rounded-[12px] flex items-center justify-center mb-6">
           <img
             src="/icons/plane1.svg"
-            alt="FlyVoid Logo"
+            alt="Flyverax Logo"
             className="h-8 w-8 brightness-0 invert"
           />
         </div>
@@ -164,7 +164,7 @@ function OnboardForm() {
               </div>
               <div className="flex flex-col gap-1">
                 <h2 className="text-gray-800 text-lg font-semibold font-figtree leading-tight">
-                  Welcome to FlyVoid
+                  Welcome to Flyverax
                 </h2>
                 <p className="text-gray-500 text-[14px] font-normal font-figtree leading-tight">
                   Set up your password to complete your onboarding process.

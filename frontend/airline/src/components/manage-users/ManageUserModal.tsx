@@ -42,6 +42,7 @@ const PERMISSION_ROWS: PermissionRow[] = [
   { key: "cancelledFlights", label: "Cancelled Flights" },
   { key: "bookings", label: "Bookings" },
   { key: "payments", label: "Payments" },
+  { key: "manageUsers", label: "Manage Users" },
 ];
 
 const emptyPermissions = (): UserPermissions => ({
@@ -51,6 +52,7 @@ const emptyPermissions = (): UserPermissions => ({
   cancelledFlights: { view: false, edit: false, export: false, all: false },
   bookings: { view: false, edit: false, export: false, all: false },
   payments: { view: false, edit: false, export: false, all: false },
+  manageUsers: { view: false, edit: false, export: false, all: false },
 });
 
 function superAdminPermissions(): UserPermissions {
@@ -61,6 +63,7 @@ function superAdminPermissions(): UserPermissions {
     cancelledFlights: { view: true, edit: true, export: true, all: true },
     bookings: { view: true, edit: true, export: true, all: true },
     payments: { view: true, edit: true, export: true, all: true },
+    manageUsers: { view: true, edit: true, export: true, all: true },
   };
 }
 
@@ -89,6 +92,7 @@ function mapBackendAccessControlsToFrontend(
     else if (ac.asset === "CANCELLED_FLIGHTS") permissions.cancelledFlights = access;
     else if (ac.asset === "BOOKINGS") permissions.bookings = access;
     else if (ac.asset === "PAYMENTS") permissions.payments = access;
+    else if (ac.asset === "AIRLINE_USERS" || ac.asset === "MANAGE_USERS") permissions.manageUsers = access;
   });
 
   return permissions;
@@ -115,6 +119,7 @@ function mapFrontendPermissionsToBackend(
   if (frontendPerms.cancelledFlights) addAsset("CANCELLED_FLIGHTS", frontendPerms.cancelledFlights);
   if (frontendPerms.bookings) addAsset("BOOKINGS", frontendPerms.bookings);
   if (frontendPerms.payments) addAsset("PAYMENTS", frontendPerms.payments);
+  if (frontendPerms.manageUsers) addAsset("AIRLINE_USERS", frontendPerms.manageUsers);
 
   return accessControls;
 }
@@ -136,6 +141,8 @@ export function ManageUserModal({
     }
   }, [isOpen]);
 
+  const isEdit = !!editingUser;
+
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [userEmail, setUserEmail] = useState("");
@@ -154,7 +161,7 @@ export function ManageUserModal({
       if (!value.trim()) {
         error = "Last Name is required";
       }
-    } else if (field === "userEmail") {
+    } else if (field === "userEmail" && !isEdit) {
       if (!value.trim()) {
         error = "Email is required";
       } else {
@@ -304,7 +311,6 @@ export function ManageUserModal({
 
     if (firstName.trim() !== editingUser.firstName) return true;
     if (lastName.trim() !== editingUser.lastName) return true;
-    if (userEmail.trim() !== editingUser.email) return true;
 
     const initialStatus = editingUser.isActive ? "Active" : "Inactive";
     if (userStatus !== initialStatus) return true;
@@ -320,7 +326,7 @@ export function ManageUserModal({
     }
 
     return false;
-  }, [editingUser, firstName, lastName, userEmail, userStatus, userPermissions]);
+  }, [editingUser, firstName, lastName, userEmail, userStatus, userPermissions, isEdit]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -334,12 +340,14 @@ export function ManageUserModal({
       newErrors.lastName = "Last Name is required";
     }
 
-    if (!userEmail.trim()) {
-      newErrors.userEmail = "Email is required";
-    } else {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(userEmail)) {
-        newErrors.userEmail = "Please enter a valid email address";
+    if (!isEdit) {
+      if (!userEmail.trim()) {
+        newErrors.userEmail = "Email is required";
+      } else {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(userEmail)) {
+          newErrors.userEmail = "Please enter a valid email address";
+        }
       }
     }
 
@@ -459,23 +467,33 @@ export function ManageUserModal({
               {/* Email row*/}
               <div className="self-stretch inline-flex flex-col justify-start items-start w-full">
                 <div className="self-stretch flex-1 flex flex-col justify-start items-start gap-2.5">
-                  <label className="justify-start text-gray-800 text-base font-medium font-figtree leading-[100%]">Email *</label>
+                  <div className="flex items-center gap-2">
+                    <label className="justify-start text-gray-800 text-base font-medium font-figtree leading-[100%]">
+                      Email *
+                    </label>
+                  </div>
                   <input
                     type="email"
                     placeholder="Enter user email"
                     value={userEmail}
                     onChange={(e) => handleEmailChange(e.target.value)}
                     onBlur={() => handleBlur("userEmail")}
-                    required
-                    disabled={isLoading}
+                    required={!isEdit}
+                    disabled={isLoading || isEdit}
+                    readOnly={isEdit}
                     className={cn(
-                      "self-stretch flex-1 px-4 py-3 bg-[#F9FAFB] rounded-[10px] border transition-all text-base font-figtree text-gray-800 placeholder-gray-500 focus:bg-white focus:outline-none focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed",
-                      errors.userEmail
-                        ? "border-red-500 focus:ring-red-500/10 focus:border-red-500"
-                        : "border-gray-300 focus:border-[#0F2757] focus:ring-[#0F2757]/10"
+                      "self-stretch flex-1 px-4 py-3 rounded-[10px] border transition-all text-base font-figtree",
+                      isEdit
+                        ? "bg-[#F3F4F6] text-[#6B7280] border-gray-200 cursor-not-allowed select-none focus:outline-none"
+                        : cn(
+                          "bg-[#F9FAFB] text-gray-800 placeholder-gray-500 focus:bg-white focus:outline-none focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed",
+                          errors.userEmail
+                            ? "border-red-500 focus:ring-red-500/10 focus:border-red-500"
+                            : "border-gray-300 focus:border-[#0F2757] focus:ring-[#0F2757]/10"
+                        )
                     )}
                   />
-                  {errors.userEmail && (
+                  {errors.userEmail && !isEdit && (
                     <span className="text-red-500 text-xs font-medium font-figtree pl-1 -mt-1.5">
                       {errors.userEmail}
                     </span>

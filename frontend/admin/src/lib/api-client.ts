@@ -46,6 +46,7 @@ export function clearAuthStorage() {
   }
 
   sessionStorage.clear();
+  eraseCookie("flyverax_refresh_token");
   eraseCookie("flyvoid_refresh_token");
 
   Object.keys(localStorage).forEach((key) => {
@@ -59,7 +60,7 @@ export function clearAuthStorage() {
 apiClient.interceptors.request.use(
   (config) => {
     if (typeof window !== "undefined") {
-      const token = sessionStorage.getItem("flyvoid_access_token");
+      const token = sessionStorage.getItem("flyverax_access_token") || sessionStorage.getItem("flyvoid_access_token");
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
       }
@@ -130,7 +131,7 @@ apiClient.interceptors.response.use(
       originalRequest._retry = true;
       isRefreshing = true;
 
-      const refreshToken = getCookie("flyvoid_refresh_token");
+      const refreshToken = getCookie("flyverax_refresh_token") || getCookie("flyvoid_refresh_token");
       if (!refreshToken) {
         isRefreshing = false;
         if (typeof window !== "undefined") {
@@ -150,8 +151,8 @@ apiClient.interceptors.response.use(
         const { accessToken: newAccessToken, refreshToken: newRefreshToken } = response.data.data;
 
         if (typeof window !== "undefined") {
-          sessionStorage.setItem("flyvoid_access_token", newAccessToken);
-          setCookie("flyvoid_refresh_token", newRefreshToken);
+          sessionStorage.setItem("flyverax_access_token", newAccessToken);
+          setCookie("flyverax_refresh_token", newRefreshToken);
         }
 
         processQueue(null, newAccessToken);

@@ -78,7 +78,7 @@ export default function AirportsPage() {
 
   const isAirlineUser = useMemo(() => {
     if (typeof window === "undefined") return false;
-    const token = sessionStorage.getItem("flyvoid_access_token");
+    const token = sessionStorage.getItem("flyverax_access_token") || sessionStorage.getItem("flyvoid_access_token");
     if (!token) return false;
     const decoded = decodeJwt(token);
     return decoded?.userType === "AIRLINE";

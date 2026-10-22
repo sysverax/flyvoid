@@ -842,12 +842,12 @@ export default function PaymentsPage() {
     const newReserveValue = type === "Deposit" ? reserveValue + amountNum : reserveValue - amountNum;
 
     const emailToName: Record<string, string> = {
-      "you@flyvoid.com": "You (Admin)",
-      "john.smith@flyvoid.com": "John Smith",
-      "jane.doe@flyvoid.com": "Jane Doe",
-      "emily.white@flyvoid.com": "Emily White",
-      "michael.johnson@flyvoid.com": "Michael Johnson",
-      "sarah.brown@flyvoid.com": "Sarah Brown",
+      "you@flyverax.com": "You (Admin)",
+      "john.smith@flyverax.com": "John Smith",
+      "jane.doe@flyverax.com": "Jane Doe",
+      "emily.white@flyverax.com": "Emily White",
+      "michael.johnson@flyverax.com": "Michael Johnson",
+      "sarah.brown@flyverax.com": "Sarah Brown",
     };
 
     const newTx: TreasuryAudit = {

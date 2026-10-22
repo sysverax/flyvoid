@@ -23,22 +23,23 @@ export const usersService = {
       const { data } = await apiClient.get("/admin/users", { params });
       const { users, total } = data.data;
 
-      const items = users.map((u: any) => {
-        let accessControls = u.accessControls || [];
-        if (typeof window !== "undefined") {
-          const stored = localStorage.getItem(`user_access_controls_${u.id}`);
-          if (stored) {
-            try {
-              accessControls = JSON.parse(stored);
-            } catch { }
-          }
-        }
-        return { ...u, accessControls };
-      });
+      const items = users.map((u: any) => ({
+        ...u,
+        accessControls: u.accessControls || [],
+      }));
 
       return { users: items, total };
     } catch (error: any) {
       throw new Error(extractErrorMessage(error, "Failed to fetch admin users."));
+    }
+  },
+
+  async getUserById(id: number): Promise<User> {
+    try {
+      const { data } = await apiClient.get(`/admin/users/${id}`);
+      return data.data;
+    } catch (error: any) {
+      throw new Error(extractErrorMessage(error, "Failed to fetch admin user details."));
     }
   },
 
@@ -51,10 +52,6 @@ export const usersService = {
       });
 
       const { admin, temporaryPassword } = data.data;
-
-      if (typeof window !== "undefined") {
-        localStorage.setItem(`user_access_controls_${admin.id}`, JSON.stringify(user.accessControls));
-      }
 
       return {
         user: { ...admin, accessControls: user.accessControls },
@@ -79,10 +76,6 @@ export const usersService = {
 
       const updated = data.data;
 
-      if (typeof window !== "undefined") {
-        localStorage.setItem(`user_access_controls_${updated.id}`, JSON.stringify(user.accessControls));
-      }
-
       return {
         user: { ...updated, accessControls: user.accessControls },
         message: data.message || "Admin user updated successfully",
@@ -95,9 +88,6 @@ export const usersService = {
   async deleteUser(id: number): Promise<string> {
     try {
       const { data } = await apiClient.delete(`/admin/users/${id}`);
-      if (typeof window !== "undefined") {
-        localStorage.removeItem(`user_access_controls_${id}`);
-      }
       return data.message || "Admin user deleted successfully";
     } catch (error: any) {
       throw new Error(extractErrorMessage(error, "Failed to delete admin user."));

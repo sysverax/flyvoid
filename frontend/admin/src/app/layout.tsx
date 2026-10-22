@@ -20,8 +20,8 @@ const urbanist = Urbanist({
 });
 
 export const metadata: Metadata = {
-  title: "FlyVoid Admin",
-  description: "FlyVoid Admin Panel",
+  title: "Flyverax Admin",
+  description: "Flyverax Admin Panel",
 };
 
 export default function RootLayout({
