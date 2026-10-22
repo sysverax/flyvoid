@@ -109,12 +109,12 @@ export class AdminController {
 
   @Get("profile")
   @RequireUserRoles(AdminRole.SUPER_ADMIN, AdminRole.STAFF)
-  @RequireAccessControl({
-    platform: {
-      asset: PlatformAsset.PROFILE,
-      access: [AccessAction.VIEW],
-    },
-  })
+  // @RequireAccessControl({
+  //   platform: {
+  //     asset: PlatformAsset.PROFILE,
+  //     access: [AccessAction.VIEW],
+  //   },
+  // })
   @ApiOperation({
     summary: "Get logged-in admin profile",
     description: `

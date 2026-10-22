@@ -84,12 +84,12 @@ export class AirlineUserController {
 
   @Get("users/profile")
   @RequireUserRoles(AirlineRole.AIRLINE_ADMIN, AirlineRole.AIRLINE_STAFF)
-  @RequireAccessControl({
-    airline: {
-      asset: AirlineAsset.PROFILE,
-      access: [AccessAction.VIEW],
-    },
-  })
+  // @RequireAccessControl({
+  //   airline: {
+  //     asset: AirlineAsset.PROFILE,
+  //     access: [AccessAction.VIEW],
+  //   },
+  // })
   @ApiBearerAuth("access-token")
   @ApiOperation({
     summary: "Airline user profile",
