@@ -1,6 +1,13 @@
 import { Transform } from "class-transformer";
 import { ApiPropertyOptional, IntersectionType } from "@nestjs/swagger";
-import { IsEnum, IsInt, IsOptional, Min } from "class-validator";
+import {
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+} from "class-validator";
 import { TimestampRangeQueryDto } from "../../common/dto/date-range-query.dto";
 import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
 import { PAYMENT_STATUSES } from "../constants";
@@ -53,4 +60,13 @@ export class GetWalletTransactionsQueryDto extends IntersectionType(
   })
   @IsOptional()
   status?: PAYMENT_STATUSES;
+
+  @ApiPropertyOptional({
+    description: "Search by transaction id (partial match)",
+    example: "1024",
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  search?: string;
 }

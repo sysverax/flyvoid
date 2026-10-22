@@ -209,6 +209,7 @@ export class WalletService {
           type: query.type,
           startDate: query.startDate,
           endDate: query.endDate,
+          search: query.search?.trim(),
         },
         requestLogger,
       );

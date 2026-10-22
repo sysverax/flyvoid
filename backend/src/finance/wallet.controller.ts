@@ -137,7 +137,7 @@ export class WalletController {
   @ApiOperation({
     summary: "List wallet transactions",
     description:
-      "Returns paginated wallet transaction (ledger) history with optional filters: airlineId (platform users only), type (ADJUSTMENT or BOOKING), status, startDate/endDate (transaction creation time; ISO 8601 timestamps with timezone, start inclusive, end exclusive). Platform users see all airlines by default; airline users only ever see their own.",
+      "Returns paginated wallet transaction (ledger) history with optional filters: search (partial match on transaction id), airlineId (platform users only), type (ADJUSTMENT or BOOKING), status, startDate/endDate (transaction creation time; ISO 8601 timestamps with timezone, start inclusive, end exclusive). Platform users see all airlines by default; airline users only ever see their own.",
   })
   @ApiOkResponse({
     schema: {

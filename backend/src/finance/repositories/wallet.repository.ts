@@ -19,6 +19,8 @@ export interface WalletTransactionFilters {
   startDate?: Date;
   /** Exclusive upper bound on created_at (a UTC instant). */
   endDate?: Date;
+  /** Partial match on transaction id. */
+  search?: string;
 }
 
 @Injectable()
@@ -323,6 +325,12 @@ export class WalletRepository {
 
     if (filters.type) {
       qb.andWhere("transaction.referenceType = :type", { type: filters.type });
+    }
+
+    if (filters.search) {
+      qb.andWhere("CAST(transaction.id AS TEXT) ILIKE :search", {
+        search: `%${filters.search}%`,
+      });
     }
 
     // Half-open range on a UTC timestamp column: start inclusive, end exclusive.
