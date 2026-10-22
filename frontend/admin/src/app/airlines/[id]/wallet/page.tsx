@@ -406,6 +406,7 @@ export default function AirlineWalletPage({
                 setCurrentPage(1);
               }}
               placeholder="End Date"
+              align="right"
             />
           </div>
         </FiltersCard>

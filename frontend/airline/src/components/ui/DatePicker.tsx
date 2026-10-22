@@ -8,12 +8,13 @@ interface DatePickerProps {
   placeholder: string;
   align?: "left" | "right";
   className?: string;
+  widthClass?: string;
 }
 
-export function DatePicker({ value, onChange, placeholder, align = "left", className }: DatePickerProps) {
+export function DatePicker({ value, onChange, placeholder, align = "left", className, widthClass }: DatePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [alignRight, setAlignRight] = useState(false);
+  const [alignRight, setAlignRight] = useState(align === "right");
 
   // Parse initial value or default to current date
   const parsedDate = value ? new Date(value) : new Date();
@@ -115,13 +116,19 @@ export function DatePicker({ value, onChange, placeholder, align = "left", class
     if (!isOpen && containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
       const overflowsRight = rect.left + 280 > window.innerWidth;
-      setAlignRight(overflowsRight);
+      setAlignRight(align === "right" || overflowsRight);
     }
     setIsOpen(!isOpen);
   };
 
   return (
-    <div className={cn("relative", className ? "w-full block" : "inline-block w-[160px]")} ref={containerRef}>
+    <div
+      className={cn(
+        "relative",
+        className ? "w-full block" : cn("inline-block", widthClass || "w-[160px]")
+      )}
+      ref={containerRef}
+    >
       {/* Trigger input */}
       <div
         onClick={handleToggleOpen}

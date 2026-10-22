@@ -165,8 +165,8 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
   return (
     <span
       className={cn(
-        "inline-flex items-center justify-center text-[12px] font-medium tracking-wide select-none",
-        "h-[20px] rounded-[15px]",
+        "inline-flex items-center justify-center whitespace-nowrap text-[12px] font-medium tracking-wide select-none",
+        "h-[22px] rounded-[15px]",
         "pt-[2px] pb-[2px] pl-[10px] pr-[10px]",
         styles.bg,
         styles.text,

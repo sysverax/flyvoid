@@ -100,13 +100,13 @@ export default function WalletPage() {
         (tx: WalletTransactionItemDTO) => {
           const formattedDate = tx.createdAt
             ? new Date(tx.createdAt).toLocaleString("en-US", {
-                month: "short",
-                day: "numeric",
-                year: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
-                hour12: true,
-              })
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: true,
+            })
             : "N/A";
 
           const isCredit = tx.transactionType === "CREDIT";
@@ -128,8 +128,8 @@ export default function WalletPage() {
               tx.status === "SUCCESS"
                 ? "Success"
                 : tx.status === "PENDING"
-                ? "Pending"
-                : "Failed",
+                  ? "Pending"
+                  : "Failed",
           };
         }
       );
@@ -311,6 +311,7 @@ export default function WalletPage() {
                 setCurrentPage(1);
               }}
               placeholder="Start Date"
+              widthClass="w-[195px]"
             />
             <DatePicker
               value={endDate}
@@ -319,6 +320,8 @@ export default function WalletPage() {
                 setCurrentPage(1);
               }}
               placeholder="End Date"
+              widthClass="w-[195px]"
+              align="right"
             />
           </div>
         </FiltersCard>

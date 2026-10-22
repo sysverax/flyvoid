@@ -482,7 +482,7 @@ export default function CancellationPage() {
                   onSort={handleSort}
                 />
               </TableHead>
-              <TableHead className="min-w-[120px] relative -left-1">
+              <TableHead className="min-w-[170px] relative -left-1">
                 <SortHeader
                   label="Status"
                   field="status"
@@ -561,7 +561,7 @@ export default function CancellationPage() {
                     <TableCell className={earningsValue !== undefined && earningsValue !== null ? "!text-[#10B981] font-semibold" : "text-[#6B7280]"}>
                       {earningsDisplay}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-nowrap">
                       <StatusBadge status={flight.status} />
                     </TableCell>
                   </TableRow>
