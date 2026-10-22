@@ -144,12 +144,12 @@ export class AirlineUserController {
 
   @Patch("users/profile")
   @RequireUserRoles(AirlineRole.AIRLINE_ADMIN, AirlineRole.AIRLINE_STAFF)
-  @RequireAccessControl({
-    airline: {
-      asset: AirlineAsset.PROFILE,
-      access: [AccessAction.EDIT],
-    },
-  })
+  // @RequireAccessControl({
+  //   airline: {
+  //     asset: AirlineAsset.PROFILE,
+  //     access: [AccessAction.EDIT],
+  //   },
+  // })
   @ApiBearerAuth("access-token")
   @ApiOperation({
     summary: "Update airline user profile",
