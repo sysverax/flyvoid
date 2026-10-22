@@ -46,32 +46,51 @@ export async function insertProvider(code: string): Promise<number> {
   return res.rows[0].id;
 }
 
-/** A passenger booking (PNR) whose hotel is booked, so it counts as live. */
+/**
+ * A passenger booking (PNR). Defaults to 1 adult with a confirmed hotel
+ * allocation, so it counts as live once it has a hotel booking.
+ */
 export async function insertBookedPassenger(
   cancelledFlightId: number,
   email: string,
+  options: {
+    adults?: number;
+    children?: number;
+    allocationStatus?: string;
+  } = {},
 ): Promise<number> {
   const res = await query<{ id: number }>(
     `INSERT INTO cancelled_flight_bookings
       (cancelled_flight_id, pnr, first_name, last_name, email, phone, residency, travel_class, adults, children, allocation_status)
-     VALUES ($1, $2, 'E2E', 'Passenger', $3, '+94110000000', 'LK', 'economy', 1, 0, 'confirmed')
+     VALUES ($1, $2, 'E2E', 'Passenger', $3, '+94110000000', 'LK', 'economy', $4, $5, $6)
      RETURNING id`,
-    [cancelledFlightId, `E2E${Math.floor(Math.random() * 1_000_000)}`, email],
+    [
+      cancelledFlightId,
+      `E2E${Math.floor(Math.random() * 1_000_000)}`,
+      email,
+      options.adults ?? 1,
+      options.children ?? 0,
+      options.allocationStatus ?? "confirmed",
+    ],
   );
   return res.rows[0].id;
 }
 
-/** A successful hotel booking with the given check-in date (YYYY-MM-DD). */
+/** A hotel booking with the given check-in date (YYYY-MM-DD); successful by default. */
 export async function insertHotelBooking(params: {
   cancelledFlightId: number;
   bookingId: number;
   providerId: number;
   checkInDate: string;
+  status?: string;
+  attemptOrder?: number;
+  totalPrice?: number;
+  platformFee?: number;
 }): Promise<number> {
   const res = await query<{ id: number }>(
     `INSERT INTO hotel_bookings
-      (cancelled_flight_id, booking_id, provider_id, attempt_order, status, check_in_date, check_out_date, provider_request_id)
-     VALUES ($1, $2, $3, 1, 'success', $4::date, $4::date + 1, $5)
+      (cancelled_flight_id, booking_id, provider_id, attempt_order, status, check_in_date, check_out_date, provider_request_id, total_price, platform_fee)
+     VALUES ($1, $2, $3, $6, $7, $4::date, $4::date + 1, $5, $8, $9)
      RETURNING id`,
     [
       params.cancelledFlightId,
@@ -79,7 +98,26 @@ export async function insertHotelBooking(params: {
       params.providerId,
       params.checkInDate,
       `e2e-${Math.random().toString(36).slice(2, 12)}`,
+      params.attemptOrder ?? 1,
+      params.status ?? "success",
+      params.totalPrice ?? 0,
+      params.platformFee ?? 0,
     ],
+  );
+  return res.rows[0].id;
+}
+
+/** A room on a hotel booking; booked by default. */
+export async function insertHotelBookingRoom(params: {
+  hotelBookingId: number;
+  roomNo: number;
+  status?: string;
+}): Promise<number> {
+  const res = await query<{ id: number }>(
+    `INSERT INTO hotel_booking_rooms (hotel_booking_id, room_no, status)
+     VALUES ($1, $2, $3)
+     RETURNING id`,
+    [params.hotelBookingId, params.roomNo, params.status ?? "booked"],
   );
   return res.rows[0].id;
 }

@@ -22,10 +22,18 @@ export class CancelledFlightsSummaryResponseDto {
   totalChildren!: number;
 
   @ApiProperty({
-    description: "Total number of passenger bookings across those flights",
+    description:
+      "Total number of passenger bookings (PNRs) across those flights, with or without a hotel",
     example: 18,
   })
   totalBookings!: number;
+
+  @ApiProperty({
+    description:
+      "Total number of live hotel bookings across those flights (the same rows as the hotel bookings list)",
+    example: 15,
+  })
+  totalHotelBookings!: number;
 
   @ApiProperty({
     description: "Total number of hotel rooms allocated across those flights",

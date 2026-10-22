@@ -137,12 +137,13 @@ export interface HotelBookingDetailDTO {
 }
 
 export interface HotelBookingsSummaryDTO {
-  totalCancelFlights: number;
   totalBookings: number;
   totalPassengers: number;
   totalRooms: number;
   totalCost: number;
   totalPlatformFee: number;
+  totalPnrs: number;
+  totalAllocatedPnrs: number;
 }
 
 export const hotelBookingsService = {

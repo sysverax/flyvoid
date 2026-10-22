@@ -1,25 +1,27 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Brackets, Repository } from "typeorm";
+import {
+  Brackets,
+  ObjectLiteral,
+  Repository,
+  SelectQueryBuilder,
+} from "typeorm";
 import { Logger } from "winston";
 import { HotelBookingEntity } from "../cancelled-flights/entities/hotel-booking.entity";
-import { CancelledFlightEntity } from "../cancelled-flights/entities/cancelled-flight.entity";
-import {
-  HotelAllocationStatus,
-  HotelBookingAttemptStatus,
-} from "../cancelled-flights/entities/enums";
+import { BookingEntity } from "../cancelled-flights/entities/booking.entity";
+import { FlightStatus } from "../cancelled-flights/entities/enums";
 import {
   HotelBookingRecord,
+  LIVE_HOTEL_BOOKING_CONDITION,
   toAllocationRecord,
 } from "../cancelled-flights/hotel-allocation.record";
 
-const NOT_BOOKED_STATUSES = [
-  HotelAllocationStatus.DRAFT,
-  HotelAllocationStatus.FAILED,
+/** Flight statuses at which hotel allocation has finished. */
+const ALLOCATED_FLIGHT_STATUSES = [
+  FlightStatus.ALLOCATED,
+  FlightStatus.PAID,
+  FlightStatus.PUBLISHED,
 ];
-
-/** A PNR's live (non-failed) hotel booking, for PNRs that have a hotel. */
-const LIVE_BOOKING_CONDITION = `hotelBooking.status <> '${HotelBookingAttemptStatus.FAILED}' AND booking.allocation_status NOT IN (${NOT_BOOKED_STATUSES.map((status) => `'${status}'`).join(", ")})`;
 
 export interface HotelBookingFilters {
   page: number;
@@ -32,6 +34,14 @@ export interface HotelBookingFilters {
   endDate?: string;
 }
 
+export interface HotelBookingsSummaryFilters {
+  destinationAirportId?: number;
+  cancelledFlightId?: number;
+  search?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
 @Injectable()
 export class HotelBookingsRepository {
   private readonly context = "HotelBookingsRepository";
@@ -39,8 +49,6 @@ export class HotelBookingsRepository {
   constructor(
     @InjectRepository(HotelBookingEntity)
     private readonly hotelBookingRepo: Repository<HotelBookingEntity>,
-    @InjectRepository(CancelledFlightEntity)
-    private readonly cancelledFlightRepo: Repository<CancelledFlightEntity>,
   ) {}
 
   async findHotelBookingsWithPaginationAndFilters(
@@ -69,7 +77,7 @@ export class HotelBookingsRepository {
       .addOrderBy("hotelBooking.id", "DESC")
       .skip(skip)
       .take(filters.limit)
-      .where(LIVE_BOOKING_CONDITION);
+      .where(LIVE_HOTEL_BOOKING_CONDITION);
 
     if (typeof filters.destinationAirportId === "number") {
       qb.andWhere("cancelledFlight.arrivalAirportId = :destinationAirportId", {
@@ -134,126 +142,100 @@ export class HotelBookingsRepository {
 
   async getHotelBookingsSummary(
     airlineId: number,
-    filters: {
-      destinationAirportId?: number;
-      cancelledFlightId?: number;
-      search?: string;
-      startDate?: string;
-      endDate?: string;
-    },
+    filters: HotelBookingsSummaryFilters,
     requestLogger: Logger,
   ): Promise<{
-    totalCancelFlights: number;
     totalBookings: number;
     totalPassengers: number;
     totalRooms: number;
     totalCost: number;
     totalPlatformFee: number;
+    totalPnrs: number;
+    totalAllocatedPnrs: number;
   }> {
     requestLogger.debug("Querying hotel bookings summary", {
       context: this.context,
       airlineId,
+      filters,
     });
 
-    // CancelledFlightEntity already carries per-flight running totals
-    // (totalBooking/totalAdults/totalChildren/totalHotelRooms/totalPrice/
-    // totalPlatformFee), kept up to date as passengers are confirmed and
-    // hotels are allocated — so this is a single aggregate over that table,
-    // no joins to bookings/hotel_bookings needed.
-    const summaryQb = this.cancelledFlightRepo
-      .createQueryBuilder("cancelledFlight")
+    // Hotel totals come from the same live hotel bookings (and filters) as
+    // the bookings list, so the summary cards always match the table.
+    // Postgres numeric uniquely allows storing NaN (distinct from NULL), and
+    // SUM() propagates it through the whole aggregate - COALESCE alone
+    // doesn't catch it, so the CASE guards treat a poisoned row as 0.
+    // A PNR has at most one non-failed hotel booking (uq_hotel_bookings_one_active),
+    // so summing passengers per hotel booking counts each PNR once.
+    const hotelTotalsQuery = this.applyLiveHotelBookingFilters(
+      this.hotelBookingRepo.createQueryBuilder("hotelBooking"),
+      airlineId,
+      filters,
+    )
+      .select("COUNT(hotelBooking.id)", "totalBookings")
+      .addSelect(
+        "COALESCE(SUM(booking.adults + booking.children), 0)",
+        "totalPassengers",
+      )
+      .addSelect(
+        "COALESCE(SUM(CASE WHEN hotelBooking.totalPrice = 'NaN' THEN 0 ELSE hotelBooking.totalPrice END), 0)",
+        "totalCost",
+      )
+      .addSelect(
+        "COALESCE(SUM(CASE WHEN hotelBooking.platformFee = 'NaN' THEN 0 ELSE hotelBooking.platformFee END), 0)",
+        "totalPlatformFee",
+      )
+      .getRawOne<{
+        totalBookings: string;
+        totalPassengers: string;
+        totalCost: string;
+        totalPlatformFee: string;
+      }>();
+
+    // Rooms are counted in their own query - joining them into the totals
+    // query above would repeat each hotel booking's price once per room.
+    // Failed rooms are excluded, as in the bookings list.
+    const roomsQuery = this.applyLiveHotelBookingFilters(
+      this.hotelBookingRepo.createQueryBuilder("hotelBooking"),
+      airlineId,
+      filters,
+    )
+      .innerJoin("hotelBooking.rooms", "room", "room.status <> 'failed'")
+      .select("COUNT(room.id)", "totalRooms")
+      .getRawOne<{ totalRooms: string }>();
+
+    // PNR counts are not narrowed by search or check-in dates - those only
+    // apply to hotel bookings, and would otherwise drop PNRs with no hotel.
+    const pnrQb = this.hotelBookingRepo.manager
+      .createQueryBuilder(BookingEntity, "booking")
+      .innerJoin("booking.cancelledFlight", "cancelledFlight")
       .where("cancelledFlight.airlineId = :airlineId", { airlineId });
 
     if (typeof filters.destinationAirportId === "number") {
-      summaryQb.andWhere(
-        "cancelledFlight.arrivalAirportId = :destinationAirportId",
-        { destinationAirportId: filters.destinationAirportId },
-      );
+      pnrQb.andWhere("cancelledFlight.arrivalAirportId = :destinationAirportId", {
+        destinationAirportId: filters.destinationAirportId,
+      });
     }
 
     if (typeof filters.cancelledFlightId === "number") {
-      summaryQb.andWhere("cancelledFlight.id = :cancelledFlightId", {
+      pnrQb.andWhere("cancelledFlight.id = :cancelledFlightId", {
         cancelledFlightId: filters.cancelledFlightId,
       });
     }
 
-    if (filters.startDate || filters.endDate || filters.search?.trim()) {
-      const hotelBookingSubquery = summaryQb
-        .subQuery()
-        .select("1")
-        .from(HotelBookingEntity, "hotelBooking")
-        .innerJoin("hotelBooking.booking", "booking")
-        .leftJoin("hotelBooking.hotel", "hotel")
-        .where("hotelBooking.cancelledFlightId = cancelledFlight.id")
-        .andWhere(LIVE_BOOKING_CONDITION);
-
-      // The subquery is inlined via getQuery(), so its parameters must be
-      // bound on the outer query.
-      if (filters.startDate) {
-        hotelBookingSubquery.andWhere("hotelBooking.checkInDate >= :startDate");
-        summaryQb.setParameter("startDate", filters.startDate);
-      }
-
-      if (filters.endDate) {
-        hotelBookingSubquery.andWhere("hotelBooking.checkInDate <= :endDate");
-        summaryQb.setParameter("endDate", filters.endDate);
-      }
-
-      if (filters.search?.trim()) {
-        const search = `%${filters.search.trim()}%`;
-        summaryQb.setParameter("search", search);
-        hotelBookingSubquery.andWhere(
-          new Brackets((sub) => {
-            sub
-              .where("CAST(hotelBooking.id AS TEXT) ILIKE :search")
-              .orWhere(
-                "CAST(cancelledFlight.flight_number AS TEXT) ILIKE :search",
-              )
-              .orWhere("hotel.name ILIKE :search")
-              .orWhere("booking.email ILIKE :search");
-          }),
-        );
-      }
-
-      summaryQb.andWhere(`EXISTS ${hotelBookingSubquery.getQuery()}`);
-    }
-
-    const raw = await summaryQb
-      .select("COUNT(cancelledFlight.id)", "totalCancelFlights")
+    const pnrQuery = pnrQb
+      .select("COUNT(booking.id)", "totalPnrs")
       .addSelect(
-        "COALESCE(SUM(cancelledFlight.totalBooking), 0)",
-        "totalBookings",
+        "COALESCE(SUM(CASE WHEN cancelledFlight.status IN (:...allocatedStatuses) THEN 1 ELSE 0 END), 0)",
+        "totalAllocatedPnrs",
       )
-      .addSelect(
-        "COALESCE(SUM(cancelledFlight.totalAdults + cancelledFlight.totalChildren), 0)",
-        "totalPassengers",
-      )
-      .addSelect(
-        "COALESCE(SUM(cancelledFlight.totalHotelRooms), 0)",
-        "totalRooms",
-      )
-      // Postgres numeric uniquely allows storing NaN (distinct from NULL),
-      // and SUM() propagates it through the whole aggregate - COALESCE
-      // alone doesn't catch it, since it only substitutes for NULL. The
-      // CASE guards below treat a poisoned row as a 0 contribution instead
-      // of silently NaN-ing (and, once serialized to JSON, null-ing) this
-      // entire summary.
-      .addSelect(
-        "COALESCE(SUM(CASE WHEN cancelledFlight.totalPrice = 'NaN' THEN 0 ELSE cancelledFlight.totalPrice END), 0)",
-        "totalCost",
-      )
-      .addSelect(
-        "COALESCE(SUM(CASE WHEN cancelledFlight.totalPlatformFee = 'NaN' THEN 0 ELSE cancelledFlight.totalPlatformFee END), 0)",
-        "totalPlatformFee",
-      )
-      .getRawOne<{
-        totalCancelFlights: string;
-        totalBookings: string;
-        totalPassengers: string;
-        totalRooms: string;
-        totalCost: string;
-        totalPlatformFee: string;
-      }>();
+      .setParameter("allocatedStatuses", ALLOCATED_FLIGHT_STATUSES)
+      .getRawOne<{ totalPnrs: string; totalAllocatedPnrs: string }>();
+
+    const [hotelTotals, rooms, pnrs] = await Promise.all([
+      hotelTotalsQuery,
+      roomsQuery,
+      pnrQuery,
+    ]);
 
     requestLogger.debug("Hotel bookings summary query complete", {
       context: this.context,
@@ -270,13 +252,73 @@ export class HotelBookingsRepository {
     };
 
     return {
-      totalCancelFlights: toFiniteNumber(raw?.totalCancelFlights),
-      totalBookings: toFiniteNumber(raw?.totalBookings),
-      totalPassengers: toFiniteNumber(raw?.totalPassengers),
-      totalRooms: toFiniteNumber(raw?.totalRooms),
-      totalCost: toFiniteNumber(raw?.totalCost),
-      totalPlatformFee: toFiniteNumber(raw?.totalPlatformFee),
+      totalBookings: toFiniteNumber(hotelTotals?.totalBookings),
+      totalPassengers: toFiniteNumber(hotelTotals?.totalPassengers),
+      totalRooms: toFiniteNumber(rooms?.totalRooms),
+      totalCost: toFiniteNumber(hotelTotals?.totalCost),
+      totalPlatformFee: toFiniteNumber(hotelTotals?.totalPlatformFee),
+      totalPnrs: toFiniteNumber(pnrs?.totalPnrs),
+      totalAllocatedPnrs: toFiniteNumber(pnrs?.totalAllocatedPnrs),
     };
+  }
+
+  /**
+   * Narrows a query on `hotelBooking` to the airline's live hotel bookings
+   * with the bookings list's filters (destination, flight, check-in dates,
+   * search). Joins `booking`, `cancelledFlight` and `hotel`.
+   */
+  private applyLiveHotelBookingFilters<T extends ObjectLiteral>(
+    qb: SelectQueryBuilder<T>,
+    airlineId: number,
+    filters: HotelBookingsSummaryFilters,
+  ): SelectQueryBuilder<T> {
+    qb.innerJoin("hotelBooking.booking", "booking")
+      .innerJoin("hotelBooking.cancelledFlight", "cancelledFlight")
+      .leftJoin("hotelBooking.hotel", "hotel")
+      .where(LIVE_HOTEL_BOOKING_CONDITION)
+      .andWhere("cancelledFlight.airlineId = :airlineId", { airlineId });
+
+    if (typeof filters.destinationAirportId === "number") {
+      qb.andWhere("cancelledFlight.arrivalAirportId = :destinationAirportId", {
+        destinationAirportId: filters.destinationAirportId,
+      });
+    }
+
+    if (typeof filters.cancelledFlightId === "number") {
+      qb.andWhere("hotelBooking.cancelledFlightId = :cancelledFlightId", {
+        cancelledFlightId: filters.cancelledFlightId,
+      });
+    }
+
+    if (filters.startDate) {
+      qb.andWhere("hotelBooking.checkInDate >= :startDate", {
+        startDate: filters.startDate,
+      });
+    }
+
+    if (filters.endDate) {
+      qb.andWhere("hotelBooking.checkInDate <= :endDate", {
+        endDate: filters.endDate,
+      });
+    }
+
+    if (filters.search?.trim()) {
+      const search = `%${filters.search.trim()}%`;
+      qb.andWhere(
+        new Brackets((sub) => {
+          sub
+            .where("CAST(hotelBooking.id AS TEXT) ILIKE :search", { search })
+            .orWhere(
+              "CAST(cancelledFlight.flight_number AS TEXT) ILIKE :search",
+              { search },
+            )
+            .orWhere("hotel.name ILIKE :search", { search })
+            .orWhere("booking.email ILIKE :search", { search });
+        }),
+      );
+    }
+
+    return qb;
   }
 
   async findHotelBookingById(

@@ -38,6 +38,7 @@ import {
   AllocationSuccess,
   HotelAllocationRecord,
   HotelBookingRecord,
+  LIVE_HOTEL_BOOKING_CONDITION,
   ProviderOrder,
   bookingReferenceOf,
   starsLabel,
@@ -415,6 +416,7 @@ export class CancelledFlightsRepository {
     totalAdults: number;
     totalChildren: number;
     totalBookings: number;
+    totalHotelBookings: number;
     totalRooms: number;
     totalHotelCost: number;
     totalHotelTax: number;
@@ -482,11 +484,26 @@ export class CancelledFlightsRepository {
     const sumMoney = (column: string) =>
       `COALESCE(SUM(CASE WHEN ${column} = 'NaN'${excludeUnsettled} THEN 0 ELSE ${column} END), 0)`;
 
+    // Live hotel bookings per flight - the same rows as the hotel bookings
+    // list. totalBookings, by contrast, counts every PNR on the flight.
+    const hotelBookingsPerFlight = qb
+      .subQuery()
+      .select("COUNT(hotelBooking.id)")
+      .from(HotelBookingEntity, "hotelBooking")
+      .innerJoin("hotelBooking.booking", "booking")
+      .where("hotelBooking.cancelledFlightId = flight.id")
+      .andWhere(LIVE_HOTEL_BOOKING_CONDITION)
+      .getQuery();
+
     const raw = await qb
       .select("COUNT(flight.id)", "totalCancelFlights")
       .addSelect("COALESCE(SUM(flight.totalAdults), 0)", "totalAdults")
       .addSelect("COALESCE(SUM(flight.totalChildren), 0)", "totalChildren")
       .addSelect("COALESCE(SUM(flight.totalBooking), 0)", "totalBookings")
+      .addSelect(
+        `COALESCE(SUM(${hotelBookingsPerFlight}), 0)`,
+        "totalHotelBookings",
+      )
       .addSelect("COALESCE(SUM(flight.totalHotelRooms), 0)", "totalRooms")
       .addSelect(sumMoney("flight.totalSellingPrice"), "totalHotelCost")
       .addSelect(sumMoney("flight.totalHotelTaxes"), "totalHotelTax")
@@ -498,6 +515,7 @@ export class CancelledFlightsRepository {
         totalAdults: string;
         totalChildren: string;
         totalBookings: string;
+        totalHotelBookings: string;
         totalRooms: string;
         totalHotelCost: string;
         totalHotelTax: string;
@@ -522,6 +540,7 @@ export class CancelledFlightsRepository {
       totalAdults: toFiniteNumber(raw?.totalAdults),
       totalChildren: toFiniteNumber(raw?.totalChildren),
       totalBookings: toFiniteNumber(raw?.totalBookings),
+      totalHotelBookings: toFiniteNumber(raw?.totalHotelBookings),
       totalRooms: toFiniteNumber(raw?.totalRooms),
       totalHotelCost: toFiniteNumber(raw?.totalHotelCost),
       totalHotelTax: toFiniteNumber(raw?.totalHotelTax),
