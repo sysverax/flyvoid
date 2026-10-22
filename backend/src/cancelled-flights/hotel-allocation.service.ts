@@ -247,6 +247,15 @@ const ROOM_SPLIT_RULES: Record<string, RoomSplitPlan> = {
   "2_2": { preferred: [room(2, 2)], fallbacks: [[room(1, 1), room(1, 1)]] },
   "2_3": { preferred: [room(1, 2), room(1, 1)], fallbacks: [[room(2, 3)]] },
   "2_4": { preferred: [room(1, 2), room(1, 2)], fallbacks: [[room(2, 4)]] },
+  "2_5": {
+    preferred: [room(1, 3), room(1, 2)],
+    fallbacks: [[room(1, 4), room(1, 1)]],
+  },
+  "2_6": {
+    preferred: [room(1, 3), room(1, 3)],
+    fallbacks: [[room(1, 4), room(1, 2)]],
+  },
+  "2_7": { preferred: [room(1, 4), room(1, 3)], fallbacks: [] },
 
   "3_1": {
     preferred: [room(2), room(1, 1)],
@@ -264,6 +273,14 @@ const ROOM_SPLIT_RULES: Record<string, RoomSplitPlan> = {
     preferred: [room(2, 1), room(1, 3)],
     fallbacks: [[room(2, 2), room(1, 2)]],
   },
+  "3_5": {
+    preferred: [room(2, 2), room(1, 3)],
+    fallbacks: [[room(2, 1), room(1, 4)]],
+  },
+  "3_6": {
+    preferred: [room(2, 3), room(1, 3)],
+    fallbacks: [[room(1, 2), room(1, 2), room(1, 2)]],
+  },
   "4_1": {
     preferred: [room(2), room(2, 1)],
     fallbacks: [[room(2, 1), room(1), room(1)]],
@@ -279,6 +296,10 @@ const ROOM_SPLIT_RULES: Record<string, RoomSplitPlan> = {
   "4_4": {
     preferred: [room(2, 2), room(2, 2)],
     fallbacks: [[room(2), room(1, 3), room(1, 1)]],
+  },
+  "4_5": {
+    preferred: [room(2, 2), room(2, 3)],
+    fallbacks: [[room(2, 1), room(1, 2), room(1, 2)]],
   },
   "5_1": {
     preferred: [room(2), room(2), room(1, 1)],
