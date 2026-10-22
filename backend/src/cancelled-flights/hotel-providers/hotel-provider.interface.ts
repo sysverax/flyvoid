@@ -39,6 +39,8 @@ export interface AvailabilityHotel {
   address: string;
   stars: number;
   rates: AvailabilityRoomRate[];
+  /** Radius of the search ring that first found the hotel (config.hotelSearch.unit). */
+  radius?: number;
 }
 
 /** Static hotel data from a supplier's content API, stored in our hotels table. */

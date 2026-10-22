@@ -84,6 +84,7 @@ export interface CancelledFlightsSummaryData {
   totalAdults: number;
   totalChildren: number;
   totalBookings: number;
+  totalHotelBookings: number;
   totalRooms: number;
   totalHotelCost: number;
   totalHotelTax: number;

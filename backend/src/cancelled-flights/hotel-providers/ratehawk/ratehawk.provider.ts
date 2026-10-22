@@ -715,6 +715,15 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
       .filter((tax: TaxAtProperty) => Number.isFinite(tax.amount));
   }
 
+  /** Passengers must not pay the hotel themselves: true when any of the hotel's rates has a tax payable there. */
+  private chargesAtProperty(hotel: any): boolean {
+    return (hotel?.rates ?? []).some((rate: any) =>
+      (rate.payment_options?.payment_types ?? []).some(
+        (payment: any) => this.taxesAtProperty(payment).length > 0,
+      ),
+    );
+  }
+
   private taxComments(payment: any): string | null {
     const taxes = Array.isArray(payment?.tax_data?.taxes)
       ? payment.tax_data.taxes
@@ -758,6 +767,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     checkout: string,
   ): AvailabilityHotel[] {
     return rawHotels
+      .filter((hotel: any) => !this.chargesAtProperty(hotel))
       .map((hotel: any) => {
         const hid = Number(hotel.hid);
         // Stars and the real name come from our hotels table (Content API), not search.
@@ -1455,6 +1465,11 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
       log,
     );
     const hpHotel = hotelpage?.hotels?.[0];
+    if (this.chargesAtProperty(hpHotel)) {
+      throw new ConflictException(
+        "The hotel charges taxes payable at the property; passengers must not pay the hotel",
+      );
+    }
     const bookable = (hpHotel?.rates ?? [])
       .filter(
         (rate: any) =>

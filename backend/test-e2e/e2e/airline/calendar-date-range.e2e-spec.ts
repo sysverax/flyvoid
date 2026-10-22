@@ -47,7 +47,7 @@ const ENDPOINTS: { name: string; path: string; count: (body: any) => number }[] 
   {
     name: "hotel bookings summary",
     path: "/api/v1/hotel-bookings/summary",
-    count: (body) => body.data.totalCancelFlights,
+    count: (body) => body.data.totalBookings,
   },
 ];
 
@@ -176,7 +176,7 @@ describe("Calendar date (YYYY-MM-DD) range filters", () => {
         .query({ ...RANGE, search: "e2e-calendar-range" })
         .set("Authorization", `Bearer ${token}`);
       expect(res.status).toBe(200);
-      expect(res.body.data.totalCancelFlights).toBe(2);
+      expect(res.body.data.totalBookings).toBe(2);
     });
   });
 });

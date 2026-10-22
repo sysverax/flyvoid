@@ -125,7 +125,7 @@ export class HotelBookingsController {
   @ApiOperation({
     summary: "Get hotel bookings summary",
     description:
-      "Returns total hotel bookings, total passengers, and total cost for the authenticated airline's cancelled flights. Optional filters: destinationAirportId, cancelledFlightId, search, startDate/endDate (check-in date as YYYY-MM-DD, both inclusive). Airline users only, requires VIEW access on the Bookings tab.",
+      "Returns totals for the authenticated airline's live hotel bookings (the same rows as the hotel bookings list): totalBookings, totalPassengers, totalRooms, totalCost, totalPlatformFee. Also returns totalPnrs (all PNRs on the airline's cancelled flights) and totalAllocatedPnrs (PNRs on flights that are allocated, paid or published). Optional filters: destinationAirportId, cancelledFlightId, search, startDate/endDate (check-in date as YYYY-MM-DD, both inclusive). destinationAirportId and cancelledFlightId apply to every total; search and startDate/endDate only narrow the hotel booking totals, not the PNR counts. Airline users only, requires VIEW access on the Bookings tab.",
   })
   @ApiOkResponse({
     schema: {

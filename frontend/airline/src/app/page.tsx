@@ -215,7 +215,7 @@ export default function DashboardPage() {
       {
         title: "Total Hotel Bookings",
         value: summaryData
-          ? (summaryData.totalBookings || 0).toLocaleString("en-US")
+          ? (summaryData.totalHotelBookings || 0).toLocaleString("en-US")
           : "0",
       },
       {

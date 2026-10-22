@@ -1,6 +1,9 @@
 import { BookingEntity } from "./entities/booking.entity";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
-import { HotelAllocationStatus } from "./entities/enums";
+import {
+  HotelAllocationStatus,
+  HotelBookingAttemptStatus,
+} from "./entities/enums";
 import { HotelBookingEntity } from "./entities/hotel-booking.entity";
 import { HotelContact } from "./entities/hotel.entity";
 import {
@@ -11,6 +14,17 @@ import type {
   HotelPolicies,
   TaxAtProperty,
 } from "./hotel-providers/hotel-provider.interface";
+
+const NOT_BOOKED_STATUSES = [
+  HotelAllocationStatus.DRAFT,
+  HotelAllocationStatus.FAILED,
+];
+
+/**
+ * SQL condition for a PNR's live (non-failed) hotel booking, for PNRs that
+ * have a hotel. Expects the aliases `hotelBooking` and `booking`.
+ */
+export const LIVE_HOTEL_BOOKING_CONDITION = `hotelBooking.status <> '${HotelBookingAttemptStatus.FAILED}' AND booking.allocation_status NOT IN (${NOT_BOOKED_STATUSES.map((status) => `'${status}'`).join(", ")})`;
 
 export interface HotelAllocationRoom {
   adults: number;
