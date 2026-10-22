@@ -24,6 +24,5 @@ export const SPEND_FLIGHT_STATUSES: FlightStatus[] = [
   FlightStatus.PUBLISHED,
 ];
 
-/** "2026-10-21 18:30:00.000" - matches the UTC `timestamp without time zone` column. */
-export const toUtcTimestampParam = (instant: Date): string =>
-  instant.toISOString().replace("T", " ").replace("Z", "");
+// Moved to common/utils/date-range.util.ts; re-exported for existing callers.
+export { toUtcTimestampParam } from "../common/utils/date-range.util";
