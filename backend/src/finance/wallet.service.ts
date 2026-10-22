@@ -183,12 +183,8 @@ export class WalletService {
       query,
     });
 
-    if (query.startDate && query.endDate) {
-      if (new Date(query.startDate) > new Date(query.endDate)) {
-        throw new BadRequestException("startDate cannot be later than endDate");
-      }
-    }
-
+    // startDate/endDate format and order are validated by the DTO
+    // (TimestampRangeQueryDto); both are UTC Dates here.
     const airlineScopeId = this.resolveAirlineScope(
       authenticatedUser,
       query.airlineId,
@@ -213,6 +209,7 @@ export class WalletService {
           type: query.type,
           startDate: query.startDate,
           endDate: query.endDate,
+          search: query.search?.trim(),
         },
         requestLogger,
       );

@@ -16,6 +16,10 @@ export function extractErrorMessage(error: any, defaultMsg: string): string {
   if (data?.errors && Array.isArray(data.errors) && data.errors.length > 0) {
     return data.errors.join(", ");
   }
+  // Validation errors send `message` as a list, service errors as a string.
+  if (Array.isArray(data?.message)) {
+    return data.message.length > 0 ? data.message.join(", ") : defaultMsg;
+  }
   return data?.message || defaultMsg;
 }
 

@@ -201,7 +201,7 @@ export default function VerifyPage() {
     try {
       const token = sessionStorage.getItem("two_factor_token") || "";
       const email = sessionStorage.getItem("two_factor_email") || "";
-      const result = await authService.recoverTfa(email, cleanCode);
+      const result = await authService.recoverTfa(token, cleanCode);
 
       if (email) {
         sessionStorage.removeItem(`airline_tfa_enabled_${email}`);
@@ -225,11 +225,6 @@ export default function VerifyPage() {
         return;
       }
       toast.error(err.message || "Failed to recover 2FA.");
-      if (err.status === 401 || err.response?.status === 401) {
-        sessionStorage.removeItem("two_factor_token");
-        sessionStorage.removeItem("two_factor_email");
-        router.push("/auth/login");
-      }
     } finally {
       setIsLoading(false);
     }

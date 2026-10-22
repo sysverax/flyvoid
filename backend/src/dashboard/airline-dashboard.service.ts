@@ -1,7 +1,6 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
 import { Logger } from "winston";
 import { AuthenticatedUser } from "../auth/interfaces/authenticated-request.interface";
-import { TimeFrame } from "../common/constants/time-frame.constants";
 import {
   AirlineDashboardRepository,
   TREND_METRICS,
@@ -13,10 +12,11 @@ import {
   CancelledFlightsTrendResponseDto,
   HotelSpendTrendResponseDto,
 } from "./dto/airline-trend-response.dto";
+import { GetAirlineTrendQueryDto } from "./dto/get-airline-trend-query.dto";
 import {
   buildTrendWindow,
+  describeTimeFrameRange,
   fillTrendBuckets,
-  formatInTimeZone,
   TrendPoint,
 } from "../common/utils/time-frame.util";
 
@@ -30,12 +30,12 @@ export class AirlineDashboardService {
 
   async getHotelSpendTrend(
     user: AuthenticatedUser,
-    timeFrame: TimeFrame,
+    query: GetAirlineTrendQueryDto,
     requestLogger: Logger,
   ): Promise<HotelSpendTrendResponseDto> {
     const { window, points } = await this.getTrend(
       user,
-      timeFrame,
+      query,
       TREND_METRICS.hotelSpend,
       requestLogger,
     );
@@ -51,12 +51,12 @@ export class AirlineDashboardService {
 
   async getAffectedPassengersTrend(
     user: AuthenticatedUser,
-    timeFrame: TimeFrame,
+    query: GetAirlineTrendQueryDto,
     requestLogger: Logger,
   ): Promise<AffectedPassengersTrendResponseDto> {
     const { window, points } = await this.getTrend(
       user,
-      timeFrame,
+      query,
       TREND_METRICS.affectedPassengers,
       requestLogger,
     );
@@ -72,12 +72,12 @@ export class AirlineDashboardService {
 
   async getCancelledFlightsTrend(
     user: AuthenticatedUser,
-    timeFrame: TimeFrame,
+    query: GetAirlineTrendQueryDto,
     requestLogger: Logger,
   ): Promise<CancelledFlightsTrendResponseDto> {
     const { window, points } = await this.getTrend(
       user,
-      timeFrame,
+      query,
       TREND_METRICS.cancelledFlights,
       requestLogger,
     );
@@ -92,10 +92,10 @@ export class AirlineDashboardService {
   }
 
   // Shared by all three trends: scope to the caller's airline, resolve the
-  // window in the airline's timezone, run one grouped query, zero-fill.
+  // window in the request timezone, run one grouped query, zero-fill.
   private async getTrend(
     user: AuthenticatedUser,
-    timeFrame: TimeFrame,
+    { timeFrame, timezone }: GetAirlineTrendQueryDto,
     metric: TrendMetric,
     requestLogger: Logger,
   ): Promise<{ window: AirlineTrendResponseDto; points: TrendPoint[] }> {
@@ -111,19 +111,7 @@ export class AirlineDashboardService {
       );
     }
 
-    const trendWindow = buildTrendWindow(timeFrame, user.airlineTimezone);
-
-    if (trendWindow.timeZone !== user.airlineTimezone) {
-      requestLogger.warn(
-        "Airline timezone missing, invalid or non-canonical; using resolved timezone for dashboard trend",
-        {
-          context: this.context,
-          airlineId,
-          airlineTimezone: user.airlineTimezone,
-          resolvedTimezone: trendWindow.timeZone,
-        },
-      );
-    }
+    const trendWindow = buildTrendWindow(timeFrame, timezone);
 
     requestLogger.info("Fetching airline dashboard trend", {
       context: this.context,
@@ -147,15 +135,8 @@ export class AirlineDashboardService {
 
     return {
       window: {
-        timeFrame,
+        ...describeTimeFrameRange(timeFrame, trendWindow),
         granularity: trendWindow.granularity,
-        timezone: trendWindow.timeZone,
-        startDate: formatInTimeZone(trendWindow.startUtc, trendWindow.timeZone),
-        // endUtc is exclusive; report the last second inside the window.
-        endDate: formatInTimeZone(
-          new Date(trendWindow.endUtc.getTime() - 1000),
-          trendWindow.timeZone,
-        ),
       },
       points: fillTrendBuckets(
         trendWindow.buckets,

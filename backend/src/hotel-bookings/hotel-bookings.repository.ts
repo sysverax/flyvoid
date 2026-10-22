@@ -187,16 +187,21 @@ export class HotelBookingsRepository {
         .where("hotelBooking.cancelledFlightId = cancelledFlight.id")
         .andWhere(LIVE_BOOKING_CONDITION);
 
+      // The subquery is inlined via getQuery(), so its parameters must be
+      // bound on the outer query.
       if (filters.startDate) {
         hotelBookingSubquery.andWhere("hotelBooking.checkInDate >= :startDate");
+        summaryQb.setParameter("startDate", filters.startDate);
       }
 
       if (filters.endDate) {
         hotelBookingSubquery.andWhere("hotelBooking.checkInDate <= :endDate");
+        summaryQb.setParameter("endDate", filters.endDate);
       }
 
       if (filters.search?.trim()) {
         const search = `%${filters.search.trim()}%`;
+        summaryQb.setParameter("search", search);
         hotelBookingSubquery.andWhere(
           new Brackets((sub) => {
             sub

@@ -54,6 +54,7 @@ import {
 import { AirlineRole, UserType } from "../../common/constants/user.constants";
 import {
   AirlineProfileResponseDto,
+  AirlineUserDetailsResponseDto,
   AirlineUserListResponseDto,
   AirlineUserResponseDto,
   AirlineUserProfileResponseDto,
@@ -69,6 +70,7 @@ import { AirlineUserService } from "../services/airline-user.service";
 @ApiExtraModels(
   BaseResponseDto,
   AirlineUserResponseDto,
+  AirlineUserDetailsResponseDto,
   InviteAirlineUserRequestDto,
   InviteAirlineUserResponseDto,
   UpdateAirlineUserRequestDto,
@@ -82,12 +84,12 @@ export class AirlineUserController {
 
   @Get("users/profile")
   @RequireUserRoles(AirlineRole.AIRLINE_ADMIN, AirlineRole.AIRLINE_STAFF)
-  @RequireAccessControl({
-    airline: {
-      asset: AirlineAsset.PROFILE,
-      access: [AccessAction.VIEW],
-    },
-  })
+  // @RequireAccessControl({
+  //   airline: {
+  //     asset: AirlineAsset.PROFILE,
+  //     access: [AccessAction.VIEW],
+  //   },
+  // })
   @ApiBearerAuth("access-token")
   @ApiOperation({
     summary: "Airline user profile",
@@ -142,12 +144,12 @@ export class AirlineUserController {
 
   @Patch("users/profile")
   @RequireUserRoles(AirlineRole.AIRLINE_ADMIN, AirlineRole.AIRLINE_STAFF)
-  @RequireAccessControl({
-    airline: {
-      asset: AirlineAsset.PROFILE,
-      access: [AccessAction.EDIT],
-    },
-  })
+  // @RequireAccessControl({
+  //   airline: {
+  //     asset: AirlineAsset.PROFILE,
+  //     access: [AccessAction.EDIT],
+  //   },
+  // })
   @ApiBearerAuth("access-token")
   @ApiOperation({
     summary: "Update airline user profile",
@@ -209,13 +211,13 @@ export class AirlineUserController {
   }
 
   @Get("profile")
-  @RequireUserRoles(AirlineRole.AIRLINE_ADMIN)
+  @RequireUserRoles(AirlineRole.AIRLINE_ADMIN, AirlineRole.AIRLINE_STAFF)
   @ApiBearerAuth("access-token")
   @ApiOperation({
     summary: "Airline profile",
     description: `
     Returns the airline profile associated with the authenticated airline admin's account.
-      Access: AIRLINE_ADMIN only. Requires userType=AIRLINE.
+      Access: AIRLINE_ADMIN and AIRLINE_STAFF. Requires userType=AIRLINE.
       Business logic validations:
         1. Authenticated user must be an active airline user (401 if not found or inactive)
         2. Associated airline must be active (401 if not found or inactive)`,
@@ -238,7 +240,7 @@ export class AirlineUserController {
   })
   @ApiForbiddenResponse({
     description:
-      "Insufficient permissions. AIRLINE_ADMIN role is required for this endpoint.",
+      "Insufficient permissions. AIRLINE_ADMIN and AIRLINE_STAFF roles are required for this endpoint.",
   })
   @ApiUnauthorizedResponse({
     schema: createUnauthorizedErrorSchema(
@@ -337,6 +339,83 @@ export class AirlineUserController {
       response,
       requestId,
       "Airline user invited successfully",
+    );
+  }
+
+  @Get("users/:userId")
+  @RequireUserRoles(AirlineRole.AIRLINE_ADMIN, AirlineRole.AIRLINE_STAFF)
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.AIRLINE_USERS,
+      access: [AccessAction.VIEW],
+    },
+  })
+  @ApiBearerAuth("access-token")
+  @ApiOperation({
+    summary: "View airline user details",
+    description: `
+    Returns a single airline user's details including their assigned access controls.
+      Access: AIRLINE_ADMIN and AIRLINE_STAFF with VIEW access on the AIRLINE_USERS asset. Requires userType=AIRLINE.
+      Business logic validations:
+        1. Target airline user must exist within same airline (404 if not found)`,
+  })
+  @ApiOkResponse({
+    description: "Airline user fetched successfully",
+    headers: {
+      "x-request-id": REQUEST_ID_HEADER_SCHEMA,
+    },
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(BaseResponseDto) },
+        {
+          properties: {
+            success: { type: "boolean", example: true },
+            requestId: { type: "string", example: REQUEST_ID_EXAMPLE },
+            timestamp: { type: "string", example: TIMESTAMP_EXAMPLE },
+            message: {
+              type: "string",
+              example: "Airline user fetched successfully",
+            },
+            data: { $ref: getSchemaPath(AirlineUserDetailsResponseDto) },
+          },
+        },
+      ],
+    },
+  })
+  @ApiBadRequestResponse({
+    description: "Validation failed",
+    schema: createBadRequestErrorSchema("/api/v1/airline/users/2"),
+  })
+  @ApiNotFoundResponse({
+    description: "Airline user not found",
+    schema: createNotFoundErrorSchema(
+      "/api/v1/airline/users/2",
+      "Airline user not found",
+    ),
+  })
+  @ApiForbiddenResponse({
+    description:
+      "Only AIRLINE_ADMIN and AIRLINE_STAFF who has the required permissions can perform this action",
+    schema: createForbiddenErrorSchema(
+      "/api/v1/airline/users/2",
+      "Only AIRLINE_ADMIN and AIRLINE_STAFF who has the required permissions can perform this action",
+    ),
+  })
+  async getAirlineUserDetails(
+    @Req() req: AuthenticatedRequest,
+    @Param("userId", ParseIntPipe) userId: number,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<AirlineUserDetailsResponseDto>> {
+    const response = await this.airlineUserService.getAirlineUserDetails(
+      req.user,
+      userId,
+      requestId,
+    );
+
+    return BaseResponseDto.success(
+      response,
+      requestId,
+      "Airline user fetched successfully",
     );
   }
 
@@ -525,7 +604,8 @@ export class AirlineUserController {
       Filters:
         1. page (pagination, min 1)
         2. limit (items per page)
-        3. search (matches first name, last name, userId or email)`,
+        3. search (matches first name, last name, userId or email)
+        4. isActive (filter by active status: true or false)`,
   })
   @ApiOkResponse({
     description: "Airline users fetched successfully",

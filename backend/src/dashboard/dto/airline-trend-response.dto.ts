@@ -1,42 +1,20 @@
 import { ApiProperty } from "@nestjs/swagger";
 import {
-  TIME_FRAME,
-  TimeFrame,
   TREND_GRANULARITY,
   TrendGranularity,
 } from "../../common/constants/time-frame.constants";
+import { TimeFrameRangeResponseDto } from "../../common/dto/time-frame-range-response.dto";
 
 const BUCKET_DESCRIPTION =
-  'Bucket start in the airline\'s timezone: "2026-10-21T14:00" (hour), "2026-10-21" (day), "2026-10" (month) or "2026" (year)';
+  'Bucket start, local wall-clock time in the request `timezone` (no offset): "2026-10-21T14:00" (hour), "2026-10-21" (day), "2026-10" (month) or "2026" (year)';
 
 const LABEL_DESCRIPTION =
   'Display label for the bucket: "14:00" (hour), weekday name such as "Monday" (day, i.e. week), month name such as "October" (month) or "2026" (year)';
 
-export class AirlineTrendResponseDto {
-  @ApiProperty({ enum: TIME_FRAME, example: TIME_FRAME.WEEK })
-  timeFrame!: TimeFrame;
-
+// timeFrame, timezone, startDate, endDate come from TimeFrameRangeResponseDto.
+export class AirlineTrendResponseDto extends TimeFrameRangeResponseDto {
   @ApiProperty({ enum: TREND_GRANULARITY, example: TREND_GRANULARITY.DAY })
   granularity!: TrendGranularity;
-
-  @ApiProperty({
-    description:
-      "IANA timezone the buckets are computed in (the airline's timezone, or UTC if it is not set)",
-    example: "Asia/Colombo",
-  })
-  timezone!: string;
-
-  @ApiProperty({
-    description: "Start of the window (inclusive), in the airline's timezone",
-    example: "2026-10-15T00:00:00+05:30",
-  })
-  startDate!: string;
-
-  @ApiProperty({
-    description: "End of the window (inclusive), in the airline's timezone",
-    example: "2026-10-21T23:59:59+05:30",
-  })
-  endDate!: string;
 }
 
 export class HotelSpendTrendPointDto {

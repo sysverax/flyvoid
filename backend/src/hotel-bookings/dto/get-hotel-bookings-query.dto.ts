@@ -1,13 +1,13 @@
 import { Transform } from "class-transformer";
-import { ApiPropertyOptional } from "@nestjs/swagger";
+import { ApiPropertyOptional, IntersectionType } from "@nestjs/swagger";
 import {
-  IsDateString,
   IsInt,
   IsOptional,
   IsString,
   Min,
   MaxLength,
 } from "class-validator";
+import { CalendarDateRangeQueryDto } from "../../common/dto/date-range-query.dto";
 import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
 
 const toOptionalInt = ({ value }: { value: unknown }) => {
@@ -18,7 +18,12 @@ const toOptionalInt = ({ value }: { value: unknown }) => {
   return Number.isInteger(num) ? num : value;
 };
 
-export class GetHotelBookingsQueryDto extends PaginationQueryDto {
+// startDate/endDate filter the check-in date (a DATE column): YYYY-MM-DD,
+// both inclusive.
+export class GetHotelBookingsQueryDto extends IntersectionType(
+  PaginationQueryDto,
+  CalendarDateRangeQueryDto,
+) {
   @ApiPropertyOptional({
     description: "Filter by destination (arrival) airport id",
     example: 3,
@@ -63,36 +68,9 @@ export class GetHotelBookingsQueryDto extends PaginationQueryDto {
   @Min(1, { message: "airlineId must be greater than or equal to 1" })
   @IsOptional()
   airlineId?: number;
-
-  @ApiPropertyOptional({
-    description:
-      "Filter hotel bookings with a check-in date on or after this date",
-    example: "2026-09-01",
-  })
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === "string" ? value.trim() : value,
-  )
-  @IsDateString(
-    {},
-    { message: "startDate must be a valid ISO 8601 date string" },
-  )
-  @IsOptional()
-  startDate?: string;
-
-  @ApiPropertyOptional({
-    description:
-      "Filter hotel bookings with a check-in date on or before this date",
-    example: "2026-09-30",
-  })
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === "string" ? value.trim() : value,
-  )
-  @IsDateString({}, { message: "endDate must be a valid ISO 8601 date string" })
-  @IsOptional()
-  endDate?: string;
 }
 
-export class GetHotelBookingsSummaryQueryDto {
+export class GetHotelBookingsSummaryQueryDto extends CalendarDateRangeQueryDto {
   @ApiPropertyOptional({
     description: "Filter by destination (arrival) airport id",
     example: 3,
@@ -137,31 +115,4 @@ export class GetHotelBookingsSummaryQueryDto {
   @Min(1, { message: "airlineId must be greater than or equal to 1" })
   @IsOptional()
   airlineId?: number;
-
-  @ApiPropertyOptional({
-    description:
-      "Filter hotel bookings with a check-in date on or after this date",
-    example: "2026-09-01",
-  })
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === "string" ? value.trim() : value,
-  )
-  @IsDateString(
-    {},
-    { message: "startDate must be a valid ISO 8601 date string" },
-  )
-  @IsOptional()
-  startDate?: string;
-
-  @ApiPropertyOptional({
-    description:
-      "Filter hotel bookings with a check-in date on or before this date",
-    example: "2026-09-30",
-  })
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === "string" ? value.trim() : value,
-  )
-  @IsDateString({}, { message: "endDate must be a valid ISO 8601 date string" })
-  @IsOptional()
-  endDate?: string;
 }

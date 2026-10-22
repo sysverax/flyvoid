@@ -181,6 +181,7 @@ export class AirlineUserRepository {
         page: query.page,
         limit: query.limit,
         search: query.search,
+        isActive: query.isActive,
       },
     );
 
@@ -194,9 +195,15 @@ export class AirlineUserRepository {
       })
       .andWhere("airlineUser.id != :excludeUserId", { excludeUserId });
 
+    if (query.isActive !== undefined) {
+      queryBuilder.andWhere("airlineUser.isActive = :isActive", {
+        isActive: query.isActive,
+      });
+    }
+
     if (query.search) {
       queryBuilder.andWhere(
-        "(airlineUser.firstName ILIKE :search OR airlineUser.lastName ILIKE :search OR airlineUser.email ILIKE :search OR airlineUser.id::text ILIKE :search)",
+        "(airlineUser.firstName ILIKE :search OR airlineUser.lastName ILIKE :search OR airlineUser.email ILIKE :search OR CAST(airlineUser.id AS TEXT) ILIKE :search)",
         { search: `%${query.search}%` },
       );
     }

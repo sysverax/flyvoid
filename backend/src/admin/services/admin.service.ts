@@ -16,6 +16,7 @@ import { AuthenticatedUser } from "../../auth/interfaces/authenticated-request.i
 import { AdminRole } from "../../common/constants/user.constants";
 import {
   AdminProfileDto,
+  AdminUserDetailsResponseDto,
   AdminUserListResponseDto,
   AdminUserQueryDto,
   AdminUserResponseDto,
@@ -94,7 +95,7 @@ export class AdminService {
     dto: InviteAdminUserRequestDto,
     requestId: string,
   ): Promise<InviteAdminUserResponseDto> {
-    await this.ensureSuperAdmin(authenticatedUser, requestId);
+    await this.ensureActiveAdmin(authenticatedUser, requestId);
 
     if (dto.role === AdminRole.SUPER_ADMIN) {
       throw new ForbiddenException("Inviting SUPER_ADMIN is not allowed");
@@ -149,7 +150,7 @@ export class AdminService {
     dto: UpdateAdminUserRequestDto,
     requestId: string,
   ): Promise<AdminUserResponseDto> {
-    const actor = await this.ensureSuperAdmin(authenticatedUser, requestId);
+    const actor = await this.ensureActiveAdmin(authenticatedUser, requestId);
 
     const admin = await this.adminRepository.findById(adminId, requestId);
     if (!admin) {
@@ -218,7 +219,7 @@ export class AdminService {
     adminId: number,
     requestId: string,
   ): Promise<void> {
-    const actor = await this.ensureSuperAdmin(authenticatedUser, requestId);
+    const actor = await this.ensureActiveAdmin(authenticatedUser, requestId);
 
     const admin = await this.adminRepository.findById(adminId, requestId);
     if (!admin) {
@@ -236,12 +237,38 @@ export class AdminService {
     await this.adminRepository.deleteAdmin(adminId, requestId);
   }
 
+  async getAdminUserDetails(
+    authenticatedUser: AuthenticatedUser,
+    adminId: number,
+    requestId: string,
+  ): Promise<AdminUserDetailsResponseDto> {
+    await this.ensureActiveAdmin(authenticatedUser, requestId);
+
+    const admin = await this.adminRepository.findById(adminId, requestId);
+    if (!admin) {
+      throw new NotFoundException("Admin user not found");
+    }
+
+    const accessControls =
+      admin.role === AdminRole.SUPER_ADMIN
+        ? this.buildSuperAdminAccessControls()
+        : await this.adminRepository.findAdminAccessControls(
+            admin.id,
+            requestId,
+          );
+
+    return {
+      ...this.toAdminUserResponse(admin),
+      accessControls,
+    };
+  }
+
   async listAdminUsers(
     authenticatedUser: AuthenticatedUser,
     adminUserQuery: AdminUserQueryDto,
     requestId: string,
   ): Promise<AdminUserListResponseDto> {
-    await this.ensureSuperAdmin(authenticatedUser, requestId);
+    await this.ensureActiveAdmin(authenticatedUser, requestId);
 
     const { admins, total } = await this.adminRepository.findAll(
       adminUserQuery,
@@ -256,7 +283,7 @@ export class AdminService {
     };
   }
 
-  private async ensureSuperAdmin(
+  private async ensureActiveAdmin(
     authenticatedUser: AuthenticatedUser,
     requestId: string,
   ) {
@@ -266,10 +293,6 @@ export class AdminService {
     );
     if (!actor || !actor.isActive) {
       throw new UnauthorizedException("Unauthorized");
-    }
-
-    if (actor.role !== AdminRole.SUPER_ADMIN) {
-      throw new ForbiddenException("Only SUPER_ADMIN can perform this action");
     }
 
     return actor;

@@ -1,6 +1,14 @@
 import { Transform } from "class-transformer";
-import { ApiPropertyOptional } from "@nestjs/swagger";
-import { IsDateString, IsEnum, IsInt, IsOptional, Min } from "class-validator";
+import { ApiPropertyOptional, IntersectionType } from "@nestjs/swagger";
+import {
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+} from "class-validator";
+import { TimestampRangeQueryDto } from "../../common/dto/date-range-query.dto";
 import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
 import { PAYMENT_STATUSES } from "../constants";
 import { TRANSACTION_REFERENCE_TYPES } from "../constants";
@@ -13,7 +21,12 @@ const toOptionalInt = ({ value }: { value: unknown }) => {
   return Number.isInteger(num) ? num : value;
 };
 
-export class GetWalletTransactionsQueryDto extends PaginationQueryDto {
+// startDate/endDate filter transaction creation time (a timestamp column):
+// ISO 8601 with timezone, start inclusive, end exclusive.
+export class GetWalletTransactionsQueryDto extends IntersectionType(
+  PaginationQueryDto,
+  TimestampRangeQueryDto,
+) {
   @ApiPropertyOptional({
     description: "Filter by airline id (platform users only)",
     example: 12,
@@ -49,21 +62,11 @@ export class GetWalletTransactionsQueryDto extends PaginationQueryDto {
   status?: PAYMENT_STATUSES;
 
   @ApiPropertyOptional({
-    description: "Filter transactions created on or after this date",
-    example: "2026-09-01",
+    description: "Search by transaction id (partial match)",
+    example: "1024",
   })
-  @IsDateString(
-    {},
-    { message: "startDate must be a valid ISO 8601 date string" },
-  )
   @IsOptional()
-  startDate?: string;
-
-  @ApiPropertyOptional({
-    description: "Filter transactions created on or before this date",
-    example: "2026-09-30",
-  })
-  @IsDateString({}, { message: "endDate must be a valid ISO 8601 date string" })
-  @IsOptional()
-  endDate?: string;
+  @IsString()
+  @MaxLength(50)
+  search?: string;
 }
