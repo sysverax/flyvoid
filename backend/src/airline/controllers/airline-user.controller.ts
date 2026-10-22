@@ -54,6 +54,7 @@ import {
 import { AirlineRole, UserType } from "../../common/constants/user.constants";
 import {
   AirlineProfileResponseDto,
+  AirlineUserDetailsResponseDto,
   AirlineUserListResponseDto,
   AirlineUserResponseDto,
   AirlineUserProfileResponseDto,
@@ -69,6 +70,7 @@ import { AirlineUserService } from "../services/airline-user.service";
 @ApiExtraModels(
   BaseResponseDto,
   AirlineUserResponseDto,
+  AirlineUserDetailsResponseDto,
   InviteAirlineUserRequestDto,
   InviteAirlineUserResponseDto,
   UpdateAirlineUserRequestDto,
@@ -337,6 +339,83 @@ export class AirlineUserController {
       response,
       requestId,
       "Airline user invited successfully",
+    );
+  }
+
+  @Get("users/:userId")
+  @RequireUserRoles(AirlineRole.AIRLINE_ADMIN, AirlineRole.AIRLINE_STAFF)
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.AIRLINE_USERS,
+      access: [AccessAction.VIEW],
+    },
+  })
+  @ApiBearerAuth("access-token")
+  @ApiOperation({
+    summary: "View airline user details",
+    description: `
+    Returns a single airline user's details including their assigned access controls.
+      Access: AIRLINE_ADMIN and AIRLINE_STAFF with VIEW access on the AIRLINE_USERS asset. Requires userType=AIRLINE.
+      Business logic validations:
+        1. Target airline user must exist within same airline (404 if not found)`,
+  })
+  @ApiOkResponse({
+    description: "Airline user fetched successfully",
+    headers: {
+      "x-request-id": REQUEST_ID_HEADER_SCHEMA,
+    },
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(BaseResponseDto) },
+        {
+          properties: {
+            success: { type: "boolean", example: true },
+            requestId: { type: "string", example: REQUEST_ID_EXAMPLE },
+            timestamp: { type: "string", example: TIMESTAMP_EXAMPLE },
+            message: {
+              type: "string",
+              example: "Airline user fetched successfully",
+            },
+            data: { $ref: getSchemaPath(AirlineUserDetailsResponseDto) },
+          },
+        },
+      ],
+    },
+  })
+  @ApiBadRequestResponse({
+    description: "Validation failed",
+    schema: createBadRequestErrorSchema("/api/v1/airline/users/2"),
+  })
+  @ApiNotFoundResponse({
+    description: "Airline user not found",
+    schema: createNotFoundErrorSchema(
+      "/api/v1/airline/users/2",
+      "Airline user not found",
+    ),
+  })
+  @ApiForbiddenResponse({
+    description:
+      "Only AIRLINE_ADMIN and AIRLINE_STAFF who has the required permissions can perform this action",
+    schema: createForbiddenErrorSchema(
+      "/api/v1/airline/users/2",
+      "Only AIRLINE_ADMIN and AIRLINE_STAFF who has the required permissions can perform this action",
+    ),
+  })
+  async getAirlineUserDetails(
+    @Req() req: AuthenticatedRequest,
+    @Param("userId", ParseIntPipe) userId: number,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<AirlineUserDetailsResponseDto>> {
+    const response = await this.airlineUserService.getAirlineUserDetails(
+      req.user,
+      userId,
+      requestId,
+    );
+
+    return BaseResponseDto.success(
+      response,
+      requestId,
+      "Airline user fetched successfully",
     );
   }
 

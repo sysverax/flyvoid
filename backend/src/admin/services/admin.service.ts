@@ -16,6 +16,7 @@ import { AuthenticatedUser } from "../../auth/interfaces/authenticated-request.i
 import { AdminRole } from "../../common/constants/user.constants";
 import {
   AdminProfileDto,
+  AdminUserDetailsResponseDto,
   AdminUserListResponseDto,
   AdminUserQueryDto,
   AdminUserResponseDto,
@@ -236,6 +237,32 @@ export class AdminService {
     await this.adminRepository.deleteAdmin(adminId, requestId);
   }
 
+  async getAdminUserDetails(
+    authenticatedUser: AuthenticatedUser,
+    adminId: number,
+    requestId: string,
+  ): Promise<AdminUserDetailsResponseDto> {
+    await this.ensureActiveAdmin(authenticatedUser, requestId);
+
+    const admin = await this.adminRepository.findById(adminId, requestId);
+    if (!admin) {
+      throw new NotFoundException("Admin user not found");
+    }
+
+    const accessControls =
+      admin.role === AdminRole.SUPER_ADMIN
+        ? this.buildSuperAdminAccessControls()
+        : await this.adminRepository.findAdminAccessControls(
+            admin.id,
+            requestId,
+          );
+
+    return {
+      ...this.toAdminUserResponse(admin),
+      accessControls,
+    };
+  }
+
   async listAdminUsers(
     authenticatedUser: AuthenticatedUser,
     adminUserQuery: AdminUserQueryDto,
@@ -254,6 +281,21 @@ export class AdminService {
       limit: adminUserQuery.limit,
       users: admins.map((admin) => this.toAdminUserResponse(admin)),
     };
+  }
+
+  private async ensureActiveAdmin(
+    authenticatedUser: AuthenticatedUser,
+    requestId: string,
+  ) {
+    const actor = await this.adminRepository.findById(
+      authenticatedUser.sub,
+      requestId,
+    );
+    if (!actor || !actor.isActive) {
+      throw new UnauthorizedException("Unauthorized");
+    }
+
+    return actor;
   }
 
   private async ensureSuperAdmin(

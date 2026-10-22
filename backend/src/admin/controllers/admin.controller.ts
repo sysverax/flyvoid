@@ -54,6 +54,7 @@ import {
 } from "../../common/constants/access-control.constants";
 import {
   AdminProfileDto,
+  AdminUserDetailsResponseDto,
   AdminUserListResponseDto,
   AdminUserQueryDto,
   AdminUserResponseDto,
@@ -92,6 +93,7 @@ const adminProfileSuccessExample = {
   BaseResponseDto,
   AdminProfileDto,
   AdminUserResponseDto,
+  AdminUserDetailsResponseDto,
   InviteAdminUserRequestDto,
   InviteAdminUserResponseDto,
   UpdateAdminUserRequestDto,
@@ -248,6 +250,79 @@ export class AdminController {
       response,
       requestId,
       "Admin user invited successfully",
+    );
+  }
+
+  @Get("users/:adminId")
+  @RequireUserRoles(AdminRole.SUPER_ADMIN, AdminRole.STAFF)
+  @RequireAccessControl({
+    platform: { asset: PlatformAsset.ADMIN_USERS, access: [AccessAction.VIEW] },
+  })
+  @ApiOperation({
+    summary: "View admin user details",
+    description: `
+    Returns a single platform admin user's details including their assigned access controls.
+      Access: SUPER_ADMIN and STAFF with VIEW access on the ADMIN_USERS asset. Requires userType=PLATFORM.
+      SUPER_ADMIN users are returned with full access on every platform asset.
+      Business logic validations:
+        1. Target admin must exist (404 if not found)`,
+  })
+  @ApiOkResponse({
+    description: "Admin user fetched successfully",
+    headers: {
+      "x-request-id": REQUEST_ID_HEADER_SCHEMA,
+    },
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(BaseResponseDto) },
+        {
+          properties: {
+            success: { type: "boolean", example: true },
+            requestId: { type: "string", example: REQUEST_ID_EXAMPLE },
+            timestamp: { type: "string", example: TIMESTAMP_EXAMPLE },
+            message: {
+              type: "string",
+              example: "Admin user fetched successfully",
+            },
+            data: { $ref: getSchemaPath(AdminUserDetailsResponseDto) },
+          },
+        },
+      ],
+    },
+  })
+  @ApiBadRequestResponse({
+    description: "Validation failed",
+    schema: createBadRequestErrorSchema("/api/v1/admin/users/2"),
+  })
+  @ApiNotFoundResponse({
+    description: "Admin user not found",
+    schema: createNotFoundErrorSchema(
+      "/api/v1/admin/users/2",
+      "Admin user not found",
+    ),
+  })
+  @ApiForbiddenResponse({
+    description:
+      "Only SUPER_ADMIN and STAFF who has the required permissions can perform this action",
+    schema: createForbiddenErrorSchema(
+      "/api/v1/admin/users/2",
+      "Only SUPER_ADMIN and STAFF who has the required permissions can perform this action",
+    ),
+  })
+  async getAdminUserDetails(
+    @Req() req: AuthenticatedRequest,
+    @Param("adminId", ParseIntPipe) adminId: number,
+    @RequestId() requestId: string,
+  ): Promise<BaseResponseDto<AdminUserDetailsResponseDto>> {
+    const response = await this.adminService.getAdminUserDetails(
+      req.user,
+      adminId,
+      requestId,
+    );
+    return BaseResponseDto.success(
+      response,
+      requestId,
+      "Admin user fetched successfully",
     );
   }
 

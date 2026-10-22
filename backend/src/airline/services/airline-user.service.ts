@@ -19,6 +19,7 @@ import { AirlineRole, UserType } from "../../common/constants/user.constants";
 import { LoggerService } from "../../common/logger/logger.service";
 import {
   AirlineProfileResponseDto,
+  AirlineUserDetailsResponseDto,
   AirlineUserListResponseDto,
   AirlineUserResponseDto,
   AirlineUserProfileResponseDto,
@@ -204,6 +205,33 @@ export class AirlineUserService {
     };
   }
 
+  async getAirlineUserDetails(
+    authenticatedUser: AuthenticatedUser,
+    userId: number,
+    requestId: string,
+  ): Promise<AirlineUserDetailsResponseDto> {
+    const actor = await this.ensureActiveAirlineUser(
+      authenticatedUser,
+      requestId,
+    );
+
+    const user = await this.airlineUserRepository.findById(userId, requestId);
+    if (!user || user.airlineId !== actor.airlineId) {
+      throw new NotFoundException("Airline user not found");
+    }
+
+    const accessControls =
+      await this.airlineUserRepository.findAirlineUserAccessControls(
+        user.id,
+        requestId,
+      );
+
+    return {
+      ...this.toAirlineUserResponse(user),
+      accessControls,
+    };
+  }
+
   async getUserProfile(
     authenticatedUser: AuthenticatedUser,
     requestId: string,
@@ -313,6 +341,22 @@ export class AirlineUserService {
       role: user.role as AirlineRole,
       accessControls: accessControls,
     };
+  }
+
+  private async ensureActiveAirlineUser(
+    authenticatedUser: AuthenticatedUser,
+    requestId: string,
+  ): Promise<AirlineUserEntity> {
+    const actor = await this.airlineUserRepository.findById(
+      authenticatedUser.sub,
+      requestId,
+    );
+
+    if (!actor || !actor.isActive) {
+      throw new UnauthorizedException("Unauthorized");
+    }
+
+    return actor;
   }
 
   private async ensureAirlineAdmin(
