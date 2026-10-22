@@ -34,17 +34,17 @@ interface KpiCard {
 const FILTER_OPTIONS = [
   { value: "Today", label: "Today" },
   { value: "Yesterday", label: "Yesterday" },
-  { value: "This Week", label: "This Week" },
-  { value: "This Month", label: "This Month" },
-  { value: "This Year", label: "This Year" },
+  { value: "Week", label: "Week" },
+  { value: "Month", label: "Month" },
+  { value: "Year", label: "Year" },
 ];
 
 const TIME_FRAME_MAP: Record<string, TrendTimeFrame> = {
   Today: "today",
   Yesterday: "yesterday",
-  "This Week": "week",
-  "This Month": "month",
-  "This Year": "year",
+  Week: "week",
+  Month: "month",
+  Year: "year",
   today: "today",
   yesterday: "yesterday",
   week: "week",
@@ -116,7 +116,7 @@ function ChartLoadingState({ height = "h-[260px]" }: { height?: string }) {
 
 export default function DashboardPage() {
   const [mounted, setMounted] = useState(false);
-  const [selectedPeriod, setSelectedPeriod] = useState<string>("This Month");
+  const [selectedPeriod, setSelectedPeriod] = useState<string>("Month");
   const [hotelSpendData, setHotelSpendData] = useState<HotelSpendTrendData | null>(null);
   const [affectedPassengersData, setAffectedPassengersData] = useState<AffectedPassengersTrendData | null>(null);
   const [cancelledFlightsData, setCancelledFlightsData] = useState<CancelledFlightsTrendData | null>(null);
