@@ -8,7 +8,7 @@ export interface User {
   accessControl: Record<string, string[]>;
 }
 
-const STORAGE_KEY = "flyvoid_current_user";
+const STORAGE_KEY = "flyverax_current_user";
 
 function mapAccessControls(admin: any): Record<string, string[]> {
   const assetMap: Record<string, string> = {
@@ -23,6 +23,7 @@ function mapAccessControls(admin: any): Record<string, string[]> {
     SYSTEM_SETTINGS: "systemSettings",
     AUDIT_LOGS: "auditLogs",
     PROFILE: "profile",
+    ADMIN_USERS: "manageUsers",
   };
 
   const accessControl: Record<string, string[]> = {
@@ -37,6 +38,7 @@ function mapAccessControls(admin: any): Record<string, string[]> {
     invitesOnboarding: [],
     systemSettings: [],
     auditLogs: [],
+    manageUsers: [],
     profile: ["view", "edit", "export"],
   };
 
@@ -56,6 +58,10 @@ function mapAccessControls(admin: any): Record<string, string[]> {
           accessControl.platformOverview = mappedActions;
           accessControl.detailedAnalysis = mappedActions;
           accessControl.platformTreasury = mappedActions;
+        }
+
+        if (frontKey === "manageUsers") {
+          accessControl.systemSettings = mappedActions;
         }
       }
     });
@@ -106,9 +112,9 @@ export const authService = {
         accessControl: mapAccessControls(admin),
       };
 
-      sessionStorage.setItem("flyvoid_access_token", accessToken);
+      sessionStorage.setItem("flyverax_access_token", accessToken);
       if (refreshToken) {
-        setCookie("flyvoid_refresh_token", refreshToken);
+        setCookie("flyverax_refresh_token", refreshToken);
       }
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(user));
       return { user, message: response.data.message || "Successfully signed in." };
@@ -142,9 +148,9 @@ export const authService = {
         accessControl: mapAccessControls(admin),
       };
 
-      sessionStorage.setItem("flyvoid_access_token", accessToken);
+      sessionStorage.setItem("flyverax_access_token", accessToken);
       if (refreshToken) {
-        setCookie("flyvoid_refresh_token", refreshToken);
+        setCookie("flyverax_refresh_token", refreshToken);
       }
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(user));
       return { user, message: response.data.message || "Successfully signed in." };
@@ -185,7 +191,7 @@ export const authService = {
 
   async logout(): Promise<void> {
     if (typeof window === "undefined") return;
-    const refreshToken = getCookie("flyvoid_refresh_token");
+    const refreshToken = getCookie("flyverax_refresh_token") || getCookie("flyvoid_refresh_token");
     if (refreshToken) {
       try {
         await apiClient.post("/auth/admin/signout", { refreshToken });
@@ -277,7 +283,7 @@ export const authService = {
 
   getCurrentUser(): User | null {
     if (typeof window === "undefined") return null;
-    const stored = sessionStorage.getItem(STORAGE_KEY);
+    const stored = sessionStorage.getItem(STORAGE_KEY) || sessionStorage.getItem("flyvoid_current_user");
     if (!stored) return null;
     try {
       return JSON.parse(stored) as User;

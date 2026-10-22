@@ -24,22 +24,23 @@ export const usersService = {
       const { data } = await apiClient.get("/airline/users", { params });
       const { users = [], total = 0 } = data.data || {};
 
-      const items = users.map((u: any) => {
-        let accessControls = u.accessControls || [];
-        if (typeof window !== "undefined") {
-          const stored = localStorage.getItem(`airline_user_access_controls_${u.id}`);
-          if (stored) {
-            try {
-              accessControls = JSON.parse(stored);
-            } catch { }
-          }
-        }
-        return { ...u, accessControls };
-      });
+      const items = users.map((u: any) => ({
+        ...u,
+        accessControls: u.accessControls || [],
+      }));
 
       return { users: items, total };
     } catch (error: any) {
       throw new Error(extractErrorMessage(error, "Failed to fetch airline users."));
+    }
+  },
+
+  async getUserById(id: number): Promise<User> {
+    try {
+      const { data } = await apiClient.get(`/airline/users/${id}`);
+      return data.data;
+    } catch (error: any) {
+      throw new Error(extractErrorMessage(error, "Failed to fetch airline user details."));
     }
   },
 
@@ -56,10 +57,6 @@ export const usersService = {
 
       const invitedUser = data.data?.user || data.data || {};
       const temporaryPassword = data.data?.temporaryPassword;
-
-      if (typeof window !== "undefined" && invitedUser?.id) {
-        localStorage.setItem(`airline_user_access_controls_${invitedUser.id}`, JSON.stringify(user.accessControls));
-      }
 
       return {
         user: { ...invitedUser, accessControls: user.accessControls },
@@ -86,10 +83,6 @@ export const usersService = {
 
       const updated = data.data || {};
 
-      if (typeof window !== "undefined" && updated?.id) {
-        localStorage.setItem(`airline_user_access_controls_${updated.id}`, JSON.stringify(user.accessControls));
-      }
-
       return {
         user: { ...updated, accessControls: user.accessControls },
         message: data.message || "Airline user updated successfully",
@@ -102,9 +95,6 @@ export const usersService = {
   async deleteUser(id: number): Promise<string> {
     try {
       const { data } = await apiClient.delete(`/airline/users/${id}`);
-      if (typeof window !== "undefined") {
-        localStorage.removeItem(`airline_user_access_controls_${id}`);
-      }
       return data.message || "Airline user deleted successfully";
     } catch (error: any) {
       throw new Error(extractErrorMessage(error, "Failed to delete airline user."));

@@ -31,13 +31,6 @@ interface KpiCard {
   isGreen?: boolean;
 }
 
-interface PeriodDashboardData {
-  kpiCards: KpiCard[];
-  hotelSpend: { month: string; spend: number }[];
-  passengers: { month: string; passengers: number }[];
-  cancelledFlights: { month: string; flights: number }[];
-}
-
 const FILTER_OPTIONS = [
   { value: "Today", label: "Today" },
   { value: "Yesterday", label: "Yesterday" },

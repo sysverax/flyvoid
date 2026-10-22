@@ -20,7 +20,7 @@ import {
   SortHeader,
 } from "@/src/components/ui/table";
 import { Pagination } from "@/src/components/ui/pagination";
-import { sortData, cn, formatDate } from "@/src/lib/utils";
+import { sortData, cn, formatDate, formatUtcStartDate, formatUtcEndDate } from "@/src/lib/utils";
 import { TableEmptyState } from "@/src/components/ui/EmptyState";
 import { FiltersCard } from "@/src/components/ui/FiltersCard";
 import { Dropdown } from "@/src/components/ui/Dropdown";
@@ -123,12 +123,25 @@ export default function AirlineWalletPage({
           ? selectedStatus.toUpperCase()
           : undefined;
 
+      const formattedStartDate = formatUtcStartDate(startDate);
+      const formattedEndDate = formatUtcEndDate(endDate);
+
+      if (
+        formattedStartDate &&
+        formattedEndDate &&
+        new Date(formattedStartDate).getTime() >= new Date(formattedEndDate).getTime()
+      ) {
+        setTransactions([]);
+        setTotalResults(0);
+        return;
+      }
+
       const res = await airlinesService.getWalletTransactions({
         airlineId,
         type: typeParam,
         status: statusParam,
-        startDate: startDate || undefined,
-        endDate: endDate || undefined,
+        startDate: formattedStartDate,
+        endDate: formattedEndDate,
         page: currentPage,
         limit: resultsPerPage,
       });

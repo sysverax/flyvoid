@@ -39,6 +39,7 @@ interface PermissionRow {
 const PERMISSION_ROWS: PermissionRow[] = [
   { key: "dashboard", label: "Dashboard" },
   { key: "airlines", label: "Airlines" },
+  { key: "airports", label: "Airports" },
   { key: "cancelledFlights", label: "Cancelled Flights" },
   { key: "hotelBookings", label: "Bookings" },
   { key: "platformOverview", label: "Platform Overview", category: "PAYMENTS & REVENUE" },
@@ -47,11 +48,13 @@ const PERMISSION_ROWS: PermissionRow[] = [
   { key: "invitesOnboarding", label: "Invites & Onboarding" },
   { key: "systemSettings", label: "System Settings" },
   { key: "auditLogs", label: "Audit Logs" },
+  { key: "manageUsers", label: "Manage Users" },
 ];
 
 const emptyPermissions = (): UserPermissions => ({
   dashboard: { view: false, edit: false, export: false, all: false },
   airlines: { view: false, edit: false, export: false, all: false },
+  airports: { view: false, edit: false, export: false, all: false },
   cancelledFlights: { view: false, edit: false, export: false, all: false },
   hotelBookings: { view: false, edit: false, export: false, all: false },
   platformOverview: { view: false, edit: false, export: false, all: false },
@@ -60,12 +63,14 @@ const emptyPermissions = (): UserPermissions => ({
   invitesOnboarding: { view: false, edit: false, export: false, all: false },
   systemSettings: { view: false, edit: false, export: false, all: false },
   auditLogs: { view: false, edit: false, export: false, all: false },
+  manageUsers: { view: false, edit: false, export: false, all: false },
 });
 
 function superAdminPermissions(): UserPermissions {
   return {
     dashboard: { view: true, edit: true, export: true, all: true },
     airlines: { view: true, edit: true, export: true, all: true },
+    airports: { view: true, edit: true, export: true, all: true },
     cancelledFlights: { view: true, edit: true, export: true, all: true },
     hotelBookings: { view: true, edit: true, export: true, all: true },
     platformOverview: { view: true, edit: true, export: true, all: true },
@@ -74,6 +79,7 @@ function superAdminPermissions(): UserPermissions {
     invitesOnboarding: { view: true, edit: true, export: true, all: true },
     systemSettings: { view: true, edit: true, export: true, all: true },
     auditLogs: { view: true, edit: true, export: true, all: true },
+    manageUsers: { view: true, edit: true, export: true, all: true },
   };
 }
 
@@ -98,11 +104,15 @@ function mapBackendAccessControlsToFrontend(
 
     if (ac.asset === "DASHBOARD") permissions.dashboard = access;
     else if (ac.asset === "AIRLINES") permissions.airlines = access;
-    else if (ac.asset === "CANCELLED_FLIGHTS") permissions.cancelledFlights = access;
-    else if (ac.asset === "HOTEL_BOOKINGS") permissions.hotelBookings = access;
+    else if (ac.asset === "AIRPORTS") permissions.airports = access;
+    else if (ac.asset === "CANCELLED_FLIGHTS") {
+      permissions.cancelledFlights = access;
+      permissions.hotelBookings = access;
+    }
     else if (ac.asset === "INVITES_ONBOARDING") permissions.invitesOnboarding = access;
     else if (ac.asset === "SYSTEM_SETTINGS") permissions.systemSettings = access;
     else if (ac.asset === "AUDIT_LOGS") permissions.auditLogs = access;
+    else if (ac.asset === "ADMIN_USERS") permissions.manageUsers = access;
     else if (ac.asset === "PAYMENTS" || ac.asset === "REVENUE") {
       permissions.platformOverview = { ...access };
       permissions.detailedAnalysis = { ...access };
@@ -130,13 +140,27 @@ function mapFrontendPermissionsToBackend(
 
   if (frontendPerms.dashboard) addAsset("DASHBOARD", frontendPerms.dashboard);
   if (frontendPerms.airlines) addAsset("AIRLINES", frontendPerms.airlines);
-  if (frontendPerms.cancelledFlights) addAsset("CANCELLED_FLIGHTS", frontendPerms.cancelledFlights);
-  if (frontendPerms.hotelBookings) addAsset("HOTEL_BOOKINGS", frontendPerms.hotelBookings);
+  if (frontendPerms.airports) addAsset("AIRPORTS", frontendPerms.airports);
   if (frontendPerms.invitesOnboarding) addAsset("INVITES_ONBOARDING", frontendPerms.invitesOnboarding);
   if (frontendPerms.systemSettings) addAsset("SYSTEM_SETTINGS", frontendPerms.systemSettings);
   if (frontendPerms.auditLogs) addAsset("AUDIT_LOGS", frontendPerms.auditLogs);
+  if (frontendPerms.manageUsers) addAsset("ADMIN_USERS", frontendPerms.manageUsers);
 
-  // Merge platformOverview, detailedAnalysis, platformTreasury into PAYMENTS
+  // Merge cancelledFlights and hotelBookings into CANCELLED_FLIGHTS (backend PlatformAsset for flights & bookings)
+  const flightsView = frontendPerms.cancelledFlights?.view || frontendPerms.hotelBookings?.view;
+  const flightsEdit = frontendPerms.cancelledFlights?.edit || frontendPerms.hotelBookings?.edit;
+  const flightsExport = frontendPerms.cancelledFlights?.export || frontendPerms.hotelBookings?.export;
+
+  const flightsAccess: string[] = [];
+  if (flightsView) flightsAccess.push("VIEW");
+  if (flightsEdit) flightsAccess.push("EDIT");
+  if (flightsExport) flightsAccess.push("EXPORT");
+
+  if (flightsAccess.length > 0) {
+    accessControls.push({ asset: "CANCELLED_FLIGHTS", access: flightsAccess });
+  }
+
+  // Merge platformOverview, detailedAnalysis, platformTreasury into PAYMENTS & REVENUE
   const paymentsView = frontendPerms.platformOverview?.view || frontendPerms.detailedAnalysis?.view || frontendPerms.platformTreasury?.view;
   const paymentsEdit = frontendPerms.platformOverview?.edit || frontendPerms.detailedAnalysis?.edit || frontendPerms.platformTreasury?.edit;
   const paymentsExport = frontendPerms.platformOverview?.export || frontendPerms.detailedAnalysis?.export || frontendPerms.platformTreasury?.export;
@@ -171,6 +195,8 @@ export function ManageUserModal({
     }
   }, [isOpen]);
 
+  const isEdit = !!editingUser;
+
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [userEmail, setUserEmail] = useState("");
@@ -189,7 +215,7 @@ export function ManageUserModal({
       if (!value.trim()) {
         error = "Last Name is required";
       }
-    } else if (field === "userEmail") {
+    } else if (field === "userEmail" && !isEdit) {
       if (!value.trim()) {
         error = "Email is required";
       } else {
@@ -339,7 +365,6 @@ export function ManageUserModal({
 
     if (firstName.trim() !== editingUser.firstName) return true;
     if (lastName.trim() !== editingUser.lastName) return true;
-    if (userEmail.trim() !== editingUser.email) return true;
 
     const initialStatus = editingUser.isActive ? "Active" : "Inactive";
     if (userStatus !== initialStatus) return true;
@@ -355,7 +380,7 @@ export function ManageUserModal({
     }
 
     return false;
-  }, [editingUser, firstName, lastName, userEmail, userStatus, userPermissions]);
+  }, [editingUser, firstName, lastName, userEmail, userStatus, userPermissions, isEdit]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -369,12 +394,14 @@ export function ManageUserModal({
       newErrors.lastName = "Last Name is required";
     }
 
-    if (!userEmail.trim()) {
-      newErrors.userEmail = "Email is required";
-    } else {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(userEmail)) {
-        newErrors.userEmail = "Please enter a valid email address";
+    if (!isEdit) {
+      if (!userEmail.trim()) {
+        newErrors.userEmail = "Email is required";
+      } else {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(userEmail)) {
+          newErrors.userEmail = "Please enter a valid email address";
+        }
       }
     }
 
@@ -494,23 +521,33 @@ export function ManageUserModal({
               {/* Email row*/}
               <div className="self-stretch inline-flex flex-col justify-start items-start w-full">
                 <div className="self-stretch flex-1 flex flex-col justify-start items-start gap-2.5">
-                  <label className="justify-start text-gray-800 text-base font-medium font-figtree leading-[100%]">Email *</label>
+                  <div className="flex items-center gap-2">
+                    <label className="justify-start text-gray-800 text-base font-medium font-figtree leading-[100%]">
+                      Email *
+                    </label>
+                  </div>
                   <input
                     type="email"
                     placeholder="Enter user email"
                     value={userEmail}
                     onChange={(e) => handleEmailChange(e.target.value)}
                     onBlur={() => handleBlur("userEmail")}
-                    required
-                    disabled={isLoading}
+                    required={!isEdit}
+                    disabled={isLoading || isEdit}
+                    readOnly={isEdit}
                     className={cn(
-                      "self-stretch flex-1 px-4 py-3 bg-[#F9FAFB] rounded-[10px] border transition-all text-base font-figtree text-gray-800 placeholder-gray-500 focus:bg-white focus:outline-none focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed",
-                      errors.userEmail
-                        ? "border-red-500 focus:ring-red-500/10 focus:border-red-500"
-                        : "border-gray-300 focus:border-[#0F2757] focus:ring-[#0F2757]/10"
+                      "self-stretch flex-1 px-4 py-3 rounded-[10px] border transition-all text-base font-figtree",
+                      isEdit
+                        ? "bg-[#F3F4F6] text-[#6B7280] border-gray-200 cursor-not-allowed select-none focus:outline-none"
+                        : cn(
+                          "bg-[#F9FAFB] text-gray-800 placeholder-gray-500 focus:bg-white focus:outline-none focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed",
+                          errors.userEmail
+                            ? "border-red-500 focus:ring-red-500/10 focus:border-red-500"
+                            : "border-gray-300 focus:border-[#0F2757] focus:ring-[#0F2757]/10"
+                        )
                     )}
                   />
-                  {errors.userEmail && (
+                  {errors.userEmail && !isEdit && (
                     <span className="text-red-500 text-xs font-medium font-figtree pl-1 -mt-1.5">
                       {errors.userEmail}
                     </span>

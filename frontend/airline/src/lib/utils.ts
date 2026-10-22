@@ -67,3 +67,22 @@ export function sortData<T>(
     return 0;
   });
 }
+
+export function formatUtcStartDate(dateStr?: string): string | undefined {
+  if (!dateStr) return undefined;
+  const parts = dateStr.split("-").map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return undefined;
+  const [year, month, day] = parts;
+  const date = new Date(year, month - 1, day, 0, 0, 0, 0);
+  return isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+
+export function formatUtcEndDate(dateStr?: string): string | undefined {
+  if (!dateStr) return undefined;
+  const parts = dateStr.split("-").map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return undefined;
+  const [year, month, day] = parts;
+  const date = new Date(year, month - 1, day + 1, 0, 0, 0, 0);
+  return isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+

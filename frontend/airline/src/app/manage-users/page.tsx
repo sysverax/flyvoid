@@ -81,13 +81,19 @@ export default function ManageUsersPage() {
     setIsModalOpen(true);
   };
 
-  const handleOpenEditModal = (user: User) => {
+  const handleOpenEditModal = async (user: User) => {
     setIsEditingId(user.id);
-    setTimeout(() => {
+    try {
+      const detailedUser = await usersService.getUserById(user.id);
+      setEditingUser(detailedUser);
+      setIsModalOpen(true);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to fetch user details");
       setEditingUser(user);
       setIsModalOpen(true);
+    } finally {
       setIsEditingId(null);
-    }, 400);
+    }
   };
 
   const handleConfirmDelete = async () => {
@@ -340,7 +346,7 @@ export default function ManageUsersPage() {
             ) : (
               <TableRow>
                 <TableCell colSpan={hasPermission("edit") ? 5 : 4} className="px-6 py-10 text-center text-gray-500 font-figtree">
-                  No users found matching your search filters.
+                  No users found
                 </TableCell>
               </TableRow>
             )}
