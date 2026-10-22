@@ -482,6 +482,11 @@ export function FailedBookingHotelDrawer({
                           <span className="font-medium">
                             {hotel.stars || "Unrated"}
                           </span>
+                          {!hotel.meetsMinimum && (
+                            <span className="ml-1 text-gray-500">
+                              · below the {data.minStars}★ minimum for this class
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="shrink-0 text-right">
