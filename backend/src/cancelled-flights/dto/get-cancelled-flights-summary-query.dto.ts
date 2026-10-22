@@ -1,7 +1,6 @@
 import { Transform } from "class-transformer";
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import {
-  IsDateString,
   IsEnum,
   IsInt,
   IsOptional,
@@ -12,6 +11,7 @@ import {
 } from "class-validator";
 import { FlightStatus } from "../entities/enums";
 import { TimeFrame } from "../../common/constants/time-frame.constants";
+import { CalendarDateRangeQueryDto } from "../../common/dto/date-range-query.dto";
 import {
   TIMEZONE_DESCRIPTION,
   TimeFrameField,
@@ -19,8 +19,9 @@ import {
 } from "../../common/dto/time-frame-query.dto";
 
 // Same filters as GetCancelledFlightsQueryDto, minus pagination - a summary
-// is a single aggregate row, not a page of results.
-export class GetCancelledFlightsSummaryQueryDto {
+// is a single aggregate row, not a page of results. startDate/endDate filter
+// cancellation_date (a DATE column): YYYY-MM-DD, both inclusive.
+export class GetCancelledFlightsSummaryQueryDto extends CalendarDateRangeQueryDto {
   @ApiPropertyOptional({
     description: "Filter by cancelled flight status",
     enum: FlightStatus,
@@ -62,28 +63,6 @@ export class GetCancelledFlightsSummaryQueryDto {
   @Min(1)
   @IsOptional()
   airlineId?: number;
-
-  @ApiPropertyOptional({
-    description: "Filter flights with cancellation date on or after this date",
-    example: "2026-09-01",
-  })
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === "string" ? value.trim() : value,
-  )
-  @IsDateString()
-  @IsOptional()
-  startDate?: string;
-
-  @ApiPropertyOptional({
-    description: "Filter flights with cancellation date on or before this date",
-    example: "2026-09-30",
-  })
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === "string" ? value.trim() : value,
-  )
-  @IsDateString()
-  @IsOptional()
-  endDate?: string;
 
   // Cannot be combined with startDate/endDate (checked in the service).
   @TimeFrameField({ required: false })

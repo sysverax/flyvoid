@@ -752,16 +752,10 @@ export class CancelledFlightsService {
     const page = query.page || 1;
     const limit = query.limit || 10;
 
+    // YYYY-MM-DD calendar dates; format and order are validated by the DTO
+    // (CalendarDateRangeQueryDto).
     const startDate = query.startDate;
     const endDate = query.endDate;
-
-    if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
-      requestLogger.warn(
-        "Rejected cancelled flights query: startDate after endDate",
-        { context: this.context, startDate, endDate },
-      );
-      throw new BadRequestException("startDate cannot be later than endDate");
-    }
 
     let airlineScopeId: number | undefined;
 
@@ -909,14 +903,6 @@ export class CancelledFlightsService {
       throw new BadRequestException(
         "timeFrame cannot be combined with startDate or endDate; send one or the other",
       );
-    }
-
-    if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
-      requestLogger.warn(
-        "Rejected cancelled flights summary query: startDate after endDate",
-        { context: this.context, startDate, endDate },
-      );
-      throw new BadRequestException("startDate cannot be later than endDate");
     }
 
     let airlineScopeId: number | undefined;

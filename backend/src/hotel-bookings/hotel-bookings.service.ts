@@ -59,17 +59,8 @@ export class HotelBookingsService {
       query,
     });
 
-    if (query.startDate && query.endDate) {
-      if (new Date(query.startDate) > new Date(query.endDate)) {
-        requestLogger.warn("startDate is later than endDate", {
-          context: this.context,
-          startDate: query.startDate,
-          endDate: query.endDate,
-        });
-        throw new BadRequestException("startDate cannot be later than endDate");
-      }
-    }
-
+    // startDate/endDate (YYYY-MM-DD) format and order are validated by the
+    // DTO (CalendarDateRangeQueryDto).
     let airlineScopeId: number | undefined;
 
     if (user.userType === UserType.AIRLINE) {

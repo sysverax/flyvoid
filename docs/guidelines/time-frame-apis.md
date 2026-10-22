@@ -31,9 +31,9 @@ Paths below are relative to the repository root.
 - Never use the airline's stored timezone, the server timezone, or UTC as an
   implicit default for user-facing time frames. Invalid or missing
   timezone -> 400.
-- Custom date ranges (from/to) must be sent as full UTC ISO 8601 timestamps
-  with `"Z"`, using an exclusive end (start of the next day), not
-  `"23:59:59"`.
+- Custom date ranges (`startDate`/`endDate`) follow
+  [Custom date range filters](#custom-date-range-filters-startdate--enddate)
+  below: the column type decides the format.
 
 ## Calculation
 
@@ -97,9 +97,70 @@ All in the timezone sent in `timezone`; start inclusive, end exclusive.
 - E2E expectations: use `backend/test-e2e/helpers/time-zone.helper.ts`
   (Intl-based), never hardcoded offsets
 
-## Known exception
+## Custom date range filters (startDate / endDate)
 
-`GET /api/v1/cancelled-flights/summary` still accepts the older
-`startDate`/`endDate` filters: inclusive `YYYY-MM-DD` dates on the DATE
-column `cancellation_date`. They predate these rules and are kept for
-existing callers; don't copy that pattern into new APIs.
+Any API that filters by a custom date range MUST follow these rules.
+The column type decides the input format.
+
+The building blocks live in `backend/src/common/dto/date-range-query.dto.ts`
+(parsing helpers in `backend/src/common/utils/date-range.util.ts`). Compose
+them with pagination via `IntersectionType(PaginationQueryDto, ...)`.
+Range order is validated in the DTO (`@IsDateRangeEnd`), which skips the
+check when either bound is missing, so open-ended ranges work. Don't add
+service-level range checks.
+
+### Timestamp columns (exact moments: created_at, paid_at, updated_at...)
+
+- Input: ISO 8601 timestamp WITH timezone information:
+  `"Z"` (`2026-09-30T18:30:00.000Z`) or a numeric offset
+  (`2026-10-01T00:00:00+05:30`). Offsets are converted to UTC.
+- Values without timezone information are rejected with 400:
+  date-only (`2026-10-01`) and no-offset (`2026-10-01T00:00:00`).
+  Reason: they are ambiguous and silently shift results.
+- startDate inclusive, endDate exclusive (start of the next day).
+  Never use 23:59:59. Query: `column >= :startDate AND column < :endDate`,
+  passing the Dates through `toUtcTimestampParam()`.
+- The backend never assumes the user's timezone.
+- Use `@TimestampWithTimezoneField` / `TimestampRangeQueryDto`.
+  Example: `GET /api/v1/wallets/transactions`.
+
+### DATE columns (calendar dates: cancellation_date, check-in date...)
+
+- Input: `"YYYY-MM-DD"`, both inclusive
+  (`column >= :startDate AND column <= :endDate`).
+- Never convert to UTC; a calendar date is timezone-independent.
+- Use `@CalendarDateField` / `CalendarDateRangeQueryDto`.
+  Examples: `GET /api/v1/cancelled-flights`, `GET /api/v1/hotel-bookings`.
+
+### How to choose
+
+- The column stores a time of day -> timestamp rules.
+- The column stores only a date -> DATE rules.
+- New columns representing a moment must be timestamps in UTC,
+  never local time.
+
+### Frontend example (timestamp columns)
+
+```ts
+// User selects 1 Oct to 15 Oct in their local timezone
+const start = new Date(2026, 9, 1);   // local midnight, 1 Oct
+const end   = new Date(2026, 9, 16);  // local midnight, 16 Oct (day after last day)
+params.startDate = start.toISOString(); // e.g. 2026-09-30T18:30:00.000Z in Colombo
+params.endDate   = end.toISOString();
+```
+
+### Frontend example (DATE columns)
+
+```ts
+params.startDate = "2026-10-01";
+params.endDate   = "2026-10-15";
+```
+
+### Testing checklist for new date-range filters
+
+- Timestamp: row at startDate included, row at endDate excluded
+- Timestamp: "Z" and offset versions of the same range give identical results
+- Timestamp: date-only and no-timezone input return 400
+- DATE: rows on both start and end dates included
+- Reversed ranges return 400
+- Only startDate and only endDate (open-ended) still work

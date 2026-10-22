@@ -141,7 +141,7 @@ export class CancelledFlightsController {
   @ApiOperation({
     summary: "List cancelled flights",
     description:
-      "Returns paginated cancelled flights with optional filters: status, search, airlineId, startDate, endDate. Platform users can view all airlines and can filter by airlineId; airline users only see flights for their own airline.",
+      "Returns paginated cancelled flights with optional filters: status, search, airlineId, startDate, endDate (cancellation date as YYYY-MM-DD, both inclusive). Platform users can view all airlines and can filter by airlineId; airline users only see flights for their own airline.",
   })
   @ApiOkResponse({
     schema: {
@@ -219,7 +219,7 @@ export class CancelledFlightsController {
   @ApiOperation({
     summary: "Get cancelled flights summary",
     description:
-      "Returns aggregate totals (flights, adults, children, bookings, rooms, hotel cost, hotel tax, discount, total cost, platform fee) for cancelled flights matching the same filters as GET /cancelled-flights: status, search, airlineId, startDate, endDate. Platform users can view all airlines and can filter by airlineId. Airline users are always scoped to their own airline from the access token: airlineId is ignored, and platformFeePercentage returns their airline's current fee rate.\n\n" +
+      "Returns aggregate totals (flights, adults, children, bookings, rooms, hotel cost, hotel tax, discount, total cost, platform fee) for cancelled flights matching the same filters as GET /cancelled-flights: status, search, airlineId, startDate, endDate (cancellation date as YYYY-MM-DD, both inclusive). Platform users can view all airlines and can filter by airlineId. Airline users are always scoped to their own airline from the access token: airlineId is ignored, and platformFeePercentage returns their airline's current fee rate.\n\n" +
       "timeFrame (optional) picks the same range as the airline dashboard trends, in the IANA `timezone` sent with the request (for both airline and platform users), and filters on the flight's creation time instead of cancellationDate. With timeFrame, counts exclude draft flights and money totals only include allocated, paid and published flights, so totalCancelFlights and totalCost equal the sums of the cancelled-flights and hotel-spend trends, and the response also contains timeFrame, timezone, startDate and endDate. Without timeFrame the behaviour is unchanged. Sending timeFrame together with startDate or endDate returns 400; timeFrame without a valid timezone returns 400.",
   })
   @ApiQuery({

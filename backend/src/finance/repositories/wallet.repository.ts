@@ -8,14 +8,17 @@ import { WalletTransactionEntity } from "../entities/wallet-transaction.entity";
 import { WalletAdjustmentEntity } from "../entities/wallet-adjustment.entity";
 import { WalletCreditLimitHistoryEntity } from "../entities/wallet-credit-limit-history.entity";
 import { TRANSACTION_TYPES, TRANSACTION_REFERENCE_TYPES } from "../constants";
+import { toUtcTimestampParam } from "../../common/utils/date-range.util";
 
 export interface WalletTransactionFilters {
   page: number;
   limit: number;
   airlineId?: number;
   type?: TRANSACTION_REFERENCE_TYPES;
-  startDate?: string;
-  endDate?: string;
+  /** Inclusive lower bound on created_at (a UTC instant). */
+  startDate?: Date;
+  /** Exclusive upper bound on created_at (a UTC instant). */
+  endDate?: Date;
 }
 
 @Injectable()
@@ -322,15 +325,16 @@ export class WalletRepository {
       qb.andWhere("transaction.referenceType = :type", { type: filters.type });
     }
 
+    // Half-open range on a UTC timestamp column: start inclusive, end exclusive.
     if (filters.startDate) {
       qb.andWhere("transaction.createdAt >= :startDate", {
-        startDate: filters.startDate,
+        startDate: toUtcTimestampParam(filters.startDate),
       });
     }
 
     if (filters.endDate) {
-      qb.andWhere("transaction.createdAt <= :endDate", {
-        endDate: filters.endDate,
+      qb.andWhere("transaction.createdAt < :endDate", {
+        endDate: toUtcTimestampParam(filters.endDate),
       });
     }
 
