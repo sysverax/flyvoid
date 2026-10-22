@@ -318,12 +318,12 @@ export default function ForgotPasswordPage() {
         <div className="w-16 h-16 bg-[#0F2757] rounded-[12px] flex items-center justify-center mb-6">
           <img
             src="/icons/plane1.svg"
-            alt="FlyVoid Logo"
+            alt="Flyverax Logo"
             className="h-8 w-8 brightness-0 invert"
           />
         </div>
         <h1 className="text-gray-800 text-[24px] font-bold tracking-tight leading-[100%] py-1">
-          FlyVoid Airline
+          Flyverax Airline
         </h1>
         <p className="text-gray-500 text-[14px] font-normal mt-1 font-figtree">
           Reset your password
@@ -359,7 +359,7 @@ export default function ForgotPasswordPage() {
                   <Mail className={cn("w-4 h-4 text-gray-500 shrink-0 transition-colors text-gray-400")} />
                   <input
                     type="email"
-                    placeholder="you@flyvoid.com"
+                    placeholder="you@flyverax.com"
                     value={email}
                     onChange={(e) => handleEmailChange(e.target.value)}
                     onBlur={handleEmailBlur}

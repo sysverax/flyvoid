@@ -17,7 +17,7 @@ export function PlatformReserveModal({
   reserveValue,
   onConfirm,
 }: PlatformReserveModalProps) {
-  const [reserveEmail, setReserveEmail] = useState("you@flyvoid.com");
+  const [reserveEmail, setReserveEmail] = useState("you@flyverax.com");
   const [reserveAmount, setReserveAmount] = useState("");
   const [reserveNote, setReserveNote] = useState("");
 
@@ -28,7 +28,7 @@ export function PlatformReserveModal({
     if (!isOpen) {
       setReserveAmount("");
       setReserveNote("");
-      setReserveEmail("you@flyvoid.com");
+      setReserveEmail("you@flyverax.com");
     }
   }, [isOpen]);
 
@@ -96,12 +96,12 @@ export function PlatformReserveModal({
                   onChange={(e) => setReserveEmail(e.target.value)}
                   className="w-full pl-10 pr-10 py-2.5 bg-white border border-[#D1D5DB] rounded-lg text-gray-500 text-base font-normal font-figtree outline-none appearance-none cursor-pointer focus:border-blue-900 transition-colors"
                 >
-                  <option value="you@flyvoid.com">you@flyvoid.com</option>
-                  <option value="john.smith@flyvoid.com">john.smith@flyvoid.com</option>
-                  <option value="jane.doe@flyvoid.com">jane.doe@flyvoid.com</option>
-                  <option value="emily.white@flyvoid.com">emily.white@flyvoid.com</option>
-                  <option value="michael.johnson@flyvoid.com">michael.johnson@flyvoid.com</option>
-                  <option value="sarah.brown@flyvoid.com">sarah.brown@flyvoid.com</option>
+                  <option value="you@flyverax.com">you@flyverax.com</option>
+                  <option value="john.smith@flyverax.com">john.smith@flyverax.com</option>
+                  <option value="jane.doe@flyverax.com">jane.doe@flyverax.com</option>
+                  <option value="emily.white@flyverax.com">emily.white@flyverax.com</option>
+                  <option value="michael.johnson@flyverax.com">michael.johnson@flyverax.com</option>
+                  <option value="sarah.brown@flyverax.com">sarah.brown@flyverax.com</option>
                 </select>
                 <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none text-gray-400">
                   <ChevronDown className="w-4 h-4 text-gray-500" />

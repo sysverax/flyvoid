@@ -160,7 +160,7 @@ export function TfaVerification({
     }
     const element = document.createElement("a");
     element.href = qrCodeDataUrl;
-    element.download = "flyvoid-2fa-qr.png";
+    element.download = "flyverax-2fa-qr.png";
     document.body.appendChild(element);
     element.click();
     document.body.removeChild(element);
@@ -171,7 +171,7 @@ export function TfaVerification({
     const element = document.createElement("a");
     const file = new Blob([recoveryCodes.join("\n")], { type: "text/plain" });
     element.href = URL.createObjectURL(file);
-    element.download = "flyvoid-recovery-codes.txt";
+    element.download = "flyverax-recovery-codes.txt";
     document.body.appendChild(element);
     element.click();
     document.body.removeChild(element);
@@ -385,7 +385,7 @@ export function TfaVerification({
                   Issuer
                 </span>
                 <span className="text-gray-800 text-base font-medium font-figtree">
-                  FlyVoid Admin
+                  Flyverax Admin
                 </span>
               </div>
 
