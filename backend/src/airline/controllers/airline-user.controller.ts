@@ -604,7 +604,8 @@ export class AirlineUserController {
       Filters:
         1. page (pagination, min 1)
         2. limit (items per page)
-        3. search (matches first name, last name, userId or email)`,
+        3. search (matches first name, last name, userId or email)
+        4. isActive (filter by active status: true or false)`,
   })
   @ApiOkResponse({
     description: "Airline users fetched successfully",

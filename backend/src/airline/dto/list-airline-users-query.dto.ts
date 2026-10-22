@@ -1,5 +1,6 @@
+import { Transform } from "class-transformer";
 import { ApiPropertyOptional } from "@nestjs/swagger";
-import { IsOptional, IsString, MaxLength } from "class-validator";
+import { IsBoolean, IsOptional, IsString, MaxLength } from "class-validator";
 import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
 
 export class ListAirlineUsersQueryDto extends PaginationQueryDto {
@@ -11,4 +12,17 @@ export class ListAirlineUsersQueryDto extends PaginationQueryDto {
   @IsString()
   @MaxLength(50)
   search?: string;
+
+  @ApiPropertyOptional({
+    description: "Filter by active status",
+    example: true,
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === "true") return true;
+    if (value === "false") return false;
+    return value;
+  })
+  @IsBoolean()
+  isActive?: boolean;
 }

@@ -108,13 +108,6 @@ export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 
   @Get("profile")
-  @RequireUserRoles(AdminRole.SUPER_ADMIN, AdminRole.STAFF)
-  // @RequireAccessControl({
-  //   platform: {
-  //     asset: PlatformAsset.PROFILE,
-  //     access: [AccessAction.VIEW],
-  //   },
-  // })
   @ApiOperation({
     summary: "Get logged-in admin profile",
     description: `
@@ -178,7 +171,6 @@ export class AdminController {
 
   @Post("users")
   @HttpCode(201)
-  @RequireUserRoles(AdminRole.SUPER_ADMIN, AdminRole.STAFF)
   @RequireAccessControl({
     platform: {
       asset: PlatformAsset.ADMIN_USERS,
@@ -254,7 +246,6 @@ export class AdminController {
   }
 
   @Get("users/:adminId")
-  @RequireUserRoles(AdminRole.SUPER_ADMIN, AdminRole.STAFF)
   @RequireAccessControl({
     platform: { asset: PlatformAsset.ADMIN_USERS, access: [AccessAction.VIEW] },
   })
@@ -327,7 +318,6 @@ export class AdminController {
   }
 
   @Patch("users/:adminId")
-  @RequireUserRoles(AdminRole.SUPER_ADMIN, AdminRole.STAFF)
   @RequireAccessControl({
     platform: { asset: PlatformAsset.ADMIN_USERS, access: [AccessAction.EDIT] },
   })
@@ -411,7 +401,6 @@ export class AdminController {
 
   @Delete("users/:adminId")
   @HttpCode(200)
-  @RequireUserRoles(AdminRole.SUPER_ADMIN)
   @RequireAccessControl({
     platform: {
       asset: PlatformAsset.ADMIN_USERS,
@@ -483,7 +472,6 @@ export class AdminController {
   }
 
   @Get("users")
-  @RequireUserRoles(AdminRole.SUPER_ADMIN, AdminRole.STAFF)
   @RequireAccessControl({
     platform: { asset: PlatformAsset.ADMIN_USERS, access: [AccessAction.VIEW] },
   })
