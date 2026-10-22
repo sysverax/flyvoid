@@ -241,6 +241,7 @@ export interface HotelRecommendation {
   hotelCode: string;
   hotelName: string;
   stars: number;
+  meetsMinimum: boolean;
   address: string | null;
   totalPrice: number;
   currency: string;
@@ -254,6 +255,7 @@ export interface HotelRecommendationsResponse {
   children: number;
   radius: number;
   radiusUnit: string;
+  minStars: number;
   maxRadius: number;
   rooms: RoomOccupancy[];
   splitOptions: Array<{ rooms: RoomOccupancy[]; recommended: boolean }>;

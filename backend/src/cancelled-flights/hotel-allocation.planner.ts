@@ -102,11 +102,49 @@ export function toRoomNeeds(rooms: RoomOccupancy[]): RoomNeed[] {
   return [...needs.values()];
 }
 
+/** Minimum stars a travel class accepts, and the stars it prefers. */
+export interface StarRule {
+  min: number;
+  preferred: number;
+}
+
+/** Hotels meeting the class minimum first, then the nearest search ring, then the preferred stars. */
+const byQuality = (stars: StarRule, hotels: AvailabilityHotel[]) => {
+  const radiusOf = new Map(hotels.map((h) => [h.hotelCode, h.radius ?? 0]));
+  return (
+    a: { hotelCode: string; stars: number },
+    b: { hotelCode: string; stars: number },
+  ): number =>
+    Number(b.stars >= stars.min) - Number(a.stars >= stars.min) ||
+    radiusOf.get(a.hotelCode)! - radiusOf.get(b.hotelCode)! ||
+    Number(b.stars >= stars.preferred) - Number(a.stars >= stars.preferred);
+};
+
+/** Picks the split to book, preferring splits that hotels with at least minStars can cover. */
 export function chooseRoomSplit(
   plan: RoomSplitPlan,
   hotels: AvailabilityHotel[],
   orderHotels?: AvailabilityHotel[],
+  minStars = 0,
 ): RoomOccupancy[] {
+  const qualified = (list: AvailabilityHotel[]) =>
+    list.filter((hotel) => hotel.stars >= minStars);
+  return (
+    rankRoomSplits(
+      plan,
+      qualified(hotels),
+      orderHotels && qualified(orderHotels),
+    ) ??
+    rankRoomSplits(plan, hotels, orderHotels) ??
+    plan.preferred
+  );
+}
+
+function rankRoomSplits(
+  plan: RoomSplitPlan,
+  hotels: AvailabilityHotel[],
+  orderHotels?: AvailabilityHotel[],
+): RoomOccupancy[] | undefined {
   const hotelsByShape = new Map<string, Set<string>>();
   const cheapestByShape = new Map<string, number>();
   for (const hotel of hotels) {
@@ -174,7 +212,7 @@ export function chooseRoomSplit(
         a.distinctShapes - b.distinctShapes ||
         a.roomCount - b.roomCount,
     );
-  return ranked[0]?.rooms ?? plan.preferred;
+  return ranked[0]?.rooms;
 }
 
 export const supplyTarget = (demand: number, bufferRatio: number): number =>
@@ -400,6 +438,7 @@ function selectOrderRate(
 export function buildOrderCandidatePlan(
   orderHotels: AvailabilityHotel[],
   rooms: RoomOccupancy[],
+  stars: StarRule,
 ): PlannedCandidate[] {
   const needs = toRoomNeeds(rooms);
   const candidates: PlannedCandidate[] = [];
@@ -435,8 +474,10 @@ export function buildOrderCandidatePlan(
       })),
     });
   }
+  const quality = byQuality(stars, orderHotels);
   return candidates.sort(
     (a, b) =>
+      quality(a, b) ||
       b.stars - a.stars ||
       a.estimatedPrice - b.estimatedPrice ||
       a.hotelCode.localeCompare(b.hotelCode),
@@ -447,6 +488,7 @@ export function buildCandidatePlan(
   hotels: AvailabilityHotel[],
   needs: RoomNeed[],
   pools: Map<string, ShapePool>,
+  stars: StarRule,
 ): PlannedCandidate[] {
   const candidates: PlannedCandidate[] = [];
   for (const hotel of hotels) {
@@ -504,8 +546,10 @@ export function buildCandidatePlan(
       rooms,
     });
   }
+  const quality = byQuality(stars, hotels);
   return candidates.sort(
     (a, b) =>
+      quality(a, b) ||
       Number(a.tier === "overflow") - Number(b.tier === "overflow") ||
       b.stars - a.stars ||
       a.estimatedPrice - b.estimatedPrice ||
