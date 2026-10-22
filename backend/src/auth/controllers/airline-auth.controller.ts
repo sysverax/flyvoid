@@ -515,7 +515,9 @@ export class AirlineAuthController {
       Access: Public endpoint — no authentication required.
       Business logic validations:
         1. twoFactorToken must be a valid, unexpired 2FA challenge token issued by signin (401 if invalid/expired)
-        2. Recovery code must be valid and unused (400 if invalid)`,
+        2. Recovery code must be valid and unused (400 if invalid)
+        3. User must be active with 2FA enabled (400 "Invalid recovery code" otherwise)
+      On success 2FA is disabled, all recovery codes are cleared and the user must sign in again.`,
   })
   @ApiBody({ type: AirlineTwoFactorRecoverRequestDto })
   @ApiOkResponse({
@@ -532,12 +534,6 @@ export class AirlineAuthController {
   })
   @ApiBadRequestResponse({
     schema: createBadRequestErrorSchema("/api/v1/auth/airline/2fa/recover"),
-  })
-  @ApiConflictResponse({
-    schema: createConflictErrorSchema(
-      "/api/v1/auth/airline/2fa/recover",
-      "2FA not enabled",
-    ),
   })
   async recoverTwoFactor(
     @Body() dto: AirlineTwoFactorRecoverRequestDto,

@@ -9,7 +9,10 @@ export class AirlineTwoFactorRecoverRequestDto {
   twoFactorToken!: string;
 
   @ApiProperty({ example: "ABCD2EFGH3" })
-  @Transform(({ value }: { value: string }) => value.trim().toUpperCase())
+  // Leave non-strings as is so @IsString reports a 400 instead of throwing.
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === "string" ? value.trim().toUpperCase() : value,
+  )
   @IsString()
   @IsNotEmpty()
   recoveryCode!: string;
