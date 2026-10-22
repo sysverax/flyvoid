@@ -50,7 +50,10 @@ export class AirlineUserService {
     dto: InviteAirlineUserRequestDto,
     requestId: string,
   ): Promise<InviteAirlineUserResponseDto> {
-    const actor = await this.ensureAirlineAdmin(authenticatedUser, requestId);
+    const actor = await this.ensureActiveAirlineUser(
+      authenticatedUser,
+      requestId,
+    );
 
     const email = dto.email.toLowerCase().trim();
     const existingUser = await this.airlineUserRepository.findByEmail(
@@ -112,7 +115,10 @@ export class AirlineUserService {
     dto: UpdateAirlineUserRequestDto,
     requestId: string,
   ): Promise<AirlineUserResponseDto> {
-    const actor = await this.ensureAirlineAdmin(authenticatedUser, requestId);
+    const actor = await this.ensureActiveAirlineUser(
+      authenticatedUser,
+      requestId,
+    );
 
     const user = await this.airlineUserRepository.findById(userId, requestId);
     if (!user || user.airlineId !== actor.airlineId) {
@@ -164,7 +170,10 @@ export class AirlineUserService {
     userId: number,
     requestId: string,
   ): Promise<void> {
-    const actor = await this.ensureAirlineAdmin(authenticatedUser, requestId);
+    const actor = await this.ensureActiveAirlineUser(
+      authenticatedUser,
+      requestId,
+    );
 
     const user = await this.airlineUserRepository.findById(userId, requestId);
     if (!user || user.airlineId !== actor.airlineId) {
@@ -187,7 +196,10 @@ export class AirlineUserService {
     query: ListAirlineUsersQueryDto,
     requestId: string,
   ): Promise<AirlineUserListResponseDto> {
-    const actor = await this.ensureAirlineAdmin(authenticatedUser, requestId);
+    const actor = await this.ensureActiveAirlineUser(
+      authenticatedUser,
+      requestId,
+    );
 
     const { users, total } =
       await this.airlineUserRepository.findAllByAirlineId(
@@ -354,28 +366,6 @@ export class AirlineUserService {
 
     if (!actor || !actor.isActive) {
       throw new UnauthorizedException("Unauthorized");
-    }
-
-    return actor;
-  }
-
-  private async ensureAirlineAdmin(
-    authenticatedUser: AuthenticatedUser,
-    requestId: string,
-  ): Promise<AirlineUserEntity> {
-    const actor = await this.airlineUserRepository.findById(
-      authenticatedUser.sub,
-      requestId,
-    );
-
-    if (!actor || !actor.isActive) {
-      throw new UnauthorizedException("Unauthorized");
-    }
-
-    if (actor.role !== AirlineRole.AIRLINE_ADMIN) {
-      throw new ForbiddenException(
-        "Only AIRLINE_ADMIN can perform this action",
-      );
     }
 
     return actor;
