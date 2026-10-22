@@ -1,10 +1,12 @@
 import { describe, expect, it } from "@jest/globals";
 import {
   TIME_FRAME,
+  TimeFrame,
   TREND_GRANULARITY,
 } from "../constants/time-frame.constants";
 import {
   buildTrendWindow,
+  describeTimeFrameRange,
   fillTrendBuckets,
   formatInTimeZone,
   getTimeZoneOffsetMinutes,
@@ -18,6 +20,7 @@ import {
 
 const COLOMBO = "Asia/Colombo"; // UTC+05:30, no DST
 const NEW_YORK = "America/New_York"; // UTC-05:00 / -04:00 with DST
+const KATHMANDU = "Asia/Kathmandu"; // UTC+05:45, no DST
 
 describe("time-frame.util", () => {
   describe("resolveTimeZone", () => {
@@ -239,16 +242,41 @@ describe("time-frame.util", () => {
       expect(window.endUtc.toISOString()).toBe("2026-12-31T18:30:00.000Z");
     });
 
-    it("falls back to UTC for an unknown timezone", () => {
+    it("never falls back to UTC: an invalid timezone throws", () => {
+      expect(() =>
+        buildTrendWindow(TIME_FRAME.TODAY, "Not/AZone", new Date()),
+      ).toThrow(RangeError);
+    });
+
+    it("today: works with a non-whole-hour offset (Asia/Kathmandu, +05:45)", () => {
+      // 20:00 UTC on the 21st is 01:45 on the 22nd in Kathmandu.
       const window = buildTrendWindow(
         TIME_FRAME.TODAY,
-        "Not/AZone",
-        new Date("2026-10-21T05:10:00Z"),
+        KATHMANDU,
+        new Date("2026-10-21T20:00:00Z"),
       );
 
-      expect(window.timeZone).toBe("UTC");
-      expect(window.buckets).toHaveLength(6);
-      expect(window.startUtc.toISOString()).toBe("2026-10-21T00:00:00.000Z");
+      expect(window.timeZone).toBe(KATHMANDU);
+      expect(window.buckets).toEqual(["2026-10-22T00:00", "2026-10-22T01:00"]);
+      expect(window.startUtc.toISOString()).toBe("2026-10-21T18:15:00.000Z");
+      expect(window.endUtc.toISOString()).toBe("2026-10-22T18:15:00.000Z");
+    });
+
+    it("yesterday on 2026-11-02 in New York: 24 hourly buckets over the 25-hour DST day", () => {
+      const window = buildTrendWindow(
+        TIME_FRAME.YESTERDAY,
+        NEW_YORK,
+        new Date("2026-11-02T15:00:00Z"),
+      );
+
+      expect(window.buckets).toEqual(
+        Array.from({ length: 24 }, (_, hour) =>
+          `2026-11-01T${String(hour).padStart(2, "0")}:00`,
+        ),
+      );
+      expect(window.endUtc.getTime() - window.startUtc.getTime()).toBe(
+        25 * 60 * 60 * 1000,
+      );
     });
   });
 
@@ -261,18 +289,44 @@ describe("time-frame.util", () => {
       [TIME_FRAME.WEEK, "2026-10-15T18:30:00.000Z", "2026-10-22T18:30:00.000Z"],
       [TIME_FRAME.MONTH, "2025-10-31T18:30:00.000Z", "2026-10-31T18:30:00.000Z"],
       [TIME_FRAME.YEAR, "2020-12-31T18:30:00.000Z", "2026-12-31T18:30:00.000Z"],
-    ])("%s uses the airline's local calendar", (timeFrame, start, end) => {
+    ])("%s uses the requested timezone's calendar", (timeFrame, start, end) => {
       const range = resolveTimeFrameRange(timeFrame, COLOMBO, now);
       expect(range.timeZone).toBe(COLOMBO);
       expect(range.startUtc.toISOString()).toBe(start);
       expect(range.endUtc.toISOString()).toBe(end);
     });
 
-    it("uses UTC when no timezone is given (platform users)", () => {
-      const range = resolveTimeFrameRange(TIME_FRAME.TODAY, undefined, now);
+    it("uses UTC only when UTC is requested", () => {
+      const range = resolveTimeFrameRange(TIME_FRAME.TODAY, "UTC", now);
       expect(range.timeZone).toBe("UTC");
       expect(range.startUtc.toISOString()).toBe("2026-10-21T00:00:00.000Z");
       expect(range.endUtc.toISOString()).toBe("2026-10-22T00:00:00.000Z");
+    });
+
+    it.each(["", "+05:30", "UTC+5:30", "Invalid/Zone"])(
+      "throws for %j instead of falling back",
+      (zone) => {
+        expect(() => resolveTimeFrameRange(TIME_FRAME.TODAY, zone, now)).toThrow(
+          RangeError,
+        );
+      },
+    );
+
+    it("puts the same instant in different time frames per timezone", () => {
+      const flightAt = new Date("2026-10-21T20:00:00Z").getTime();
+      const at = new Date("2026-10-22T10:00:00Z");
+      const contains = (timeFrame: TimeFrame, zone: string) => {
+        const range = resolveTimeFrameRange(timeFrame, zone, at);
+        return (
+          flightAt >= range.startUtc.getTime() && flightAt < range.endUtc.getTime()
+        );
+      };
+
+      // 22 Oct 01:30 in Colombo, but still 21 Oct 16:00 in New York.
+      expect(contains(TIME_FRAME.TODAY, COLOMBO)).toBe(true);
+      expect(contains(TIME_FRAME.YESTERDAY, COLOMBO)).toBe(false);
+      expect(contains(TIME_FRAME.TODAY, NEW_YORK)).toBe(false);
+      expect(contains(TIME_FRAME.YESTERDAY, NEW_YORK)).toBe(true);
     });
 
     it("matches the trend window for every time frame", () => {
@@ -282,6 +336,32 @@ describe("time-frame.util", () => {
         expect(window.startUtc).toEqual(range.startUtc);
         expect(window.endUtc).toEqual(range.endUtc);
       }
+    });
+  });
+
+  describe("describeTimeFrameRange", () => {
+    it("returns the request timezone and the range as local time with offset", () => {
+      const now = new Date("2026-10-22T10:00:00Z");
+      const range = resolveTimeFrameRange(TIME_FRAME.WEEK, COLOMBO, now);
+
+      expect(describeTimeFrameRange(TIME_FRAME.WEEK, range)).toEqual({
+        timeFrame: TIME_FRAME.WEEK,
+        timezone: COLOMBO,
+        startDate: "2026-10-16T00:00:00+05:30",
+        endDate: "2026-10-22T23:59:59+05:30",
+      });
+    });
+
+    it("formats a non-whole-hour offset", () => {
+      const range = resolveTimeFrameRange(
+        TIME_FRAME.TODAY,
+        KATHMANDU,
+        new Date("2026-10-22T10:00:00Z"),
+      );
+      expect(describeTimeFrameRange(TIME_FRAME.TODAY, range)).toMatchObject({
+        startDate: "2026-10-22T00:00:00+05:45",
+        endDate: "2026-10-22T23:59:59+05:45",
+      });
     });
   });
 

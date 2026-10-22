@@ -24,6 +24,11 @@ import {
   AirlineAsset,
 } from "../common/constants/access-control.constants";
 import { TIME_FRAME } from "../common/constants/time-frame.constants";
+import {
+  TIME_FRAME_DESCRIPTION,
+  TIMEZONE_DESCRIPTION,
+  TIMEZONE_EXAMPLE,
+} from "../common/dto/time-frame-query.dto";
 import { UserType } from "../common/constants/user.constants";
 import {
   REQUEST_ID_EXAMPLE,
@@ -49,8 +54,14 @@ const TIME_FRAME_QUERY = {
   name: "timeFrame",
   required: true,
   enum: TIME_FRAME,
-  description:
-    "today: hourly up to the current hour; yesterday: 24 hours; week: last 7 days; month: last 12 months; year: last 6 years. All in the airline's timezone.",
+  description: TIME_FRAME_DESCRIPTION,
+};
+
+const TIMEZONE_QUERY = {
+  name: "timezone",
+  required: true,
+  example: TIMEZONE_EXAMPLE,
+  description: TIMEZONE_DESCRIPTION,
 };
 
 const successSchema = (message: string, dto: object) => ({
@@ -86,9 +97,10 @@ export class AirlineDashboardController {
   @ApiOperation({
     summary: "Get hotel spend trend",
     description:
-      "Total hotel cost (including tax and platform fee) per bucket for the authenticated airline's allocated, paid and published cancelled flights. Always scoped to the caller's airline.",
+      "Total hotel cost (including tax and platform fee) per bucket for the authenticated airline's allocated, paid and published cancelled flights. Always scoped to the caller's airline. The range and buckets use the `timezone` query parameter (required); missing, invalid or raw-offset timezones return 400.",
   })
   @ApiQuery(TIME_FRAME_QUERY)
+  @ApiQuery(TIMEZONE_QUERY)
   @ApiOkResponse(
     successSchema(
       "Hotel spend trend fetched successfully",
@@ -118,7 +130,7 @@ export class AirlineDashboardController {
   ): Promise<BaseResponseDto<HotelSpendTrendResponseDto>> {
     const data = await this.service.getHotelSpendTrend(
       req.user,
-      query.timeFrame,
+      query,
       requestLogger,
     );
     return BaseResponseDto.success(
@@ -133,9 +145,10 @@ export class AirlineDashboardController {
   @ApiOperation({
     summary: "Get affected passengers trend",
     description:
-      "Adults plus children per bucket across the authenticated airline's non-draft cancelled flights. Always scoped to the caller's airline.",
+      "Adults plus children per bucket across the authenticated airline's non-draft cancelled flights. Always scoped to the caller's airline. The range and buckets use the `timezone` query parameter (required); missing, invalid or raw-offset timezones return 400.",
   })
   @ApiQuery(TIME_FRAME_QUERY)
+  @ApiQuery(TIMEZONE_QUERY)
   @ApiOkResponse(
     successSchema(
       "Affected passengers trend fetched successfully",
@@ -167,7 +180,7 @@ export class AirlineDashboardController {
   ): Promise<BaseResponseDto<AffectedPassengersTrendResponseDto>> {
     const data = await this.service.getAffectedPassengersTrend(
       req.user,
-      query.timeFrame,
+      query,
       requestLogger,
     );
     return BaseResponseDto.success(
@@ -182,9 +195,10 @@ export class AirlineDashboardController {
   @ApiOperation({
     summary: "Get cancelled flights trend",
     description:
-      "Number of non-draft cancelled flights per bucket for the authenticated airline. Always scoped to the caller's airline.",
+      "Number of non-draft cancelled flights per bucket for the authenticated airline. Always scoped to the caller's airline. The range and buckets use the `timezone` query parameter (required); missing, invalid or raw-offset timezones return 400.",
   })
   @ApiQuery(TIME_FRAME_QUERY)
+  @ApiQuery(TIMEZONE_QUERY)
   @ApiOkResponse(
     successSchema(
       "Cancelled flights trend fetched successfully",
@@ -214,7 +228,7 @@ export class AirlineDashboardController {
   ): Promise<BaseResponseDto<CancelledFlightsTrendResponseDto>> {
     const data = await this.service.getCancelledFlightsTrend(
       req.user,
-      query.timeFrame,
+      query,
       requestLogger,
     );
     return BaseResponseDto.success(

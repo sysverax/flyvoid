@@ -51,6 +51,11 @@ import {
 } from "../common/constants/access-control.constants";
 import { UserType } from "../common/constants/user.constants";
 import { TIME_FRAME } from "../common/constants/time-frame.constants";
+import {
+  TIME_FRAME_DESCRIPTION,
+  TIMEZONE_DESCRIPTION,
+  TIMEZONE_EXAMPLE,
+} from "../common/dto/time-frame-query.dto";
 import { BaseResponseDto } from "../common/dto/base-response.dto";
 import { RequestId } from "../common/decorators/request-id.decorator";
 import {
@@ -215,14 +220,19 @@ export class CancelledFlightsController {
     summary: "Get cancelled flights summary",
     description:
       "Returns aggregate totals (flights, adults, children, bookings, rooms, hotel cost, hotel tax, discount, total cost, platform fee) for cancelled flights matching the same filters as GET /cancelled-flights: status, search, airlineId, startDate, endDate. Platform users can view all airlines and can filter by airlineId. Airline users are always scoped to their own airline from the access token: airlineId is ignored, and platformFeePercentage returns their airline's current fee rate.\n\n" +
-      "timeFrame (optional) picks the same range as the airline dashboard trends, in the airline's timezone (UTC for platform users), and filters on the flight's creation time instead of cancellationDate. With timeFrame, counts exclude draft flights and money totals only include allocated, paid and published flights, so totalCancelFlights and totalCost equal the sums of the cancelled-flights and hotel-spend trends. Without timeFrame the behaviour is unchanged. Sending timeFrame together with startDate or endDate returns 400.",
+      "timeFrame (optional) picks the same range as the airline dashboard trends, in the IANA `timezone` sent with the request (for both airline and platform users), and filters on the flight's creation time instead of cancellationDate. With timeFrame, counts exclude draft flights and money totals only include allocated, paid and published flights, so totalCancelFlights and totalCost equal the sums of the cancelled-flights and hotel-spend trends, and the response also contains timeFrame, timezone, startDate and endDate. Without timeFrame the behaviour is unchanged. Sending timeFrame together with startDate or endDate returns 400; timeFrame without a valid timezone returns 400.",
   })
   @ApiQuery({
     name: "timeFrame",
     required: false,
     enum: TIME_FRAME,
-    description:
-      "today: 00:00 today to now; yesterday: 00:00-23:59:59 yesterday; week: the last 7 days including today; month: the last 12 calendar months including this one; year: the last 6 years including this one. Cannot be combined with startDate/endDate (400).",
+    description: `${TIME_FRAME_DESCRIPTION} Cannot be combined with startDate/endDate (400).`,
+  })
+  @ApiQuery({
+    name: "timezone",
+    required: false,
+    example: TIMEZONE_EXAMPLE,
+    description: `${TIMEZONE_DESCRIPTION} Required when timeFrame is sent (400 if missing); ignored otherwise.`,
   })
   @ApiOkResponse({
     schema: {

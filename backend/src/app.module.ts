@@ -4,7 +4,9 @@ import {
   NestModule,
   RequestMethod,
 } from "@nestjs/common";
+import { APP_FILTER } from "@nestjs/core";
 import { AdminModule } from "./admin/admin.module";
+import { DatabaseExceptionFilter } from "./common/filters/database-exception.filter";
 import { ConfigModule } from "@nestjs/config";
 import { AuthModule } from "./auth/auth.module";
 import { LoggerModule } from "./common/logger/logger.module";
@@ -18,6 +20,7 @@ import { HotelBookingsModule } from "./hotel-bookings/hotel-bookings.module";
 import { DashboardModule } from "./dashboard/dashboard.module";
 
 @Module({
+  providers: [{ provide: APP_FILTER, useClass: DatabaseExceptionFilter }],
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     LoggerModule,
