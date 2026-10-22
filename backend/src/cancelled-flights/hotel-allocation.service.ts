@@ -2661,6 +2661,15 @@ export class HotelAllocationService implements OnApplicationBootstrap {
           error,
         );
       }
+      if (check.taxesAtProperty?.length) {
+        const taxes = check.taxesAtProperty
+          .map((tax) => `${tax.name} ${tax.amount} ${tax.currencyCode ?? ""}`)
+          .join(", ");
+        return fail(
+          HotelBookingFailureCode.HOTEL_PAYABLE_TAXES,
+          `Rate has taxes payable at the hotel (${taxes}); passengers must not pay the hotel`,
+        );
+      }
       const orderRooms = check.rooms ?? [
         { adults: check.adults, children: check.children },
       ];
