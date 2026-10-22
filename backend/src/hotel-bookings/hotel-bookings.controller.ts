@@ -81,7 +81,7 @@ export class HotelBookingsController {
   @ApiOperation({
     summary: "List hotel bookings",
     description:
-      "Returns paginated hotel bookings with optional filters: destinationAirportId, cancelledFlightId, search (hotel booking id, flight number, hotel name, or passenger email), startDate/endDate (check-in date range). Platform users can filter by airlineId; airline users only see their own airline's hotel bookings.",
+      "Returns paginated hotel bookings with optional filters: destinationAirportId, cancelledFlightId, search (hotel booking id, flight number, hotel name, or passenger email), startDate/endDate (check-in date as YYYY-MM-DD, both inclusive). Platform users can filter by airlineId; airline users only see their own airline's hotel bookings.",
   })
   @ApiOkResponse({
     schema: {
@@ -125,7 +125,7 @@ export class HotelBookingsController {
   @ApiOperation({
     summary: "Get hotel bookings summary",
     description:
-      "Returns total hotel bookings, total passengers, and total cost for the authenticated airline's cancelled flights. Airline users only, requires VIEW access on the Bookings tab.",
+      "Returns total hotel bookings, total passengers, and total cost for the authenticated airline's cancelled flights. Optional filters: destinationAirportId, cancelledFlightId, search, startDate/endDate (check-in date as YYYY-MM-DD, both inclusive). Airline users only, requires VIEW access on the Bookings tab.",
   })
   @ApiOkResponse({
     schema: {
