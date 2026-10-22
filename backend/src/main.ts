@@ -51,7 +51,8 @@ async function bootstrap(): Promise<void> {
       validationError: { target: false, value: false },
       exceptionFactory: (validationErrors: ValidationError[]) => {
         const fields = flattenValidationErrors(validationErrors[0]);
-        const message = fields.message ? [fields.message] : [];
+        // A single string, like the errors thrown from services.
+        const message = fields.message || "Validation failed";
         const detail = fields.detail || "Request field validation failed";
         const solution = fields.solution || "Fix invalid fields and retry.";
         const code = fields?.code ?? undefined;
