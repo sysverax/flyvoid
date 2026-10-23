@@ -14,6 +14,7 @@ import {
   Users,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
+import { PAYMENTS_ENABLED } from "@/src/lib/constants";
 import { SignOutDialog } from "./SignOutDialog";
 import { useAuth } from "@/src/hooks/useAuth";
 import { authService } from "@/src/services/auth.service";
@@ -30,7 +31,7 @@ const navItems = [
   { title: "Audit Logs", icon: FileText, path: "/audit-logs", key: "auditLogs" },
   { title: "Manage Users", icon: Users, path: "/manage-users", key: "manageUsers" },
   { title: "Admin Profile", icon: "/icons/user.svg", path: "/profile", key: "profile" },
-];
+].filter((item) => PAYMENTS_ENABLED || item.key !== "payments");
 
 export function Sidebar() {
   const pathname = usePathname();

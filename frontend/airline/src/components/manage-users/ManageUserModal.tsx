@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { X } from "lucide-react";
 import { useLockBodyScroll } from "@/src/hooks/useLockBodyScroll";
 import { cn } from "@/src/lib/utils";
+import { PAYMENTS_ENABLED } from "@/src/lib/constants";
 import { User } from "@/src/services/users.service";
 
 interface UserPermissions {
@@ -43,7 +44,7 @@ const PERMISSION_ROWS: PermissionRow[] = [
   { key: "bookings", label: "Bookings" },
   { key: "payments", label: "Payments" },
   { key: "manageUsers", label: "Manage Users" },
-];
+].filter((row) => PAYMENTS_ENABLED || row.key !== "payments");
 
 const emptyPermissions = (): UserPermissions => ({
   dashboard: { view: false, edit: false, export: false, all: false },

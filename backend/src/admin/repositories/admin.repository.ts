@@ -5,6 +5,7 @@ import {
   AccessAction,
   PlatformAsset,
 } from "../../common/constants/access-control.constants";
+import { AdminRole } from "../../common/constants/user.constants";
 import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
 import { AdminUserQueryDto } from "../dto/admin-user-query.dto";
 import { LoggerService } from "../../common/logger/logger.service";
@@ -90,13 +91,17 @@ export class AdminRepository {
 
   async findAll(
     adminUserQuery: AdminUserQueryDto,
+    excludeAdminId: number,
     requestId: string,
   ): Promise<{ admins: AdminEntity[]; total: number }> {
     this.logger.debug("Listing all admins", "AdminRepository", requestId);
 
     const skip = (adminUserQuery.page - 1) * adminUserQuery.limit;
 
-    const queryBuilder = this.adminRepository.createQueryBuilder("admin");
+    const queryBuilder = this.adminRepository
+      .createQueryBuilder("admin")
+      .where("admin.role = :role", { role: AdminRole.STAFF })
+      .andWhere("admin.id != :excludeAdminId", { excludeAdminId });
 
     if (adminUserQuery.isActive !== undefined) {
       queryBuilder.andWhere("admin.isActive = :isActive", {
