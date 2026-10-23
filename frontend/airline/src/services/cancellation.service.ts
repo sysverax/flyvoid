@@ -779,21 +779,12 @@ export const cancellationService = {
     airlineId?: number;
     startDate?: string;
     endDate?: string;
-    timeFrame?: string;
-    timezone?: string;
   }): Promise<any> {
     try {
-      const queryParams = { ...params };
-      if (queryParams.timeFrame && !queryParams.timezone) {
-        try {
-          queryParams.timezone =
-            Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-        } catch {
-          queryParams.timezone = "UTC";
-        }
-      }
+      // No timeFrame/timezone here; dashboard totals come from
+      // dashboardService.getDashboardSummary.
       const response = await apiClient.get("/cancelled-flights/summary", {
-        params: queryParams,
+        params,
       });
       return response.data.data;
     } catch (error: any) {

@@ -11,12 +11,6 @@ import {
 import { QueryDeepPartialEntity } from "typeorm/query-builder/QueryPartialEntity";
 import { config } from "../config/config";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
-import {
-  RAISED_FLIGHT_STATUSES,
-  REPORTING_DATE_COLUMN,
-  SPEND_FLIGHT_STATUSES,
-  toUtcTimestampParam,
-} from "./cancelled-flight-reporting.constants";
 import { BookingEntity } from "./entities/booking.entity";
 import {
   FlightStatus,
@@ -396,19 +390,12 @@ export class CancelledFlightsRepository {
       airlineId,
       startDate,
       endDate,
-      timeFrameRange,
     }: {
       status?: FlightStatus;
       search?: string;
       airlineId?: number;
       startDate?: string;
       endDate?: string;
-      /**
-       * A resolved timeFrame. Filters on the reporting timestamp instead of
-       * cancellationDate and applies the same status rules as the dashboard
-       * trends, so the totals equal the trend sums.
-       */
-      timeFrameRange?: { startUtc: Date; endUtc: Date };
     },
     requestLogger: Logger,
   ): Promise<{
@@ -431,8 +418,6 @@ export class CancelledFlightsRepository {
       airlineId,
       startDate,
       endDate,
-      timeFrameStartUtc: timeFrameRange?.startUtc.toISOString(),
-      timeFrameEndUtc: timeFrameRange?.endUtc.toISOString(),
     });
 
     const qb = this.flightRepo.createQueryBuilder("flight");
@@ -457,32 +442,13 @@ export class CancelledFlightsRepository {
       qb.andWhere("flight.cancellationDate <= :endDate", { endDate });
     }
 
-    // With a timeFrame, counts cover every raised (non-draft) flight and
-    // money only settled ones - the same rules as the dashboard trends.
-    if (timeFrameRange) {
-      qb.andWhere(`${REPORTING_DATE_COLUMN} >= :timeFrameStart`, {
-        timeFrameStart: toUtcTimestampParam(timeFrameRange.startUtc),
-      })
-        .andWhere(`${REPORTING_DATE_COLUMN} < :timeFrameEnd`, {
-          timeFrameEnd: toUtcTimestampParam(timeFrameRange.endUtc),
-        })
-        .andWhere("flight.status IN (:...raisedStatuses)", {
-          raisedStatuses: RAISED_FLIGHT_STATUSES,
-        })
-        .setParameter("spendStatuses", SPEND_FLIGHT_STATUSES);
-    }
-    const excludeUnsettled = timeFrameRange
-      ? " OR flight.status NOT IN (:...spendStatuses)"
-      : "";
-
     // Postgres numeric uniquely allows storing NaN (distinct from NULL), and
     // SUM() propagates it through the whole aggregate - COALESCE alone
     // doesn't catch it, since it only substitutes for NULL. The CASE guards
     // below treat a poisoned row as a 0 contribution instead of silently
     // NaN-ing (and, once serialized to JSON, null-ing) this entire summary.
-    // With a timeFrame, unsettled flights also contribute 0.
     const sumMoney = (column: string) =>
-      `COALESCE(SUM(CASE WHEN ${column} = 'NaN'${excludeUnsettled} THEN 0 ELSE ${column} END), 0)`;
+      `COALESCE(SUM(CASE WHEN ${column} = 'NaN' THEN 0 ELSE ${column} END), 0)`;
 
     // Live hotel bookings per flight - the same rows as the hotel bookings
     // list. totalBookings, by contrast, counts every PNR on the flight.

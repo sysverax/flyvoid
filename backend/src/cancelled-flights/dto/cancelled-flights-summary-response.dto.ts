@@ -1,6 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { TimeFrame } from "../../common/constants/time-frame.constants";
-import { TIME_FRAME_RANGE_DOCS } from "../../common/dto/time-frame-range-response.dto";
+import { ApiProperty } from "@nestjs/swagger";
 
 export class CancelledFlightsSummaryResponseDto {
   @ApiProperty({
@@ -79,29 +77,4 @@ export class CancelledFlightsSummaryResponseDto {
     type: Number,
   })
   platformFeePercentage!: number | null;
-
-  // Present only when the request sends timeFrame.
-  @ApiPropertyOptional({
-    ...TIME_FRAME_RANGE_DOCS.timeFrame,
-    description: "Echo of the request timeFrame. Only present when timeFrame is sent.",
-  })
-  timeFrame?: TimeFrame;
-
-  @ApiPropertyOptional({
-    ...TIME_FRAME_RANGE_DOCS.timezone,
-    description: `${TIME_FRAME_RANGE_DOCS.timezone.description}. Only present when timeFrame is sent.`,
-  })
-  timezone?: string;
-
-  @ApiPropertyOptional({
-    ...TIME_FRAME_RANGE_DOCS.startDate,
-    description: `${TIME_FRAME_RANGE_DOCS.startDate.description}. Only present when timeFrame is sent.`,
-  })
-  startDate?: string;
-
-  @ApiPropertyOptional({
-    ...TIME_FRAME_RANGE_DOCS.endDate,
-    description: `${TIME_FRAME_RANGE_DOCS.endDate.description}. Only present when timeFrame is sent.`,
-  })
-  endDate?: string;
 }

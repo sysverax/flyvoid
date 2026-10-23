@@ -47,6 +47,8 @@ import {
   HotelSpendTrendResponseDto,
 } from "./dto/airline-trend-response.dto";
 import { GetAirlineTrendQueryDto } from "./dto/get-airline-trend-query.dto";
+import { GetAirlineSummaryQueryDto } from "./dto/get-airline-summary-query.dto";
+import { AirlineDashboardSummaryResponseDto } from "./dto/airline-summary-response.dto";
 
 const BASE_PATH = "/api/v1/dashboard/airline";
 
@@ -88,16 +90,55 @@ const successSchema = (message: string, dto: object) => ({
   HotelSpendTrendResponseDto,
   AffectedPassengersTrendResponseDto,
   CancelledFlightsTrendResponseDto,
+  AirlineDashboardSummaryResponseDto,
 )
 export class AirlineDashboardController {
   constructor(private readonly service: AirlineDashboardService) {}
+
+  // ── GET /dashboard/airline/summary ───────────────────────────────────────
+  @Get("summary")
+  @ApiOperation({
+    summary: "Get airline dashboard summary",
+    description:
+      "KPI totals for the authenticated airline in the selected time frame. Hotel figures (totalHotelBookingCost, totalHotelBookings, totalRooms, totalPlatformFee) cover live hotel bookings created in the range (hotel booking created_at) on allocated, paid or published flights. totalCancelFlights counts non-draft cancelled flights created in the range (flight created_at). totalAdults and totalChildren cover PNRs created in the range (PNR created_at) on non-draft flights, matching the affected passengers trend. platformFeePercentage is the airline's current fee rate. The range uses the `timezone` query parameter (required); missing, invalid or raw-offset timezones return 400.",
+  })
+  @ApiQuery(TIME_FRAME_QUERY)
+  @ApiQuery(TIMEZONE_QUERY)
+  @ApiOkResponse(
+    successSchema(
+      "Airline dashboard summary fetched successfully",
+      AirlineDashboardSummaryResponseDto,
+    ),
+  )
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema(`${BASE_PATH}/summary`),
+  })
+  @ApiUnauthorizedResponse({
+    schema: createUnauthorizedErrorSchema(`${BASE_PATH}/summary`, "Unauthorized"),
+  })
+  @ApiForbiddenResponse({
+    schema: createForbiddenErrorSchema(`${BASE_PATH}/summary`, "Access denied"),
+  })
+  async getSummary(
+    @Req() req: AuthenticatedRequest,
+    @Query() query: GetAirlineSummaryQueryDto,
+    @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
+  ): Promise<BaseResponseDto<AirlineDashboardSummaryResponseDto>> {
+    const data = await this.service.getSummary(req.user, query, requestLogger);
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Airline dashboard summary fetched successfully",
+    );
+  }
 
   // ── GET /dashboard/airline/hotel-spend-trend ─────────────────────────────
   @Get("hotel-spend-trend")
   @ApiOperation({
     summary: "Get hotel spend trend",
     description:
-      "Total hotel cost (including tax and platform fee) per bucket for the authenticated airline's allocated, paid and published cancelled flights. Always scoped to the caller's airline. The range and buckets use the `timezone` query parameter (required); missing, invalid or raw-offset timezones return 400.",
+      "Total hotel cost (including tax and platform fee) per bucket of the authenticated airline's live hotel bookings on allocated, paid and published flights, bucketed by when each hotel booking was created (hotel booking created_at). The bucket values add up to the summary's totalHotelBookingCost for the same timeFrame. Always scoped to the caller's airline. The range and buckets use the `timezone` query parameter (required); missing, invalid or raw-offset timezones return 400.",
   })
   @ApiQuery(TIME_FRAME_QUERY)
   @ApiQuery(TIMEZONE_QUERY)
@@ -145,7 +186,7 @@ export class AirlineDashboardController {
   @ApiOperation({
     summary: "Get affected passengers trend",
     description:
-      "Adults plus children per bucket across the authenticated airline's non-draft cancelled flights. Always scoped to the caller's airline. The range and buckets use the `timezone` query parameter (required); missing, invalid or raw-offset timezones return 400.",
+      "Adults plus children per bucket on the authenticated airline's PNRs (passenger bookings) on non-draft cancelled flights, bucketed by when each PNR was created (PNR created_at). Always scoped to the caller's airline. The range and buckets use the `timezone` query parameter (required); missing, invalid or raw-offset timezones return 400.",
   })
   @ApiQuery(TIME_FRAME_QUERY)
   @ApiQuery(TIMEZONE_QUERY)
@@ -195,7 +236,7 @@ export class AirlineDashboardController {
   @ApiOperation({
     summary: "Get cancelled flights trend",
     description:
-      "Number of non-draft cancelled flights per bucket for the authenticated airline. Always scoped to the caller's airline. The range and buckets use the `timezone` query parameter (required); missing, invalid or raw-offset timezones return 400.",
+      "Number of non-draft cancelled flights per bucket for the authenticated airline, bucketed by when each flight was created (flight created_at). The bucket values add up to the summary's totalCancelFlights for the same timeFrame. Always scoped to the caller's airline. The range and buckets use the `timezone` query parameter (required); missing, invalid or raw-offset timezones return 400.",
   })
   @ApiQuery(TIME_FRAME_QUERY)
   @ApiQuery(TIMEZONE_QUERY)
