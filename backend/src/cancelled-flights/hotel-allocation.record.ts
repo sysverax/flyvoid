@@ -3,6 +3,7 @@ import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
 import {
   HotelAllocationStatus,
   HotelBookingAttemptStatus,
+  HotelBookingPaymentStatus,
 } from "./entities/enums";
 import { HotelBookingEntity } from "./entities/hotel-booking.entity";
 import { HotelContact } from "./entities/hotel.entity";
@@ -80,6 +81,8 @@ export interface HotelAllocationRecord {
   platformFee: number;
   totalPrice: number;
   earnings: number;
+  paymentStatus: HotelBookingPaymentStatus;
+  paidAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
   booking: BookingEntity;
@@ -232,6 +235,8 @@ export function toAllocationRecord(
     platformFee: num(hb?.platformFee),
     totalPrice: num(hb?.totalPrice),
     earnings: num(hb?.earnings),
+    paymentStatus: hb?.paymentStatus ?? HotelBookingPaymentStatus.PENDING,
+    paidAt: hb?.paidAt ?? null,
     createdAt: hb?.createdAt ?? pnr.createdAt,
     updatedAt: hb?.updatedAt ?? pnr.updatedAt,
     booking: pnr,

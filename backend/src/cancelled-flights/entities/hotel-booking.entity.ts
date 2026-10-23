@@ -12,7 +12,7 @@ import {
 import { BookingEntity } from "./booking.entity";
 import { CancelledFlightEntity } from "./cancelled-flight.entity";
 import { HotelAllocationOptionEntity } from "./hotel-allocation-option.entity";
-import { HotelBookingAttemptStatus } from "./enums";
+import { HotelBookingAttemptStatus, HotelBookingPaymentStatus } from "./enums";
 import { HotelEntity } from "./hotel.entity";
 import { ProviderEntity } from "./provider.entity";
 import { HotelBookingRoomEntity } from "./hotel-booking-room.entity";
@@ -150,6 +150,17 @@ export class HotelBookingEntity {
 
   @Column({ name: "failed_at", type: "timestamp", nullable: true })
   failedAt?: Date | null;
+
+  @Column({
+    name: "payment_status",
+    type: "varchar",
+    length: 20,
+    default: HotelBookingPaymentStatus.PENDING,
+  })
+  paymentStatus!: HotelBookingPaymentStatus;
+
+  @Column({ name: "paid_at", type: "timestamp", nullable: true })
+  paidAt?: Date | null;
 
   @Column({
     name: "failure_code",

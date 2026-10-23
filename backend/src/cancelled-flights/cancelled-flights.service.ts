@@ -1414,6 +1414,8 @@ export class CancelledFlightsService {
         }),
         status: hotelBooking.status,
         bookingReference: hotelBooking.bookingReference,
+        paymentStatus: hotelBooking.paymentStatus,
+        paidAt: hotelBooking.paidAt?.toISOString() ?? null,
         createdAt: hotelBooking.createdAt.toISOString(),
         updatedAt: hotelBooking.updatedAt?.toISOString() ?? null,
         reason: hotelBooking.reason ?? null,

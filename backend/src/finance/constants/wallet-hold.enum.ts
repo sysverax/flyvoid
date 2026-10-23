@@ -1,0 +1,10 @@
+export enum WALLET_HOLD_STATUSES {
+  OPEN = "OPEN",
+  CLOSED = "CLOSED",
+}
+
+export enum WALLET_HOLD_ITEM_STATUSES {
+  HELD = "HELD",
+  CHARGED = "CHARGED",
+  RELEASED = "RELEASED",
+}
