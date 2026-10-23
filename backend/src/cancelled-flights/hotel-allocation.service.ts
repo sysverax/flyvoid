@@ -2441,24 +2441,57 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     run: AllocationRunContext,
     entries: Array<{ booking: BookingEntity; candidates: HotelCandidate[] }>,
   ): Promise<void> {
-    const items = entries.flatMap(({ booking, candidates }) => {
+    const estimates = entries.flatMap(({ booking, candidates }) => {
       const first = [...candidates].sort(
         (a, b) => a.candidateOrder - b.candidateOrder,
       )[0];
       if (!first) return [];
       const price = Number(first.estimatedPrice);
-      const { totalPrice } = this.calculatePricing(
+      const pricing = this.calculatePricing(
         price,
         price,
         run.platformFeePercentage,
         0,
         0,
       );
-      return [{ bookingId: booking.id, amount: totalPrice }];
+      return [
+        {
+          bookingId: booking.id,
+          pnr: booking.pnr,
+          hotelName: first.hotelName,
+          hotelCost: pricing.actualPrice,
+          platformFee: pricing.platformFee,
+          estimate: pricing.totalPrice,
+        },
+      ];
     });
-    if (items.length === 0) return;
+    const withoutCandidate = entries
+      .filter(({ candidates }) => candidates.length === 0)
+      .map(({ booking }) => booking.id);
+    const sum = (pick: (e: (typeof estimates)[number]) => number) =>
+      this.roundCurrency(estimates.reduce((acc, e) => acc + pick(e), 0));
+    run.requestLogger.info("Estimated wallet cost of PNRs to book", {
+      context: this.context,
+      flightId: run.flight.id,
+      runId: run.runId,
+      platformFeePercentage: run.platformFeePercentage,
+      pnrs: estimates.length,
+      hotelCost: sum((e) => e.hotelCost),
+      platformFee: sum((e) => e.platformFee),
+      totalEstimate: sum((e) => e.estimate),
+      estimates,
+      withoutCandidateBookingIds: withoutCandidate,
+    });
+    if (estimates.length === 0) return;
     await this.cancelledFlightsRepository.reserveWalletForRun(
-      { cancelledFlightId: run.flight.id, runId: run.runId, items },
+      {
+        cancelledFlightId: run.flight.id,
+        runId: run.runId,
+        items: estimates.map(({ bookingId, estimate }) => ({
+          bookingId,
+          amount: estimate,
+        })),
+      },
       run.requestLogger,
     );
   }

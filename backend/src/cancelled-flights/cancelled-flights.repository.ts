@@ -1175,6 +1175,12 @@ export class CancelledFlightsRepository {
         Number(flight.airlineId),
         requestLogger,
       );
+      await this.logWalletSummary(
+        manager,
+        cancelledFlightId,
+        runId,
+        requestLogger,
+      );
       const totals = await this.sumConfirmedAllocations(
         manager,
         cancelledFlightId,
@@ -1256,9 +1262,38 @@ export class CancelledFlightsRepository {
       .map((pnr) => pnr.id);
     await this.walletHoldRepository.releaseBookings(
       manager,
-      { airlineId, cancelledFlightId, bookingIds: unbooked },
+      {
+        airlineId,
+        cancelledFlightId,
+        bookingIds: unbooked,
+        reason: "End of run: PNR not booked",
+      },
       requestLogger,
     );
+  }
+
+  /** Logs what the flight locked, charged and released in the wallet so far. */
+  private async logWalletSummary(
+    manager: EntityManager,
+    cancelledFlightId: number,
+    runId: string,
+    requestLogger: Logger,
+  ): Promise<void> {
+    const summary = await this.walletHoldRepository.summarizeFlight(
+      manager,
+      cancelledFlightId,
+    );
+    if (summary.holds === 0) return;
+    requestLogger.info("Wallet summary for cancelled flight hotel bookings", {
+      context: this.context,
+      cancelledFlightId,
+      runId,
+      ...summary,
+      // actual cost above (+) or below (-) the locked estimate of charged PNRs
+      overEstimate: Math.round(
+        (summary.actualCharged - summary.chargedShares) * 100,
+      ) / 100,
+    });
   }
 
   async getFlightAllocationRunState(
@@ -2322,6 +2357,7 @@ export class CancelledFlightsRepository {
             airlineId: flight.airlineId,
             cancelledFlightId: flight.id,
             bookingIds: [bookingId],
+            reason: `PNR failed: ${reason}`,
           },
           requestLogger,
         );

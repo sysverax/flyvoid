@@ -36,6 +36,16 @@ interface LockedWallet {
 const toMoney = (value: number): string =>
   (Math.round((value + Number.EPSILON) * 100) / 100).toFixed(2);
 
+/** Wallet figures for the logs, with available = balance + creditLimit - lockedAmount. */
+const snapshot = (wallet: Omit<LockedWallet, "id"> & { id?: number }) => ({
+  balance: Number(toMoney(wallet.balance)),
+  creditLimit: Number(toMoney(wallet.creditLimit)),
+  lockedAmount: Number(toMoney(wallet.lockedAmount)),
+  available: Number(
+    toMoney(wallet.balance + wallet.creditLimit - wallet.lockedAmount),
+  ),
+});
+
 /**
  * Wallet holds for cancelled-flight hotel bookings
  * (docs/wallet-cancellation-payment.md). Every method runs inside the caller's
@@ -80,6 +90,13 @@ export class WalletHoldRepository {
       toMoney(items.reduce((sum, item) => sum + item.amount, 0)),
     );
     if (items.length === 0) {
+      requestLogger.info("No new wallet funds to lock for this run", {
+        context: this.context,
+        airlineId: params.airlineId,
+        cancelledFlightId: params.cancelledFlightId,
+        runId: params.runId,
+        alreadyHeldBookingIds: [...alreadyHeld],
+      });
       return {
         lockedAmount: 0,
         heldPnrs: 0,
@@ -91,6 +108,7 @@ export class WalletHoldRepository {
     if (!wallet) {
       throw new Error(`Wallet not found for airline '${params.airlineId}'`);
     }
+    const before = snapshot(wallet);
     // UPDATE through manager.query returns [rows, rowCount].
     const [, lockedRows] = (await manager.query(
       `UPDATE wallets
@@ -100,16 +118,20 @@ export class WalletHoldRepository {
       [toMoney(total), wallet.id],
     )) as [unknown[], number];
     if (lockedRows === 0) {
-      const available = wallet.balance + wallet.creditLimit - wallet.lockedAmount;
-      requestLogger.warn("Wallet cannot cover the hotel booking estimate", {
-        context: this.context,
-        airlineId: params.airlineId,
-        cancelledFlightId: params.cancelledFlightId,
-        runId: params.runId,
-        available,
-        required: total,
-      });
-      throw new InsufficientWalletBalanceError(available, total);
+      requestLogger.warn(
+        "Wallet cannot cover the hotel booking estimate; nothing locked or booked",
+        {
+          context: this.context,
+          airlineId: params.airlineId,
+          cancelledFlightId: params.cancelledFlightId,
+          runId: params.runId,
+          wallet: before,
+          required: total,
+          shortfall: Number(toMoney(total - before.available)),
+          pnrs: items.length,
+        },
+      );
+      throw new InsufficientWalletBalanceError(before.available, total);
     }
 
     const [hold] = (await manager.query(
@@ -121,7 +143,7 @@ export class WalletHoldRepository {
               remaining_amount = wallet_holds.remaining_amount + EXCLUDED.remaining_amount,
               status = EXCLUDED.status,
               updated_at = now()
-       RETURNING id`,
+       RETURNING id, initial_amount, remaining_amount`,
       [
         wallet.id,
         params.cancelledFlightId,
@@ -129,7 +151,7 @@ export class WalletHoldRepository {
         toMoney(total),
         WALLET_HOLD_STATUSES.OPEN,
       ],
-    )) as Array<{ id: number }>;
+    )) as Array<{ id: number; initial_amount: string; remaining_amount: string }>;
     await manager.query(
       `INSERT INTO wallet_hold_items (hold_id, booking_id, amount, status)
        SELECT $1, booking_id, amount, $4
@@ -148,9 +170,16 @@ export class WalletHoldRepository {
       cancelledFlightId: params.cancelledFlightId,
       runId: params.runId,
       holdId: hold.id,
-      amount: total,
-      heldPnrs: items.length,
-      alreadyHeldPnrs: alreadyHeld.size,
+      lockedNow: total,
+      holdInitialAmount: Number(hold.initial_amount),
+      holdRemainingAmount: Number(hold.remaining_amount),
+      walletBefore: before,
+      walletAfter: snapshot({
+        ...wallet,
+        lockedAmount: wallet.lockedAmount + total,
+      }),
+      items,
+      alreadyHeldBookingIds: [...alreadyHeld],
     });
     return {
       lockedAmount: total,
@@ -218,6 +247,7 @@ export class WalletHoldRepository {
     }
 
     let charge = 0;
+    let walletTransactionId: number | null = null;
     if (params.amount > 0) {
       const inserted = (await manager.query(
         `INSERT INTO wallet_transactions
@@ -248,6 +278,7 @@ export class WalletHoldRepository {
         });
       } else {
         charge = params.amount;
+        walletTransactionId = Number(inserted[0].id);
       }
     } else {
       requestLogger.warn("Confirmed hotel booking has no cost to charge", {
@@ -275,24 +306,29 @@ export class WalletHoldRepository {
       ]);
     }
 
-    const after = updated[0];
-    const available =
-      Number(after.balance) +
-      Number(after.credit_limit) -
-      Number(after.locked_amount);
+    const after = snapshot({
+      id: wallet.id,
+      balance: Number(updated[0].balance),
+      creditLimit: Number(updated[0].credit_limit),
+      lockedAmount: Number(updated[0].locked_amount),
+    });
     const details = {
       context: this.context,
       airlineId: params.airlineId,
       cancelledFlightId: params.cancelledFlightId,
       bookingId: params.bookingId,
       hotelBookingId: params.hotelBookingId,
-      charged: charge,
+      walletTransactionId,
+      description: params.description,
+      // estimate = the PNR's locked share; null when it had none left to release
+      estimate: item ? release : null,
+      actualCost: charge,
+      difference: item ? Number(toMoney(charge - release)) : null,
       released: release,
-      balance: Number(after.balance),
-      lockedAmount: Number(after.locked_amount),
-      available,
+      walletBefore: snapshot(wallet),
+      walletAfter: after,
     };
-    if (available < 0) {
+    if (after.available < 0) {
       // Allowed: the supplier already booked the hotel. The next lock fails
       // until the airline tops up.
       requestLogger.warn(
@@ -308,12 +344,18 @@ export class WalletHoldRepository {
   /** Releases the HELD shares of the given PNRs of a flight. Returns the amount released. */
   async releaseBookings(
     manager: EntityManager,
-    params: { airlineId: number; cancelledFlightId: number; bookingIds: number[] },
+    params: {
+      airlineId: number;
+      cancelledFlightId: number;
+      bookingIds: number[];
+      /** Why the shares are released, for the logs. */
+      reason: string;
+    },
     requestLogger: Logger,
   ): Promise<number> {
     if (params.bookingIds.length === 0) return 0;
     const rows = (await manager.query(
-      `SELECT id, hold_id, amount FROM wallet_hold_items
+      `SELECT id, hold_id, booking_id, amount FROM wallet_hold_items
         WHERE booking_id = ANY($1)
           AND status = $2
           AND hold_id IN (SELECT id FROM wallet_holds WHERE cancelled_flight_id = $3)
@@ -324,7 +366,12 @@ export class WalletHoldRepository {
         WALLET_HOLD_ITEM_STATUSES.HELD,
         params.cancelledFlightId,
       ],
-    )) as Array<{ id: number; hold_id: number; amount: string }>;
+    )) as Array<{
+      id: number;
+      hold_id: number;
+      booking_id: number;
+      amount: string;
+    }>;
     if (rows.length === 0) return 0;
     await manager.query(
       `UPDATE wallet_hold_items SET status = $1, updated_at = now()
@@ -359,10 +406,81 @@ export class WalletHoldRepository {
       context: this.context,
       airlineId: params.airlineId,
       cancelledFlightId: params.cancelledFlightId,
-      bookings: params.bookingIds,
+      reason: params.reason,
       released: total,
+      items: rows.map((row) => ({
+        bookingId: Number(row.booking_id),
+        amount: Number(row.amount),
+      })),
+      walletBefore: snapshot(wallet),
+      walletAfter: snapshot({
+        ...wallet,
+        lockedAmount: Math.max(wallet.lockedAmount - total, 0),
+      }),
     });
     return total;
+  }
+
+  /**
+   * Wallet totals of a flight across all its runs: what was locked, charged,
+   * released and is still held, plus the actual cost charged.
+   */
+  async summarizeFlight(
+    manager: EntityManager,
+    cancelledFlightId: number,
+  ): Promise<{
+    holds: number;
+    locked: number;
+    chargedShares: number;
+    actualCharged: number;
+    released: number;
+    stillHeld: number;
+    pnrs: { charged: number; released: number; held: number };
+  }> {
+    const [shares] = (await manager.query(
+      `SELECT COUNT(DISTINCT h.id) AS holds,
+              COALESCE(SUM(i.amount), 0) AS locked,
+              COALESCE(SUM(i.amount) FILTER (WHERE i.status = $2), 0) AS charged,
+              COALESCE(SUM(i.amount) FILTER (WHERE i.status = $3), 0) AS released,
+              COALESCE(SUM(i.amount) FILTER (WHERE i.status = $4), 0) AS held,
+              COUNT(i.id) FILTER (WHERE i.status = $2) AS charged_pnrs,
+              COUNT(i.id) FILTER (WHERE i.status = $3) AS released_pnrs,
+              COUNT(i.id) FILTER (WHERE i.status = $4) AS held_pnrs
+         FROM wallet_holds h
+         LEFT JOIN wallet_hold_items i ON i.hold_id = h.id
+        WHERE h.cancelled_flight_id = $1`,
+      [
+        cancelledFlightId,
+        WALLET_HOLD_ITEM_STATUSES.CHARGED,
+        WALLET_HOLD_ITEM_STATUSES.RELEASED,
+        WALLET_HOLD_ITEM_STATUSES.HELD,
+      ],
+    )) as Array<Record<string, string>>;
+    const [charged] = (await manager.query(
+      `SELECT COALESCE(SUM(t.amount), 0) AS amount
+         FROM wallet_transactions t
+        WHERE t.reference_type = $2 AND t.type = $3
+          AND t.reference_id IN (SELECT id FROM hotel_bookings
+                                  WHERE cancelled_flight_id = $1)`,
+      [
+        cancelledFlightId,
+        TRANSACTION_REFERENCE_TYPES.BOOKING,
+        TRANSACTION_TYPES.DEBIT,
+      ],
+    )) as Array<{ amount: string }>;
+    return {
+      holds: Number(shares.holds),
+      locked: Number(shares.locked),
+      chargedShares: Number(shares.charged),
+      actualCharged: Number(charged.amount),
+      released: Number(shares.released),
+      stillHeld: Number(shares.held),
+      pnrs: {
+        charged: Number(shares.charged_pnrs),
+        released: Number(shares.released_pnrs),
+        held: Number(shares.held_pnrs),
+      },
+    };
   }
 
   /** PNRs of a flight that still have a HELD share. */
