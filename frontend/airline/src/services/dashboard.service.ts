@@ -79,37 +79,30 @@ export interface CancelledFlightsTrendResponse {
   data: CancelledFlightsTrendData;
 }
 
-export interface CancelledFlightsSummaryData {
+// GET /dashboard/airline/summary. Hotel figures use the hotel booking's
+// created_at (allocated / paid / published flights); flight figures use the
+// flight's created_at (non-draft flights).
+export interface DashboardSummaryData {
+  timeFrame: TrendTimeFrame;
+  timezone: string;
+  startDate: string;
+  endDate: string;
+  totalHotelBookingCost: number;
+  totalHotelBookings: number;
+  totalRooms: number;
+  totalPlatformFee: number;
+  platformFeePercentage: number | null;
   totalCancelFlights: number;
   totalAdults: number;
   totalChildren: number;
-  totalBookings: number;
-  totalHotelBookings: number;
-  totalRooms: number;
-  totalHotelCost: number;
-  totalHotelTax: number;
-  totalDiscount: number;
-  totalCost: number;
-  totalPlatformFee: number;
-  platformFeePercentage: number | null;
 }
 
-export interface CancelledFlightsSummaryResponse {
+export interface DashboardSummaryResponse {
   success: boolean;
   requestId: string;
   timestamp: string;
   message: string;
-  data: CancelledFlightsSummaryData;
-}
-
-export interface GetCancelledFlightsSummaryParams {
-  status?: string;
-  search?: string;
-  airlineId?: number;
-  startDate?: string;
-  endDate?: string;
-  timeFrame?: TrendTimeFrame;
-  timezone?: string;
+  data: DashboardSummaryData;
 }
 
 export const dashboardService = {
@@ -173,22 +166,20 @@ export const dashboardService = {
     }
   },
 
-  async getCancelledFlightsSummary(
-    params?: GetCancelledFlightsSummaryParams
-  ): Promise<CancelledFlightsSummaryData> {
+  async getDashboardSummary(
+    timeFrame: TrendTimeFrame,
+    timezone?: string
+  ): Promise<DashboardSummaryData> {
     try {
-      const queryParams = { ...params };
-      if (queryParams.timeFrame && !queryParams.timezone) {
-        queryParams.timezone = getUserTimeZone();
-      }
-      const response = await apiClient.get<CancelledFlightsSummaryResponse>(
-        "/cancelled-flights/summary",
-        { params: queryParams }
+      const tz = timezone || getUserTimeZone();
+      const response = await apiClient.get<DashboardSummaryResponse>(
+        "/dashboard/airline/summary",
+        { params: { timeFrame, timezone: tz } }
       );
       return response.data.data;
     } catch (error: any) {
       throw new Error(
-        extractErrorMessage(error, "Failed to fetch cancelled flights summary.")
+        extractErrorMessage(error, "Failed to fetch dashboard summary.")
       );
     }
   },

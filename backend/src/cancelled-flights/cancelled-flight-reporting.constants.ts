@@ -1,8 +1,7 @@
 import { FlightStatus } from "./entities/enums";
 
-// Shared rules for time-frame reporting on cancelled flights, used by both
-// the dashboard trends and GET /cancelled-flights/summary?timeFrame=... so
-// their numbers always agree.
+// Shared rules for time-frame reporting on cancelled flights, used by the
+// airline dashboard trends and summary so their numbers always agree.
 
 /**
  * The timestamp that places a cancelled flight in a reporting period (a

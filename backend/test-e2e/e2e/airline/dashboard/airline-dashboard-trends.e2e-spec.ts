@@ -23,6 +23,12 @@ import {
   insertDashboardAirport,
   insertDashboardCancelledFlight,
 } from "../../../seeders/airline-dashboard.seeder";
+import {
+  deleteDateRangeData,
+  insertBookedPassenger,
+  insertHotelBooking,
+  insertProvider,
+} from "../../../seeders/date-range.seeder";
 
 const EMAIL_PATTERN = "%@e2e-dashboard.test";
 const TEST_PASSWORD = "Password@123";
@@ -155,6 +161,7 @@ const sumOf = (points: Record<string, number>[], field: Metric) =>
 describe("Airline dashboard trends", () => {
   const airlineIds: number[] = [];
   const airportIds: number[] = [];
+  const providerIds: number[] = [];
   const flightsA: SeededFlight[] = [];
 
   let adminTokenA = "";
@@ -266,9 +273,20 @@ describe("Airline dashboard trends", () => {
       }
     }
 
-    for (const flight of flightsA) {
-      await insertDashboardCancelledFlight({
-        airlineId: airlineA,
+    // Spend is bucketed by hotel booking created_at and passengers by PNR
+    // created_at: each flight gets one PNR (carrying the flight's adults and
+    // children) and one live hotel booking (priced like the flight), both at
+    // the flight's own instant, so every metric lands in the same bucket as
+    // the flight. The flight's status still decides what counts.
+    const providerId = await insertProvider(`e2e-trend-${suffix}`);
+    providerIds.push(providerId);
+    const insertFlightWithHotel = async (
+      airlineId: number,
+      flight: SeededFlight,
+      index: number,
+    ) => {
+      const flightId = await insertDashboardCancelledFlight({
+        airlineId,
         airportId,
         status: flight.status,
         createdAt: flight.createdAt,
@@ -276,21 +294,45 @@ describe("Airline dashboard trends", () => {
         totalChildren: flight.children,
         totalPrice: flight.price,
       });
+      const bookingId = await insertBookedPassenger(
+        flightId,
+        `pax-${airlineId}-${index}-${suffix}@e2e-dashboard.test`,
+        {
+          adults: flight.adults,
+          children: flight.children,
+          createdAt: flight.createdAt,
+        },
+      );
+      await insertHotelBooking({
+        cancelledFlightId: flightId,
+        bookingId,
+        providerId,
+        checkInDate: "2026-10-01",
+        createdAt: flight.createdAt,
+        totalPrice: flight.price,
+      });
+    };
+
+    for (const [index, flight] of flightsA.entries()) {
+      await insertFlightWithHotel(airlineA, flight, index);
     }
 
     // Airline B data at the same instant must never reach airline A.
-    await insertDashboardCancelledFlight({
-      airlineId: airlineB,
-      airportId,
-      status: "published",
-      createdAt: currentHourFlightTime,
-      totalAdults: 7,
-      totalChildren: 0,
-      totalPrice: 1000,
-    });
+    await insertFlightWithHotel(
+      airlineB,
+      {
+        status: "published",
+        createdAt: currentHourFlightTime,
+        adults: 7,
+        children: 0,
+        price: 1000,
+      },
+      0,
+    );
   });
 
   afterAll(async () => {
+    await deleteDateRangeData({ airlineIds, providerIds });
     await deleteDashboardData({ airlineIds, airportIds });
     await deleteAdminsByEmailPattern(EMAIL_PATTERN);
     await endPool();
