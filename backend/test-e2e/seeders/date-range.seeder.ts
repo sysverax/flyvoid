@@ -57,12 +57,14 @@ export async function insertBookedPassenger(
     adults?: number;
     children?: number;
     allocationStatus?: string;
+    /** Defaults to now. */
+    createdAt?: Date;
   } = {},
 ): Promise<number> {
   const res = await query<{ id: number }>(
     `INSERT INTO cancelled_flight_bookings
-      (cancelled_flight_id, pnr, first_name, last_name, email, phone, residency, travel_class, adults, children, allocation_status)
-     VALUES ($1, $2, 'E2E', 'Passenger', $3, '+94110000000', 'LK', 'economy', $4, $5, $6)
+      (cancelled_flight_id, pnr, first_name, last_name, email, phone, residency, travel_class, adults, children, allocation_status, created_at)
+     VALUES ($1, $2, 'E2E', 'Passenger', $3, '+94110000000', 'LK', 'economy', $4, $5, $6, $7)
      RETURNING id`,
     [
       cancelledFlightId,
@@ -71,6 +73,7 @@ export async function insertBookedPassenger(
       options.adults ?? 1,
       options.children ?? 0,
       options.allocationStatus ?? "confirmed",
+      toUtcTimestamp(options.createdAt ?? new Date()),
     ],
   );
   return res.rows[0].id;

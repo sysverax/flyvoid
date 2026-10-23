@@ -26,7 +26,7 @@ export class HotelSpendTrendPointDto {
 
   @ApiProperty({
     description:
-      "Total hotel cost (including tax and platform fee) of allocated, paid and published flights",
+      "Total hotel cost (including tax and platform fee) of live hotel bookings created in this bucket, on allocated, paid and published flights",
     example: 1250.5,
   })
   spend!: number;
@@ -48,7 +48,8 @@ export class AffectedPassengersTrendPointDto {
   label!: string;
 
   @ApiProperty({
-    description: "Adults plus children on non-draft cancelled flights",
+    description:
+      "Adults plus children on PNRs created in this bucket, on non-draft cancelled flights",
     example: 148,
   })
   passengers!: number;
@@ -70,7 +71,7 @@ export class CancelledFlightsTrendPointDto {
   label!: string;
 
   @ApiProperty({
-    description: "Number of non-draft cancelled flights",
+    description: "Number of non-draft cancelled flights created in this bucket",
     example: 4,
   })
   flights!: number;

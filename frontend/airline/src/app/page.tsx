@@ -8,7 +8,7 @@ import {
   HotelSpendTrendData,
   AffectedPassengersTrendData,
   CancelledFlightsTrendData,
-  CancelledFlightsSummaryData,
+  DashboardSummaryData,
   TrendTimeFrame,
 } from "@/src/services/dashboard.service";
 import {
@@ -120,7 +120,7 @@ export default function DashboardPage() {
   const [hotelSpendData, setHotelSpendData] = useState<HotelSpendTrendData | null>(null);
   const [affectedPassengersData, setAffectedPassengersData] = useState<AffectedPassengersTrendData | null>(null);
   const [cancelledFlightsData, setCancelledFlightsData] = useState<CancelledFlightsTrendData | null>(null);
-  const [summaryData, setSummaryData] = useState<CancelledFlightsSummaryData | null>(null);
+  const [summaryData, setSummaryData] = useState<DashboardSummaryData | null>(null);
 
   const [isLoadingSpend, setIsLoadingSpend] = useState<boolean>(true);
   const [isLoadingPassengers, setIsLoadingPassengers] = useState<boolean>(true);
@@ -177,12 +177,12 @@ export default function DashboardPage() {
       });
 
     dashboardService
-      .getCancelledFlightsSummary({ timeFrame })
+      .getDashboardSummary(timeFrame)
       .then((data) => {
         if (!isCancelled) setSummaryData(data);
       })
       .catch((err) => {
-        console.error("Failed to load cancelled flights summary:", err);
+        console.error("Failed to load dashboard summary:", err);
       })
       .finally(() => {
         if (!isCancelled) setIsLoadingSummary(false);
@@ -198,7 +198,7 @@ export default function DashboardPage() {
       {
         title: "Total Hotel Booking Cost",
         value: summaryData
-          ? `$${Number(summaryData.totalCost || 0).toLocaleString("en-US", {
+          ? `$${Number(summaryData.totalHotelBookingCost || 0).toLocaleString("en-US", {
               minimumFractionDigits: 2,
               maximumFractionDigits: 2,
             })}`

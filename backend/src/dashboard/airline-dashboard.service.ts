@@ -13,10 +13,13 @@ import {
   HotelSpendTrendResponseDto,
 } from "./dto/airline-trend-response.dto";
 import { GetAirlineTrendQueryDto } from "./dto/get-airline-trend-query.dto";
+import { GetAirlineSummaryQueryDto } from "./dto/get-airline-summary-query.dto";
+import { AirlineDashboardSummaryResponseDto } from "./dto/airline-summary-response.dto";
 import {
   buildTrendWindow,
   describeTimeFrameRange,
   fillTrendBuckets,
+  resolveTimeFrameRange,
   TrendPoint,
 } from "../common/utils/time-frame.util";
 
@@ -91,6 +94,39 @@ export class AirlineDashboardService {
     };
   }
 
+  async getSummary(
+    user: AuthenticatedUser,
+    { timeFrame, timezone }: GetAirlineSummaryQueryDto,
+    requestLogger: Logger,
+  ): Promise<AirlineDashboardSummaryResponseDto> {
+    const airlineId = this.requireAirlineId(user, requestLogger);
+    const range = resolveTimeFrameRange(timeFrame, timezone);
+
+    requestLogger.info("Fetching airline dashboard summary", {
+      context: this.context,
+      airlineId,
+      timeFrame,
+      timezone: range.timeZone,
+    });
+
+    const totals = await this.airlineDashboardRepository.getSummary(
+      { airlineId, startUtc: range.startUtc, endUtc: range.endUtc },
+      requestLogger,
+    );
+
+    const platformFeePercentage =
+      user.platformFeePercentage !== undefined &&
+      user.platformFeePercentage !== null
+        ? Number(user.platformFeePercentage)
+        : null;
+
+    return {
+      ...describeTimeFrameRange(timeFrame, range),
+      ...totals,
+      platformFeePercentage,
+    };
+  }
+
   // Shared by all three trends: scope to the caller's airline, resolve the
   // window in the request timezone, run one grouped query, zero-fill.
   private async getTrend(
@@ -99,17 +135,7 @@ export class AirlineDashboardService {
     metric: TrendMetric,
     requestLogger: Logger,
   ): Promise<{ window: AirlineTrendResponseDto; points: TrendPoint[] }> {
-    const airlineId = user.airlineId;
-
-    if (!airlineId) {
-      requestLogger.error(
-        "Authenticated airline user does not have an associated airlineId",
-        { context: this.context, userId: user.sub },
-      );
-      throw new BadRequestException(
-        "Authenticated airline user does not have an associated airlineId",
-      );
-    }
+    const airlineId = this.requireAirlineId(user, requestLogger);
 
     const trendWindow = buildTrendWindow(timeFrame, timezone);
 
@@ -144,5 +170,18 @@ export class AirlineDashboardService {
         trendWindow.granularity,
       ),
     };
+  }
+
+  private requireAirlineId(user: AuthenticatedUser, requestLogger: Logger): number {
+    if (!user.airlineId) {
+      requestLogger.error(
+        "Authenticated airline user does not have an associated airlineId",
+        { context: this.context, userId: user.sub },
+      );
+      throw new BadRequestException(
+        "Authenticated airline user does not have an associated airlineId",
+      );
+    }
+    return user.airlineId;
   }
 }
