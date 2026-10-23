@@ -23,6 +23,7 @@ import {
 // list; totalPnrs / totalAllocatedPnrs count PNRs by flight status.
 //
 // Flight A (published):
+// Hotel dates below are created_at (UTC).
 //   PNR 1: 2 adults + 1 child, hotel 2026-10-01, cost 100, fee 10,
 //          2 booked rooms + 1 failed room
 //   PNR 2: 1 adult, failed attempt (cost 999) then hotel 2026-10-05,
@@ -99,6 +100,7 @@ describe("GET /api/v1/hotel-bookings/summary totals", () => {
       bookingId: pnr1,
       providerId,
       checkInDate: "2026-10-01",
+      createdAt: new Date("2026-10-01T10:00:00Z"),
       totalPrice: 100,
       platformFee: 10,
     });
@@ -118,6 +120,7 @@ describe("GET /api/v1/hotel-bookings/summary totals", () => {
       checkInDate: "2026-10-05",
       status: "failed",
       attemptOrder: 1,
+      createdAt: new Date("2026-10-05T09:00:00Z"),
       totalPrice: 999,
       platformFee: 99,
     });
@@ -127,6 +130,7 @@ describe("GET /api/v1/hotel-bookings/summary totals", () => {
       providerId,
       checkInDate: "2026-10-05",
       attemptOrder: 2,
+      createdAt: new Date("2026-10-05T10:00:00Z"),
       totalPrice: 50,
       platformFee: 5,
     });
@@ -150,6 +154,7 @@ describe("GET /api/v1/hotel-bookings/summary totals", () => {
       bookingId: pnr4,
       providerId,
       checkInDate: "2026-10-10",
+      createdAt: new Date("2026-10-10T10:00:00Z"),
       totalPrice: 30,
       platformFee: 3,
     });
@@ -189,6 +194,7 @@ describe("GET /api/v1/hotel-bookings/summary totals", () => {
       bookingId: otherPnr,
       providerId,
       checkInDate: "2026-10-01",
+      createdAt: new Date("2026-10-01T10:00:00Z"),
       totalPrice: 500,
       platformFee: 50,
     });
@@ -246,10 +252,11 @@ describe("GET /api/v1/hotel-bookings/summary totals", () => {
     });
   });
 
-  it("narrows hotel totals but not PNR counts by check-in date", async () => {
+  it("narrows hotel totals but not PNR counts by created date", async () => {
+    // 1-5 Oct in Colombo (+05:30); endDate is the start of 6 Oct (exclusive).
     const res = await getSummary({
-      startDate: "2026-10-01",
-      endDate: "2026-10-05",
+      startDate: "2026-09-30T18:30:00.000Z",
+      endDate: "2026-10-05T18:30:00.000Z",
     });
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual({

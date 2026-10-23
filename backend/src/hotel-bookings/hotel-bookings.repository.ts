@@ -10,6 +10,7 @@ import { Logger } from "winston";
 import { HotelBookingEntity } from "../cancelled-flights/entities/hotel-booking.entity";
 import { BookingEntity } from "../cancelled-flights/entities/booking.entity";
 import { FlightStatus } from "../cancelled-flights/entities/enums";
+import { toUtcTimestampParam } from "../common/utils/date-range.util";
 import {
   HotelBookingRecord,
   LIVE_HOTEL_BOOKING_CONDITION,
@@ -30,16 +31,20 @@ export interface HotelBookingFilters {
   cancelledFlightId?: number;
   search?: string;
   airlineId?: number;
-  startDate?: string;
-  endDate?: string;
+  /** Inclusive lower bound on created_at (a UTC instant). */
+  startDate?: Date;
+  /** Exclusive upper bound on created_at (a UTC instant). */
+  endDate?: Date;
 }
 
 export interface HotelBookingsSummaryFilters {
   destinationAirportId?: number;
   cancelledFlightId?: number;
   search?: string;
-  startDate?: string;
-  endDate?: string;
+  /** Inclusive lower bound on created_at (a UTC instant). */
+  startDate?: Date;
+  /** Exclusive upper bound on created_at (a UTC instant). */
+  endDate?: Date;
 }
 
 @Injectable()
@@ -97,15 +102,16 @@ export class HotelBookingsRepository {
       });
     }
 
+    // Half-open range on a UTC timestamp column: start inclusive, end exclusive.
     if (filters.startDate) {
-      qb.andWhere("hotelBooking.checkInDate >= :startDate", {
-        startDate: filters.startDate,
+      qb.andWhere("hotelBooking.createdAt >= :startDate", {
+        startDate: toUtcTimestampParam(filters.startDate),
       });
     }
 
     if (filters.endDate) {
-      qb.andWhere("hotelBooking.checkInDate <= :endDate", {
-        endDate: filters.endDate,
+      qb.andWhere("hotelBooking.createdAt < :endDate", {
+        endDate: toUtcTimestampParam(filters.endDate),
       });
     }
 
@@ -203,7 +209,7 @@ export class HotelBookingsRepository {
       .select("COUNT(room.id)", "totalRooms")
       .getRawOne<{ totalRooms: string }>();
 
-    // PNR counts are not narrowed by search or check-in dates - those only
+    // PNR counts are not narrowed by search or the created date range - those only
     // apply to hotel bookings, and would otherwise drop PNRs with no hotel.
     const pnrQb = this.hotelBookingRepo.manager
       .createQueryBuilder(BookingEntity, "booking")
@@ -264,8 +270,8 @@ export class HotelBookingsRepository {
 
   /**
    * Narrows a query on `hotelBooking` to the airline's live hotel bookings
-   * with the bookings list's filters (destination, flight, check-in dates,
-   * search). Joins `booking`, `cancelledFlight` and `hotel`.
+   * with the bookings list's filters (destination, flight, created date
+   * range, search). Joins `booking`, `cancelledFlight` and `hotel`.
    */
   private applyLiveHotelBookingFilters<T extends ObjectLiteral>(
     qb: SelectQueryBuilder<T>,
@@ -290,15 +296,16 @@ export class HotelBookingsRepository {
       });
     }
 
+    // Half-open range on a UTC timestamp column: start inclusive, end exclusive.
     if (filters.startDate) {
-      qb.andWhere("hotelBooking.checkInDate >= :startDate", {
-        startDate: filters.startDate,
+      qb.andWhere("hotelBooking.createdAt >= :startDate", {
+        startDate: toUtcTimestampParam(filters.startDate),
       });
     }
 
     if (filters.endDate) {
-      qb.andWhere("hotelBooking.checkInDate <= :endDate", {
-        endDate: filters.endDate,
+      qb.andWhere("hotelBooking.createdAt < :endDate", {
+        endDate: toUtcTimestampParam(filters.endDate),
       });
     }
 

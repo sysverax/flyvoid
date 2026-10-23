@@ -122,7 +122,9 @@ service-level range checks.
   passing the Dates through `toUtcTimestampParam()`.
 - The backend never assumes the user's timezone.
 - Use `@TimestampWithTimezoneField` / `TimestampRangeQueryDto`.
-  Example: `GET /api/v1/wallets/transactions`.
+  Examples: `GET /api/v1/wallets/transactions`,
+  `GET /api/v1/hotel-bookings` and `GET /api/v1/hotel-bookings/summary`
+  (hotel booking created_at).
 
 ### DATE columns (calendar dates: cancellation_date, check-in date...)
 
@@ -130,7 +132,7 @@ service-level range checks.
   (`column >= :startDate AND column <= :endDate`).
 - Never convert to UTC; a calendar date is timezone-independent.
 - Use `@CalendarDateField` / `CalendarDateRangeQueryDto`.
-  Examples: `GET /api/v1/cancelled-flights`, `GET /api/v1/hotel-bookings`.
+  Example: `GET /api/v1/cancelled-flights`.
 
 ### How to choose
 

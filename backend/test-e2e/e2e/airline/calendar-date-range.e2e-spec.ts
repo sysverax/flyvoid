@@ -18,8 +18,9 @@ import {
   insertProvider,
 } from "../../seeders/date-range.seeder";
 
-// Category B (DATE columns): cancelled_flights.cancellation_date and
-// hotel_bookings.check_in_date. YYYY-MM-DD, both ends inclusive.
+// Category B (DATE columns): cancelled_flights.cancellation_date.
+// YYYY-MM-DD, both ends inclusive. The hotel bookings endpoints filter on
+// created_at (a timestamp) - see hotel-bookings-date-range.e2e-spec.ts.
 
 const EMAIL_PATTERN = "%@e2e-calendar-range.test";
 const TEST_PASSWORD = "Password@123";
@@ -38,16 +39,6 @@ const ENDPOINTS: { name: string; path: string; count: (body: any) => number }[] 
     name: "cancelled flights summary",
     path: "/api/v1/cancelled-flights/summary",
     count: (body) => body.data.totalCancelFlights,
-  },
-  {
-    name: "hotel bookings",
-    path: "/api/v1/hotel-bookings",
-    count: (body) => body.data.pagination.totalCount,
-  },
-  {
-    name: "hotel bookings summary",
-    path: "/api/v1/hotel-bookings/summary",
-    count: (body) => body.data.totalBookings,
   },
 ];
 
@@ -166,17 +157,6 @@ describe("Calendar date (YYYY-MM-DD) range filters", () => {
       const res = await get({ endDate: "2026-10-05" });
       expect(res.status).toBe(200);
       expect(res.body.data.pagination.totalCount).toBe(3);
-    });
-  });
-
-  describe("hotel bookings summary bug fix", () => {
-    it("search and date filters no longer fail", async () => {
-      const res = await api
-        .get("/api/v1/hotel-bookings/summary")
-        .query({ ...RANGE, search: "e2e-calendar-range" })
-        .set("Authorization", `Bearer ${token}`);
-      expect(res.status).toBe(200);
-      expect(res.body.data.totalBookings).toBe(2);
     });
   });
 });

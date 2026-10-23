@@ -86,11 +86,14 @@ export async function insertHotelBooking(params: {
   attemptOrder?: number;
   totalPrice?: number;
   platformFee?: number;
+  /** Defaults to now. */
+  createdAt?: Date;
 }): Promise<number> {
+  const createdAt = toUtcTimestamp(params.createdAt ?? new Date());
   const res = await query<{ id: number }>(
     `INSERT INTO hotel_bookings
-      (cancelled_flight_id, booking_id, provider_id, attempt_order, status, check_in_date, check_out_date, provider_request_id, total_price, platform_fee)
-     VALUES ($1, $2, $3, $6, $7, $4::date, $4::date + 1, $5, $8, $9)
+      (cancelled_flight_id, booking_id, provider_id, attempt_order, status, check_in_date, check_out_date, provider_request_id, total_price, platform_fee, created_at, updated_at)
+     VALUES ($1, $2, $3, $6, $7, $4::date, $4::date + 1, $5, $8, $9, $10, $10)
      RETURNING id`,
     [
       params.cancelledFlightId,
@@ -102,6 +105,7 @@ export async function insertHotelBooking(params: {
       params.status ?? "success",
       params.totalPrice ?? 0,
       params.platformFee ?? 0,
+      createdAt,
     ],
   );
   return res.rows[0].id;
