@@ -1,12 +1,15 @@
 "use client";
 
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import CancellationWizard, {
   getMaxAllowedStep,
 } from "../../CancellationWizard";
 import CancelledFlightNotFound from "../../CancelledFlightNotFound";
-import { cancellationService } from "@/src/services/cancellation.service";
+import {
+  cancellationService,
+  ReviewFlightResponse,
+} from "@/src/services/cancellation.service";
 import { Loader2 } from "lucide-react";
 
 interface StepPageProps {
@@ -22,6 +25,10 @@ export default function CancelledFlightStepPage({ params }: StepPageProps) {
 
   const [isLoading, setIsLoading] = useState(true);
   const [isNotFound, setIsNotFound] = useState(false);
+  const [review, setReview] = useState<ReviewFlightResponse | null>(null);
+  const allowedRef = useRef<{ flightId: number; maxStep: number } | null>(
+    null,
+  );
 
   const flightIdNum = useMemo(() => {
     const parsed = Number(id);
@@ -37,6 +44,12 @@ export default function CancelledFlightStepPage({ params }: StepPageProps) {
     if (!flightIdNum) {
       setIsNotFound(true);
       setIsLoading(false);
+      return;
+    }
+
+    // The max step only grows while the flight is open, so lower steps are allowed.
+    const allowed = allowedRef.current;
+    if (allowed?.flightId === flightIdNum && stepNumber <= allowed.maxStep) {
       return;
     }
 
@@ -66,6 +79,7 @@ export default function CancelledFlightStepPage({ params }: StepPageProps) {
         // 2. Opening a step beyond the user's progress redirects to the furthest allowed step
         const summary = res?.data?.summary || (res as any)?.summary;
         const maxStep = getMaxAllowedStep(flight, summary);
+        allowedRef.current = { flightId: flightIdNum, maxStep };
 
         if (stepNumber > maxStep) {
           router.replace(`/cancelled-flight/${id}/step-${maxStep}`);
@@ -73,6 +87,7 @@ export default function CancelledFlightStepPage({ params }: StepPageProps) {
         }
 
         if (isMounted) {
+          setReview(res?.data || (res as any));
           setIsLoading(false);
         }
       } catch {
@@ -111,6 +126,7 @@ export default function CancelledFlightStepPage({ params }: StepPageProps) {
       <CancellationWizard
         flightId={flightIdNum}
         initialStep={stepNumber}
+        initialReview={review}
         onClose={() => {
           router.push("/cancelled-flight");
         }}

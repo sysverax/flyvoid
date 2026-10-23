@@ -182,6 +182,7 @@ export interface CancellationWizardProps {
   initialData?: Cancellation | null;
   initialStep?: number;
   flightId?: number | null;
+  initialReview?: ReviewFlightResponse | null;
   onStepChange?: (step: number, flightId?: number | null) => void;
 }
 
@@ -312,6 +313,7 @@ export default function CancellationWizard({
   initialData,
   initialStep,
   flightId: propFlightId,
+  initialReview,
   onStepChange,
 }: CancellationWizardProps) {
   const { hasPermission } = useAuth();
@@ -794,8 +796,10 @@ export default function CancellationWizard({
 
   useEffect(() => {
     if (flightId && !initialData) {
-      cancellationService
-        .reviewFlight(flightId)
+      (initialReview
+        ? Promise.resolve({ data: initialReview })
+        : cancellationService.reviewFlight(flightId)
+      )
         .then((res) => {
           const f = res?.data?.flight || (res as any)?.flight;
           if (f) {
@@ -858,8 +862,10 @@ export default function CancellationWizard({
 
   // Step 3 Review state
   const [reviewData, setReviewData] = useState<ReviewFlightResponse | null>(
-    null,
+    initialReview ?? null,
   );
+  // Used once, for the step the page was opened on.
+  const preloadedReviewRef = useRef(initialReview ?? null);
   const [isLoadingReview, setIsLoadingReview] = useState(false);
 
   // Step 4 Allocation state
@@ -1007,10 +1013,12 @@ export default function CancellationWizard({
   };
 
   useEffect(() => {
+    const preloadedReview = preloadedReviewRef.current;
+    preloadedReviewRef.current = null;
     if (activeStep === 2 && flightId) {
       fetchBookings(flightId);
     } else if (activeStep === 3 && flightId) {
-      fetchReviewData(flightId);
+      if (!preloadedReview) fetchReviewData(flightId);
       if (addedBookings.length === 0) {
         fetchBookings(flightId);
       }
