@@ -1,6 +1,9 @@
 import { HotelPolicies } from "../../cancelled-flights/hotel-providers/hotel-provider.interface";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { HotelAllocationStatus } from "../../cancelled-flights/entities/enums";
+import {
+  HotelAllocationStatus,
+  HotelBookingPaymentStatus,
+} from "../../cancelled-flights/entities/enums";
 import { BookingResponseDto } from "../../cancelled-flights/dto/booking-response.dto";
 import { ReviewCancelledFlightDto } from "../../cancelled-flights/dto/review-cancelled-flight-response.dto";
 
@@ -143,6 +146,21 @@ export class HotelBookingHotelDetailDto {
 
   @ApiProperty({ example: "HB-1001-0" })
   bookingReference!: string;
+
+  @ApiProperty({
+    example: "PAID",
+    enum: HotelBookingPaymentStatus,
+    description:
+      "Wallet payment of this hotel booking: PAID once the supplier confirmed and the airline wallet was charged, FAILED when the supplier booking failed",
+  })
+  paymentStatus!: HotelBookingPaymentStatus;
+
+  @ApiProperty({
+    example: "2024-01-15T10:05:00Z",
+    nullable: true,
+    description: "When the airline wallet was charged",
+  })
+  paidAt!: string | null;
 
   @ApiProperty({ example: "2024-01-15T10:00:00Z" })
   createdAt!: string;
