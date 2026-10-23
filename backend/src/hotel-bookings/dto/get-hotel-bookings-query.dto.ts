@@ -7,7 +7,7 @@ import {
   Min,
   MaxLength,
 } from "class-validator";
-import { CalendarDateRangeQueryDto } from "../../common/dto/date-range-query.dto";
+import { TimestampRangeQueryDto } from "../../common/dto/date-range-query.dto";
 import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
 
 const toOptionalInt = ({ value }: { value: unknown }) => {
@@ -18,11 +18,11 @@ const toOptionalInt = ({ value }: { value: unknown }) => {
   return Number.isInteger(num) ? num : value;
 };
 
-// startDate/endDate filter the check-in date (a DATE column): YYYY-MM-DD,
-// both inclusive.
+// startDate/endDate filter the hotel booking's creation time (a timestamp
+// column): ISO 8601 with timezone, start inclusive, end exclusive.
 export class GetHotelBookingsQueryDto extends IntersectionType(
   PaginationQueryDto,
-  CalendarDateRangeQueryDto,
+  TimestampRangeQueryDto,
 ) {
   @ApiPropertyOptional({
     description: "Filter by destination (arrival) airport id",
@@ -70,7 +70,7 @@ export class GetHotelBookingsQueryDto extends IntersectionType(
   airlineId?: number;
 }
 
-export class GetHotelBookingsSummaryQueryDto extends CalendarDateRangeQueryDto {
+export class GetHotelBookingsSummaryQueryDto extends TimestampRangeQueryDto {
   @ApiPropertyOptional({
     description: "Filter by destination (arrival) airport id",
     example: 3,
