@@ -254,9 +254,10 @@ export class AdminController {
     description: `
     Returns a single platform admin user's details including their assigned access controls.
       Access: SUPER_ADMIN and STAFF with VIEW access on the ADMIN_USERS asset. Requires userType=PLATFORM.
-      SUPER_ADMIN users are returned with full access on every platform asset.
       Business logic validations:
-        1. Target admin must exist (404 if not found)`,
+        1. Target admin must exist (404 if not found)
+        2. The logged-in user cannot view their own account here (403 Forbidden)
+        3. SUPER_ADMIN accounts cannot be viewed (403 Forbidden)`,
   })
   @ApiOkResponse({
     description: "Admin user fetched successfully",
@@ -294,7 +295,7 @@ export class AdminController {
   })
   @ApiForbiddenResponse({
     description:
-      "Only SUPER_ADMIN and STAFF who has the required permissions can perform this action",
+      "Only SUPER_ADMIN and STAFF who has the required permissions can perform this action. Also returned when viewing your own account (\"You cannot view your own account\") or a SUPER_ADMIN (\"Viewing SUPER_ADMIN is not allowed\").",
     schema: createForbiddenErrorSchema(
       "/api/v1/admin/users/2",
       "Only SUPER_ADMIN and STAFF who has the required permissions can perform this action",
@@ -328,7 +329,10 @@ export class AdminController {
       Access: SUPER_ADMIN and STAFF with EDIT access on the ADMIN_USERS asset. Requires userType=PLATFORM.
       Business logic validations:
         1. Target admin must exist (404 if not found)
-        2. Email must not already be in use by another admin (409 Conflict)`,
+        2. The logged-in user cannot update their own account (403 Forbidden)
+        3. SUPER_ADMIN accounts cannot be updated (403 Forbidden)
+        4. Role cannot be changed to SUPER_ADMIN (403 Forbidden)
+        5. Email must not already be in use by another admin (409 Conflict)`,
   })
   @ApiBody({ type: UpdateAdminUserRequestDto })
   @ApiOkResponse({
@@ -374,7 +378,7 @@ export class AdminController {
   })
   @ApiForbiddenResponse({
     description:
-      "Only SUPER_ADMIN and STAFF who has the required permissions can perform this action",
+      "Only SUPER_ADMIN and STAFF who has the required permissions can perform this action. Also returned when updating your own account (\"You cannot update your own account\"), a SUPER_ADMIN (\"Updating SUPER_ADMIN is not allowed\"), or setting role to SUPER_ADMIN (\"Updating role to SUPER_ADMIN is not allowed\").",
     schema: createForbiddenErrorSchema(
       "/api/v1/admin/users/2",
       "Only SUPER_ADMIN and STAFF who has the required permissions can perform this action",
@@ -414,7 +418,8 @@ export class AdminController {
       Access: SUPER_ADMIN with EDIT access on the ADMIN_USERS asset. Requires userType=PLATFORM.
       Business logic validations:
         1. Target admin must exist (404 if not found)
-        2. SUPER_ADMIN accounts cannot be deleted (400 Bad Request)`,
+        2. The logged-in user cannot delete their own account (403 Forbidden)
+        3. SUPER_ADMIN accounts cannot be deleted (403 Forbidden)`,
   })
   @ApiOkResponse({
     description: "Admin user deleted successfully",
@@ -452,7 +457,7 @@ export class AdminController {
   })
   @ApiForbiddenResponse({
     description:
-      "Only SUPER_ADMIN and STAFF who has the required permissions can perform this action",
+      "Only SUPER_ADMIN and STAFF who has the required permissions can perform this action. Also returned when deleting your own account (\"You cannot delete your own account\") or a SUPER_ADMIN (\"Deleting SUPER_ADMIN is not allowed\").",
     schema: createForbiddenErrorSchema(
       "/api/v1/admin/users/2",
       "Only SUPER_ADMIN and STAFF who has the required permissions can perform this action",
@@ -478,7 +483,7 @@ export class AdminController {
   @ApiOperation({
     summary: "View all admin users",
     description: `
-    Returns a paginated list of all platform admin users.
+    Returns a paginated list of STAFF admin users. SUPER_ADMIN users and the logged-in user are excluded.
       Access: SUPER_ADMIN and STAFF with VIEW access on the ADMIN_USERS asset. Requires userType=PLATFORM.
       Filters:
         1. search (match on user ID, first name, last name, or email)

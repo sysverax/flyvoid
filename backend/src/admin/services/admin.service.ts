@@ -157,16 +157,15 @@ export class AdminService {
       throw new NotFoundException("Admin user not found");
     }
 
-    if (admin.role === AdminRole.SUPER_ADMIN && actor.id !== admin.id) {
-      throw new ForbiddenException(
-        "Only self-update is allowed for SUPER_ADMIN",
-      );
+    if (admin.id === actor.id) {
+      throw new ForbiddenException("You cannot update your own account");
     }
 
-    if (
-      dto.role === AdminRole.SUPER_ADMIN &&
-      admin.role !== AdminRole.SUPER_ADMIN
-    ) {
+    if (admin.role === AdminRole.SUPER_ADMIN) {
+      throw new ForbiddenException("Updating SUPER_ADMIN is not allowed");
+    }
+
+    if (dto.role === AdminRole.SUPER_ADMIN) {
       throw new ForbiddenException(
         "Updating role to SUPER_ADMIN is not allowed",
       );
@@ -180,10 +179,6 @@ export class AdminService {
       if (existingByEmail && existingByEmail.id !== admin.id) {
         throw new ConflictException("Admin email already exists");
       }
-    }
-
-    if (admin.role === AdminRole.SUPER_ADMIN && dto.isActive === false) {
-      throw new ForbiddenException("SUPER_ADMIN cannot be suspended");
     }
 
     await this.adminRepository.updateAdmin(
@@ -242,20 +237,25 @@ export class AdminService {
     adminId: number,
     requestId: string,
   ): Promise<AdminUserDetailsResponseDto> {
-    await this.ensureActiveAdmin(authenticatedUser, requestId);
+    const actor = await this.ensureActiveAdmin(authenticatedUser, requestId);
 
     const admin = await this.adminRepository.findById(adminId, requestId);
     if (!admin) {
       throw new NotFoundException("Admin user not found");
     }
 
-    const accessControls =
-      admin.role === AdminRole.SUPER_ADMIN
-        ? this.buildSuperAdminAccessControls()
-        : await this.adminRepository.findAdminAccessControls(
-            admin.id,
-            requestId,
-          );
+    if (admin.id === actor.id) {
+      throw new ForbiddenException("You cannot view your own account");
+    }
+
+    if (admin.role === AdminRole.SUPER_ADMIN) {
+      throw new ForbiddenException("Viewing SUPER_ADMIN is not allowed");
+    }
+
+    const accessControls = await this.adminRepository.findAdminAccessControls(
+      admin.id,
+      requestId,
+    );
 
     return {
       ...this.toAdminUserResponse(admin),
@@ -272,6 +272,7 @@ export class AdminService {
 
     const { admins, total } = await this.adminRepository.findAll(
       adminUserQuery,
+      authenticatedUser.sub,
       requestId,
     );
 
