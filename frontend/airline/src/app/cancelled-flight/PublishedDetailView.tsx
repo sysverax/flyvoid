@@ -86,12 +86,14 @@ function formatDateString(dateStr: string): string {
 interface PublishedDetailViewProps {
   flightId?: number | string;
   cancellation?: CancellationSummaryInfo | null;
+  initialReview?: ReviewFlightResponse | null;
   onClose?: () => void;
 }
 
 export default function PublishedDetailView({
   flightId: propFlightId,
   cancellation,
+  initialReview,
   onClose,
 }: PublishedDetailViewProps) {
   const router = useRouter();
@@ -100,7 +102,9 @@ export default function PublishedDetailView({
   const [resultsPerPage, setResultsPerPage] = useState(10);
 
   // API states
-  const [reviewData, setReviewData] = useState<ReviewFlightResponse | null>(null);
+  const [reviewData, setReviewData] = useState<ReviewFlightResponse | null>(
+    initialReview ?? null,
+  );
   const [isLoadingReview, setIsLoadingReview] = useState(false);
 
   const [hotelSummary, setHotelSummary] =
@@ -149,7 +153,7 @@ export default function PublishedDetailView({
 
   // 1. Fetch Review Flight API
   useEffect(() => {
-    if (!effectiveFlightId) return;
+    if (!effectiveFlightId || initialReview) return;
     let isMounted = true;
 
     const fetchReview = async () => {
