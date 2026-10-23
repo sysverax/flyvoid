@@ -1,3 +1,5 @@
+import { PAYMENTS_ENABLED } from "./constants";
+
 export const NAVIGATION_ITEMS = [
   { title: "Dashboard", path: "/", key: "dashboard" },
   { title: "Airlines", path: "/airlines", key: "airlines" },
@@ -9,7 +11,7 @@ export const NAVIGATION_ITEMS = [
   { title: "Audit Logs", path: "/audit-logs", key: "auditLogs" },
   { title: "Manage Users", path: "/manage-users", key: "manageUsers" },
   { title: "Admin Profile", path: "/profile", key: "profile" },
-];
+].filter((item) => PAYMENTS_ENABLED || item.key !== "payments");
 
 export const getModuleKey = (path: string): string => {
   if (path === "/") return "dashboard";

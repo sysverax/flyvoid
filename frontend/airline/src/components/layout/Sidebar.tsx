@@ -15,6 +15,7 @@ import {
   Users,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
+import { PAYMENTS_ENABLED } from "@/src/lib/constants";
 import { toast } from "react-toastify";
 import { SignOutDialog } from "./SignOutDialog";
 import { authService } from "@/src/services/auth.service";
@@ -49,7 +50,7 @@ const navItems = [
   },
   { title: "Manage Users", icon: Users, path: "/manage-users", key: "manageUsers" },
   { title: "Settings", icon: Settings, path: "/settings", key: "settings" },
-];
+].filter((item) => PAYMENTS_ENABLED || item.key !== "payments");
 
 export function Sidebar() {
   const pathname = usePathname();
