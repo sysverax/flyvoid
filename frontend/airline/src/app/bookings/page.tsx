@@ -21,10 +21,11 @@ import {
   SortHeader,
 } from "@/src/components/ui/table";
 import { Pagination } from "@/src/components/ui/pagination";
-import { sortData } from "@/src/lib/utils";
+import { sortData, formatUtcStartDate, formatUtcEndDate } from "@/src/lib/utils";
 import { TableEmptyState } from "@/src/components/ui/EmptyState";
 import { FiltersCard } from "@/src/components/ui/FiltersCard";
 import { Dropdown } from "@/src/components/ui/Dropdown";
+import { DatePicker } from "@/src/components/ui/DatePicker";
 import { TruncatedTooltip } from "@/src/components/ui/TruncatedTooltip";
 import { BookingDetailsDrawer } from "@/src/components/ui/BookingDetailsDrawer";
 import { useAuth } from "@/src/hooks/useAuth";
@@ -87,6 +88,11 @@ export default function BookingsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFlight, setSelectedFlight] = useState("All Cancelled Flights");
   const [selectedAirport, setSelectedAirport] = useState("All Airports");
+  // Booking created date range, picked as local YYYY-MM-DD. Sent as UTC
+  // timestamps: start of startDate, and start of the day after endDate
+  // (the backend treats endDate as exclusive).
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
 
   // Options states
   const [airportOptions, setAirportOptions] = useState<
@@ -190,12 +196,17 @@ export default function BookingsPage() {
         }
 
         const searchFilter = searchQuery.trim() || undefined;
+        const dateFilter = {
+          startDate: formatUtcStartDate(startDate),
+          endDate: formatUtcEndDate(endDate),
+        };
 
         const [res, summaryRes] = await Promise.all([
           hotelBookingsService.getHotelBookings({
             search: searchFilter,
             destinationAirportId,
             cancelledFlightId,
+            ...dateFilter,
             page: currentPage,
             limit: resultsPerPage,
           }),
@@ -203,6 +214,7 @@ export default function BookingsPage() {
             search: searchFilter,
             destinationAirportId,
             cancelledFlightId,
+            ...dateFilter,
           }),
         ]);
 
@@ -258,6 +270,8 @@ export default function BookingsPage() {
     searchQuery,
     selectedAirport,
     selectedFlight,
+    startDate,
+    endDate,
     currentPage,
     resultsPerPage,
   ]);
@@ -273,6 +287,8 @@ export default function BookingsPage() {
     setSearchQuery("");
     setSelectedFlight("All Cancelled Flights");
     setSelectedAirport("All Airports");
+    setStartDate("");
+    setEndDate("");
     setSortField(null);
     setSortOrder("asc");
     setCurrentPage(1);
@@ -413,6 +429,32 @@ export default function BookingsPage() {
             maxListHeightClass="max-h-60"
             searchable
           />
+
+          {/* Divider */}
+          <div className="hidden sm:block h-11 w-[2px] bg-[#E5E7EB] mx-1.5" />
+
+          {/* Check-in date range */}
+          <div className="flex flex-wrap items-center gap-2">
+            <DatePicker
+              value={startDate}
+              onChange={(val) => {
+                setStartDate(val);
+                setCurrentPage(1);
+              }}
+              placeholder="Start Date"
+              widthClass="w-[195px]"
+            />
+            <DatePicker
+              value={endDate}
+              onChange={(val) => {
+                setEndDate(val);
+                setCurrentPage(1);
+              }}
+              placeholder="End Date"
+              widthClass="w-[195px]"
+              align="right"
+            />
+          </div>
         </FiltersCard>
 
         {/* 3 KPI Cards Grid */}

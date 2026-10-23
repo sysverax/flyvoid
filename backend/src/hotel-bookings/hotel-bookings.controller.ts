@@ -81,7 +81,7 @@ export class HotelBookingsController {
   @ApiOperation({
     summary: "List hotel bookings",
     description:
-      "Returns paginated hotel bookings with optional filters: destinationAirportId, cancelledFlightId, search (hotel booking id, flight number, hotel name, or passenger email), startDate/endDate (check-in date as YYYY-MM-DD, both inclusive). Platform users can filter by airlineId; airline users only see their own airline's hotel bookings.",
+      "Returns paginated hotel bookings with optional filters: destinationAirportId, cancelledFlightId, search (hotel booking id, flight number, hotel name, or passenger email), startDate/endDate (hotel booking creation time; ISO 8601 timestamps with timezone, start inclusive, end exclusive). Platform users can filter by airlineId; airline users only see their own airline's hotel bookings.",
   })
   @ApiOkResponse({
     schema: {
@@ -125,7 +125,7 @@ export class HotelBookingsController {
   @ApiOperation({
     summary: "Get hotel bookings summary",
     description:
-      "Returns totals for the authenticated airline's live hotel bookings (the same rows as the hotel bookings list): totalBookings, totalPassengers, totalRooms, totalCost, totalPlatformFee. Also returns totalPnrs (all PNRs on the airline's cancelled flights) and totalAllocatedPnrs (PNRs on flights that are allocated, paid or published). Optional filters: destinationAirportId, cancelledFlightId, search, startDate/endDate (check-in date as YYYY-MM-DD, both inclusive). destinationAirportId and cancelledFlightId apply to every total; search and startDate/endDate only narrow the hotel booking totals, not the PNR counts. Airline users only, requires VIEW access on the Bookings tab.",
+      "Returns totals for the authenticated airline's live hotel bookings (the same rows as the hotel bookings list): totalBookings, totalPassengers, totalRooms, totalCost, totalPlatformFee. Also returns totalPnrs (all PNRs on the airline's cancelled flights) and totalAllocatedPnrs (PNRs on flights that are allocated, paid or published). Optional filters: destinationAirportId, cancelledFlightId, search, startDate/endDate (hotel booking creation time; ISO 8601 timestamps with timezone, start inclusive, end exclusive). destinationAirportId and cancelledFlightId apply to every total; search and startDate/endDate only narrow the hotel booking totals, not the PNR counts. Airline users only, requires VIEW access on the Bookings tab.",
   })
   @ApiOkResponse({
     schema: {

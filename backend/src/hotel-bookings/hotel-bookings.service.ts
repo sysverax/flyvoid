@@ -59,8 +59,8 @@ export class HotelBookingsService {
       query,
     });
 
-    // startDate/endDate (YYYY-MM-DD) format and order are validated by the
-    // DTO (CalendarDateRangeQueryDto).
+    // startDate/endDate format and order are validated by the DTO
+    // (TimestampRangeQueryDto); both are UTC Dates here.
     let airlineScopeId: number | undefined;
 
     if (user.userType === UserType.AIRLINE) {

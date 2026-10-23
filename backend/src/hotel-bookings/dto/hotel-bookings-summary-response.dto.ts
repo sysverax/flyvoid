@@ -35,14 +35,14 @@ export class HotelBookingsSummaryResponseDto {
 
   @ApiProperty({
     description:
-      "Total PNRs on the airline's cancelled flights, any flight status. Not narrowed by search or check-in dates.",
+      "Total PNRs on the airline's cancelled flights, any flight status. Not narrowed by search or startDate/endDate.",
     example: 70,
   })
   totalPnrs!: number;
 
   @ApiProperty({
     description:
-      "PNRs on flights whose status is allocated, paid or published. Not narrowed by search or check-in dates.",
+      "PNRs on flights whose status is allocated, paid or published. Not narrowed by search or startDate/endDate.",
     example: 52,
   })
   totalAllocatedPnrs!: number;
