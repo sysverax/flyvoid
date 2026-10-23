@@ -4,7 +4,10 @@ import { use, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import PublishedDetailView from "../PublishedDetailView";
 import CancelledFlightNotFound from "../CancelledFlightNotFound";
-import { cancellationService } from "@/src/services/cancellation.service";
+import {
+  cancellationService,
+  ReviewFlightResponse,
+} from "@/src/services/cancellation.service";
 import { getMaxAllowedStep } from "../CancellationWizard";
 import { Loader2 } from "lucide-react";
 
@@ -22,6 +25,7 @@ export default function CancelledFlightPublishedPage({
 
   const [isLoading, setIsLoading] = useState(true);
   const [isNotFound, setIsNotFound] = useState(false);
+  const [review, setReview] = useState<ReviewFlightResponse | null>(null);
 
   const flightIdNum = useMemo(() => {
     const parsed = Number(id);
@@ -60,6 +64,7 @@ export default function CancelledFlightPublishedPage({
         }
 
         if (isMounted) {
+          setReview(res?.data || (res as any));
           setIsLoading(false);
         }
       } catch {
@@ -97,6 +102,7 @@ export default function CancelledFlightPublishedPage({
     <div className="flex min-h-screen flex-1 flex-col pb-16 lg:w-full lg:max-w-[calc(100vw-304px)]">
       <PublishedDetailView
         flightId={id}
+        initialReview={review}
         onClose={() => {
           router.push("/cancelled-flight");
         }}
