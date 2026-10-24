@@ -1,7 +1,9 @@
 "use client";
 
+import { WalletSummaryCards } from "@/src/components/wallet/WalletSummaryCards";
+import { PageHeader } from "@/src/components/layout/PageHeader";
 import { useState, useMemo, useEffect } from "react";
-import { Search, Wallet as WalletIcon, Loader2 } from "lucide-react";
+import { Search } from "lucide-react";
 import {
   Table,
   TableHeader,
@@ -21,7 +23,6 @@ import { StatusBadge } from "@/src/components/ui/StatusBadge";
 import { TruncatedTooltip } from "@/src/components/ui/TruncatedTooltip";
 import {
   walletService,
-  WalletBalanceDTO,
   WalletTransactionItemDTO,
 } from "@/src/services/wallet.service";
 
@@ -53,9 +54,8 @@ const statusOptions = [
 ];
 
 export default function WalletPage() {
-  const [balanceData, setBalanceData] = useState<WalletBalanceDTO | null>(null);
+  // The wallet balance is shown in the top bar (components/layout/TopBar.tsx).
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
-  const [isLoadingBalance, setIsLoadingBalance] = useState(true);
   const [isLoadingTransactions, setIsLoadingTransactions] = useState(true);
 
   // Search & Filter state inputs
@@ -73,19 +73,6 @@ export default function WalletPage() {
   // Sorting state
   const [sortField, setSortField] = useState<keyof WalletTransaction | null>(null);
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
-
-  // Fetch Wallet Balance from GET /api/v1/wallets/balance
-  const fetchWalletBalance = async () => {
-    setIsLoadingBalance(true);
-    try {
-      const data = await walletService.getWalletBalance();
-      setBalanceData(data);
-    } catch (err: any) {
-      console.error("Failed to fetch wallet balance:", err);
-    } finally {
-      setIsLoadingBalance(false);
-    }
-  };
 
   // Fetch Wallet Transactions from GET /api/v1/wallets/transactions
   const fetchWalletTransactions = async () => {
@@ -170,10 +157,6 @@ export default function WalletPage() {
   };
 
   useEffect(() => {
-    fetchWalletBalance();
-  }, []);
-
-  useEffect(() => {
     fetchWalletTransactions();
   }, [selectedType, selectedStatus, startDate, endDate, currentPage, resultsPerPage]);
 
@@ -255,50 +238,14 @@ export default function WalletPage() {
     };
   };
 
-  const displayBalance = balanceData?.balance ?? 0;
-  const formattedBalanceStr = displayBalance.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-
   return (
     <div className="flex min-h-screen flex-1 flex-col pb-16 lg:w-full lg:max-w-[calc(100vw-304px)]">
       <div className="space-y-7">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl sm:text-[24px] font-semibold text-[#1F2937] leading-[100%] tracking-[0%]">
-              Wallet
-            </h1>
-            <p className="text-[14px] text-[#6B7280] mt-1">
-              Wallet balance ${formattedBalanceStr} — full history of top-ups
-              and deductions
-            </p>
-          </div>
+        <PageHeader />
 
-          {/* Wallet balance top badge */}
-          <div className="flex items-center gap-2.5 rounded-[10px] border border-[#E5E7EB] bg-white px-3.5 py-2 shadow-xs shrink-0 max-w-[280px]">
-            <div className="flex h-9 w-9 items-center justify-center rounded-[8px] bg-[#F3F4F6] text-[#4B5563] shrink-0">
-              <WalletIcon className="h-5 w-5" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-[#6B7280] truncate">
-                WALLET BALANCE
-              </div>
-              <div className="text-[16px] font-bold text-[#1F2937] truncate">
-                {isLoadingBalance ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-gray-500 my-0.5" />
-                ) : (
-                  <TruncatedTooltip text={`$${formattedBalanceStr}`} side="top">
-                    <span className="truncate block cursor-default">
-                      ${formattedBalanceStr}
-                    </span>
-                  </TruncatedTooltip>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
+        {/* Account summary: available, balance, credit limit, reserved */}
+        <WalletSummaryCards />
+
 
         {/* Filters Card */}
         <FiltersCard

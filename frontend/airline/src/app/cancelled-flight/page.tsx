@@ -1,5 +1,6 @@
 "use client";
 
+import { PageHeader } from "@/src/components/layout/PageHeader";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -22,6 +23,7 @@ import {
 } from "@/src/components/ui/table";
 import { TableEmptyState } from "@/src/components/ui/EmptyState";
 import { StatusBadge } from "@/src/components/ui/StatusBadge";
+import { FLIGHT_PAYMENT_STEP_ENABLED } from "@/src/lib/constants";
 import { FiltersCard } from "@/src/components/ui/FiltersCard";
 import { Dropdown } from "@/src/components/ui/Dropdown";
 import { TruncatedTooltip } from "@/src/components/ui/TruncatedTooltip";
@@ -53,11 +55,13 @@ const STATUS_OPTIONS = [
   { value: "All Status", label: "All Status" },
   { value: "Draft", label: "Draft" },
   { value: "In Progress", label: "In Progress" },
-  { value: "Confirmed", label: "Confirmed" },
-  { value: "Allocated", label: "Allocated" },
+  { value: "Confirmed", label: "Ready for Allocation" },
+  { value: "HA In Progress", label: "Allocation In Progress" },
+  { value: "Allocated", label: "Hotels Booked" },
   { value: "Paid", label: "Paid" },
   { value: "Published", label: "Published" },
-];
+  // "Paid" only comes from the payment step; hide it while that step is off.
+].filter((option) => FLIGHT_PAYMENT_STEP_ENABLED || option.value !== "Paid");
 
 const UI_STATUS_TO_API_STATUS: Record<
   string,
@@ -81,13 +85,13 @@ const API_STATUS_TO_UI_STATUS: Record<
   in_progress: { status: "Draft", displayStatus: "In Progress" },
   passengers_booking_confirmed: {
     status: "Verified",
-    displayStatus: "Confirmed",
+    displayStatus: "Ready for Allocation",
   },
   hotel_allocation_in_progress: {
     status: "Verified",
-    displayStatus: "HA In Progress",
+    displayStatus: "Allocation In Progress",
   },
-  allocated: { status: "Allocated", displayStatus: "Allocated" },
+  allocated: { status: "Allocated", displayStatus: "Hotels Booked" },
   paid: { status: "Paid", displayStatus: "Paid" },
   published: { status: "Published", displayStatus: "Published" },
 };
@@ -305,26 +309,19 @@ export default function CancellationPage() {
   return (
     <div className="flex min-h-screen flex-1 flex-col pb-16 lg:w-full lg:max-w-[calc(100vw-304px)]">
       <div className="space-y-7">
-        {/* Header Block */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl sm:text-[24px] font-semibold text-[#1F2937] leading-[100%] tracking-[0%]">
-              Cancelled Flights
-            </h1>
-            <p className="text-[14px] text-[#6B7280] mt-1">
-              Manage flight cancellations and hotel allocations
-            </p>
-          </div>
-          {hasPermission("edit") && (
-            <button
-              onClick={handleCreate}
-              className="h-[50px] rounded-[10px] bg-[#0F2757] hover:bg-[#162259] px-4.5 py-[9px] text-[16px] font-medium font-figtree transition-colors duration-200 cursor-pointer text-white flex items-center justify-center gap-1.5 -translate-y-0.5"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Create Cancelled Flight</span>
-            </button>
-          )}
-        </div>
+        <PageHeader
+          actions={
+            hasPermission("edit") && (
+              <button
+                onClick={handleCreate}
+                className="h-[50px] rounded-[10px] bg-[#0F2757] hover:bg-[#162259] px-4.5 py-[9px] text-[16px] font-medium font-figtree transition-colors duration-200 cursor-pointer text-white flex items-center justify-center gap-1.5"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Create Cancelled Flight</span>
+              </button>
+            )
+          }
+        />
 
         {/* Filters Card */}
         <FiltersCard
@@ -503,7 +500,11 @@ export default function CancellationPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center justify-start gap-1 -translate-x-1">
-                        {(c.status === "Paid" || c.displayStatus === "Paid") && hasPermission("edit") && (
+                        {(c.status === "Paid" ||
+                          c.displayStatus === "Paid" ||
+                          // Without the payment step an allocated flight is ready to publish.
+                          (!FLIGHT_PAYMENT_STEP_ENABLED && c.status === "Allocated")) &&
+                          hasPermission("edit") && (
                           <button
                             onClick={() => setPublishTarget(c)}
                             className="p-1 text-[#6B7280] hover:text-emerald-600 transition-colors cursor-pointer"

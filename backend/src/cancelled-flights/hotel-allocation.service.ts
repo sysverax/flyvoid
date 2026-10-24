@@ -1969,6 +1969,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       await this.cancelledFlightsRepository.markPnrFailed(
         attempt.bookingId,
         reason,
+        requestLogger,
       );
       requestLogger.warn(
         "MANUAL_CHECK booking marked failed: no final status",
@@ -2245,6 +2246,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         await this.cancelledFlightsRepository.markPnrFailed(
           booking.id,
           `Invalid passenger data: ${split.reason ?? "no room split"}`,
+          requestLogger,
         );
         continue;
       }
@@ -2392,6 +2394,8 @@ export class HotelAllocationService implements OnApplicationBootstrap {
           (b.row.processingOrder ?? Number.MAX_SAFE_INTEGER),
       );
 
+    await this.reserveWalletFunds(run, entries);
+
     const ranks = [
       ...new Set(
         entries.map(
@@ -2426,6 +2430,70 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         );
       });
     }
+  }
+
+  /**
+   * Locks the estimated cost of the PNRs about to be booked in the airline's
+   * wallet: per PNR, its first candidate's price plus the platform fee.
+   * Throws before anything is booked when the wallet cannot cover it.
+   */
+  private async reserveWalletFunds(
+    run: AllocationRunContext,
+    entries: Array<{ booking: BookingEntity; candidates: HotelCandidate[] }>,
+  ): Promise<void> {
+    const estimates = entries.flatMap(({ booking, candidates }) => {
+      const first = [...candidates].sort(
+        (a, b) => a.candidateOrder - b.candidateOrder,
+      )[0];
+      if (!first) return [];
+      const price = Number(first.estimatedPrice);
+      const pricing = this.calculatePricing(
+        price,
+        price,
+        run.platformFeePercentage,
+        0,
+        0,
+      );
+      return [
+        {
+          bookingId: booking.id,
+          pnr: booking.pnr,
+          hotelName: first.hotelName,
+          hotelCost: pricing.actualPrice,
+          platformFee: pricing.platformFee,
+          estimate: pricing.totalPrice,
+        },
+      ];
+    });
+    const withoutCandidate = entries
+      .filter(({ candidates }) => candidates.length === 0)
+      .map(({ booking }) => booking.id);
+    const sum = (pick: (e: (typeof estimates)[number]) => number) =>
+      this.roundCurrency(estimates.reduce((acc, e) => acc + pick(e), 0));
+    run.requestLogger.info("Estimated wallet cost of PNRs to book", {
+      context: this.context,
+      flightId: run.flight.id,
+      runId: run.runId,
+      platformFeePercentage: run.platformFeePercentage,
+      pnrs: estimates.length,
+      hotelCost: sum((e) => e.hotelCost),
+      platformFee: sum((e) => e.platformFee),
+      totalEstimate: sum((e) => e.estimate),
+      estimates,
+      withoutCandidateBookingIds: withoutCandidate,
+    });
+    if (estimates.length === 0) return;
+    await this.cancelledFlightsRepository.reserveWalletForRun(
+      {
+        cancelledFlightId: run.flight.id,
+        runId: run.runId,
+        items: estimates.map(({ bookingId, estimate }) => ({
+          bookingId,
+          amount: estimate,
+        })),
+      },
+      run.requestLogger,
+    );
   }
 
   private buildPlanLedger(
@@ -2489,6 +2557,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
           await this.cancelledFlightsRepository.markPnrFailed(
             booking.id,
             `Gave up after ${failures} failed booking attempt(s); last failure: ${lastFailure}`,
+            requestLogger,
           );
           return;
         }
@@ -2526,6 +2595,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
             lastFailure
               ? `No remaining hotel candidates could be booked; last failure: ${lastFailure}`
               : "No hotel near the airport has rooms left for this booking's room split",
+            requestLogger,
           );
           return;
         }
@@ -3254,6 +3324,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         await this.cancelledFlightsRepository.markPnrFailed(
           attempt.bookingId,
           reason,
+          requestLogger,
         );
         requestLogger.info(
           "Hotel booking failed per supplier status",
@@ -3873,6 +3944,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       await this.cancelledFlightsRepository.markPnrFailed(
         bookingId,
         outcome.reason,
+        requestLogger,
       );
     }
   }

@@ -1301,7 +1301,7 @@ export default function PaymentsPage() {
                   }}
                   options={airlineOptions}
                   triggerWidthClass="w-[180px]"
-                  widthClass="w-[200px]"
+                  widthClass="w-80 max-w-[calc(100vw-2rem)]"
                 />
                 <Dropdown
                   value={airportFilter}
@@ -1323,7 +1323,7 @@ export default function PaymentsPage() {
                   }}
                   options={countryOptions}
                   triggerWidthClass="w-[180px]"
-                  widthClass="w-[180px]"
+                  widthClass="w-80 max-w-[calc(100vw-2rem)]"
                   maxListHeightClass="max-h-[296px]"
                   searchable
                 />

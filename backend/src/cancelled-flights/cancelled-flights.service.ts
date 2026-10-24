@@ -48,6 +48,10 @@ import { GetCancelledFlightsSummaryQueryDto } from "./dto/get-cancelled-flights-
 import { CancelledFlightsSummaryResponseDto } from "./dto/cancelled-flights-summary-response.dto";
 import { request } from "http";
 import { config } from "../config/config";
+import {
+  FLIGHT_PAYMENT_STEP_ENABLED,
+  PUBLISHABLE_FLIGHT_STATUSES,
+} from "./cancelled-flights.constants";
 import { CancelledFlightBookingsListResponseDto } from "./dto/cancelled-flight-bookings-list-response.dto";
 import { PdfService } from "../common/pdf/pdf.service";
 import {
@@ -845,12 +849,20 @@ export class CancelledFlightsService {
         flights.map((flight) => flight.id),
       );
 
-    // Platform users get the owning airline (id, name) on each item; airline
-    // users already know their own airline, so they get the base shape.
+    // Platform users get the owning airline (id, name) and the hotel, room and
+    // earnings figures on each item; airline users already know their own
+    // airline and must not see platform earnings, so they get the base shape.
     if (user.userType === UserType.PLATFORM) {
+      const hotelsByFlight =
+        await this.cancelledFlightsRepository.countBookedHotelsByFlightIds(
+          flights.map((flight) => flight.id),
+        );
       return {
         cancelledFlights: flights.map((flight) => ({
           ...this.toCancelledFlightListItem(flight, allocationStarted),
+          totalHotels: hotelsByFlight.get(flight.id) ?? 0,
+          totalRooms: flight.totalHotelRooms ?? 0,
+          totalEarnings: Number(flight.totalEarnings ?? 0),
           airline: {
             id: flight.airline.id,
             name: flight.airline.name,
@@ -1398,6 +1410,8 @@ export class CancelledFlightsService {
         }),
         status: hotelBooking.status,
         bookingReference: hotelBooking.bookingReference,
+        paymentStatus: hotelBooking.paymentStatus,
+        paidAt: hotelBooking.paidAt?.toISOString() ?? null,
         createdAt: hotelBooking.createdAt.toISOString(),
         updatedAt: hotelBooking.updatedAt?.toISOString() ?? null,
         reason: hotelBooking.reason ?? null,
@@ -1454,6 +1468,16 @@ export class CancelledFlightsService {
     requestId: string,
     requestLogger: Logger,
   ): Promise<CancelledFlightResponseDto> {
+    if (!FLIGHT_PAYMENT_STEP_ENABLED) {
+      requestLogger.warn("Rejected payment processing: payment step disabled", {
+        context: this.context,
+        flightId,
+      });
+      throw new NotFoundException(
+        "The payment step is disabled: hotel bookings are charged to the airline wallet as each PNR is booked. An allocated flight can be published directly.",
+      );
+    }
+
     const flight = await this.requireFlight(flightId, requestLogger);
 
     if (flight.status !== FlightStatus.ALLOCATED) {
@@ -1508,14 +1532,14 @@ export class CancelledFlightsService {
   ): Promise<CancelledFlightResponseDto> {
     const flight = await this.requireFlight(flightId, requestLogger);
 
-    if (flight.status !== FlightStatus.PAID) {
-      requestLogger.warn("Rejected flight publish: flight not in paid status", {
+    if (!PUBLISHABLE_FLIGHT_STATUSES.includes(flight.status)) {
+      requestLogger.warn("Rejected flight publish: flight not ready to publish", {
         context: this.context,
         flightId,
         status: flight.status,
       });
       throw new BadRequestException(
-        `Cannot publish flight '${flightId}' from status '${flight.status}'. Flight must be in 'paid' status.`,
+        `Cannot publish flight '${flightId}' from status '${flight.status}'. Flight must be in ${PUBLISHABLE_FLIGHT_STATUSES.map((status) => `'${status}'`).join(" or ")} status.`,
       );
     }
 

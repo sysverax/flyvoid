@@ -28,6 +28,7 @@ import { Dropdown } from "@/src/components/ui/Dropdown";
 import { DatePicker } from "@/src/components/ui/DatePicker";
 import { cancellationService } from "@/src/services/cancellation.service";
 import { airlinesService } from "@/src/services/airlines.service";
+import { FLIGHT_PAYMENT_STEP_ENABLED } from "@/src/lib/constants";
 import { toast } from "react-toastify";
 
 export default function CancellationPage() {
@@ -91,11 +92,13 @@ export default function CancellationPage() {
     { value: "All Status", label: "All Status" },
     { value: "draft", label: "Draft" },
     { value: "in_progress", label: "In Progress" },
-    { value: "passengers_booking_confirmed", label: "Bookings Confirmed" },
-    { value: "allocated", label: "Allocated" },
+    { value: "passengers_booking_confirmed", label: "Ready for Allocation" },
+    { value: "hotel_allocation_in_progress", label: "Allocation In Progress" },
+    { value: "allocated", label: "Hotels Booked" },
     { value: "paid", label: "Paid" },
     { value: "published", label: "Published" },
-  ];
+    // "paid" only comes from the payment step; hide it while that step is off.
+  ].filter((option) => FLIGHT_PAYMENT_STEP_ENABLED || option.value !== "paid");
 
   const airlineOptions = useMemo(() => {
     return [
@@ -315,7 +318,7 @@ export default function CancellationPage() {
               setCurrentPage(1);
             }}
             options={countryOptions}
-            widthClass="w-full sm:w-44"
+            widthClass="w-80 max-w-[calc(100vw-2rem)]"
             triggerWidthClass="w-full sm:w-44"
             maxListHeightClass="max-h-[296px]"
             searchable
@@ -329,7 +332,7 @@ export default function CancellationPage() {
               setCurrentPage(1);
             }}
             options={airlineOptions}
-            widthClass="w-60"
+            widthClass="w-80 max-w-[calc(100vw-2rem)]"
             triggerWidthClass="w-[180px]"
           />
 
@@ -341,7 +344,8 @@ export default function CancellationPage() {
               setCurrentPage(1);
             }}
             options={statusOptions}
-            widthClass="w-44"
+            // Same list width as the airline portal, so "Allocation In Progress" fits.
+            widthClass="w-60"
             triggerWidthClass="w-[180px]"
           />
 

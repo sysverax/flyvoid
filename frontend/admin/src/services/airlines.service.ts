@@ -181,16 +181,23 @@ export interface WalletTransactionsResponse {
 }
 
 export interface WalletSummaryDTO {
+  totalAirlines: number;
+  totalActiveAirlines: number;
   totalWalletBalance: number;
   totalCreditIssued: number;
   totalCreditUsed: number;
-  totalActiveAirlines?: number;
 }
 
 export const airlinesService = {
-  async getWalletsSummary(): Promise<WalletSummaryDTO> {
+  /** Totals over the airlines matching the same filters as getAirlines (all when none). */
+  async getWalletsSummary(params?: {
+    search?: string;
+    isActive?: boolean;
+    isSuspended?: boolean;
+    countryCode?: string;
+  }): Promise<WalletSummaryDTO> {
     try {
-      const { data } = await apiClient.get("/wallets/summary");
+      const { data } = await apiClient.get("/wallets/summary", { params });
       return data.data;
     } catch (error: any) {
       throw new Error(extractErrorMessage(error, "Failed to fetch wallets summary."));

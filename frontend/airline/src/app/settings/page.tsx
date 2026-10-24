@@ -1,5 +1,6 @@
 "use client";
 
+import { PageHeader } from "@/src/components/layout/PageHeader";
 import { useState, useEffect, useRef } from "react";
 import { Header } from "@/src/components/layout/Header";
 import { User, Bell, Globe, Lock, Plug, Building2, Plane, Mail, ShieldCheck, Smartphone, Check, Eye, EyeOff, Info, Save, Loader2 } from "lucide-react";
@@ -23,16 +24,7 @@ export default function SettingsPage() {
 
   return (
     <div className="flex flex-col min-h-screen">
-      <div className="mb-7 flex flex-row items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-[24px] font-semibold text-[#1F2937] leading-[100%] tracking-[0%] font-figtree">
-            Settings
-          </h1>
-          <p className="text-[14px] text-[#6B7280] mt-1 font-figtree">
-            Manage your account settings and preferences
-          </p>
-        </div>
-      </div>
+      <PageHeader className="mb-7" />
 
       <div className="border-b border-gray-200 mt-4 mb-6">
         <div className="flex space-x-8">

@@ -17,6 +17,7 @@ import {
   HotelAllocationStatus,
   HotelBookingAttemptStatus,
   HotelBookingFailureCode,
+  HotelBookingPaymentStatus,
 } from "./entities/enums";
 import { HotelBookingEntity } from "./entities/hotel-booking.entity";
 import { HotelBookingRoomEntity } from "./entities/hotel-booking-room.entity";
@@ -39,6 +40,11 @@ import {
   toAllocationRecord,
 } from "./hotel-allocation.record";
 import { Logger } from "winston";
+import {
+  WalletHoldItemInput,
+  WalletHoldRepository,
+} from "../finance/repositories/wallet-hold.repository";
+import { retryOnLockConflict } from "../common/utils/lock-retry.util";
 import type { PnrBookingStatus } from "./dto/hotel-allocations.dto";
 import type { HotelStaticContent } from "./hotel-providers/hotel-provider.interface";
 
@@ -214,6 +220,7 @@ export class CancelledFlightsRepository {
     private readonly flightRepo: Repository<CancelledFlightEntity>,
     @InjectRepository(BookingEntity)
     private readonly bookingRepo: Repository<BookingEntity>,
+    private readonly walletHoldRepository: WalletHoldRepository,
   ) {}
 
   // ── CancelledFlight ──────────────────────────────────────────────────────
@@ -367,6 +374,24 @@ export class CancelledFlightsRepository {
     } else {
       qb.andWhere("flight.status = :listStatus", params);
     }
+  }
+
+  /** Distinct hotels with a confirmed PNR booking, per flight (flights with none are absent). */
+  async countBookedHotelsByFlightIds(
+    cancelledFlightIds: number[],
+  ): Promise<Map<number, number>> {
+    if (cancelledFlightIds.length === 0) return new Map();
+    const rows: Array<{ id: number; hotels: string }> = await this.manager.query(
+      `SELECT pnr.cancelled_flight_id AS "id",
+              COUNT(DISTINCT hb.hotel_id) AS "hotels"
+         FROM cancelled_flight_bookings pnr
+         JOIN hotel_bookings hb ON hb.id = pnr.confirmed_hotel_booking_id
+        WHERE pnr.cancelled_flight_id = ANY($1)
+          AND pnr.allocation_status = $2
+        GROUP BY pnr.cancelled_flight_id`,
+      [cancelledFlightIds, HotelAllocationStatus.CONFIRMED],
+    );
+    return new Map(rows.map((row) => [Number(row.id), Number(row.hotels)]));
   }
 
   /** Flights (of these ids) that have at least one hotel booking attempt. */
@@ -1121,14 +1146,35 @@ export class CancelledFlightsRepository {
     /** User-started run: counted toward the retry limit if it reached the supplier. */
     countUserRun = false,
   ): Promise<void> {
+    await retryOnLockConflict(() =>
+      this.completeFlightAllocationRunOnce(
+        cancelledFlightId,
+        runId,
+        platformFeePercentage,
+        runError,
+        requestLogger,
+        countUserRun,
+      ),
+    );
+  }
+
+  private async completeFlightAllocationRunOnce(
+    cancelledFlightId: number,
+    runId: string,
+    platformFeePercentage: number,
+    runError: string | null | undefined,
+    requestLogger: Logger,
+    countUserRun: boolean,
+  ): Promise<void> {
     await this.manager.transaction(async (manager) => {
       const flight = await manager
         .getRepository(CancelledFlightEntity)
         .createQueryBuilder("flight")
         .setLock("pessimistic_write")
         .select("flight.hotelAllocationRunId", "runId")
+        .addSelect("flight.airlineId", "airlineId")
         .where("flight.id = :id", { id: cancelledFlightId })
-        .getRawOne<{ runId: string | null }>();
+        .getRawOne<{ runId: string | null; airlineId: number }>();
       if (flight?.runId !== runId) {
         requestLogger.warn(
           "Hotel allocation run was superseded; not completing it",
@@ -1141,6 +1187,18 @@ export class CancelledFlightsRepository {
         );
         return;
       }
+      await this.releaseUnbookedWalletShares(
+        manager,
+        cancelledFlightId,
+        Number(flight.airlineId),
+        requestLogger,
+      );
+      await this.logWalletSummary(
+        manager,
+        cancelledFlightId,
+        runId,
+        requestLogger,
+      );
       const totals = await this.sumConfirmedAllocations(
         manager,
         cancelledFlightId,
@@ -1190,6 +1248,69 @@ export class CancelledFlightsRepository {
         totalPrice: totals.totalPrice,
         runError,
       });
+    });
+  }
+
+  /**
+   * End of run: releases the wallet share of every PNR that did not get
+   * booked. MANUAL_CHECK (and still in-progress) PNRs keep their share until
+   * their outcome is known. Lock order: flight -> hold items -> wallet.
+   */
+  private async releaseUnbookedWalletShares(
+    manager: EntityManager,
+    cancelledFlightId: number,
+    airlineId: number,
+    requestLogger: Logger,
+  ): Promise<void> {
+    const held = await this.walletHoldRepository.findHeldBookingIds(
+      manager,
+      cancelledFlightId,
+    );
+    if (held.length === 0) return;
+    const pnrs = await manager.getRepository(BookingEntity).find({
+      where: { id: In(held) },
+      select: { id: true, allocationStatus: true },
+    });
+    const unbooked = pnrs
+      .filter(
+        (pnr) =>
+          pnr.allocationStatus !== HotelAllocationStatus.MANUAL_CHECK &&
+          pnr.allocationStatus !== HotelAllocationStatus.IN_PROGRESS,
+      )
+      .map((pnr) => pnr.id);
+    await this.walletHoldRepository.releaseBookings(
+      manager,
+      {
+        airlineId,
+        cancelledFlightId,
+        bookingIds: unbooked,
+        reason: "End of run: PNR not booked",
+      },
+      requestLogger,
+    );
+  }
+
+  /** Logs what the flight locked, charged and released in the wallet so far. */
+  private async logWalletSummary(
+    manager: EntityManager,
+    cancelledFlightId: number,
+    runId: string,
+    requestLogger: Logger,
+  ): Promise<void> {
+    const summary = await this.walletHoldRepository.summarizeFlight(
+      manager,
+      cancelledFlightId,
+    );
+    if (summary.holds === 0) return;
+    requestLogger.info("Wallet summary for cancelled flight hotel bookings", {
+      context: this.context,
+      cancelledFlightId,
+      runId,
+      ...summary,
+      // actual cost above (+) or below (-) the locked estimate of charged PNRs
+      overEstimate: Math.round(
+        (summary.actualCharged - summary.chargedShares) * 100,
+      ) / 100,
     });
   }
 
@@ -1595,6 +1716,7 @@ export class CancelledFlightsRepository {
             status: HotelBookingAttemptStatus.FAILED,
             failureReason: "Placeholder allocation replaced by a live booking",
             failedAt: () => "now()",
+            paymentStatus: HotelBookingPaymentStatus.FAILED,
           },
         );
       } else if (active) {
@@ -1851,6 +1973,82 @@ export class CancelledFlightsRepository {
     );
   }
 
+  /**
+   * Locks the estimated cost of the PNRs a run is about to book in the
+   * airline's wallet. Throws InsufficientWalletBalanceError when the wallet
+   * cannot cover it, before anything is booked.
+   */
+  async reserveWalletForRun(
+    params: {
+      cancelledFlightId: number;
+      runId: string;
+      items: WalletHoldItemInput[];
+    },
+    requestLogger: Logger,
+  ) {
+    const flight = await this.flightRepo.findOne({
+      where: { id: params.cancelledFlightId },
+      select: { id: true, airlineId: true },
+    });
+    if (!flight) {
+      throw new Error(`Cancelled flight '${params.cancelledFlightId}' not found`);
+    }
+    return retryOnLockConflict(() =>
+      this.manager.transaction((manager) =>
+        this.walletHoldRepository.reserveForRun(
+          manager,
+          { ...params, airlineId: flight.airlineId },
+          requestLogger,
+        ),
+      ),
+    );
+  }
+
+  /**
+   * Charges a just-confirmed booking attempt to the wallet and marks it PAID.
+   * Runs in the transaction that marks the attempt SUCCESS, after its booking
+   * row lock (lock order: booking -> hold item -> wallet).
+   */
+  private async chargeConfirmedBooking(
+    manager: EntityManager,
+    attemptId: number,
+    requestLogger: Logger,
+  ): Promise<void> {
+    const attempt = await manager
+      .getRepository(HotelBookingEntity)
+      .findOneOrFail({ where: { id: attemptId } });
+    const [flight, pnr] = await Promise.all([
+      manager.getRepository(CancelledFlightEntity).findOneOrFail({
+        where: { id: attempt.cancelledFlightId },
+        select: { id: true, airlineId: true, flightNumber: true },
+      }),
+      manager.getRepository(BookingEntity).findOneOrFail({
+        where: { id: attempt.bookingId },
+        select: { id: true, pnr: true },
+      }),
+    ]);
+    const charged = await this.walletHoldRepository.chargeBooking(
+      manager,
+      {
+        airlineId: flight.airlineId,
+        cancelledFlightId: flight.id,
+        bookingId: pnr.id,
+        hotelBookingId: attempt.id,
+        amount: Number(attempt.totalPrice ?? 0),
+        description: `Cancellation #${flight.id} - Flight ${flight.flightNumber} - PNR ${pnr.pnr} - Hotel booking #${attempt.id}`,
+      },
+      requestLogger,
+    );
+    if (charged) {
+      await manager
+        .getRepository(HotelBookingEntity)
+        .update(
+          { id: attempt.id },
+          { paymentStatus: HotelBookingPaymentStatus.PAID, paidAt: () => "now()" },
+        );
+    }
+  }
+
   async finishBookingAttempt(
     attemptId: number,
     bookingId: number,
@@ -1862,6 +2060,24 @@ export class CancelledFlightsRepository {
       providerOrders?: ProviderOrder[] | null;
       responseReceived?: boolean;
     },
+    success: AllocationSuccess | undefined,
+    requestLogger: Logger,
+  ): Promise<{ updated: boolean; allocation: HotelAllocationRecord | null }> {
+    return retryOnLockConflict(() =>
+      this.finishBookingAttemptOnce(
+        attemptId,
+        bookingId,
+        changes,
+        success,
+        requestLogger,
+      ),
+    );
+  }
+
+  private async finishBookingAttemptOnce(
+    attemptId: number,
+    bookingId: number,
+    changes: Parameters<CancelledFlightsRepository["finishBookingAttempt"]>[2],
     success: AllocationSuccess | undefined,
     requestLogger: Logger,
   ): Promise<{ updated: boolean; allocation: HotelAllocationRecord | null }> {
@@ -1880,7 +2096,10 @@ export class CancelledFlightsRepository {
             ? { completedAt: () => "now()" }
             : {}),
           ...(changes.status === HotelBookingAttemptStatus.FAILED
-            ? { failedAt: () => "now()" }
+            ? {
+                failedAt: () => "now()",
+                paymentStatus: HotelBookingPaymentStatus.FAILED,
+              }
             : {}),
         })
         .where("id = :attemptId", { attemptId })
@@ -1908,6 +2127,9 @@ export class CancelledFlightsRepository {
           .getRepository(HotelBookingEntity)
           .findOneOrFail({ where: { id: attemptId } });
         await this.saveConfirmedBooking(manager, attempt, success);
+        if (changes.status === HotelBookingAttemptStatus.SUCCESS) {
+          await this.chargeConfirmedBooking(manager, attemptId, requestLogger);
+        }
       }
       const allocation = await this.applyEffectiveState(
         manager,
@@ -2104,7 +2326,21 @@ export class CancelledFlightsRepository {
       .execute();
   }
 
-  async markPnrFailed(bookingId: number, reason: string): Promise<boolean> {
+  async markPnrFailed(
+    bookingId: number,
+    reason: string,
+    requestLogger: Logger,
+  ): Promise<boolean> {
+    return retryOnLockConflict(() =>
+      this.markPnrFailedOnce(bookingId, reason, requestLogger),
+    );
+  }
+
+  private async markPnrFailedOnce(
+    bookingId: number,
+    reason: string,
+    requestLogger: Logger,
+  ): Promise<boolean> {
     return this.manager.transaction(async (manager) => {
       await this.lockBooking(manager, bookingId);
       const active = await manager.getRepository(HotelBookingEntity).findOne({
@@ -2126,6 +2362,24 @@ export class CancelledFlightsRepository {
           confirmedHotelBookingId: null,
         },
       );
+      const flight = await manager
+        .getRepository(CancelledFlightEntity)
+        .findOne({
+          where: { id: pnr.cancelledFlightId },
+          select: { id: true, airlineId: true },
+        });
+      if (flight) {
+        await this.walletHoldRepository.releaseBookings(
+          manager,
+          {
+            airlineId: flight.airlineId,
+            cancelledFlightId: flight.id,
+            bookingIds: [bookingId],
+            reason: `PNR failed: ${reason}`,
+          },
+          requestLogger,
+        );
+      }
       return true;
     });
   }
@@ -2156,6 +2410,7 @@ export class CancelledFlightsRepository {
                 failureReason:
                   "Booking was interrupted before the request was sent to the supplier",
                 failedAt: () => "now()",
+                paymentStatus: HotelBookingPaymentStatus.FAILED,
               },
         )
         .where("cancelled_flight_id = :cancelledFlightId", {

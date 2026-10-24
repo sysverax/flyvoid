@@ -11,6 +11,7 @@ import {
   ReviewFlightResponse,
 } from "@/src/services/cancellation.service";
 import { Loader2 } from "lucide-react";
+import { FLIGHT_PAYMENT_STEP_ENABLED } from "@/src/lib/constants";
 
 interface StepPageProps {
   params: Promise<{
@@ -44,6 +45,13 @@ export default function CancelledFlightStepPage({ params }: StepPageProps) {
     if (!flightIdNum) {
       setIsNotFound(true);
       setIsLoading(false);
+      return;
+    }
+
+    // The payment step is hidden: its URL moves on to publish, which is
+    // checked against the flight's progress like any other step.
+    if (!FLIGHT_PAYMENT_STEP_ENABLED && stepNumber === 6) {
+      router.replace(`/cancelled-flight/${id}/step-7`);
       return;
     }
 

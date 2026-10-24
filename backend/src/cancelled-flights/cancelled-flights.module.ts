@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { AuthModule } from "../auth/auth.module";
+import { FinanceModule } from "../finance/finance.module";
 import { AirlineEntity } from "../airline/entities/airline.entity";
 import { AirportEntity } from "../airline/entities/airport.entity";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
@@ -25,6 +26,7 @@ import { PdfService } from "../common/pdf/pdf.service";
 @Module({
   imports: [
     AuthModule,
+    FinanceModule,
     TypeOrmModule.forFeature([
       CancelledFlightEntity,
       BookingEntity,

@@ -5,6 +5,7 @@ import { EntityManager, Repository } from "typeorm";
 import { LoggerService } from "../../common/logger/logger.service";
 import { AirlineEntity } from "../entities/airline.entity";
 import { AdminAirlineQueryDto } from "../dto/admin-airline-query.dto";
+import { applyAirlineListFilters } from "./airline-list-filters";
 import { CancelledFlightEntity } from "../../cancelled-flights/entities/cancelled-flight.entity";
 import { FlightStatus } from "../../cancelled-flights/entities/enums";
 
@@ -162,29 +163,7 @@ export class AirlineRepository {
       .createQueryBuilder("airline")
       .leftJoinAndSelect("airline.wallet", "wallet");
 
-    if (query.search) {
-      qb.where("(airline.name ILIKE :search OR airline.code ILIKE :search)", {
-        search: `%${query.search}%`,
-      });
-    }
-
-    if (query.isActive !== undefined) {
-      qb.andWhere("airline.isActive = :isActive", {
-        isActive: query.isActive,
-      });
-    }
-
-    if (query.isSuspended !== undefined) {
-      qb.andWhere("airline.isSuspended = :isSuspended", {
-        isSuspended: query.isSuspended,
-      });
-    }
-
-    if (query.countryCode) {
-      qb.andWhere("airline.countryCode = :countryCode", {
-        countryCode: query.countryCode,
-      });
-    }
+    applyAirlineListFilters(qb, "airline", query);
 
     qb.orderBy("airline.createdAt", "DESC");
     // Tie-breaker for rows sharing the same createdAt - without it, ties

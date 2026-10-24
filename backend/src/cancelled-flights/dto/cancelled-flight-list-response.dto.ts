@@ -50,7 +50,23 @@ export class CancelledFlightListAirlineDto {
 }
 
 // Platform (admin) view: same item as the airline view, plus the owning airline.
+// Platform (admin) only: airline users do not get these fields.
 export class CancelledFlightAdminListItemDto extends CancelledFlightListItemDto {
+  @ApiProperty({
+    description: "Distinct hotels with a confirmed booking for this flight",
+    example: 3,
+  })
+  totalHotels!: number;
+
+  @ApiProperty({ description: "Hotel rooms booked for this flight", example: 21 })
+  totalRooms!: number;
+
+  @ApiProperty({
+    description: "Platform earnings from this flight's hotel bookings",
+    example: 856.4,
+  })
+  totalEarnings!: number;
+
   @ApiProperty({ type: CancelledFlightListAirlineDto })
   airline!: CancelledFlightListAirlineDto;
 }

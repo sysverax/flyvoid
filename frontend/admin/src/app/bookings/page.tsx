@@ -390,7 +390,7 @@ export default function BookingsPage() {
               setCurrentPage(1);
             }}
             options={AIRLINE_OPTIONS}
-            widthClass="w-52"
+            widthClass="w-80 max-w-[calc(100vw-2rem)]"
             triggerWidthClass="w-[180px]"
             maxListHeightClass="max-h-60"
             searchable

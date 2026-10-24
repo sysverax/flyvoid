@@ -5,6 +5,7 @@ import {
   PrimaryGeneratedColumn,
   ManyToOne,
   JoinColumn,
+  Index,
 } from "typeorm";
 import { WalletEntity } from "./wallet.entity";
 import {
@@ -13,6 +14,11 @@ import {
 } from "../constants/transaction.enum";
 
 @Entity("wallet_transactions")
+// Each hotel booking is charged at most once (wallet-hold.repository.ts relies on it).
+@Index("uq_wallet_transactions_booking_debit", ["referenceType", "referenceId"], {
+  unique: true,
+  where: "reference_type = 'BOOKING' AND type = 'DEBIT'",
+})
 export class WalletTransactionEntity {
   @PrimaryGeneratedColumn()
   id!: number;

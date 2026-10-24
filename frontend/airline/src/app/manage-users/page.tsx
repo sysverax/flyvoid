@@ -1,10 +1,12 @@
 "use client";
 
+import { PageHeader } from "@/src/components/layout/PageHeader";
 import { useState, useMemo, useEffect } from "react";
 import Image from "next/image";
-import { Search, Plus, Trash2, Loader2 } from "lucide-react";
+import { Plus, Trash2, Loader2 } from "lucide-react";
 import { cn, sortData } from "@/src/lib/utils";
 import { Dropdown } from "@/src/components/ui/Dropdown";
+import { FiltersCard } from "@/src/components/ui/FiltersCard";
 import { StatusBadge } from "@/src/components/ui/StatusBadge";
 import { Button } from "@/src/components/ui/button";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell, SortHeader } from "@/src/components/ui/table";
@@ -201,45 +203,39 @@ export default function ManageUsersPage() {
   return (
     <div className="flex min-h-screen flex-1 flex-col pb-16 lg:w-full lg:max-w-[calc(100vw-304px)]">
       {/* Header Section */}
-      <div className="mb-7 flex flex-row items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-[24px] font-semibold text-[#1F2937] leading-[100%] tracking-[0%] font-figtree">
-            Manage Users
-          </h1>
-          <p className="text-[14px] text-[#6B7280] mt-1 font-figtree">
-            Create and manage airline users and their module access
-          </p>
-        </div>
-        {hasPermission("edit") && (
-          <Button
-            onClick={handleOpenAddModal}
-            className="h-[50px] bg-primary hover:bg-primary-hover px-4.5 py-[9px] text-[16px] font-medium font-figtree transition-colors duration-200 cursor-pointer text-white flex items-center justify-center gap-2"
-            style={{ borderRadius: "10px" }}
-          >
-            <Plus className="h-5 w-5" />
-            <span>Add New</span>
-          </Button>
-        )}
-      </div>
+      <PageHeader
+        className="mb-7"
+        actions={
+          hasPermission("edit") && (
+            <Button
+              onClick={handleOpenAddModal}
+              className="h-[50px] bg-primary hover:bg-primary-hover px-4.5 py-[9px] text-[16px] font-medium font-figtree transition-colors duration-200 cursor-pointer text-white flex items-center justify-center gap-2"
+              style={{ borderRadius: "10px" }}
+            >
+              <Plus className="h-5 w-5" />
+              <span>Add New</span>
+            </Button>
+          )
+        }
+      />
 
       {/* Filter and Search Bar */}
-      <div className="h-[88px] mb-6 flex flex-col sm:flex-row gap-4 w-full bg-white p-4 rounded-xl border border-gray-200 justify-between items-center -mt-1">
-        <div className="relative w-full sm:max-w-[520px]">
-          <span className="absolute inset-y-0 left-0 flex items-center pl-4.5 pointer-events-none">
-            <Search className="h-5 w-5 text-gray-400" />
-          </span>
-          <input
-            type="text"
-            placeholder="Search by User ID, Name, Email"
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              setCurrentPage(1);
-            }}
-            className="w-full h-[48px] pl-[46px] pr-4 border border-[#D1D5DB] bg-[#F3F4F6] rounded-[10px] text-[16px] font-figtree focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-white transition-all text-gray-800 placeholder-[#6B7280]"
-          />
-        </div>
-
+      <FiltersCard
+        singleRow
+        className="mb-6"
+        searchQuery={searchQuery}
+        setSearchQuery={(q) => {
+          setSearchQuery(q);
+          setCurrentPage(1);
+        }}
+        searchPlaceholder="Search by User ID, Name, Email"
+        onClearFilters={() => {
+          setSearchQuery("");
+          setStatusFilter("All");
+          setCurrentPage(1);
+        }}
+      >
+        {/* Status selector */}
         <Dropdown
           value={statusFilter}
           onChange={(val) => {
@@ -251,10 +247,8 @@ export default function ManageUsersPage() {
             { value: "Active", label: "Active" },
             { value: "Inactive", label: "Inactive" },
           ]}
-          triggerWidthClass="w-full sm:w-[180px]"
-          widthClass="w-[180px]"
         />
-      </div>
+      </FiltersCard>
 
       {/* Users Table */}
       <div className="overflow-hidden rounded-[12px] border border-[#E5E7EB] bg-white mb-6">

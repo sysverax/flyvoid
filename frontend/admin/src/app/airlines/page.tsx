@@ -84,9 +84,37 @@ export default function AirlinesPage() {
     null,
   );
 
+  // The page filters as API params; the list and the summary use the same ones.
+  const buildAirlineFilters = () => {
+    let isActive: boolean | undefined = undefined;
+    let isSuspended: boolean | undefined = undefined;
+
+    if (selectedStatus === "Active") {
+      isActive = true;
+      isSuspended = false;
+    } else if (selectedStatus === "Inactive") {
+      isActive = false;
+      isSuspended = false;
+    } else if (selectedStatus === "Suspended") {
+      isSuspended = true;
+    }
+
+    return {
+      search: searchQuery || undefined,
+      isActive,
+      isSuspended,
+      countryCode:
+        selectedCountry !== "All Countries"
+          ? getCountryCode(selectedCountry)
+          : undefined,
+    };
+  };
+
   const fetchWalletSummary = async () => {
     try {
-      const data = await airlinesService.getWalletsSummary();
+      const data = await airlinesService.getWalletsSummary(
+        buildAirlineFilters(),
+      );
       setWalletSummary(data);
     } catch (err: any) {
       console.error("Failed to fetch wallets summary:", err);
@@ -186,27 +214,8 @@ export default function AirlinesPage() {
   const fetchAirlines = async (showLoading = true) => {
     if (showLoading) setIsLoading(true);
     try {
-      let isActive: boolean | undefined = undefined;
-      let isSuspended: boolean | undefined = undefined;
-
-      if (selectedStatus === "Active") {
-        isActive = true;
-        isSuspended = false;
-      } else if (selectedStatus === "Inactive") {
-        isActive = false;
-        isSuspended = false;
-      } else if (selectedStatus === "Suspended") {
-        isSuspended = true;
-      }
-
       const res = await airlinesService.getAirlines({
-        search: searchQuery || undefined,
-        isActive,
-        isSuspended,
-        countryCode:
-          selectedCountry !== "All Countries"
-            ? getCountryCode(selectedCountry)
-            : undefined,
+        ...buildAirlineFilters(),
         page: currentPage,
         limit: resultsPerPage,
       });
@@ -499,7 +508,7 @@ export default function AirlinesPage() {
               setCurrentPage(1);
             }}
             options={countryOptions}
-            widthClass="w-full sm:w-44"
+            widthClass="w-80 max-w-[calc(100vw-2rem)]"
             triggerWidthClass="w-full sm:w-44"
             maxListHeightClass="max-h-[296px]"
             searchable

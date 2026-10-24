@@ -46,7 +46,12 @@ import { useAuth } from "@/src/hooks/useAuth";
 import { BookingDetailsDrawer } from "@/src/components/ui/BookingDetailsDrawer";
 import { PassengerBookingDetailDrawer } from "@/src/components/ui/PassengerBookingDetailDrawer";
 import { FailedBookingHotelDrawer } from "@/src/components/ui/FailedBookingHotelDrawer";
-import { DROPDOWN_LIMIT, PLATFORM_FEE_PERCENT } from "@/src/lib/constants";
+import {
+  DROPDOWN_LIMIT,
+  FLIGHT_PAYMENT_STEP_ENABLED,
+  PLATFORM_FEE_PERCENT,
+} from "@/src/lib/constants";
+import { notifyWalletBalanceChanged } from "@/src/lib/wallet-events";
 import {
   Table,
   TableBody,
@@ -270,7 +275,8 @@ export function getMaxAllowedStep(flight: any, summary?: any): number {
     return 7;
   }
   if (status === "allocated") {
-    return 6;
+    // Without the payment step, an allocated flight goes straight to publish.
+    return FLIGHT_PAYMENT_STEP_ENABLED ? 6 : 7;
   }
   // A partially booked flight stays in passengers_booking_confirmed until every
   // PNR is confirmed; it may view the summary (step 5) but not pay.
@@ -1080,6 +1086,8 @@ export default function CancellationWizard({
     stopAllocationPolling();
     setIsAllocating(false);
     setAllocationRunProgress(null);
+    // Each booked PNR was charged to the wallet: refresh the top bar balance.
+    notifyWalletBalanceChanged();
     const anythingBooked = (allocData.successfulPnrs ?? 0) > 0;
     if (allocData.lastRunError) {
       setAllocationError(allocData.lastRunError);
@@ -1958,11 +1966,13 @@ export default function CancellationWizard({
     } else if (activeStep === 5) {
       if (flightId && !allPnrsBooked) {
         toast.error(
-          "All bookings must have a confirmed hotel before continuing to payment.",
+          FLIGHT_PAYMENT_STEP_ENABLED
+            ? "All bookings must have a confirmed hotel before continuing to payment."
+            : "All bookings must have a confirmed hotel before continuing to publish.",
         );
         return;
       }
-      changeStep(6);
+      changeStep(FLIGHT_PAYMENT_STEP_ENABLED ? 6 : 7);
     } else if (activeStep === 6) {
       if (!flightId) {
         changeStep(7);
@@ -2002,7 +2012,7 @@ export default function CancellationWizard({
       },
       { number: 6, label: "Payment", desc: "Review & pay" },
       { number: 7, label: "Publish", desc: "Notify passengers" },
-    ];
+    ].filter((step) => FLIGHT_PAYMENT_STEP_ENABLED || step.number !== 6);
 
     return (
       <div className="w-full bg-white border border-[#E5E7EB] rounded-2xl p-6 overflow-x-auto">
@@ -2035,7 +2045,8 @@ export default function CancellationWizard({
                           : "bg-gray-200 text-gray-500 border-gray-300",
                     )}
                   >
-                    {isCompleted ? <Check className="h-5 w-5" /> : step.number}
+                    {/* Position, not step.number: a hidden step leaves no gap. */}
+                    {isCompleted ? <Check className="h-5 w-5" /> : idx + 1}
                   </div>
 
                   {/* Text Content */}
@@ -4437,9 +4448,12 @@ export default function CancellationWizard({
                 Notify Passengers
               </h3>
               <p className="text-sm text-gray-500 max-w-[480px] mx-auto leading-relaxed">
-                Payment is complete. Publishing will send the hotel booking
-                confirmation email, including the booking confirmation PDF, to
-                every booking contact address.
+                {FLIGHT_PAYMENT_STEP_ENABLED
+                  ? "Payment is complete."
+                  : "All hotels are booked and charged to your wallet."}{" "}
+                Publishing will send the hotel booking confirmation email,
+                including the booking confirmation PDF, to every booking
+                contact address.
               </p>
             </div>
 
@@ -4610,7 +4624,11 @@ export default function CancellationWizard({
                   ) : (
                     <>
                       <span>
-                        {activeStep === 5 ? "Continue to Payment" : "Continue"}
+                        {activeStep === 5
+                          ? FLIGHT_PAYMENT_STEP_ENABLED
+                            ? "Continue to Payment"
+                            : "Continue to Publish"
+                          : "Continue"}
                       </span>
                       <ArrowRight className="h-4 w-4" />
                     </>
