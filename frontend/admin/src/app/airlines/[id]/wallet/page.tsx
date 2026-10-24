@@ -58,7 +58,7 @@ const statusOptions = [
 const typeOptions = [
   { value: "All Types", label: "All Types" },
   { value: "ADJUSTMENT", label: "Adjustment" },
-  { value: "CANCELLED_FLIGHT_COST", label: "Cancelled Flight" },
+  { value: "BOOKING", label: "Hotel Booking" },
 ];
 
 export default function AirlineWalletPage({

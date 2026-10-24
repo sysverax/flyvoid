@@ -75,6 +75,27 @@ export class CancelledFlightListResponseDto {
   pagination!: CancelledFlightListPaginationDto;
 }
 
+// shorten=true (dropdowns): one entry per cancellation; the same flight
+// number can be cancelled more than once, so cancellationDate tells them apart.
+export class CancelledFlightShortListItemDto {
+  @ApiProperty({ example: 12 })
+  id!: number;
+
+  @ApiProperty({ example: "FV123" })
+  flightNumber!: string;
+
+  @ApiProperty({ example: "2026-09-07" })
+  cancellationDate!: string;
+}
+
+export class CancelledFlightShortListResponseDto {
+  @ApiProperty({ type: [CancelledFlightShortListItemDto] })
+  cancelledFlights!: CancelledFlightShortListItemDto[];
+
+  @ApiProperty({ type: CancelledFlightListPaginationDto })
+  pagination!: CancelledFlightListPaginationDto;
+}
+
 // Platform (admin) view response.
 export class CancelledFlightAdminListResponseDto {
   @ApiProperty({ type: [CancelledFlightAdminListItemDto] })
