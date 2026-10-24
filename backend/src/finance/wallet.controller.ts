@@ -46,6 +46,7 @@ import {
   WalletAdjustmentResponseDto,
   WalletBalanceResponseDto,
   WalletSummaryResponseDto,
+  GetWalletsSummaryQueryDto,
   WalletTransactionListResponseDto,
 } from "./dto";
 
@@ -176,10 +177,16 @@ export class WalletController {
   // ── GET /wallets/balance ─────────────────────────────────────────────────
   @Get("balance")
   @RequireUserTypes(UserType.AIRLINE)
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.WALLET,
+      access: [AccessAction.VIEW],
+    },
+  })
   @ApiOperation({
     summary: "Get wallet balance",
     description:
-      "Returns wallet balance and credit details. Airline users always see their own wallet; platform users must pass ?airlineId= to pick one.",
+      "Returns wallet balance and credit details of the airline user's own wallet. Requires VIEW access on the WALLET asset (airline admins always have it).",
   })
   @ApiOkResponse({
     schema: {
@@ -227,7 +234,7 @@ export class WalletController {
   @ApiOperation({
     summary: "Get wallets summary",
     description:
-      "Platform-only. Returns total wallet balance, total credit issued, and total credit used across all airlines.",
+      "Platform-only. Returns the number of airlines, the number of active airlines (active and not suspended), total wallet balance, total credit issued and total credit used. Accepts the same filters as the admin airline list (GET /airline): search (airline name or code), countryCode, isActive, isSuspended; without filters it covers all airlines.",
   })
   @ApiOkResponse({
     schema: {
@@ -237,11 +244,15 @@ export class WalletController {
       },
     },
   })
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema("/api/v1/wallets/summary"),
+  })
   async getWalletsSummary(
+    @Query() query: GetWalletsSummaryQueryDto,
     @RequestId() requestId: string,
     @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<WalletSummaryResponseDto>> {
-    const data = await this.service.getWalletsSummary(requestLogger);
+    const data = await this.service.getWalletsSummary(query, requestLogger);
     return BaseResponseDto.success(
       data,
       requestId,

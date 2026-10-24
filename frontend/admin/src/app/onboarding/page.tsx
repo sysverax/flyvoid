@@ -519,7 +519,7 @@ export default function OnboardingPage() {
               setCurrentPage(1);
             }}
             options={COUNTRIES_FILTER}
-            widthClass="w-44"
+            widthClass="w-80 max-w-[calc(100vw-2rem)]"
             triggerWidthClass="w-[180px]"
           />
 

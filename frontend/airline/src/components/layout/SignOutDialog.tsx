@@ -33,7 +33,7 @@ export function SignOutDialog({
               <span>Signing out...</span>
             </>
           ) : (
-            "Sign out"
+            "Sign Out"
           )}
         </Dialog.Action>
       </Dialog.Footer>

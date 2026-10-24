@@ -14,6 +14,7 @@ import {
   HotelAllocationStatus,
 } from "../cancelled-flights/entities/enums";
 import { HotelBookingRecord } from "../cancelled-flights/hotel-allocation.record";
+import { CONFIRMATION_FLIGHT_STATUSES } from "../cancelled-flights/cancelled-flights.constants";
 import { HotelBookingsRepository } from "./hotel-bookings.repository";
 import {
   GetHotelBookingsQueryDto,
@@ -26,6 +27,12 @@ import {
 } from "./dto";
 import { PdfService } from "../common/pdf/pdf.service";
 import { buildHotelBookingConfirmationHtml } from "./templates/hotel-booking-confirmation.template";
+
+/** e.g. "'allocated', 'paid' or 'published'", for error messages. */
+const confirmationStatusesText = (): string => {
+  const quoted = CONFIRMATION_FLIGHT_STATUSES.map((status) => `'${status}'`);
+  return `${quoted.slice(0, -1).join(", ")} or ${quoted[quoted.length - 1]}`;
+};
 
 @Injectable()
 export class HotelBookingsService {
@@ -244,16 +251,13 @@ export class HotelBookingsService {
     );
 
     const flightStatus = hotelBooking.cancelledFlight.status;
-    if (
-      flightStatus !== FlightStatus.PAID &&
-      flightStatus !== FlightStatus.PUBLISHED
-    ) {
+    if (!CONFIRMATION_FLIGHT_STATUSES.includes(flightStatus)) {
       requestLogger.warn(
-        "Rejected booking confirmation PDF: flight not paid/published",
+        "Rejected booking confirmation PDF: flight hotels not fully booked",
         { context: this.context, hotelBookingId, flightStatus },
       );
       throw new BadRequestException(
-        `Cannot generate the booking confirmation while the flight status is '${flightStatus}'. The hotel booking must be paid first - flight must be 'paid' or 'published'.`,
+        `Cannot generate the booking confirmation while the flight status is '${flightStatus}'. Flight must be ${confirmationStatusesText()}.`,
       );
     }
 
@@ -372,10 +376,7 @@ export class HotelBookingsService {
     );
 
     const flightStatus = hotelBooking.cancelledFlight.status;
-    if (
-      flightStatus !== FlightStatus.PAID &&
-      flightStatus !== FlightStatus.PUBLISHED
-    ) {
+    if (!CONFIRMATION_FLIGHT_STATUSES.includes(flightStatus)) {
       requestLogger.warn(
         "Rejected hotel booking email send due to flight status",
         {
@@ -385,7 +386,7 @@ export class HotelBookingsService {
         },
       );
       throw new BadRequestException(
-        `Cannot send hotel booking email while the flight status is '${flightStatus}'. Flight must be 'paid' or 'published'.`,
+        `Cannot send hotel booking email while the flight status is '${flightStatus}'. Flight must be ${confirmationStatusesText()}.`,
       );
     }
 
@@ -527,6 +528,8 @@ export class HotelBookingsService {
       }),
       status: hotelBooking.status,
       bookingReference: hotelBooking.bookingReference,
+      paymentStatus: hotelBooking.paymentStatus,
+      paidAt: hotelBooking.paidAt?.toISOString() ?? null,
       createdAt: hotelBooking.createdAt.toISOString(),
       updatedAt: hotelBooking.updatedAt?.toISOString() ?? null,
     };

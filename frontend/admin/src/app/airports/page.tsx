@@ -326,7 +326,7 @@ export default function AirportsPage() {
               setCurrentPage(1);
             }}
             options={countryOptions}
-            widthClass="w-full sm:w-44"
+            widthClass="w-80 max-w-[calc(100vw-2rem)]"
             triggerWidthClass="w-full sm:w-44"
             maxListHeightClass="max-h-[296px]"
             searchable

@@ -9,6 +9,11 @@ import { WalletAdjustmentEntity } from "../entities/wallet-adjustment.entity";
 import { WalletCreditLimitHistoryEntity } from "../entities/wallet-credit-limit-history.entity";
 import { TRANSACTION_TYPES, TRANSACTION_REFERENCE_TYPES } from "../constants";
 import { toUtcTimestampParam } from "../../common/utils/date-range.util";
+import { AirlineEntity } from "../../airline/entities/airline.entity";
+import {
+  AirlineListFilters,
+  applyAirlineListFilters,
+} from "../../airline/repositories/airline-list-filters";
 
 export interface WalletTransactionFilters {
   page: number;
@@ -356,32 +361,59 @@ export class WalletRepository {
     return { transactions, totalCount };
   }
 
-  async getWalletsSummary(requestLogger: Logger): Promise<{
+  /**
+   * Totals over the airlines matching the admin airline list filters (all
+   * airlines when none are given), so the Airlines page summary follows its
+   * filters.
+   */
+  async getWalletsSummary(
+    filters: AirlineListFilters,
+    requestLogger: Logger,
+  ): Promise<{
+    totalAirlines: number;
+    totalActiveAirlines: number;
     totalWalletBalance: number;
     totalCreditIssued: number;
     totalCreditUsed: number;
   }> {
-    requestLogger.debug("Querying wallets summary", { context: this.context });
+    requestLogger.debug("Querying wallets summary", {
+      context: this.context,
+      filters,
+    });
 
     // usedCredit isn't a stored column — lockedAmount is reserved for
     // in-flight processes, so a wallet is only drawing on credit once
     // balance can no longer cover both zero AND what's locked, i.e.
     // (balance - lockedAmount) < 0. The shortfall is the credit used.
-    const raw = await this.walletRepository
-      .createQueryBuilder("wallet")
-      .select("COALESCE(SUM(wallet.balance), 0)", "totalWalletBalance")
+    const qb = this.walletRepository.manager
+      .getRepository(AirlineEntity)
+      .createQueryBuilder("airline")
+      .leftJoin("airline.wallet", "wallet");
+    applyAirlineListFilters(qb, "airline", filters);
+
+    const raw = await qb
+      .select("COUNT(airline.id)", "totalAirlines")
+      .addSelect(
+        "COUNT(airline.id) FILTER (WHERE airline.isActive = true AND airline.isSuspended = false)",
+        "totalActiveAirlines",
+      )
+      .addSelect("COALESCE(SUM(wallet.balance), 0)", "totalWalletBalance")
       .addSelect("COALESCE(SUM(wallet.creditLimit), 0)", "totalCreditIssued")
       .addSelect(
         "COALESCE(SUM(CASE WHEN (wallet.balance - wallet.lockedAmount) < 0 THEN (wallet.lockedAmount - wallet.balance) ELSE 0 END), 0)",
         "totalCreditUsed",
       )
       .getRawOne<{
+        totalAirlines: string;
+        totalActiveAirlines: string;
         totalWalletBalance: string;
         totalCreditIssued: string;
         totalCreditUsed: string;
       }>();
 
     return {
+      totalAirlines: Number(raw?.totalAirlines ?? 0),
+      totalActiveAirlines: Number(raw?.totalActiveAirlines ?? 0),
       totalWalletBalance: Number(raw?.totalWalletBalance ?? 0),
       totalCreditIssued: Number(raw?.totalCreditIssued ?? 0),
       totalCreditUsed: Number(raw?.totalCreditUsed ?? 0),

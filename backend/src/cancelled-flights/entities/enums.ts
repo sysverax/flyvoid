@@ -50,6 +50,13 @@ export enum HotelBookingAttemptStatus {
   MANUAL_CHECK = "manual_check",
 }
 
+/** Wallet payment of one booking attempt: PAID when the supplier confirmed and the wallet was charged. */
+export enum HotelBookingPaymentStatus {
+  PENDING = "PENDING",
+  PAID = "PAID",
+  FAILED = "FAILED",
+}
+
 export enum HotelBookingFailureCode {
   INVALID_PASSENGER_DATA = "invalid_passenger_data",
   NO_CANDIDATES = "no_candidates",
