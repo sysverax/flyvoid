@@ -1,4 +1,4 @@
-import { ApiPropertyOptional } from "@nestjs/swagger";
+import { ApiPropertyOptional, IntersectionType } from "@nestjs/swagger";
 import { Transform } from "class-transformer";
 import {
   IsBoolean,
@@ -11,9 +11,13 @@ import {
   Min,
 } from "class-validator";
 import { PaginationQueryDto } from "../../../common/dto/pagination-query.dto";
+import { ShortenQueryDto } from "../../../common/dto/shorten-query.dto";
 import { IsSafeText } from "../../../common/validator/injection.validator";
 
-export class GetAirportsQueryDto extends PaginationQueryDto {
+export class GetAirportsQueryDto extends IntersectionType(
+  PaginationQueryDto,
+  ShortenQueryDto,
+) {
   @ApiPropertyOptional({
     description: "Filter by 2-letter country code",
     example: "AE",

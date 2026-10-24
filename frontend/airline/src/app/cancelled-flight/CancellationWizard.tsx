@@ -46,7 +46,7 @@ import { useAuth } from "@/src/hooks/useAuth";
 import { BookingDetailsDrawer } from "@/src/components/ui/BookingDetailsDrawer";
 import { PassengerBookingDetailDrawer } from "@/src/components/ui/PassengerBookingDetailDrawer";
 import { FailedBookingHotelDrawer } from "@/src/components/ui/FailedBookingHotelDrawer";
-import { PLATFORM_FEE_PERCENT } from "@/src/lib/constants";
+import { DROPDOWN_LIMIT, PLATFORM_FEE_PERCENT } from "@/src/lib/constants";
 import {
   Table,
   TableBody,
@@ -76,7 +76,10 @@ import {
   HotelBookingItemDTO,
   HotelBookingDetailDataDto,
 } from "@/src/services/cancellation.service";
-import { airportsService, AirportDTO } from "@/src/services/airports.service";
+import {
+  airportsService,
+  AirportOptionDTO,
+} from "@/src/services/airports.service";
 
 const NOTE_TAG_TO_ENUM: Record<string, string> = {
   "Wheelchair Assistance": "wheelchair_assistance",
@@ -352,7 +355,7 @@ export default function CancellationWizard({
   const [selectedReasonTag, setSelectedReasonTag] = useState("");
   const [newReason, setNewReason] = useState(initialData?.reason || "");
 
-  const [airports, setAirports] = useState<AirportDTO[]>([]);
+  const [airports, setAirports] = useState<AirportOptionDTO[]>([]);
   const [isLoadingAirports, setIsLoadingAirports] = useState(false);
 
   useEffect(() => {
@@ -363,9 +366,9 @@ export default function CancellationWizard({
     const fetchAirports = async () => {
       setIsLoadingAirports(true);
       try {
-        const response = await airportsService.getAirports({
+        const response = await airportsService.getAirportOptions({
           page: 1,
-          limit: 100,
+          limit: DROPDOWN_LIMIT,
         });
         if (isMounted && response?.airports && response.airports.length > 0) {
           setAirports(response.airports);
@@ -387,7 +390,7 @@ export default function CancellationWizard({
   const airportOptions = useMemo(() => {
     return airports.map((a) => ({
       value: a.iataCode || String(a.id),
-      label: `${a.iataCode} - ${a.name || a.city}`,
+      label: `${a.iataCode} - ${a.name}`,
     }));
   }, [airports]);
 

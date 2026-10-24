@@ -35,6 +35,7 @@ import {
   HotelBookingsSummaryDTO,
 } from "@/src/services/hotel-bookings.service";
 import { airportsService } from "@/src/services/airports.service";
+import { DROPDOWN_LIMIT } from "@/src/lib/constants";
 import {
   cancellationService,
   ListCancelledFlightsItemDTO,
@@ -55,6 +56,25 @@ export interface Booking {
   status: string;
   reason?: string;
   raw?: HotelBookingDTO;
+}
+
+/** Cancelled flight dropdown label, e.g. "FV123 · 12 Oct 2026 · #45". */
+function cancelledFlightLabel(
+  flightNumber: string,
+  id: number,
+  cancellationDate?: string,
+): string {
+  // cancellationDate is a calendar date (YYYY-MM-DD): format it as UTC so it
+  // never shifts a day in the viewer's timezone.
+  const date = cancellationDate
+    ? new Date(`${cancellationDate}T00:00:00Z`).toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        timeZone: "UTC",
+      })
+    : null;
+  return [flightNumber, date, `#${id}`].filter(Boolean).join(" · ");
 }
 
 function mapHotelBookingDTOToBooking(dto: HotelBookingDTO): Booking {
@@ -127,7 +147,7 @@ export default function BookingsPage() {
     let isMounted = true;
 
     airportsService
-      .getAirports({ page: 1, limit: 200 })
+      .getAirportOptions({ page: 1, limit: DROPDOWN_LIMIT })
       .then((res) => {
         if (!isMounted) return;
         const opts = res.airports.map((a) => ({
@@ -145,26 +165,18 @@ export default function BookingsPage() {
       });
 
     hotelBookingsService
-      .getCancelledFlights({ page: 1, limit: 200 })
+      .getCancelledFlights({ page: 1, limit: DROPDOWN_LIMIT })
       .then((flights) => {
         if (!isMounted) return;
-        const opts = flights.map((f: any) => ({
-          value: f.flightNumber,
-          label: f.flightNumber,
-          cancelledFlightId: f.id,
-        }));
-        const uniqueMap = new Map<
-          string,
-          { value: string; label: string; cancelledFlightId?: number }
-        >();
-        opts.forEach((opt: any) => {
-          if (!uniqueMap.has(opt.value)) {
-            uniqueMap.set(opt.value, opt);
-          }
-        });
+        // One option per cancellation: a flight number can be cancelled more
+        // than once, so the value is the cancellation id.
         setFlightOptions([
           { value: "All Cancelled Flights", label: "All Cancelled Flights" },
-          ...Array.from(uniqueMap.values()),
+          ...flights.map((f) => ({
+            value: String(f.id),
+            label: cancelledFlightLabel(f.flightNumber, f.id, f.cancellationDate),
+            cancelledFlightId: f.id,
+          })),
         ]);
       })
       .catch((err: any) => {
@@ -234,10 +246,11 @@ export default function BookingsPage() {
               prev.forEach((opt) => map.set(opt.value, opt));
               let added = false;
               res.hotelBookings.forEach((b) => {
-                if (b.flightNumber && !map.has(b.flightNumber)) {
-                  map.set(b.flightNumber, {
-                    value: b.flightNumber,
-                    label: b.flightNumber,
+                const key = String(b.cancelledFlightId);
+                if (b.cancelledFlightId && !map.has(key)) {
+                  map.set(key, {
+                    value: key,
+                    label: cancelledFlightLabel(b.flightNumber, b.cancelledFlightId),
                     cancelledFlightId: b.cancelledFlightId,
                   });
                   added = true;
@@ -410,7 +423,8 @@ export default function BookingsPage() {
               setCurrentPage(1);
             }}
             options={flightOptions}
-            widthClass="w-52"
+            // Wide enough for "FLIGHT · 25 Oct 2026 · #123"; the button keeps its width.
+            widthClass="w-80 max-w-[calc(100vw-2rem)]"
             triggerWidthClass="w-[195px]"
             maxListHeightClass="max-h-60"
             searchable
@@ -424,7 +438,8 @@ export default function BookingsPage() {
               setCurrentPage(1);
             }}
             options={airportOptions}
-            widthClass="w-44"
+            // Wide enough for "DXB - Dubai International Airport"; the button keeps its width.
+            widthClass="w-80 max-w-[calc(100vw-2rem)]"
             triggerWidthClass="w-[180px]"
             maxListHeightClass="max-h-60"
             searchable

@@ -10,6 +10,7 @@ import {
 } from "class-validator";
 import { CalendarDateRangeQueryDto } from "../../common/dto/date-range-query.dto";
 import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
+import { ShortenQueryDto } from "../../common/dto/shorten-query.dto";
 import { FlightStatus } from "../entities/enums";
 
 // startDate/endDate filter cancellation_date (a DATE column): YYYY-MM-DD,
@@ -17,6 +18,7 @@ import { FlightStatus } from "../entities/enums";
 export class GetCancelledFlightsQueryDto extends IntersectionType(
   PaginationQueryDto,
   CalendarDateRangeQueryDto,
+  ShortenQueryDto,
 ) {
   @ApiPropertyOptional({
     description: "Filter by cancelled flight status",

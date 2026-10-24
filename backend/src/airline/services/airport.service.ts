@@ -11,6 +11,7 @@ import { LoggerService } from "../../common/logger/logger.service";
 import { UserType } from "../../common/constants/user.constants";
 import {
   AirportListResponseDto,
+  AirportShortListResponseDto,
   AirportResponseDto,
   CreateAirportRequestDto,
   GetAirportsQueryDto,
@@ -84,7 +85,7 @@ export class AirportService {
     authenticatedUser: AuthenticatedUser,
     query: GetAirportsQueryDto,
     requestId: string,
-  ): Promise<AirportListResponseDto> {
+  ): Promise<AirportListResponseDto | AirportShortListResponseDto> {
     const { airports, total } =
       authenticatedUser.userType === UserType.AIRLINE
         ? await this.airportRepository.findAllForAirline(
@@ -96,12 +97,28 @@ export class AirportService {
 
     const totalPages = total === 0 ? 0 : Math.ceil(total / query.limit);
 
-    return {
-      airports: airports.map((airport) => this.toAirportResponse(airport)),
+    const pagination = {
       total: total,
       currentPage: query.page,
       totalPages,
       limit: query.limit,
+    };
+
+    // shorten=true: only what a dropdown needs.
+    if (query.shorten) {
+      return {
+        airports: airports.map((airport) => ({
+          id: airport.id,
+          name: airport.name,
+          iataCode: airport.iataCode,
+        })),
+        ...pagination,
+      };
+    }
+
+    return {
+      airports: airports.map((airport) => this.toAirportResponse(airport)),
+      ...pagination,
     };
   }
 

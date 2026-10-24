@@ -16,7 +16,29 @@ export interface AirportDTO {
   postalCode: string;
 }
 
+/** An airport as returned with shorten=true, for dropdowns. */
+export type AirportOptionDTO = Pick<AirportDTO, "id" | "name" | "iataCode">;
+
 export const airportsService = {
+  /** Airports for dropdowns: GET /airports?shorten=true (id, name, iataCode). */
+  async getAirportOptions(params: {
+    search?: string;
+    page: number;
+    limit: number;
+  }): Promise<{ airports: AirportOptionDTO[]; total: number }> {
+    try {
+      const { data } = await apiClient.get("/airports", {
+        params: { ...params, shorten: true },
+      });
+      return {
+        airports: data.data?.airports || [],
+        total: data.data?.total || 0,
+      };
+    } catch (error: any) {
+      throw new Error(extractErrorMessage(error, "Failed to fetch airports."));
+    }
+  },
+
   async getAirports(params: {
     search?: string;
     countryCode?: string;
