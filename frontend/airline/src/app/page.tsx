@@ -117,7 +117,7 @@ function ChartLoadingState({ height = "h-[260px]" }: { height?: string }) {
 
 export default function DashboardPage() {
   const [mounted, setMounted] = useState(false);
-  const [selectedPeriod, setSelectedPeriod] = useState<string>("Month");
+  const [selectedPeriod, setSelectedPeriod] = useState<string>("Week");
   const [hotelSpendData, setHotelSpendData] = useState<HotelSpendTrendData | null>(null);
   const [affectedPassengersData, setAffectedPassengersData] = useState<AffectedPassengersTrendData | null>(null);
   const [cancelledFlightsData, setCancelledFlightsData] = useState<CancelledFlightsTrendData | null>(null);

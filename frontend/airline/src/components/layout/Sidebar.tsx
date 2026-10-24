@@ -153,14 +153,14 @@ export function Sidebar() {
           </div>
         </nav>
 
-        {/* Logout Button */}
+        {/* Sign Out Button */}
         <div className="w-full mt-1.5">
           <button
             onClick={handleLogout}
             className="group flex w-full items-center gap-3 rounded-[10px] px-4 py-3 text-[18px] leading-[22px] text-[#9FA9BC] transition-colors duration-200 hover:bg-[#203663]/50 hover:text-white cursor-pointer"
           >
             <LogOut className="h-5 w-5" strokeWidth={1.8} />
-            <span className="text-left flex-1">Logout</span>
+            <span className="text-left flex-1">Sign Out</span>
           </button>
         </div>
       </div>

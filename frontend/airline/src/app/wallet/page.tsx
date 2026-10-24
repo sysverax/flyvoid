@@ -1,5 +1,6 @@
 "use client";
 
+import { WalletSummaryCards } from "@/src/components/wallet/WalletSummaryCards";
 import { PageHeader } from "@/src/components/layout/PageHeader";
 import { useState, useMemo, useEffect } from "react";
 import { Search } from "lucide-react";
@@ -241,6 +242,9 @@ export default function WalletPage() {
     <div className="flex min-h-screen flex-1 flex-col pb-16 lg:w-full lg:max-w-[calc(100vw-304px)]">
       <div className="space-y-7">
         <PageHeader />
+
+        {/* Account summary: available, balance, credit limit, reserved */}
+        <WalletSummaryCards />
 
 
         {/* Filters Card */}

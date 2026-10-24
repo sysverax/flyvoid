@@ -7,22 +7,17 @@ import { ChevronDown, LogOut, Settings, Wallet as WalletIcon } from "lucide-reac
 import { toast } from "react-toastify";
 import { cn } from "@/src/lib/utils";
 import { TOP_BAR_HEIGHT_CLASS } from "@/src/lib/layout";
-import { WALLET_BALANCE_CHANGED_EVENT } from "@/src/lib/wallet-events";
+import { formatMoney, walletFigures } from "@/src/lib/wallet-figures";
 import { useAuth } from "@/src/hooks/useAuth";
+import { useWalletBalance } from "@/src/hooks/useWalletBalance";
 import { authService } from "@/src/services/auth.service";
-import { walletService } from "@/src/services/wallet.service";
+import { WalletBreakdown } from "@/src/components/wallet/WalletBreakdown";
 import { SignOutDialog } from "./SignOutDialog";
 
 const ROLE_LABELS: Record<string, string> = {
   AIRLINE_ADMIN: "Admin",
   AIRLINE_STAFF: "Staff",
 };
-
-const formatMoney = (value: number) =>
-  `${value < 0 ? "–" : ""}$${Math.abs(value).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
 
 /** Wallet balance (users with Wallet view only) and profile menu, on every page. */
 export function TopBar() {
@@ -31,39 +26,33 @@ export function TopBar() {
   const { user, hasPermission } = useAuth();
   const canViewWallet = hasPermission("view", "/wallet");
 
-  const [balance, setBalance] = useState<number | null>(null);
+  // Reloads on every page change and whenever the balance may have changed.
+  const { wallet } = useWalletBalance(canViewWallet);
+  const figures = wallet ? walletFigures(wallet) : null;
+
   const [menuOpen, setMenuOpen] = useState(false);
+  const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const breakdownRef = useRef<HTMLDivElement>(null);
 
-  // Reload on every page change and whenever the balance may have changed.
+  // Close the profile menu / balance breakdown on an outside click.
   useEffect(() => {
-    if (!canViewWallet) return;
-    let active = true;
-    const load = () =>
-      walletService
-        .getWalletBalance()
-        .then((data) => active && setBalance(Number(data.balance ?? 0)))
-        .catch((err) => console.error("Failed to load wallet balance:", err));
-    load();
-    window.addEventListener(WALLET_BALANCE_CHANGED_EVENT, load);
-    return () => {
-      active = false;
-      window.removeEventListener(WALLET_BALANCE_CHANGED_EVENT, load);
-    };
-  }, [canViewWallet, pathname]);
-
-  useEffect(() => {
-    if (!menuOpen) return;
+    if (!menuOpen && !breakdownOpen) return;
     const close = (event: MouseEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
+      const target = event.target as Node;
+      if (!menuRef.current?.contains(target)) setMenuOpen(false);
+      if (!breakdownRef.current?.contains(target)) setBreakdownOpen(false);
     };
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
-  }, [menuOpen]);
+  }, [menuOpen, breakdownOpen]);
 
-  useEffect(() => setMenuOpen(false), [pathname]);
+  useEffect(() => {
+    setMenuOpen(false);
+    setBreakdownOpen(false);
+  }, [pathname]);
 
   const confirmSignOut = async () => {
     setIsSigningOut(true);
@@ -99,30 +88,53 @@ export function TopBar() {
       >
         <div className="flex items-center gap-3 sm:gap-5 shrink-0">
           {canViewWallet && (
-            <Link
-              href="/wallet"
-              title="Open wallet"
-              className="hidden sm:flex items-center gap-2.5 rounded-[10px] border border-[#E5E7EB] bg-[#F9FAFB] px-3.5 py-2 hover:bg-gray-100 transition-colors"
+            // Hover (or click / tap) shows the balance → available breakdown.
+            <div
+              ref={breakdownRef}
+              className="relative hidden sm:block"
+              onMouseEnter={() => setBreakdownOpen(true)}
+              onMouseLeave={() => setBreakdownOpen(false)}
             >
-              <span className="flex h-9 w-9 items-center justify-center rounded-[8px] bg-white text-[#4B5563] border border-[#E5E7EB]">
-                <WalletIcon className="h-5 w-5" />
-              </span>
-              <span className="flex flex-col">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[#6B7280]">
-                  Wallet Balance
+              <button
+                type="button"
+                onClick={() => setBreakdownOpen((open) => !open)}
+                aria-expanded={breakdownOpen}
+                aria-haspopup="dialog"
+                className="flex items-center gap-2.5 rounded-[10px] border border-[#E5E7EB] bg-[#F9FAFB] px-3.5 py-2 hover:bg-gray-100 transition-colors cursor-pointer"
+              >
+                <span className="flex h-9 w-9 items-center justify-center rounded-[8px] bg-white text-[#4B5563] border border-[#E5E7EB]">
+                  <WalletIcon className="h-5 w-5" />
                 </span>
-                <span
+                <span className="flex flex-col items-start">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#6B7280]">
+                    Wallet Balance
+                  </span>
+                  <span
+                    className={cn(
+                      "text-[16px] font-bold tabular-nums",
+                      figures && figures.balance < 0
+                        ? "text-[#C83833]"
+                        : "text-[#1F2937]",
+                    )}
+                  >
+                    {figures ? formatMoney(figures.balance) : "—"}
+                  </span>
+                </span>
+                <ChevronDown
                   className={cn(
-                    "text-[16px] font-bold",
-                    balance !== null && balance < 0
-                      ? "text-[#C83833]"
-                      : "text-[#1F2937]",
+                    "h-4 w-4 text-[#6B7280] transition-transform",
+                    breakdownOpen && "rotate-180",
                   )}
-                >
-                  {balance === null ? "—" : formatMoney(balance)}
-                </span>
-              </span>
-            </Link>
+                />
+              </button>
+
+              {breakdownOpen && figures && (
+                // pt-2 keeps the hover area continuous between badge and panel.
+                <div className="absolute right-0 top-full z-50 pt-2">
+                  <WalletBreakdown figures={figures} />
+                </div>
+              )}
+            </div>
           )}
 
           {user && (
@@ -184,7 +196,7 @@ export function TopBar() {
                     className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-[14px] text-[#374151] hover:bg-gray-100 cursor-pointer"
                   >
                     <LogOut className="h-4 w-4" />
-                    Sign out
+                    Sign Out
                   </button>
                 </div>
               )}
