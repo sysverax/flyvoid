@@ -34,6 +34,11 @@ const statusStyles: Record<string, { bg: string; text: string }> = {
     bg: "bg-[#DBEAFE]",
     text: "text-[#1E40AF]",
   },
+  // Cancelled flight status "passengers_booking_confirmed".
+  "Ready for Allocation": {
+    bg: "bg-[#DBEAFE]",
+    text: "text-[#1E40AF]",
+  },
   confirmed: {
     bg: "bg-[#DBEAFE]",
     text: "text-[#1E40AF]",
@@ -152,6 +157,11 @@ const statusStyles: Record<string, { bg: string; text: string }> = {
     text: "text-[#92400E]",
   },
   "HA In Progress": {
+    bg: "bg-[#FEF3C7]",
+    text: "text-[#92400E]",
+  },
+  // Cancelled flight status "hotel_allocation_in_progress".
+  "Allocation In Progress": {
     bg: "bg-[#FEF3C7]",
     text: "text-[#92400E]",
   },

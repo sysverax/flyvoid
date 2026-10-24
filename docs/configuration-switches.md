@@ -13,7 +13,7 @@ controls, and which ones must match across apps.
 | Switch | Current | Where | Must match |
 |---|---|---|---|
 | [`PAYMENTS_ENABLED`](#payments_enabled) | `false` | airline portal, admin portal | – (each portal on its own) |
-| [`FLIGHT_PAYMENT_STEP_ENABLED`](#flight_payment_step_enabled) | `false` | backend, airline portal | ✅ backend ↔ airline portal |
+| [`FLIGHT_PAYMENT_STEP_ENABLED`](#flight_payment_step_enabled) | `false` | backend, airline portal, admin portal | ✅ all three |
 | [`DROPDOWN_LIMIT`](#dropdown_limit) | `10` | airline portal | – |
 | [`PLATFORM_FEE_PERCENT`](#platform_fee_percent) | `10` | airline portal | ⚠️ should match the backend fee (see below) |
 
@@ -55,9 +55,9 @@ It is off because hotels are charged to the airline wallet as each PNR is booked
 (see [wallet-cancellation-payment.md](wallet-cancellation-payment.md)). An
 `ALLOCATED` flight is already paid for and goes straight to publish.
 
-> **Set the backend and the airline portal to the same value.** If only one
-> side is switched on, the wizard and the API disagree (for example the wizard
-> shows a Pay step whose API answers 404).
+> **Set the backend, the airline portal and the admin portal to the same
+> value.** If only one side is switched on, the wizard and the API disagree
+> (for example the wizard shows a Pay step whose API answers 404).
 
 | Where | `false` (now) | `true` |
 |---|---|---|
@@ -67,6 +67,7 @@ It is off because hotels are charged to the airline wallet as each PNR is booked
 | Wizard | Payment step hidden; Booking Summary → "Continue to Publish" → Publish | Booking Summary → Payment → Publish |
 | Wizard URL `…/step-6` | redirects to step 7 | Payment step |
 | Cancelled flights list | Publish button for "Hotels Booked" and "Paid" flights | Publish button for "Paid" flights |
+| Cancelled flights status filter (airline and admin portals) | "Paid" option hidden | "Paid" option shown |
 
 Backend: `PUBLISHABLE_FLIGHT_STATUSES` and `CONFIRMATION_FLIGHT_STATUSES` are
 derived from the switch in the same file.
@@ -74,9 +75,21 @@ derived from the switch in the same file.
 Airline portal files using it: `app/cancelled-flight/CancellationWizard.tsx`,
 `app/cancelled-flight/[id]/[step]/page.tsx`, `app/cancelled-flight/page.tsx`.
 
-**Related, not switched:** the `allocated` status is shown as **"Hotels
-Booked"** in both portals (`StatusBadge`, status filters). The API value is
-still `allocated`.
+Admin portal files using it: `app/cancellation/page.tsx` (status filter only).
+
+**Related, not switched:** cancelled flight statuses are shown with these
+labels in both portals (`StatusBadge`, status filters). The API values are
+unchanged.
+
+| API status | Label |
+|---|---|
+| `draft` | Draft |
+| `in_progress` | In Progress |
+| `passengers_booking_confirmed` | Ready for Allocation |
+| `hotel_allocation_in_progress` | Allocation In Progress |
+| `allocated` | Hotels Booked |
+| `paid` | Paid (older flights; filter option hidden while the step is off) |
+| `published` | Published |
 
 ---
 

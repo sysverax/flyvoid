@@ -3,6 +3,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Sidebar } from "./Sidebar";
+import { TopBar } from "./TopBar";
 import { cn } from "@/src/lib/utils";
 import { refreshAccessToken } from "@/src/lib/api-client";
 
@@ -116,9 +117,10 @@ export function MainLayout({ children }: MainLayoutProps) {
       <Sidebar />
       <main
         className={cn(
-          "min-h-screen transition-all duration-300 pt-16 lg:pt-0 lg:ml-[240px]",
+          "min-h-screen transition-all duration-300 lg:ml-[240px]",
         )}
       >
+        <TopBar />
         <div className="p-4 sm:p-6 lg:p-8 w-full">{children}</div>
       </main>
     </div>

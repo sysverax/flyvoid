@@ -1,5 +1,6 @@
 "use client";
 
+import { PageHeader } from "@/src/components/layout/PageHeader";
 import { useState, useEffect, useMemo } from "react";
 import { Dropdown } from "@/src/components/ui/Dropdown";
 import { cn } from "@/src/lib/utils";
@@ -386,27 +387,19 @@ export default function DashboardPage() {
   return (
     <div className="flex min-h-screen flex-1 flex-col pb-16 lg:w-full lg:max-w-[calc(100vw-304px)]">
       <div className="space-y-4.5">
-        {/* Header Title Section matching Admin Portal */}
-        <div>
-          <h1 className="text-2xl sm:text-[24px] font-semibold text-[#1F2937] leading-[100%] tracking-[0%]">
-            Dashboard
-          </h1>
-          <p className="text-[14px] text-[#6B7280] mt-1">
-            Overview of your airline operations
-          </p>
-        </div>
-
-        {/* Date / Metrics Filter Section matching Admin Portal */}
-        <div className="self-stretch flex justify-end items-center bg-transparent">
-          <Dropdown
-            value={selectedPeriod}
-            onChange={(val) => setSelectedPeriod(val)}
-            options={FILTER_OPTIONS}
-            widthClass="w-45"
-            triggerWidthClass="w-45"
-            heightClass="h-12"
-          />
-        </div>
+        {/* Title row with the period filter on the right */}
+        <PageHeader
+          actions={
+            <Dropdown
+              value={selectedPeriod}
+              onChange={(val) => setSelectedPeriod(val)}
+              options={FILTER_OPTIONS}
+              widthClass="w-45"
+              triggerWidthClass="w-45"
+              heightClass="h-12"
+            />
+          }
+        />
 
         {/* 4 KPI Cards Grid matching requested screenshot */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">

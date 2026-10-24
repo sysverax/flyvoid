@@ -1,5 +1,6 @@
 "use client";
 
+import { PageHeader } from "@/src/components/layout/PageHeader";
 import { useState, useMemo, useEffect } from "react";
 import {
   Search,
@@ -395,15 +396,7 @@ export default function BookingsPage() {
   return (
     <div className="flex min-h-screen flex-1 flex-col pb-16 lg:w-full lg:max-w-[calc(100vw-304px)]">
       <div className="space-y-7">
-        {/* Header Block */}
-        <div>
-          <h1 className="text-2xl sm:text-[24px] font-semibold text-[#1F2937] leading-[100%] tracking-[0%]">
-            Bookings
-          </h1>
-          <p className="text-[14px] text-[#6B7280] mt-1">
-            Confirmed hotel bookings from cancelled flights
-          </p>
-        </div>
+        <PageHeader />
 
         {/* Filter panel card */}
         <FiltersCard

@@ -1,5 +1,6 @@
 "use client";
 
+import { PageHeader } from "@/src/components/layout/PageHeader";
 import { useState, useMemo, useEffect } from "react";
 import { Search } from "lucide-react";
 import {
@@ -153,18 +154,11 @@ export default function AirportsPage() {
   return (
     <div className="flex min-h-screen flex-1 flex-col pb-16 lg:w-full lg:max-w-[calc(100vw-304px)]">
       <div className="space-y-7">
-        {/* Header */}
-        <div>
-          <h1 className="text-2xl sm:text-[24px] font-semibold text-[#1F2937] leading-[100%] tracking-[0%]">
-            Airports
-          </h1>
-          <p className="text-[14px] text-[#6B7280] mt-1">
-            Manage and view your airline's operating airports
-          </p>
-        </div>
+        <PageHeader />
 
         {/* Filter panel card */}
         <FiltersCard
+          singleRow
           searchQuery={searchQuery}
           setSearchQuery={(q) => {
             setSearchQuery(q);
@@ -181,8 +175,7 @@ export default function AirportsPage() {
               setCurrentPage(1);
             }}
             options={countryOptions}
-            widthClass="w-full sm:w-44"
-            triggerWidthClass="w-full sm:w-44"
+            widthClass="w-80 max-w-[calc(100vw-2rem)]"
             maxListHeightClass="max-h-[296px]"
             searchable
           />

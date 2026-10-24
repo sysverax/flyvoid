@@ -8,7 +8,7 @@ interface StatusBadgeProps {
 const statusLabels: Record<string, string> = {
   draft: "Draft",
   in_progress: "In Progress",
-  passengers_booking_confirmed: "Bookings Confirmed",
+  passengers_booking_confirmed: "Ready for Allocation",
   hotel_allocation_in_progress: "Allocation In Progress",
   allocated: "Hotels Booked",
   paid: "Paid",
@@ -25,7 +25,7 @@ const statusStyles: Record<string, { bg: string; text: string }> = {
   "In Progress": { bg: "bg-[#FEF3C7]", text: "text-[#92400E]" },
 
   passengers_booking_confirmed: { bg: "bg-[#E0F2FE]", text: "text-[#0369A1]" },
-  "Bookings Confirmed": { bg: "bg-[#E0F2FE]", text: "text-[#0369A1]" },
+  "Ready for Allocation": { bg: "bg-[#E0F2FE]", text: "text-[#0369A1]" },
 
   hotel_allocation_in_progress: { bg: "bg-[#FEF3C7]", text: "text-[#92400E]" },
   "Allocation In Progress": { bg: "bg-[#FEF3C7]", text: "text-[#92400E]" },

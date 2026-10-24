@@ -17,6 +17,7 @@ import {
 } from "./constants";
 import {
   CreateWalletAdjustmentRequestDto,
+  GetWalletsSummaryQueryDto,
   GetWalletTransactionsQueryDto,
   WalletAdjustmentResponseDto,
   WalletBalanceResponseDto,
@@ -274,11 +275,23 @@ export class WalletService {
   // ── Summary (platform only) ──────────────────────────────────────────────
 
   async getWalletsSummary(
+    query: GetWalletsSummaryQueryDto,
     requestLogger: Logger,
   ): Promise<WalletSummaryResponseDto> {
-    requestLogger.info("Fetching wallets summary", { context: this.context });
+    requestLogger.info("Fetching wallets summary", {
+      context: this.context,
+      query,
+    });
 
-    return this.walletRepository.getWalletsSummary(requestLogger);
+    return this.walletRepository.getWalletsSummary(
+      {
+        search: query.search?.trim() || undefined,
+        countryCode: query.countryCode,
+        isActive: query.isActive,
+        isSuspended: query.isSuspended,
+      },
+      requestLogger,
+    );
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────

@@ -51,6 +51,7 @@ import {
   FLIGHT_PAYMENT_STEP_ENABLED,
   PLATFORM_FEE_PERCENT,
 } from "@/src/lib/constants";
+import { notifyWalletBalanceChanged } from "@/src/lib/wallet-events";
 import {
   Table,
   TableBody,
@@ -1085,6 +1086,8 @@ export default function CancellationWizard({
     stopAllocationPolling();
     setIsAllocating(false);
     setAllocationRunProgress(null);
+    // Each booked PNR was charged to the wallet: refresh the top bar balance.
+    notifyWalletBalanceChanged();
     const anythingBooked = (allocData.successfulPnrs ?? 0) > 0;
     if (allocData.lastRunError) {
       setAllocationError(allocData.lastRunError);

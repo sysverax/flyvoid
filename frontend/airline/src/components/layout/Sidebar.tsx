@@ -15,6 +15,7 @@ import {
   Users,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
+import { TOP_BAR_HEIGHT_CLASS } from "@/src/lib/layout";
 import { PAYMENTS_ENABLED } from "@/src/lib/constants";
 import { toast } from "react-toastify";
 import { SignOutDialog } from "./SignOutDialog";
@@ -79,14 +80,19 @@ export function Sidebar() {
 
   const renderNavContent = (mobile = false) => (
     <div className="flex h-full w-full flex-col gap-8 text-[18px] text-[#9FA9BC]">
-      {/* Logo */}
-      <div className="relative h-14 w-full">
+      {/* Logo: same height as the top bar, so its bottom line continues the top bar's */}
+      <div
+        className={cn(
+          "-mx-4 flex shrink-0 items-center justify-between border-b border-[#E5E7EB]/20 px-4",
+          TOP_BAR_HEIGHT_CLASS,
+        )}
+      >
         <Image
           src="/logo.svg"
           alt="Flyverax logo"
           width={150}
           height={37}
-          className="absolute -top-1 left-[14px]"
+          className="ml-[14px]"
           priority
         />
 
@@ -181,7 +187,7 @@ export function Sidebar() {
             className="fixed inset-0 bg-black/50"
             onClick={() => setMobileOpen(false)}
           />
-          <div className="relative flex h-screen w-[240px] flex-col bg-[#0F2757] px-4 py-8">
+          <div className="relative flex h-screen w-[240px] flex-col bg-[#0F2757] px-4 pb-8">
             {renderNavContent(true)}
           </div>
         </div>
@@ -190,7 +196,7 @@ export function Sidebar() {
       {/* Desktop sidebar */}
       <aside
         className={cn(
-          "fixed left-0 top-0 z-40 hidden h-screen w-[240px] flex-col bg-[#0F2757] px-4 py-8 lg:flex",
+          "fixed left-0 top-0 z-40 hidden h-screen w-[240px] flex-col bg-[#0F2757] px-4 pb-8 lg:flex",
         )}
       >
         {renderNavContent()}
