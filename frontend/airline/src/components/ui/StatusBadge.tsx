@@ -58,6 +58,11 @@ const statusStyles: Record<string, { bg: string; text: string }> = {
     bg: "bg-[#F3E8FF]",
     text: "text-[#6B21A8]",
   },
+  // Cancelled flight status "allocated": every PNR's hotel is booked.
+  "Hotels Booked": {
+    bg: "bg-[#F3E8FF]",
+    text: "text-[#6B21A8]",
+  },
   Pending: {
     bg: "bg-[#FEF3C7]",
     text: "text-[#92400E]",

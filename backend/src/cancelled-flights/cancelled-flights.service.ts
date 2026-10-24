@@ -48,6 +48,10 @@ import { GetCancelledFlightsSummaryQueryDto } from "./dto/get-cancelled-flights-
 import { CancelledFlightsSummaryResponseDto } from "./dto/cancelled-flights-summary-response.dto";
 import { request } from "http";
 import { config } from "../config/config";
+import {
+  FLIGHT_PAYMENT_STEP_ENABLED,
+  PUBLISHABLE_FLIGHT_STATUSES,
+} from "./cancelled-flights.constants";
 import { CancelledFlightBookingsListResponseDto } from "./dto/cancelled-flight-bookings-list-response.dto";
 import { PdfService } from "../common/pdf/pdf.service";
 import {
@@ -1456,6 +1460,16 @@ export class CancelledFlightsService {
     requestId: string,
     requestLogger: Logger,
   ): Promise<CancelledFlightResponseDto> {
+    if (!FLIGHT_PAYMENT_STEP_ENABLED) {
+      requestLogger.warn("Rejected payment processing: payment step disabled", {
+        context: this.context,
+        flightId,
+      });
+      throw new NotFoundException(
+        "The payment step is disabled: hotel bookings are charged to the airline wallet as each PNR is booked. An allocated flight can be published directly.",
+      );
+    }
+
     const flight = await this.requireFlight(flightId, requestLogger);
 
     if (flight.status !== FlightStatus.ALLOCATED) {
@@ -1510,14 +1524,14 @@ export class CancelledFlightsService {
   ): Promise<CancelledFlightResponseDto> {
     const flight = await this.requireFlight(flightId, requestLogger);
 
-    if (flight.status !== FlightStatus.PAID) {
-      requestLogger.warn("Rejected flight publish: flight not in paid status", {
+    if (!PUBLISHABLE_FLIGHT_STATUSES.includes(flight.status)) {
+      requestLogger.warn("Rejected flight publish: flight not ready to publish", {
         context: this.context,
         flightId,
         status: flight.status,
       });
       throw new BadRequestException(
-        `Cannot publish flight '${flightId}' from status '${flight.status}'. Flight must be in 'paid' status.`,
+        `Cannot publish flight '${flightId}' from status '${flight.status}'. Flight must be in ${PUBLISHABLE_FLIGHT_STATUSES.map((status) => `'${status}'`).join(" or ")} status.`,
       );
     }
 

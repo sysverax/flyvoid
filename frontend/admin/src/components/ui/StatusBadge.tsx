@@ -10,7 +10,7 @@ const statusLabels: Record<string, string> = {
   in_progress: "In Progress",
   passengers_booking_confirmed: "Bookings Confirmed",
   hotel_allocation_in_progress: "Allocation In Progress",
-  allocated: "Allocated",
+  allocated: "Hotels Booked",
   paid: "Paid",
   published: "Published",
   failed: "Failed",
@@ -32,6 +32,7 @@ const statusStyles: Record<string, { bg: string; text: string }> = {
 
   allocated: { bg: "bg-[#E0E7FF]", text: "text-[#3730A3]" },
   Allocated: { bg: "bg-[#E0E7FF]", text: "text-[#3730A3]" },
+  "Hotels Booked": { bg: "bg-[#E0E7FF]", text: "text-[#3730A3]" },
 
   paid: { bg: "bg-[#D1FAE5]", text: "text-[#065F46]" },
   Paid: { bg: "bg-[#D1FAE5]", text: "text-[#065F46]" },

@@ -33,6 +33,7 @@ import {
   ApiTags,
   ApiConflictResponse,
   ApiUnauthorizedResponse,
+  ApiExcludeEndpoint,
   ApiExtraModels,
   getSchemaPath,
 } from "@nestjs/swagger";
@@ -60,6 +61,7 @@ import {
   createUnauthorizedErrorSchema,
 } from "../common/constants/swagger.constants";
 import { CancelledFlightsService } from "./cancelled-flights.service";
+import { FLIGHT_PAYMENT_STEP_ENABLED } from "./cancelled-flights.constants";
 import { HotelAllocationService } from "./hotel-allocation.service";
 import {
   CreateCancelledFlightDto,
@@ -1032,6 +1034,9 @@ export class CancelledFlightsController {
       access: [AccessAction.EDIT],
     },
   })
+  // Hidden from the docs and answering 404 while FLIGHT_PAYMENT_STEP_ENABLED
+  // is false: hotels are charged to the wallet as each PNR is booked.
+  @ApiExcludeEndpoint(!FLIGHT_PAYMENT_STEP_ENABLED)
   @ApiOperation({
     summary: "Process payment for a cancelled flight",
     description:
@@ -1077,7 +1082,7 @@ export class CancelledFlightsController {
   @ApiOperation({
     summary: "Publish a cancelled flight",
     description:
-      "Publishes a cancelled flight after payment. Flight must be in 'paid' status. Sends a notification email to all passengers.",
+      "Publishes a cancelled flight once every PNR's hotel is booked (and charged to the airline wallet). Flight must be in 'allocated' status (or 'paid' for flights paid with the earlier payment step). Sends a notification email to all passengers.",
   })
   @ApiParam({ name: "id", description: "Cancelled flight id" })
   @ApiNotFoundResponse({

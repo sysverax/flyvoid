@@ -92,7 +92,7 @@ export default function CancellationPage() {
     { value: "draft", label: "Draft" },
     { value: "in_progress", label: "In Progress" },
     { value: "passengers_booking_confirmed", label: "Bookings Confirmed" },
-    { value: "allocated", label: "Allocated" },
+    { value: "allocated", label: "Hotels Booked" },
     { value: "paid", label: "Paid" },
     { value: "published", label: "Published" },
   ];

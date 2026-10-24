@@ -22,6 +22,7 @@ import {
 } from "@/src/components/ui/table";
 import { TableEmptyState } from "@/src/components/ui/EmptyState";
 import { StatusBadge } from "@/src/components/ui/StatusBadge";
+import { FLIGHT_PAYMENT_STEP_ENABLED } from "@/src/lib/constants";
 import { FiltersCard } from "@/src/components/ui/FiltersCard";
 import { Dropdown } from "@/src/components/ui/Dropdown";
 import { TruncatedTooltip } from "@/src/components/ui/TruncatedTooltip";
@@ -54,7 +55,7 @@ const STATUS_OPTIONS = [
   { value: "Draft", label: "Draft" },
   { value: "In Progress", label: "In Progress" },
   { value: "Confirmed", label: "Confirmed" },
-  { value: "Allocated", label: "Allocated" },
+  { value: "Allocated", label: "Hotels Booked" },
   { value: "Paid", label: "Paid" },
   { value: "Published", label: "Published" },
 ];
@@ -87,7 +88,7 @@ const API_STATUS_TO_UI_STATUS: Record<
     status: "Verified",
     displayStatus: "HA In Progress",
   },
-  allocated: { status: "Allocated", displayStatus: "Allocated" },
+  allocated: { status: "Allocated", displayStatus: "Hotels Booked" },
   paid: { status: "Paid", displayStatus: "Paid" },
   published: { status: "Published", displayStatus: "Published" },
 };
@@ -503,7 +504,11 @@ export default function CancellationPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center justify-start gap-1 -translate-x-1">
-                        {(c.status === "Paid" || c.displayStatus === "Paid") && hasPermission("edit") && (
+                        {(c.status === "Paid" ||
+                          c.displayStatus === "Paid" ||
+                          // Without the payment step an allocated flight is ready to publish.
+                          (!FLIGHT_PAYMENT_STEP_ENABLED && c.status === "Allocated")) &&
+                          hasPermission("edit") && (
                           <button
                             onClick={() => setPublishTarget(c)}
                             className="p-1 text-[#6B7280] hover:text-emerald-600 transition-colors cursor-pointer"
