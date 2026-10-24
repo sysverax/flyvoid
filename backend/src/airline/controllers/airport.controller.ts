@@ -53,6 +53,7 @@ import { BaseResponseDto } from "../../common/dto/base-response.dto";
 import { RequestId } from "../../common/decorators/request-id.decorator";
 import {
   AirportListResponseDto,
+  AirportShortListResponseDto,
   AirportResponseDto,
   CreateAirportRequestDto,
   GetAirportsQueryDto,
@@ -69,6 +70,7 @@ import { AirportService } from "../services/airport.service";
   BaseResponseDto,
   AirportResponseDto,
   AirportListResponseDto,
+  AirportShortListResponseDto,
   UpdateAirlineAirportsResponseDto,
   UpdateAirlineAirportsRequestDto,
   UpdateAirportRequestDto,
@@ -100,10 +102,11 @@ export class AirportController {
     Returns a paginated list of airports. 
       Accessible to SUPER_ADMIN and STAFF with VIEW access on the AIRPORTS asset.
       Accessible to AIRLINE users with VIEW access on the AIRPORTS asset.
-      Supports optional filters: 
+      Supports optional filters:
         1. countryCode (2-letter ISO alpha-2)
         2. status (active/inactive) - not supported for AIRLINE users, as they only see active airports.
-        3. free-text search on airport name, IATA code, or ICAO code. 
+        3. free-text search on airport name, IATA code, or ICAO code.
+      shorten=true (default false) returns each airport as id, name and iataCode only, for dropdowns; filters and pagination work the same.
       Validations
         1. page must be >= 1
         2. countryCode must be exactly 2 uppercase letters`,
@@ -121,7 +124,12 @@ export class AirportController {
               type: "string",
               example: "Airports fetched successfully",
             },
-            data: { $ref: getSchemaPath(AirportListResponseDto) },
+            data: {
+              oneOf: [
+                { $ref: getSchemaPath(AirportListResponseDto) },
+                { $ref: getSchemaPath(AirportShortListResponseDto) },
+              ],
+            },
           },
         },
       ],
@@ -143,7 +151,9 @@ export class AirportController {
     @Req() req: AuthenticatedRequest,
     @Query() query: GetAirportsQueryDto,
     @RequestId() requestId: string,
-  ): Promise<BaseResponseDto<AirportListResponseDto>> {
+  ): Promise<
+    BaseResponseDto<AirportListResponseDto | AirportShortListResponseDto>
+  > {
     const data = await this.airportService.listAirports(
       req.user,
       query,

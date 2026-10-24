@@ -7,3 +7,4 @@ export * from "./airport-list-with-assignment-response.dto";
 export * from "./airport-list-response.dto";
 export * from "./update-airline-airports-request.dto";
 export * from "./update-airline-airports-response.dto";
+export * from "./airport-short-list-response.dto";

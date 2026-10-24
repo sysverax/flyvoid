@@ -69,6 +69,7 @@ import {
   BookingResponseDto,
   CancelledFlightListResponseDto,
   CancelledFlightAdminListResponseDto,
+  CancelledFlightShortListResponseDto,
   ImportBookingResponseDto,
   UpdateBookingDto,
   ReviewCancelledFlightResponseDto,
@@ -102,6 +103,7 @@ import { CancelledFlightsSummaryResponseDto } from "./dto/cancelled-flights-summ
   CancelledFlightBookingsListResponseDto,
   CancelledFlightListResponseDto,
   CancelledFlightAdminListResponseDto,
+  CancelledFlightShortListResponseDto,
   ImportBookingResponseDto,
   HotelAllocationsDto,
   HotelAllocationProgressDto,
@@ -134,7 +136,7 @@ export class CancelledFlightsController {
   @ApiOperation({
     summary: "List cancelled flights",
     description:
-      "Returns paginated cancelled flights with optional filters: status, search, airlineId, startDate, endDate (cancellation date as YYYY-MM-DD, both inclusive). Platform users can view all airlines and can filter by airlineId; airline users only see flights for their own airline.",
+      "Returns paginated cancelled flights with optional filters: status, search, airlineId, startDate, endDate (cancellation date as YYYY-MM-DD, both inclusive). Platform users can view all airlines and can filter by airlineId; airline users only see flights for their own airline. shorten=true (default false) returns each cancelled flight as id, flightNumber and cancellationDate only, for dropdowns; filters and pagination work the same.",
   })
   @ApiOkResponse({
     schema: {
@@ -151,6 +153,9 @@ export class CancelledFlightsController {
             { $ref: "#/components/schemas/CancelledFlightListResponseDto" },
             {
               $ref: "#/components/schemas/CancelledFlightAdminListResponseDto",
+            },
+            {
+              $ref: "#/components/schemas/CancelledFlightShortListResponseDto",
             },
           ],
         },
@@ -173,7 +178,9 @@ export class CancelledFlightsController {
     @RequestLogger() requestLogger: Logger,
   ): Promise<
     BaseResponseDto<
-      CancelledFlightListResponseDto | CancelledFlightAdminListResponseDto
+      | CancelledFlightListResponseDto
+      | CancelledFlightAdminListResponseDto
+      | CancelledFlightShortListResponseDto
     >
   > {
     requestLogger.info("Listing cancelled flights", {

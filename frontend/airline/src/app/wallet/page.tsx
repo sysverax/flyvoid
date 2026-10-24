@@ -38,6 +38,13 @@ export interface WalletTransaction {
   status: "Success" | "Pending" | "Failed";
 }
 
+// Values are the API's transaction types (TRANSACTION_REFERENCE_TYPES).
+const typeOptions = [
+  { value: "All Types", label: "All Types" },
+  { value: "ADJUSTMENT", label: "Adjustment" },
+  { value: "BOOKING", label: "Hotel Booking" },
+];
+
 const statusOptions = [
   { value: "All Status", label: "All Status" },
   { value: "Success", label: "Success" },
@@ -53,6 +60,7 @@ export default function WalletPage() {
 
   // Search & Filter state inputs
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedType, setSelectedType] = useState("All Types");
   const [selectedStatus, setSelectedStatus] = useState("All Status");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -83,6 +91,8 @@ export default function WalletPage() {
   const fetchWalletTransactions = async () => {
     setIsLoadingTransactions(true);
     try {
+      const typeParam =
+        selectedType !== "All Types" ? selectedType : undefined;
       const statusParam =
         selectedStatus !== "All Status"
           ? selectedStatus.toUpperCase()
@@ -102,6 +112,7 @@ export default function WalletPage() {
       }
 
       const res = await walletService.getWalletTransactions({
+        type: typeParam,
         status: statusParam,
         startDate: formattedStartDate,
         endDate: formattedEndDate,
@@ -164,10 +175,11 @@ export default function WalletPage() {
 
   useEffect(() => {
     fetchWalletTransactions();
-  }, [selectedStatus, startDate, endDate, currentPage, resultsPerPage]);
+  }, [selectedType, selectedStatus, startDate, endDate, currentPage, resultsPerPage]);
 
   const handleClearAll = () => {
     setSearchQuery("");
+    setSelectedType("All Types");
     setSelectedStatus("All Status");
     setStartDate("");
     setEndDate("");
@@ -298,6 +310,20 @@ export default function WalletPage() {
           searchPlaceholder="Search by transaction ID"
           onClearFilters={handleClearAll}
         >
+          {/* Type Dropdown */}
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center">
+            <Dropdown
+              value={selectedType}
+              onChange={(val) => {
+                setSelectedType(val);
+                setCurrentPage(1);
+              }}
+              options={typeOptions}
+              triggerWidthClass="w-full sm:w-44"
+              widthClass="w-full sm:w-44"
+            />
+          </div>
+
           {/* Status Dropdown */}
           <div className="flex flex-col gap-1 sm:flex-row sm:items-center">
             <Dropdown

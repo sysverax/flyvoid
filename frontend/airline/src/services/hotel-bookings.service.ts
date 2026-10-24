@@ -1,4 +1,5 @@
 import { apiClient, extractErrorMessage } from "../lib/api-client";
+import { DROPDOWN_LIMIT } from "../lib/constants";
 import type { HotelPoliciesDto } from "./cancellation.service";
 
 export interface HotelBookingPassengerDTO {
@@ -183,17 +184,21 @@ export const hotelBookingsService = {
     }
   },
 
+  /** Cancelled flights for dropdowns: GET /cancelled-flights?shorten=true. */
   async getCancelledFlights(params?: {
     page?: number;
     limit?: number;
     search?: string;
-  }): Promise<Array<{ id: number; flightNumber: string }>> {
+  }): Promise<
+    Array<{ id: number; flightNumber: string; cancellationDate: string }>
+  > {
     try {
       const { data } = await apiClient.get("/cancelled-flights", {
         params: {
           page: params?.page || 1,
-          limit: params?.limit || 200,
+          limit: params?.limit || DROPDOWN_LIMIT,
           search: params?.search,
+          shorten: true,
         },
       });
       return data.data?.cancelledFlights || [];

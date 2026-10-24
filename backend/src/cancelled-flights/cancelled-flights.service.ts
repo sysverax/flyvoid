@@ -28,6 +28,8 @@ import {
   CancelledFlightAdminListResponseDto,
   CancelledFlightListItemDto,
   CancelledFlightAdminListItemDto,
+  CancelledFlightShortListItemDto,
+  CancelledFlightShortListResponseDto,
   ImportBookingResponseDto,
   ReviewCancelledFlightResponseDto,
   AllocateHotelDto,
@@ -743,7 +745,9 @@ export class CancelledFlightsService {
     requestId: string,
     requestLogger: Logger,
   ): Promise<
-    CancelledFlightListResponseDto | CancelledFlightAdminListResponseDto
+    | CancelledFlightListResponseDto
+    | CancelledFlightAdminListResponseDto
+    | CancelledFlightShortListResponseDto
   > {
     const page = query.page || 1;
     const limit = query.limit || 10;
@@ -823,6 +827,19 @@ export class CancelledFlightsService {
     });
 
     const pagination = { currentPage: page, limit, totalCount };
+
+    // shorten=true: only what a dropdown needs, same shape for all users.
+    if (query.shorten) {
+      return {
+        cancelledFlights: flights.map((flight) => ({
+          id: flight.id,
+          flightNumber: flight.flightNumber,
+          cancellationDate: flight.cancellationDate,
+        })) satisfies CancelledFlightShortListItemDto[],
+        pagination,
+      };
+    }
+
     const allocationStarted =
       await this.cancelledFlightsRepository.findFlightIdsWithHotelBookings(
         flights.map((flight) => flight.id),
