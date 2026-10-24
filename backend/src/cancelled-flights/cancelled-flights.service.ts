@@ -849,12 +849,20 @@ export class CancelledFlightsService {
         flights.map((flight) => flight.id),
       );
 
-    // Platform users get the owning airline (id, name) on each item; airline
-    // users already know their own airline, so they get the base shape.
+    // Platform users get the owning airline (id, name) and the hotel, room and
+    // earnings figures on each item; airline users already know their own
+    // airline and must not see platform earnings, so they get the base shape.
     if (user.userType === UserType.PLATFORM) {
+      const hotelsByFlight =
+        await this.cancelledFlightsRepository.countBookedHotelsByFlightIds(
+          flights.map((flight) => flight.id),
+        );
       return {
         cancelledFlights: flights.map((flight) => ({
           ...this.toCancelledFlightListItem(flight, allocationStarted),
+          totalHotels: hotelsByFlight.get(flight.id) ?? 0,
+          totalRooms: flight.totalHotelRooms ?? 0,
+          totalEarnings: Number(flight.totalEarnings ?? 0),
           airline: {
             id: flight.airline.id,
             name: flight.airline.name,

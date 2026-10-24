@@ -376,6 +376,24 @@ export class CancelledFlightsRepository {
     }
   }
 
+  /** Distinct hotels with a confirmed PNR booking, per flight (flights with none are absent). */
+  async countBookedHotelsByFlightIds(
+    cancelledFlightIds: number[],
+  ): Promise<Map<number, number>> {
+    if (cancelledFlightIds.length === 0) return new Map();
+    const rows: Array<{ id: number; hotels: string }> = await this.manager.query(
+      `SELECT pnr.cancelled_flight_id AS "id",
+              COUNT(DISTINCT hb.hotel_id) AS "hotels"
+         FROM cancelled_flight_bookings pnr
+         JOIN hotel_bookings hb ON hb.id = pnr.confirmed_hotel_booking_id
+        WHERE pnr.cancelled_flight_id = ANY($1)
+          AND pnr.allocation_status = $2
+        GROUP BY pnr.cancelled_flight_id`,
+      [cancelledFlightIds, HotelAllocationStatus.CONFIRMED],
+    );
+    return new Map(rows.map((row) => [Number(row.id), Number(row.hotels)]));
+  }
+
   /** Flights (of these ids) that have at least one hotel booking attempt. */
   async findFlightIdsWithHotelBookings(
     cancelledFlightIds: number[],
