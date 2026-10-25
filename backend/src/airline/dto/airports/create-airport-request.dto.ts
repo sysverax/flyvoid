@@ -13,6 +13,7 @@ import {
 } from "class-validator";
 import { ApiProperty } from "@nestjs/swagger";
 import { AirportType } from "../../constants";
+import { IsIanaTimeZone } from "../../../common/validator/time-zone.validator";
 import { IsSafeText } from "../../../common/validator/injection.validator";
 
 export class CreateAirportRequestDto {
@@ -87,7 +88,11 @@ export class CreateAirportRequestDto {
   @IsLongitude()
   longitude!: number;
 
-  @ApiProperty({ example: "Asia/Dubai" })
+  @ApiProperty({
+    example: "Asia/Dubai",
+    description:
+      "IANA timezone name, e.g. \"Asia/Dubai\" or \"UTC\". Offsets like \"+05:30\" and abbreviations like \"GST\" are rejected.",
+  })
   @IsString()
   @Transform(({ value }: { value: unknown }) =>
     typeof value === "string" ? value.trim() : value,
@@ -95,6 +100,7 @@ export class CreateAirportRequestDto {
   @IsNotEmpty()
   @IsSafeText()
   @MaxLength(100)
+  @IsIanaTimeZone()
   timezone!: string;
 
   @ApiProperty({ example: true })

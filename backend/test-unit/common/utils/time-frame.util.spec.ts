@@ -3,7 +3,7 @@ import {
   TIME_FRAME,
   TimeFrame,
   TREND_GRANULARITY,
-} from "../constants/time-frame.constants";
+} from "../../../src/common/constants/time-frame.constants";
 import {
   buildTrendWindow,
   describeTimeFrameRange,
@@ -16,7 +16,7 @@ import {
   resolveTimeZone,
   toBucketLabel,
   toLocalDateTime,
-} from "./time-frame.util";
+} from "../../../src/common/utils/time-frame.util";
 
 const COLOMBO = "Asia/Colombo"; // UTC+05:30, no DST
 const NEW_YORK = "America/New_York"; // UTC-05:00 / -04:00 with DST

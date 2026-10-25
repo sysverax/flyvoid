@@ -6,6 +6,7 @@ import { useLockBodyScroll } from "@/src/hooks/useLockBodyScroll";
 import { Airport } from "@/src/types/airports";
 import { cn } from "@/src/lib/utils";
 import { Dropdown, DropdownOption } from "@/src/components/ui/Dropdown";
+import { TIMEZONE_OPTIONS, timezoneOptionsWith } from "@/src/lib/timezones";
 import { countries } from "countries-list";
 
 const AIRPORT_TYPES: DropdownOption[] = [
@@ -202,7 +203,7 @@ export function AddEditAirportModal({
     onSave(submissionFields);
   };
 
-  const handleTextChange = (key: "name" | "timezone" | "postalCode" | "address") => (
+  const handleTextChange = (key: "name" | "postalCode" | "address") => (
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
     const val = e.target.value;
@@ -253,6 +254,15 @@ export function AddEditAirportModal({
     setErrors((prev) => ({
       ...prev,
       country: validateField("country", val) || undefined,
+    }));
+  };
+
+  const handleTimezoneChange = (val: string) => {
+    setFormState((prev) => ({ ...prev, timezone: val }));
+    setTouched((prev) => ({ ...prev, timezone: true }));
+    setErrors((prev) => ({
+      ...prev,
+      timezone: validateField("timezone", val) || undefined,
     }));
   };
 
@@ -426,16 +436,25 @@ export function AddEditAirportModal({
                 />
               </Field>
 
+              {/* Timezone: IANA names only (same list as the airline form) */}
               <Field label="Timezone *" error={errors.timezone}>
-                <input
-                  name="timezone"
-                  placeholder=""
+                <Dropdown
                   value={formState.timezone}
-                  onChange={handleTextChange("timezone")}
-                  onBlur={handleBlur("timezone")}
-                  required
+                  onChange={handleTimezoneChange}
+                  options={
+                    formState.timezone
+                      ? timezoneOptionsWith(formState.timezone)
+                      : [{ value: "", label: "Select timezone" }, ...TIMEZONE_OPTIONS]
+                  }
+                  widthClass="w-full"
+                  triggerWidthClass="w-full"
+                  heightClass="h-[49px]"
+                  bgClass="bg-white"
+                  error={!!errors.timezone}
                   disabled={isSaving}
-                  className={cn(inputCls, errors.timezone && "border-rose-500 focus:ring-rose-500/20 focus:border-rose-500")}
+                  maxListHeightClass="max-h-[296px]"
+                  searchable
+                  searchMatch="includes"
                 />
               </Field>
 

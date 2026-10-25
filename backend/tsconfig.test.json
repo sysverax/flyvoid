@@ -5,6 +5,6 @@
     "outDir": "./dist-test",
     "strictPropertyInitialization": false
   },
-  "include": ["src/**/*.ts", "test-e2e/**/*.ts"],
+  "include": ["src/**/*.ts", "test-unit/**/*.ts", "test-e2e/**/*.ts"],
   "exclude": ["node_modules", "dist", "dist-test"]
 }

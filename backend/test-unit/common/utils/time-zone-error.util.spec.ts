@@ -7,8 +7,8 @@ import {
   Logger,
 } from "@nestjs/common";
 import { QueryFailedError } from "typeorm";
-import { DatabaseExceptionFilter } from "../filters/database-exception.filter";
-import { toUnsupportedTimeZoneException } from "./time-zone-error.util";
+import { DatabaseExceptionFilter } from "../../../src/common/filters/database-exception.filter";
+import { toUnsupportedTimeZoneException } from "../../../src/common/utils/time-zone-error.util";
 
 function queryFailed(code: string, message: string): QueryFailedError {
   const driverError = Object.assign(new Error(message), { code });

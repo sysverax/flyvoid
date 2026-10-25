@@ -33,6 +33,13 @@ export class CancelledFlightEntity {
   @Column({ name: "cancellation_date", type: "date" })
   cancellationDate!: string;
 
+  /** Hotel stay at the departure airport: calendar dates (YYYY-MM-DD), check-out exclusive. */
+  @Column({ name: "check_in_date", type: "date" })
+  checkInDate!: string;
+
+  @Column({ name: "check_out_date", type: "date" })
+  checkOutDate!: string;
+
   @Column({
     name: "cancellation_reason",
     type: "varchar",

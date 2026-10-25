@@ -19,6 +19,18 @@ export class BaseCancelledFlightResponseDto {
   cancellationDate!: string;
 
   @ApiProperty({
+    example: "2024-01-15",
+    description: "Hotel check-in (YYYY-MM-DD)",
+  })
+  checkInDate!: string;
+
+  @ApiProperty({
+    example: "2024-01-16",
+    description: "Hotel check-out (YYYY-MM-DD, exclusive)",
+  })
+  checkOutDate!: string;
+
+  @ApiProperty({
     example: "Severe weather conditions at departure",
     nullable: true,
   })

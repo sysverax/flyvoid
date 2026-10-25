@@ -274,7 +274,7 @@ export class CancelledFlightsController {
   @ApiOperation({
     summary: "Create a cancelled flight record",
     description:
-      "Creates a new cancelled flight with status = draft. Departure and arrival airports must differ.",
+      "Creates a new cancelled flight with status = draft. Departure and arrival airports must differ. cancellationDate, checkInDate and checkOutDate are calendar dates (YYYY-MM-DD, no timezone). Stay rules (400 when broken): check-in today or later at the departure airport (its own timezone); check-in on or after the cancellation date; check-out after check-in; at most STAY_MAX_NIGHTS nights (default 7); check-in at most STAY_MAX_CHECK_IN_DAYS_AHEAD days ahead (default 30).",
   })
   @ApiCreatedResponse({
     schema: {
@@ -339,7 +339,7 @@ export class CancelledFlightsController {
   @ApiOperation({
     summary: "Update a cancelled flight record",
     description:
-      "Partially updates a cancelled flight. Departure and arrival airports must differ if both are set.",
+      "Partially updates a cancelled flight (draft or in_progress only). Departure and arrival airports must differ if both are set. When cancellationDate, checkInDate, checkOutDate or departureAirportId is sent, the stay rules of the create endpoint are checked on the new values combined with the stored ones; other edits do not re-check the stay.",
   })
   @ApiParam({ name: "id", description: "Cancelled flight id" })
   @ApiNotFoundResponse({

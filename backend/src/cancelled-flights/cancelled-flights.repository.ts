@@ -11,6 +11,7 @@ import {
 import { QueryDeepPartialEntity } from "typeorm/query-builder/QueryPartialEntity";
 import { config } from "../config/config";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
+import { AirportEntity } from "../airline/entities/airport.entity";
 import { BookingEntity } from "./entities/booking.entity";
 import {
   FlightStatus,
@@ -224,6 +225,16 @@ export class CancelledFlightsRepository {
   ) {}
 
   // ── CancelledFlight ──────────────────────────────────────────────────────
+
+  /** IATA code and IANA timezone of an airport (stay-date validation). */
+  async findAirportTimezone(
+    airportId: number,
+  ): Promise<{ iataCode: string; timezone: string } | null> {
+    return this.manager.getRepository(AirportEntity).findOne({
+      where: { id: airportId },
+      select: { iataCode: true, timezone: true },
+    });
+  }
 
   async createFlight(
     payload: Partial<CancelledFlightEntity>,

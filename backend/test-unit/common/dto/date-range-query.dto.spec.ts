@@ -2,11 +2,11 @@ import { describe, expect, it } from "@jest/globals";
 import { IntersectionType } from "@nestjs/swagger";
 import { plainToInstance } from "class-transformer";
 import { validate } from "class-validator";
-import { PaginationQueryDto } from "./pagination-query.dto";
+import { PaginationQueryDto } from "../../../src/common/dto/pagination-query.dto";
 import {
   CalendarDateRangeQueryDto,
   TimestampRangeQueryDto,
-} from "./date-range-query.dto";
+} from "../../../src/common/dto/date-range-query.dto";
 
 // Mirrors the global ValidationPipe options in main.ts.
 async function check<T extends object>(
