@@ -39,23 +39,23 @@ export function Pagination({
   const endIndex = Math.min(currentPage * resultsPerPage, totalResults);
 
   return (
-    <div className="flex flex-col items-center justify-between gap-4 sm:flex-row font-urbanist ">
+    <div className="flex flex-col items-center justify-between gap-4 sm:flex-row font-figtree ">
       {/* Show Results counts */}
-      <div className="text-[14px] text-[#1F2937] font-medium font-urbanist mt-2">
+      <div className="text-[14px] text-[#1F2937] font-medium font-figtree mt-2">
         Showing {startIndex}-{endIndex} of {totalResults} results
       </div>
 
       {/* Results page size and navigations */}
       <div className="flex items-center gap-6 mt-2">
         <div className="flex h-[34px] items-center gap-[8px]">
-          <span className="text-[14px] text-[#1F2937] font-medium font-urbanist">
+          <span className="text-[14px] text-[#1F2937] font-medium font-figtree">
             Results per page:
           </span>
           <div className="relative" ref={dropdownRef}>
             <button
               type="button"
               onClick={() => setIsOpen(!isOpen)}
-              className="w-[75px] flex items-center justify-between border border-[#D1D5DB] text-[#6B7280] py-1.5 pl-3 pr-2.5 rounded-[8px] text-[14px] font-medium hover:bg-gray-50 cursor-pointer focus:outline-none transition-all h-[34px] font-urbanist"
+              className="w-[75px] flex items-center justify-between border border-[#D1D5DB] text-[#6B7280] py-1.5 pl-3 pr-2.5 rounded-[8px] text-[14px] font-medium hover:bg-gray-50 cursor-pointer focus:outline-none transition-all h-[34px] font-figtree"
             >
               <span className="text-gray-500 text-[14px] font-medium">{resultsPerPage}</span>
               <ChevronDown
@@ -80,7 +80,7 @@ export function Pagination({
                         setIsOpen(false);
                       }}
                       className={cn(
-                        "w-full text-center py-[3px] rounded-[4px] text-[14px] font-medium transition-colors cursor-pointer font-urbanist",
+                        "w-full text-center py-[3px] rounded-[4px] text-[14px] font-medium transition-colors cursor-pointer font-figtree",
                         isSelected
                           ? "bg-[#203663] text-white font-semibold"
                           : "text-gray-700 hover:bg-gray-100"

@@ -543,6 +543,8 @@ export class HotelBookingsService {
         departureAirportId: flight.departureAirportId,
         arrivalAirportId: flight.arrivalAirportId,
         cancellationDate: flight.cancellationDate,
+        checkInDate: flight.checkInDate,
+        checkOutDate: flight.checkOutDate,
         cancellationReason: flight.cancellationReason ?? null,
         status: flight.status,
         createdAt: flight.createdAt.toISOString(),

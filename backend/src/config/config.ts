@@ -207,6 +207,15 @@ export const config = {
     // Standard airline PNRs hold at most 9 passengers; larger groups use separate PNRs.
     maxPassengersPerPnr: parseInt(process.env.MAX_PASSENGERS_PER_PNR ?? "9", 10),
   },
+  // Hotel stay dates of a cancelled flight (create / update validation).
+  stay: {
+    maxNights: parseInt(process.env.STAY_MAX_NIGHTS ?? "7", 10),
+    // How far ahead of today (at the departure airport) check-in may be.
+    maxCheckInDaysAhead: parseInt(
+      process.env.STAY_MAX_CHECK_IN_DAYS_AHEAD ?? "30",
+      10,
+    ),
+  },
   /** All hotel prices, totals and invoices are in this currency. */
   currency: "USD",
   platformFeePercentage: parseFloat(

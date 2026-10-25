@@ -611,7 +611,7 @@ export function EditAirlineModal({
               {/* Table */}
               <div className="self-stretch rounded-[12px] border border-[#E5E7EB] bg-white overflow-hidden w-full">
                 <Table>
-                  <TableHeader className="pt-1 uppercase text-xs font-medium text-gray-500 font-inter h-10 bg-gray-50">
+                  <TableHeader className="pt-1 uppercase text-xs font-medium text-gray-500 font-figtree h-10 bg-gray-50">
                     <TableRow>
                       <TableHead className="flex-1 min-w-[168px]">
                         <SortHeader<any>
@@ -669,7 +669,7 @@ export function EditAirlineModal({
                             {ap.name}
                           </TableCell>
                           <TableCell>
-                            <span className="rounded-sm bg-gray-200 text-gray-800 font-inter text-xs px-2.5 py-1.5 font-medium">
+                            <span className="rounded-sm bg-gray-200 text-gray-800 font-figtree text-xs px-2.5 py-1.5 font-medium">
                               {ap.iata}
                             </span>
                           </TableCell>
@@ -679,7 +679,7 @@ export function EditAirlineModal({
                           <TableCell>
                             <span
                               className={cn(
-                                "inline-flex items-center rounded-2xl px-2.5 py-0.5 text-xs font-medium font-inter",
+                                "inline-flex items-center rounded-2xl px-2.5 py-0.5 text-xs font-medium font-figtree",
                                 ap.status === "Active"
                                   ? "bg-green-100 text-green-800"
                                   : "bg-gray-100 text-gray-800"

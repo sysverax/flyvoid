@@ -126,6 +126,23 @@ fee. Better long term: read the fee from the API instead of a constant.
 
 ---
 
+## Hotel stay limits (backend environment)
+
+**Limits on a cancelled flight's hotel stay**, checked when a flight is created
+or its dates are updated. Set in the backend environment (`.env`), read in
+`backend/src/config/config.ts` as `config.stay`.
+
+| Variable | Default | Rule |
+|---|---|---|
+| `STAY_MAX_NIGHTS` | `7` | check-out at most this many nights after check-in |
+| `STAY_MAX_CHECK_IN_DAYS_AHEAD` | `30` | check-in at most this many days after today at the departure airport |
+
+The other stay rules are fixed: check-in today or later at the departure
+airport (its own timezone), on or after the cancellation date, and check-out
+after check-in. See `backend/src/cancelled-flights/stay-dates.ts`.
+
+---
+
 ## Adding a new switch
 
 1. Put it in the app's constants file (table above), with a comment saying what

@@ -814,6 +814,9 @@ export default function CancellationWizard({
           if (f) {
             if (f.flightNumber) setNewFlight(f.flightNumber);
             if (f.cancellationDate) setNewDate(toIsoDate(f.cancellationDate));
+            // Stored stay dates (YYYY-MM-DD) override the cancellation-date default.
+            if (f.checkInDate) setCheckInDate(toIsoDate(f.checkInDate));
+            if (f.checkOutDate) setCheckOutDate(toIsoDate(f.checkOutDate));
             if (f.route?.departureAirport?.code)
               setNewDepartureAirport(f.route.departureAirport.code);
             if (f.route?.arrivalAirport?.code)
@@ -1832,6 +1835,8 @@ export default function CancellationWizard({
           departureAirportId: depId,
           arrivalAirportId: arrId,
           cancellationDate: formattedDate,
+          checkInDate: toIsoDate(checkInDate),
+          checkOutDate: toIsoDate(checkOutDate),
           cancellationReason: reasonEnum || null,
           cancellationReasonText: reasonText || null,
         };
@@ -1851,6 +1856,8 @@ export default function CancellationWizard({
           departureAirportId: depId,
           arrivalAirportId: arrId,
           cancellationDate: formattedDate,
+          checkInDate: toIsoDate(checkInDate),
+          checkOutDate: toIsoDate(checkOutDate),
           ...(reasonEnum ? { cancellationReason: reasonEnum } : {}),
           ...(reasonText ? { cancellationReasonText: reasonText } : {}),
         };

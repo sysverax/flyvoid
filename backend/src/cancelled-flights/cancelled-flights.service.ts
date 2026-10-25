@@ -48,6 +48,7 @@ import { GetCancelledFlightsSummaryQueryDto } from "./dto/get-cancelled-flights-
 import { CancelledFlightsSummaryResponseDto } from "./dto/cancelled-flights-summary-response.dto";
 import { request } from "http";
 import { config } from "../config/config";
+import { StayDates, stayDatesError, todayIn } from "./stay-dates";
 import {
   FLIGHT_PAYMENT_STEP_ENABLED,
   PUBLISHABLE_FLIGHT_STATUSES,
@@ -76,6 +77,42 @@ export class CancelledFlightsService {
     private readonly pdfService: PdfService,
   ) {}
 
+  /**
+   * Hotel stay rules (stay-dates.ts), with "today" taken at the departure
+   * airport: the hotels are there, and near midnight its date can differ from
+   * the server's or the operator's.
+   */
+  private async assertValidStayDates(
+    stay: StayDates,
+    departureAirportId: number,
+    requestLogger: Logger,
+  ): Promise<void> {
+    const airport =
+      await this.cancelledFlightsRepository.findAirportTimezone(
+        departureAirportId,
+      );
+    if (!airport) {
+      throw new BadRequestException("Departure airport not found");
+    }
+
+    const error = stayDatesError(stay, {
+      today: todayIn(airport.timezone),
+      airportCode: airport.iataCode,
+      maxNights: config.stay.maxNights,
+      maxCheckInDaysAhead: config.stay.maxCheckInDaysAhead,
+    });
+    if (error) {
+      requestLogger.warn("Rejected cancelled flight stay dates", {
+        context: this.context,
+        departureAirportId,
+        timezone: airport.timezone,
+        ...stay,
+        error,
+      });
+      throw new BadRequestException(error);
+    }
+  }
+
   private toCancelledFlightResponse(
     flight: CancelledFlightEntity,
   ): CancelledFlightResponseDto {
@@ -86,6 +123,8 @@ export class CancelledFlightsService {
       departureAirportId: flight.departureAirportId,
       arrivalAirportId: flight.arrivalAirportId,
       cancellationDate: flight.cancellationDate,
+      checkInDate: flight.checkInDate,
+      checkOutDate: flight.checkOutDate,
       cancellationReason: flight.cancellationReason ?? null,
       cancellationReasonText: flight.cancellationReasonText ?? null,
       status: flight.status,
@@ -132,6 +171,16 @@ export class CancelledFlightsService {
       );
     }
 
+    await this.assertValidStayDates(
+      {
+        cancellationDate: dto.cancellationDate,
+        checkInDate: dto.checkInDate,
+        checkOutDate: dto.checkOutDate,
+      },
+      dto.departureAirportId,
+      requestLogger,
+    );
+
     const flight = await this.cancelledFlightsRepository.createFlight(
       {
         flightNumber: dto.flightNumber,
@@ -139,6 +188,8 @@ export class CancelledFlightsService {
         departureAirportId: dto.departureAirportId,
         arrivalAirportId: dto.arrivalAirportId,
         cancellationDate: dto.cancellationDate,
+        checkInDate: dto.checkInDate,
+        checkOutDate: dto.checkOutDate,
         cancellationReason:
           (dto.cancellationReason as CancellationReason) ?? null,
         cancellationReasonText: dto.cancellationReasonText ?? null,
@@ -196,6 +247,8 @@ export class CancelledFlightsService {
       dto.departureAirportId !== undefined ||
       dto.arrivalAirportId !== undefined ||
       dto.cancellationDate !== undefined ||
+      dto.checkInDate !== undefined ||
+      dto.checkOutDate !== undefined ||
       dto.cancellationReason !== undefined ||
       dto.cancellationReasonText !== undefined;
 
@@ -222,6 +275,26 @@ export class CancelledFlightsService {
       );
     }
 
+    // Stay rules on the new values combined with the stored ones, only when a
+    // field they depend on changes (so editing e.g. the flight number never
+    // fails because a stored check-in date has passed).
+    if (
+      dto.cancellationDate !== undefined ||
+      dto.checkInDate !== undefined ||
+      dto.checkOutDate !== undefined ||
+      dto.departureAirportId !== undefined
+    ) {
+      await this.assertValidStayDates(
+        {
+          cancellationDate: dto.cancellationDate ?? flight.cancellationDate,
+          checkInDate: dto.checkInDate ?? flight.checkInDate,
+          checkOutDate: dto.checkOutDate ?? flight.checkOutDate,
+        },
+        nextDepartureAirportId,
+        requestLogger,
+      );
+    }
+
     if (dto.flightNumber !== undefined) {
       flight.flightNumber = dto.flightNumber;
     }
@@ -233,6 +306,12 @@ export class CancelledFlightsService {
     }
     if (dto.cancellationDate !== undefined) {
       flight.cancellationDate = dto.cancellationDate;
+    }
+    if (dto.checkInDate !== undefined) {
+      flight.checkInDate = dto.checkInDate;
+    }
+    if (dto.checkOutDate !== undefined) {
+      flight.checkOutDate = dto.checkOutDate;
     }
     if (dto.cancellationReason !== undefined) {
       flight.cancellationReason = dto.cancellationReason;
@@ -1088,6 +1167,8 @@ export class CancelledFlightsService {
           },
         },
         cancellationDate: flight.cancellationDate,
+        checkInDate: flight.checkInDate,
+        checkOutDate: flight.checkOutDate,
         cancellationReason: flight.cancellationReason ?? null,
         status: flight.status,
         createdAt: flight.createdAt.toISOString(),
@@ -1360,6 +1441,8 @@ export class CancelledFlightsService {
         departureAirportId: flight.departureAirportId,
         arrivalAirportId: flight.arrivalAirportId,
         cancellationDate: flight.cancellationDate,
+        checkInDate: flight.checkInDate,
+        checkOutDate: flight.checkOutDate,
         cancellationReason: flight.cancellationReason ?? null,
         status: flight.status,
         createdAt: flight.createdAt.toISOString(),

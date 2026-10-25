@@ -436,7 +436,7 @@ export default function AirportsPage() {
               ) : (
                 sortedAirports.map((airport) => (
                   <TableRow key={airport.id}>
-                    <TableCell className="leading-[100%] text-[15px] font-inter">
+                    <TableCell className="leading-[100%] text-[15px] font-figtree">
                       <TruncatedTooltip text={airport.name} side="top">
                         <div className="max-w-[200px] truncate cursor-default">
                           {airport.name}
@@ -444,31 +444,31 @@ export default function AirportsPage() {
                       </TruncatedTooltip>
                     </TableCell>
                     <TableCell>
-                      <span className="rounded-[4px] bg-[#E5E7EB] text-[#1F2937] font-inter text-[12px] px-2.5 py-1.5 font-medium h-[28px]">
+                      <span className="rounded-[4px] bg-[#E5E7EB] text-[#1F2937] font-figtree text-[12px] px-2.5 py-1.5 font-medium h-[28px]">
                         {airport.iataCode}
                       </span>
                     </TableCell>
-                    <TableCell className="font-inter">
+                    <TableCell className="font-figtree">
                       <TruncatedTooltip text={airport.city} side="top">
                         <div className="max-w-[150px] truncate cursor-default">
                           {airport.city}
                         </div>
                       </TruncatedTooltip>
                     </TableCell>
-                    <TableCell className="font-inter">
+                    <TableCell className="font-figtree">
                       {airport.latitude.toFixed(4)}
                     </TableCell>
-                    <TableCell className="font-inter">
+                    <TableCell className="font-figtree">
                       {airport.longitude.toFixed(4)}
                     </TableCell>
-                    <TableCell className="font-inter">
+                    <TableCell className="font-figtree">
                       <TruncatedTooltip text={airport.timezone} side="top">
                         <div className="max-w-[138px] truncate cursor-default">
                           {airport.timezone}
                         </div>
                       </TruncatedTooltip>
                     </TableCell>
-                    <TableCell className="font-inter">
+                    <TableCell className="font-figtree">
                       {airport.type}
                     </TableCell>
                     <TableCell>

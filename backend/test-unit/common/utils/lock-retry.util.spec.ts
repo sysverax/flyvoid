@@ -1,6 +1,6 @@
 import { describe, expect, it, jest } from "@jest/globals";
 import { QueryFailedError } from "typeorm";
-import { isLockConflictError, retryOnLockConflict } from "./lock-retry.util";
+import { isLockConflictError, retryOnLockConflict } from "../../../src/common/utils/lock-retry.util";
 
 function queryFailed(code: string): QueryFailedError {
   const driverError = Object.assign(new Error(`pg error ${code}`), { code });

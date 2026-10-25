@@ -42,6 +42,8 @@ export interface CreateCancelledFlightPayload {
   departureAirportId: number;
   arrivalAirportId: number;
   cancellationDate: string;
+  checkInDate: string;
+  checkOutDate: string;
   cancellationReason?: string;
   cancellationReasonText?: string;
   airlineId?: number;
@@ -52,6 +54,8 @@ export interface UpdateCancelledFlightPayload {
   departureAirportId?: number;
   arrivalAirportId?: number;
   cancellationDate?: string;
+  checkInDate?: string;
+  checkOutDate?: string;
   cancellationReason?: string | null;
   cancellationReasonText?: string | null;
 }
@@ -122,6 +126,8 @@ export interface ReviewCancelledFlightData {
       };
     };
     cancellationDate: string;
+    checkInDate?: string;
+    checkOutDate?: string;
     cancellationReason: string | null;
     cancellationReasonText?: string | null;
     status: string;

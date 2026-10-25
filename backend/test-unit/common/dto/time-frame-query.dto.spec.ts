@@ -1,9 +1,9 @@
 import { describe, expect, it } from "@jest/globals";
 import { plainToInstance } from "class-transformer";
 import { validate } from "class-validator";
-import { GetCancelledFlightsSummaryQueryDto } from "../../cancelled-flights/dto/get-cancelled-flights-summary-query.dto";
-import { GetAirlineTrendQueryDto } from "../../dashboard/dto/get-airline-trend-query.dto";
-import { TimeFrameQueryDto } from "./time-frame-query.dto";
+import { GetCancelledFlightsSummaryQueryDto } from "../../../src/cancelled-flights/dto/get-cancelled-flights-summary-query.dto";
+import { GetAirlineTrendQueryDto } from "../../../src/dashboard/dto/get-airline-trend-query.dto";
+import { TimeFrameQueryDto } from "../../../src/common/dto/time-frame-query.dto";
 
 // Mirrors the global ValidationPipe options in main.ts.
 async function errorsFor<T extends object>(

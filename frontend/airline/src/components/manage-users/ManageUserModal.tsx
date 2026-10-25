@@ -732,7 +732,7 @@ export function ManageUserModal({
                 </div>
               </div>
               <div className={cn(
-                "px-2.5 py-0.5 rounded-2xl flex justify-center items-center font-inter text-xs font-medium leading-4",
+                "px-2.5 py-0.5 rounded-2xl flex justify-center items-center font-figtree text-xs font-medium leading-4",
                 userStatus === "Active" ? "bg-green-100 text-green-800" : "bg-gray-200 text-gray-800"
               )}>
                 {userStatus}
