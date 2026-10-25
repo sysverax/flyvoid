@@ -12,7 +12,9 @@
 @theme {
   --color-primary: var(--primary);
   --color-primary-hover: var(--primary-hover);
-  --font-urbanist: var(--font-urbanist);
+  /* Figtree everywhere (loaded in layout.tsx as --font-figtree-family) */
+  --font-sans: var(--font-figtree-family), sans-serif;
+  --font-figtree: var(--font-figtree-family), sans-serif;
 }
 
 body {

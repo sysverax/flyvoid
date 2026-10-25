@@ -657,7 +657,7 @@ export default function AirlinesPage() {
                       <AirlineNameCell name={airline.airlineName} />
                     </TableCell>
                     <TableCell>
-                      <span className="rounded-[4px] bg-[#E5E7EB] text-[#1F2937] font-inter text-[12px] px-2.5 py-1.5 font-medium h-[28px]">
+                      <span className="rounded-[4px] bg-[#E5E7EB] text-[#1F2937] font-figtree text-[12px] px-2.5 py-1.5 font-medium h-[28px]">
                         {airline.airlineCode}
                       </span>
                     </TableCell>

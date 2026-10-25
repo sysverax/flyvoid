@@ -886,7 +886,7 @@ function SecurityTab() {
               </div>
               {isTfaEnabled && (
                 <div className="px-2.5 py-0.5 bg-green-100 rounded-2xl flex justify-center items-center shrink-0">
-                  <span className="text-center text-green-800 text-xs font-medium font-inter leading-4">
+                  <span className="text-center text-green-800 text-xs font-medium font-figtree leading-4">
                     Enabled
                   </span>
                 </div>
