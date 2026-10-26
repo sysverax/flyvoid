@@ -129,3 +129,115 @@ export class HotelBookingListResponseDto {
   @ApiProperty({ type: HotelBookingListPaginationDto })
   pagination!: HotelBookingListPaginationDto;
 }
+
+// ── Platform (admin) view ───────────────────────────────────────────────────
+
+export class HotelBookingAdminAirlineDto {
+  @ApiProperty({ example: 5 })
+  id!: number;
+
+  @ApiProperty({ example: "SkyLine Airways" })
+  name!: string;
+}
+
+export class HotelBookingAdminProviderDto {
+  @ApiProperty({ example: 1 })
+  id!: number;
+
+  @ApiProperty({ example: "RATEHAWK" })
+  code!: string;
+
+  @ApiProperty({ example: "RateHawk" })
+  name!: string;
+}
+
+export class HotelBookingAdminHotelDto {
+  @ApiProperty({ example: 42, nullable: true })
+  id!: number | null;
+
+  @ApiProperty({ example: "Grand Hotel" })
+  name!: string;
+}
+
+export class HotelBookingAdminPassengersDto {
+  @ApiProperty({ example: 2 })
+  adults!: number;
+
+  @ApiProperty({ example: 1 })
+  children!: number;
+}
+
+export class HotelBookingAdminPricingDto {
+  @ApiProperty({ example: 100, description: "Hotel price shown to the airline" })
+  hotelCost!: number;
+
+  @ApiProperty({ example: 92, description: "What the supplier charges the platform" })
+  buyingPrice!: number;
+
+  @ApiProperty({ example: 0, description: "Tax (not calculated yet, always 0)" })
+  tax!: number;
+
+  @ApiProperty({ example: 0 })
+  discount!: number;
+
+  @ApiProperty({ example: 10, description: "hotelCost × platform fee %" })
+  platformFee!: number;
+
+  @ApiProperty({
+    example: 8,
+    description: "Supplier margin kept by the platform: hotelCost − buyingPrice",
+  })
+  supplierMargin!: number;
+
+  @ApiProperty({
+    example: 110,
+    description: "Charged to the airline wallet: hotelCost + platformFee",
+  })
+  totalCost!: number;
+
+  @ApiProperty({
+    example: 18,
+    description: "Everything the platform keeps: platformFee + supplierMargin",
+  })
+  totalEarning!: number;
+}
+
+export class HotelBookingAdminListItemDto {
+  @ApiProperty({ example: 456 })
+  id!: number;
+
+  @ApiProperty({ type: HotelBookingAdminAirlineDto })
+  airline!: HotelBookingAdminAirlineDto;
+
+  @ApiProperty({ type: HotelBookingAdminProviderDto, nullable: true })
+  provider!: HotelBookingAdminProviderDto | null;
+
+  @ApiProperty({ type: HotelBookingListAirportDto })
+  destinationAirport!: HotelBookingListAirportDto;
+
+  @ApiProperty({ type: HotelBookingAdminHotelDto })
+  hotel!: HotelBookingAdminHotelDto;
+
+  @ApiProperty({ type: HotelBookingAdminPassengersDto })
+  passengers!: HotelBookingAdminPassengersDto;
+
+  @ApiProperty({ example: 2 })
+  rooms!: number;
+
+  @ApiProperty({ type: HotelBookingAdminPricingDto })
+  pricing!: HotelBookingAdminPricingDto;
+
+  @ApiProperty({ enum: HotelAllocationStatus, example: HotelAllocationStatus.CONFIRMED })
+  status!: HotelAllocationStatus;
+
+  @ApiProperty({ example: "2026-10-25T10:15:00.000Z" })
+  createdAt!: string;
+}
+
+export class HotelBookingAdminListResponseDto {
+  @ApiProperty({ type: [HotelBookingAdminListItemDto] })
+  hotelBookings!: HotelBookingAdminListItemDto[];
+
+  @ApiProperty({ type: HotelBookingListPaginationDto })
+  pagination!: HotelBookingListPaginationDto;
+}

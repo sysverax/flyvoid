@@ -9,7 +9,11 @@ import {
 import { Logger } from "winston";
 import { HotelBookingEntity } from "../cancelled-flights/entities/hotel-booking.entity";
 import { BookingEntity } from "../cancelled-flights/entities/booking.entity";
-import { FlightStatus } from "../cancelled-flights/entities/enums";
+import {
+  FlightStatus,
+  HotelAllocationStatus,
+} from "../cancelled-flights/entities/enums";
+import { ProviderEntity } from "../cancelled-flights/entities/provider.entity";
 import { toUtcTimestampParam } from "../common/utils/date-range.util";
 import {
   HotelBookingRecord,
@@ -31,6 +35,29 @@ export interface HotelBookingFilters {
   cancelledFlightId?: number;
   search?: string;
   airlineId?: number;
+  /** Platform users only. */
+  providerId?: number;
+  /** Platform users only: the PNR's allocation status. */
+  status?: HotelAllocationStatus;
+  /** Platform search matches only the booking id and hotel name. */
+  searchScope?: "airline" | "platform";
+  /** Inclusive lower bound on created_at (a UTC instant). */
+  startDate?: Date;
+  /** Exclusive upper bound on created_at (a UTC instant). */
+  endDate?: Date;
+}
+
+/** A listed hotel booking with its provider and hotel id (platform view). */
+export type HotelBookingListRow = HotelBookingRecord & {
+  provider: ProviderEntity | null;
+  hotelId: number | null;
+};
+
+/** Platform summary filters (the admin list filters, without status). */
+export interface AdminHotelBookingsSummaryFilters {
+  airlineId?: number;
+  providerId?: number;
+  search?: string;
   /** Inclusive lower bound on created_at (a UTC instant). */
   startDate?: Date;
   /** Exclusive upper bound on created_at (a UTC instant). */
@@ -59,7 +86,7 @@ export class HotelBookingsRepository {
   async findHotelBookingsWithPaginationAndFilters(
     filters: HotelBookingFilters,
     requestLogger: Logger,
-  ): Promise<{ hotelBookings: HotelBookingRecord[]; totalCount: number }> {
+  ): Promise<{ hotelBookings: HotelBookingListRow[]; totalCount: number }> {
     requestLogger.debug("Querying hotel bookings with filters", {
       context: this.context,
       filters,
@@ -70,6 +97,7 @@ export class HotelBookingsRepository {
     const qb = this.hotelBookingRepo
       .createQueryBuilder("hotelBooking")
       .innerJoinAndSelect("hotelBooking.booking", "booking")
+      .leftJoinAndSelect("hotelBooking.provider", "provider")
       .leftJoinAndSelect("hotelBooking.hotel", "hotel")
       .leftJoinAndSelect("hotelBooking.rooms", "room")
       .leftJoinAndSelect("hotelBooking.candidate", "candidate")
@@ -102,6 +130,18 @@ export class HotelBookingsRepository {
       });
     }
 
+    if (typeof filters.providerId === "number") {
+      qb.andWhere("hotelBooking.providerId = :providerId", {
+        providerId: filters.providerId,
+      });
+    }
+
+    if (filters.status) {
+      qb.andWhere("booking.allocationStatus = :status", {
+        status: filters.status,
+      });
+    }
+
     // Half-open range on a UTC timestamp column: start inclusive, end exclusive.
     if (filters.startDate) {
       qb.andWhere("hotelBooking.createdAt >= :startDate", {
@@ -117,26 +157,30 @@ export class HotelBookingsRepository {
 
     if (filters.search?.trim()) {
       const search = `%${filters.search.trim()}%`;
+      const platform = filters.searchScope === "platform";
       qb.andWhere(
         new Brackets((sub) => {
           sub
             .where("CAST(hotelBooking.id AS TEXT) ILIKE :search", { search })
-            .orWhere(
-              "CAST(cancelledFlight.flight_number AS TEXT) ILIKE :search",
-              {
-                search,
-              },
-            )
-            .orWhere("hotel.name ILIKE :search", { search })
-            .orWhere("booking.email ILIKE :search", { search });
+            .orWhere("hotel.name ILIKE :search", { search });
+          if (!platform) {
+            sub
+              .orWhere(
+                "CAST(cancelledFlight.flight_number AS TEXT) ILIKE :search",
+                { search },
+              )
+              .orWhere("booking.email ILIKE :search", { search });
+          }
         }),
       );
     }
 
     const [rows, totalCount] = await qb.getManyAndCount();
-    const hotelBookings = rows.map(
-      (row) => toAllocationRecord(row.booking, row) as HotelBookingRecord,
-    );
+    const hotelBookings = rows.map((row) => ({
+      ...(toAllocationRecord(row.booking, row) as HotelBookingRecord),
+      provider: row.provider ?? null,
+      hotelId: row.hotel?.id ?? null,
+    }));
 
     requestLogger.debug("Hotel booking query complete", {
       context: this.context,
@@ -273,6 +317,130 @@ export class HotelBookingsRepository {
    * with the bookings list's filters (destination, flight, created date
    * range, search). Joins `booking`, `cancelledFlight` and `hotel`.
    */
+  /**
+   * Platform summary: totals of CONFIRMED hotel bookings only (booked with the
+   * supplier and charged) matching the admin list filters. The status filter
+   * is not applied: in-progress and manual-check bookings are not real money yet.
+   */
+  async getAdminHotelBookingsSummary(
+    filters: AdminHotelBookingsSummaryFilters,
+    requestLogger: Logger,
+  ): Promise<{
+    totalBookings: number;
+    totalPassengers: number;
+    totalRooms: number;
+    totalCost: number;
+    totalPlatformFee: number;
+    totalSupplierMargin: number;
+    totalPaidToHotels: number;
+  }> {
+    requestLogger.debug("Querying admin hotel bookings summary", {
+      context: this.context,
+      filters,
+    });
+
+    // NaN-safe money column (see getHotelBookingsSummary).
+    const money = (column: string) =>
+      `CASE WHEN ${column} = 'NaN' THEN 0 ELSE ${column} END`;
+
+    const totalsQuery = this.applyAdminSummaryFilters(
+      this.hotelBookingRepo.createQueryBuilder("hotelBooking"),
+      filters,
+    )
+      .select("COUNT(hotelBooking.id)", "totalBookings")
+      .addSelect(
+        "COALESCE(SUM(booking.adults + booking.children), 0)",
+        "totalPassengers",
+      )
+      .addSelect(`COALESCE(SUM(${money("hotelBooking.totalPrice")}), 0)`, "totalCost")
+      .addSelect(
+        `COALESCE(SUM(${money("hotelBooking.platformFee")}), 0)`,
+        "totalPlatformFee",
+      )
+      .addSelect(
+        `COALESCE(SUM(${money("hotelBooking.actualPrice")} - ${money("hotelBooking.buyingPrice")}), 0)`,
+        "totalSupplierMargin",
+      )
+      .addSelect(
+        `COALESCE(SUM(${money("hotelBooking.buyingPrice")}), 0)`,
+        "totalPaidToHotels",
+      )
+      .getRawOne<Record<string, string>>();
+
+    // Rooms in their own query, so prices are not repeated once per room.
+    const roomsQuery = this.applyAdminSummaryFilters(
+      this.hotelBookingRepo.createQueryBuilder("hotelBooking"),
+      filters,
+    )
+      .innerJoin("hotelBooking.rooms", "room", "room.status <> 'failed'")
+      .select("COUNT(room.id)", "totalRooms")
+      .getRawOne<{ totalRooms: string }>();
+
+    const [totals, rooms] = await Promise.all([totalsQuery, roomsQuery]);
+    const round = (value: unknown) => Math.round(Number(value ?? 0) * 100) / 100;
+    return {
+      totalBookings: Number(totals?.totalBookings ?? 0),
+      totalPassengers: Number(totals?.totalPassengers ?? 0),
+      totalRooms: Number(rooms?.totalRooms ?? 0),
+      totalCost: round(totals?.totalCost),
+      totalPlatformFee: round(totals?.totalPlatformFee),
+      totalSupplierMargin: round(totals?.totalSupplierMargin),
+      totalPaidToHotels: round(totals?.totalPaidToHotels),
+    };
+  }
+
+  private applyAdminSummaryFilters<T extends ObjectLiteral>(
+    qb: SelectQueryBuilder<T>,
+    filters: AdminHotelBookingsSummaryFilters,
+  ): SelectQueryBuilder<T> {
+    qb.innerJoin("hotelBooking.booking", "booking")
+      .innerJoin("hotelBooking.cancelledFlight", "cancelledFlight")
+      .leftJoin("hotelBooking.hotel", "hotel")
+      .where(LIVE_HOTEL_BOOKING_CONDITION)
+      .andWhere("booking.allocationStatus = :confirmed", {
+        confirmed: HotelAllocationStatus.CONFIRMED,
+      });
+
+    if (typeof filters.airlineId === "number") {
+      qb.andWhere("cancelledFlight.airlineId = :airlineId", {
+        airlineId: filters.airlineId,
+      });
+    }
+
+    if (typeof filters.providerId === "number") {
+      qb.andWhere("hotelBooking.providerId = :providerId", {
+        providerId: filters.providerId,
+      });
+    }
+
+    // Half-open range on a UTC timestamp column: start inclusive, end exclusive.
+    if (filters.startDate) {
+      qb.andWhere("hotelBooking.createdAt >= :startDate", {
+        startDate: toUtcTimestampParam(filters.startDate),
+      });
+    }
+
+    if (filters.endDate) {
+      qb.andWhere("hotelBooking.createdAt < :endDate", {
+        endDate: toUtcTimestampParam(filters.endDate),
+      });
+    }
+
+    // Same search as the admin list: hotel booking id or hotel name.
+    if (filters.search?.trim()) {
+      const search = `%${filters.search.trim()}%`;
+      qb.andWhere(
+        new Brackets((sub) => {
+          sub
+            .where("CAST(hotelBooking.id AS TEXT) ILIKE :search", { search })
+            .orWhere("hotel.name ILIKE :search", { search });
+        }),
+      );
+    }
+
+    return qb;
+  }
+
   private applyLiveHotelBookingFilters<T extends ObjectLiteral>(
     qb: SelectQueryBuilder<T>,
     airlineId: number,
