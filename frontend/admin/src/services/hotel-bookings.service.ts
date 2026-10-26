@@ -1,54 +1,50 @@
 import { apiClient, extractErrorMessage } from "../lib/api-client";
 
+/** A hotel booking as GET /hotel-bookings returns it to platform users. */
 export interface AdminHotelBookingDTO {
   id: number;
-  cancelledFlightId?: number;
-  flightNumber?: string;
-  airlineId?: number;
-  airline?: {
-    id: number;
-    name: string;
-    code: string;
+  airline: { id: number; name: string };
+  provider: { id: number; code: string; name: string } | null;
+  destinationAirport: { id: number; code: string; name: string };
+  hotel: { id: number | null; name: string };
+  passengers: { adults: number; children: number };
+  rooms: number;
+  pricing: {
+    hotelCost: number;
+    buyingPrice: number;
+    tax: number;
+    discount: number;
+    platformFee: number;
+    supplierMargin: number;
+    totalCost: number;
+    totalEarning: number;
   };
-  destinationAirport?: {
-    id: number;
-    code: string;
-    name: string;
-  };
-  passenger?: {
-    id: number;
-    pnr?: string;
-    firstName?: string;
-    lastName?: string;
-    email?: string;
-    phone?: string;
-    adults?: number;
-    children?: number;
-  };
-  vendor?: string;
-  hotelName?: string;
-  rate?: string;
-  checkInDate?: string;
-  checkOutDate?: string;
-  totalRooms?: number;
-  totalPrice?: number;
-  totalPlatformFee?: number;
-  earnings?: number;
-  totalEarnings?: number;
+  /** confirmed | in_progress | manual_check */
   status: string;
-  createdAt?: string;
+  createdAt: string;
 }
 
+export interface HotelProviderDTO {
+  id: number;
+  code: string;
+  name: string;
+  isActive: boolean;
+}
+
+/** GET /hotel-bookings/summary for platform users: totals of CONFIRMED bookings. */
 export interface AdminHotelBookingsSummaryDTO {
-  totalPaymentsByAirlines?: number;
-  totalPaidToHotels?: number;
-  totalEarnings?: number;
-  totalCancelFlights?: number;
-  totalBookings?: number;
-  totalPassengers?: number;
-  totalRooms?: number;
-  totalCost?: number;
-  totalPlatformFee?: number;
+  totalBookings: number;
+  totalPassengers: number;
+  totalRooms: number;
+  /** Billed to airlines. */
+  totalCost: number;
+  totalPlatformFee: number;
+  totalSupplierMargin: number;
+  totalDiscounts: number;
+  /** totalPlatformFee + totalSupplierMargin */
+  totalEarnings: number;
+  /** Paid to suppliers (Σ buying price). */
+  totalPaidToHotels: number;
 }
 
 export interface AdminHotelBookingDetailDTO {
@@ -64,9 +60,11 @@ export const adminHotelBookingsService = {
     limit: number;
     search?: string;
     airlineId?: number;
+    providerId?: number;
     cancelledFlightId?: number;
     destinationAirportId?: number;
     status?: string;
+    /** ISO 8601 with timezone; start inclusive, end exclusive (booking created time). */
     startDate?: string;
     endDate?: string;
   }): Promise<{
@@ -95,8 +93,20 @@ export const adminHotelBookingsService = {
     }
   },
 
+  /** Hotel suppliers (GET /hotel-providers), for the provider filter. */
+  async getHotelProviders(params?: { isActive?: boolean }): Promise<HotelProviderDTO[]> {
+    try {
+      const { data } = await apiClient.get("/hotel-providers", { params });
+      return data.data?.providers || [];
+    } catch (error: any) {
+      throw new Error(extractErrorMessage(error, "Failed to fetch hotel providers."));
+    }
+  },
+
+  /** Same filters as getHotelBookings; status is accepted but the totals are confirmed-only. */
   async getHotelBookingsSummary(params?: {
     airlineId?: number;
+    providerId?: number;
     cancelledFlightId?: number;
     destinationAirportId?: number;
     search?: string;

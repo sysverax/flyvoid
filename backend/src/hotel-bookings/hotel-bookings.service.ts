@@ -15,14 +15,20 @@ import {
 } from "../cancelled-flights/entities/enums";
 import { HotelBookingRecord } from "../cancelled-flights/hotel-allocation.record";
 import { CONFIRMATION_FLIGHT_STATUSES } from "../cancelled-flights/cancelled-flights.constants";
-import { HotelBookingsRepository } from "./hotel-bookings.repository";
+import {
+  HotelBookingListRow,
+  HotelBookingsRepository,
+} from "./hotel-bookings.repository";
 import {
   GetHotelBookingsQueryDto,
   GetHotelBookingsSummaryQueryDto,
   HotelBookingDetailResponseDto,
   HotelBookingHotelDetailDto,
   HotelBookingListResponseDto,
+  HotelBookingAdminListItemDto,
+  HotelBookingAdminListResponseDto,
   HotelBookingsSummaryResponseDto,
+  HotelBookingsAdminSummaryResponseDto,
   SendHotelBookingEmailResponseDto,
 } from "./dto";
 import { PdfService } from "../common/pdf/pdf.service";
@@ -56,7 +62,7 @@ export class HotelBookingsService {
     user: AuthenticatedUser,
     query: GetHotelBookingsQueryDto,
     requestLogger: Logger,
-  ): Promise<HotelBookingListResponseDto> {
+  ): Promise<HotelBookingListResponseDto | HotelBookingAdminListResponseDto> {
     const page = query.page || 1;
     const limit = query.limit || 10;
 
@@ -100,6 +106,9 @@ export class HotelBookingsService {
       airlineScopeId = query.airlineId;
     }
 
+    // providerId / status and the narrower search are platform-only; airline
+    // users' values are ignored.
+    const isPlatform = user.userType === UserType.PLATFORM;
     const { hotelBookings, totalCount } =
       await this.repository.findHotelBookingsWithPaginationAndFilters(
         {
@@ -111,6 +120,11 @@ export class HotelBookingsService {
           airlineId: airlineScopeId,
           startDate: query.startDate,
           endDate: query.endDate,
+          ...(isPlatform && {
+            providerId: query.providerId,
+            status: query.status,
+            searchScope: "platform" as const,
+          }),
         },
         requestLogger,
       );
@@ -121,6 +135,16 @@ export class HotelBookingsService {
       page,
       limit,
     });
+
+    // Platform users get the admin shape (provider, passengers, full pricing).
+    if (isPlatform) {
+      return {
+        hotelBookings: hotelBookings.map((hotelBooking) =>
+          this.toAdminListItem(hotelBooking),
+        ),
+        pagination: { currentPage: page, limit, totalCount },
+      };
+    }
 
     return {
       hotelBookings: hotelBookings.map((hotelBooking) => ({
@@ -168,17 +192,83 @@ export class HotelBookingsService {
     };
   }
 
+  private toAdminListItem(
+    hotelBooking: HotelBookingListRow,
+  ): HotelBookingAdminListItemDto {
+    const money = (value: unknown) => Math.round(Number(value ?? 0) * 100) / 100;
+    const hotelCost = money(hotelBooking.actualPrice);
+    const buyingPrice = money(hotelBooking.buyingPrice);
+    const platformFee = money(hotelBooking.platformFee);
+    const totalCost = money(hotelBooking.totalPrice);
+    const flight = hotelBooking.cancelledFlight;
+
+    return {
+      id: hotelBooking.id,
+      airline: { id: flight.airline.id, name: flight.airline.name },
+      provider: hotelBooking.provider
+        ? {
+            id: hotelBooking.provider.id,
+            code: hotelBooking.provider.code,
+            name: hotelBooking.provider.name,
+          }
+        : null,
+      destinationAirport: {
+        id: flight.arrivalAirport.id,
+        code: flight.arrivalAirport.iataCode,
+        name: flight.arrivalAirport.name,
+      },
+      hotel: { id: hotelBooking.hotelId, name: hotelBooking.hotelName },
+      passengers: {
+        adults: hotelBooking.booking.adults,
+        children: hotelBooking.booking.children,
+      },
+      rooms: hotelBooking.totalRooms,
+      pricing: {
+        hotelCost,
+        buyingPrice,
+        tax: money(hotelBooking.tax),
+        discount: money(hotelBooking.discount),
+        platformFee,
+        supplierMargin: money(hotelCost - buyingPrice),
+        totalCost,
+        totalEarning: money(totalCost - buyingPrice),
+      },
+      status: hotelBooking.status,
+      createdAt: hotelBooking.createdAt.toISOString(),
+    };
+  }
+
   // ── Summary ──────────────────────────────────────────────────────────────
 
   async getHotelBookingsSummary(
     user: AuthenticatedUser,
     query: GetHotelBookingsSummaryQueryDto,
     requestLogger: Logger,
-  ): Promise<HotelBookingsSummaryResponseDto> {
+  ): Promise<
+    HotelBookingsSummaryResponseDto | HotelBookingsAdminSummaryResponseDto
+  > {
     requestLogger.info("Fetching hotel bookings summary", {
       context: this.context,
       userId: user.sub,
     });
+
+    // Platform users: confirmed bookings only, admin list filters (status is
+    // accepted but not applied).
+    if (user.userType === UserType.PLATFORM) {
+      const totals = await this.repository.getAdminHotelBookingsSummary(
+        {
+          airlineId: query.airlineId,
+          providerId: query.providerId,
+          search: query.search,
+          startDate: query.startDate,
+          endDate: query.endDate,
+        },
+        requestLogger,
+      );
+      const totalEarnings =
+        Math.round((totals.totalPlatformFee + totals.totalSupplierMargin) * 100) / 100;
+      return { ...totals, totalDiscounts: 0, totalEarnings };
+    }
 
     if (!user.airlineId) {
       requestLogger.error(

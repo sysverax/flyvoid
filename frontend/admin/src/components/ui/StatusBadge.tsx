@@ -14,6 +14,9 @@ const statusLabels: Record<string, string> = {
   paid: "Paid",
   published: "Published",
   failed: "Failed",
+  // Hotel booking statuses (in_progress above)
+  confirmed: "Confirmed",
+  manual_check: "Manual Check",
 };
 
 const statusStyles: Record<string, { bg: string; text: string }> = {
@@ -39,6 +42,12 @@ const statusStyles: Record<string, { bg: string; text: string }> = {
 
   published: { bg: "bg-[#ECFDF5]", text: "text-[#047857]" },
   Published: { bg: "bg-[#ECFDF5]", text: "text-[#047857]" },
+
+  // Hotel booking statuses
+  confirmed: { bg: "bg-[#D1FAE5]", text: "text-[#065F46]" },
+  Confirmed: { bg: "bg-[#D1FAE5]", text: "text-[#065F46]" },
+  manual_check: { bg: "bg-[#FFEDD5]", text: "text-[#9A3412]" },
+  "Manual Check": { bg: "bg-[#FFEDD5]", text: "text-[#9A3412]" },
 
   // General & user management statuses
   "Fees outstanding": { bg: "bg-[#FEF3C7]", text: "text-[#92400E]" },

@@ -6,7 +6,9 @@ import { BookingEntity } from "../cancelled-flights/entities/booking.entity";
 import { CancelledFlightEntity } from "../cancelled-flights/entities/cancelled-flight.entity";
 import { AirlineEntity } from "../airline/entities/airline.entity";
 import { AirportEntity } from "../airline/entities/airport.entity";
+import { ProviderEntity } from "../cancelled-flights/entities/provider.entity";
 import { HotelBookingsController } from "./hotel-bookings.controller";
+import { HotelProvidersController } from "./hotel-providers.controller";
 import { HotelBookingsService } from "./hotel-bookings.service";
 import { HotelBookingsRepository } from "./hotel-bookings.repository";
 import { PdfService } from "../common/pdf/pdf.service";
@@ -20,9 +22,10 @@ import { PdfService } from "../common/pdf/pdf.service";
       CancelledFlightEntity,
       AirlineEntity,
       AirportEntity,
+      ProviderEntity,
     ]),
   ],
-  controllers: [HotelBookingsController],
+  controllers: [HotelBookingsController, HotelProvidersController],
   providers: [HotelBookingsService, HotelBookingsRepository, PdfService],
 })
 export class HotelBookingsModule {}

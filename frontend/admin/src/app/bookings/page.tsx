@@ -1,12 +1,15 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { toast } from "react-toastify";
 import {
   Search,
   Eye,
   DollarSign,
   Hotel,
   TrendingUp,
+  Loader2,
+  BedDouble,
 } from "lucide-react";
 import {
   Table,
@@ -18,7 +21,15 @@ import {
   SortHeader,
 } from "@/src/components/ui/table";
 import { Pagination } from "@/src/components/ui/pagination";
-import { sortData } from "@/src/lib/utils";
+import { formatUtcEndDate, formatUtcStartDate, sortData } from "@/src/lib/utils";
+import {
+  adminHotelBookingsService,
+  AdminHotelBookingDTO,
+  AdminHotelBookingsSummaryDTO,
+  HotelProviderDTO,
+} from "@/src/services/hotel-bookings.service";
+import { airlinesService } from "@/src/services/airlines.service";
+import type { AirlineListItemDTO } from "@/src/services/airlines.service";
 import { TableEmptyState } from "@/src/components/ui/EmptyState";
 import { FiltersCard } from "@/src/components/ui/FiltersCard";
 import { StatusBadge } from "@/src/components/ui/StatusBadge";
@@ -26,6 +37,7 @@ import { Dropdown } from "@/src/components/ui/Dropdown";
 import { DatePicker } from "@/src/components/ui/DatePicker";
 import { TruncatedTooltip } from "@/src/components/ui/TruncatedTooltip";
 import { BookingDetailModal } from "@/src/components/bookings/BookingDetailModal";
+import { StatCard } from "@/src/components/ui/StatCard";
 
 export interface AdminBookingItem {
   id: string;
@@ -45,6 +57,8 @@ export interface AdminBookingItem {
   platformFee?: number;
   hotelCommission?: number;
   discount?: number;
+  /** What the supplier charges the platform. */
+  buyingPrice?: number;
   flightId?: number | string;
   flightNumber?: string;
   arrival?: string;
@@ -54,226 +68,65 @@ export interface AdminBookingItem {
   vendorReference?: string;
   transferReference?: string;
   completedAt?: string;
+  /** When the hotel booking was created (ISO 8601, UTC); sorts correctly as text. */
+  createdAt?: string;
   failedAt?: string;
   failureReason?: string;
 }
 
-const DUMMY_BOOKINGS: AdminBookingItem[] = [
-  {
-    id: "1",
-    bookingId: "BK-10001",
-    airlineId: 1,
-    airlineName: "SkyLine Airways",
-    vendor: "Booking.com",
-    departure: "JFK",
-    hotel: "Hyatt Place JFK",
-    passengers: 29,
-    rooms: 15,
-    hotelCost: 1710.0,
-    hotelTax: 205.0,
-    platformFee: 86.0,
-    hotelCommission: 137.0,
-    discount: 86.0,
-    totalCost: 1915.0,
-    earnings: 223.0,
-    status: "Pending",
-    flightId: 1,
-    flightNumber: "SKY1234",
-    arrival: "LAX",
-    scheduled: "2/1/2025, 5:30:00 AM",
-    requestId: "444dd18c-1e5c-4d3a-a2c5-36229b869e60",
-    vendorBookingStatus: "ON_REQUEST",
-    vendorReference: "B00-2663671",
-    transferReference: "61945ffd-0051-4521-a66c-d2f2ce8f6925",
-    completedAt: "—",
-    failedAt: "—",
-    failureReason: "—",
-  },
-  {
-    id: "2",
-    bookingId: "BK-10002",
-    airlineId: 1,
-    airlineName: "SkyLine Airways",
-    vendor: "Booking.com",
-    departure: "JFK",
-    hotel: "Radisson Blu JFK",
-    passengers: 39,
-    rooms: 39,
-    totalCost: 10735.0,
-    earnings: 1246.0,
-    status: "Pending",
-  },
-  {
-    id: "3",
-    bookingId: "BK-10003",
-    airlineId: 2,
-    airlineName: "Global Air",
-    vendor: "Hotels.com",
-    departure: "LAX",
-    hotel: "Marriott Los Angeles",
-    passengers: 54,
-    rooms: 27,
-    totalCost: 8420.5,
-    earnings: 920.0,
-    status: "Confirmed",
-  },
-  {
-    id: "4",
-    bookingId: "BK-10004",
-    airlineId: 3,
-    airlineName: "Delta Express",
-    vendor: "Expedia",
-    departure: "ORD",
-    hotel: "Hilton Chicago O'Hare",
-    passengers: 18,
-    rooms: 9,
-    totalCost: 3240.0,
-    earnings: 380.5,
-    status: "Confirmed",
-  },
-  {
-    id: "5",
-    bookingId: "BK-10005",
-    airlineId: 2,
-    airlineName: "Global Air",
-    vendor: "Booking.com",
-    departure: "MIA",
-    hotel: "InterContinental Miami",
-    passengers: 62,
-    rooms: 31,
-    totalCost: 14880.0,
-    earnings: 1750.0,
-    status: "Completed",
-  },
-  {
-    id: "6",
-    bookingId: "BK-10006",
-    airlineId: 4,
-    airlineName: "Pacific Jet",
-    vendor: "Agoda",
-    departure: "SFO",
-    hotel: "W San Francisco",
-    passengers: 11,
-    rooms: 6,
-    totalCost: 2900.0,
-    earnings: 310.0,
-    status: "Cancelled",
-  },
-  {
-    id: "7",
-    bookingId: "BK-10007",
-    airlineId: 3,
-    airlineName: "Delta Express",
-    vendor: "Hotels.com",
-    departure: "ATL",
-    hotel: "Westin Peachtree Atlanta",
-    passengers: 45,
-    rooms: 23,
-    totalCost: 7650.0,
-    earnings: 865.0,
-    status: "Confirmed",
-  },
-  {
-    id: "8",
-    bookingId: "BK-10008",
-    airlineId: 1,
-    airlineName: "SkyLine Airways",
-    vendor: "Expedia",
-    departure: "DFW",
-    hotel: "Hyatt Regency Dallas",
-    passengers: 33,
-    rooms: 17,
-    totalCost: 5610.0,
-    earnings: 640.0,
-    status: "Pending",
-  },
-  {
-    id: "9",
-    bookingId: "BK-10009",
-    airlineId: 5,
-    airlineName: "Sunrise Airlines",
-    vendor: "Booking.com",
-    departure: "SEA",
-    hotel: "Sheraton Seattle Hotel",
-    passengers: 27,
-    rooms: 14,
-    totalCost: 4480.0,
-    earnings: 510.0,
-    status: "Completed",
-  },
-  {
-    id: "10",
-    bookingId: "BK-10010",
-    airlineId: 4,
-    airlineName: "Pacific Jet",
-    vendor: "Agoda",
-    departure: "DEN",
-    hotel: "Grand Hyatt Denver",
-    passengers: 50,
-    rooms: 25,
-    totalCost: 11250.0,
-    earnings: 1300.0,
-    status: "Confirmed",
-  },
-  {
-    id: "11",
-    bookingId: "BK-10011",
-    airlineId: 5,
-    airlineName: "Sunrise Airlines",
-    vendor: "Hotels.com",
-    departure: "BOS",
-    hotel: "Marriott Long Wharf Boston",
-    passengers: 22,
-    rooms: 11,
-    totalCost: 3960.0,
-    earnings: 440.0,
-    status: "Pending",
-  },
-  {
-    id: "12",
-    bookingId: "BK-10012",
-    airlineId: 2,
-    airlineName: "Global Air",
-    vendor: "Expedia",
-    departure: "PHX",
-    hotel: "JW Marriott Phoenix",
-    passengers: 36,
-    rooms: 18,
-    totalCost: 6120.0,
-    earnings: 700.0,
-    status: "Cancelled",
-  },
-];
+/** e.g. "Oct 25, 2026, 10:15 AM" in the viewer's local time; "—" when missing. */
+function formatCreatedAt(iso?: string): string {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  return isNaN(date.getTime())
+    ? "—"
+    : date.toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      });
+}
 
-const AIRLINE_OPTIONS = [
-  { value: "All Airlines", label: "All Airlines" },
-  { value: "SkyLine Airways", label: "SkyLine Airways" },
-  { value: "Global Air", label: "Global Air" },
-  { value: "Delta Express", label: "Delta Express" },
-  { value: "Pacific Jet", label: "Pacific Jet" },
-  { value: "Sunrise Airlines", label: "Sunrise Airlines" },
-];
+/** API booking → the row shape the table and BookingDetailModal use. */
+function toAdminBookingItem(dto: AdminHotelBookingDTO): AdminBookingItem {
+  return {
+    id: String(dto.id),
+    bookingId: String(dto.id),
+    airlineId: dto.airline.id,
+    airlineName: dto.airline.name,
+    vendor: dto.provider?.name ?? "—",
+    departure: dto.destinationAirport.code,
+    hotel: dto.hotel.name,
+    passengers: dto.passengers.adults + dto.passengers.children,
+    rooms: dto.rooms,
+    totalCost: dto.pricing.totalCost,
+    earnings: dto.pricing.totalEarning,
+    status: dto.status,
+    hotelCost: dto.pricing.hotelCost,
+    hotelTax: dto.pricing.tax,
+    platformFee: dto.pricing.platformFee,
+    hotelCommission: dto.pricing.supplierMargin,
+    discount: dto.pricing.discount,
+    buyingPrice: dto.pricing.buyingPrice,
+    createdAt: dto.createdAt,
+  };
+}
 
-const VENDOR_OPTIONS = [
-  { value: "All Vendors", label: "All Vendors" },
-  { value: "Booking.com", label: "Booking.com" },
-  { value: "Hotels.com", label: "Hotels.com" },
-  { value: "Expedia", label: "Expedia" },
-  { value: "Agoda", label: "Agoda" },
-];
-
+// Hotel booking statuses the API filters by (GET /hotel-bookings, platform users).
 const STATUS_OPTIONS = [
-  { value: "All Status", label: "All Status" },
-  { value: "Pending", label: "Pending" },
-  { value: "Confirmed", label: "Confirmed" },
-  { value: "Completed", label: "Completed" },
-  { value: "Cancelled", label: "Cancelled" },
+  { value: "All Statuses", label: "All Statuses" },
+  { value: "confirmed", label: "Confirmed" },
+  { value: "in_progress", label: "In Progress" },
+  { value: "manual_check", label: "Manual Check" },
 ];
 
 const RESULTS_PER_PAGE_OPTIONS = [10, 20, 50];
 
 export default function BookingsPage() {
-  // Filter states
+  // Filter states ("All …" = no filter; otherwise the airline / provider id)
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedAirline, setSelectedAirline] = useState("All Airlines");
   const [selectedVendor, setSelectedVendor] = useState("All Vendors");
@@ -281,57 +134,126 @@ export default function BookingsPage() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
-  // Pagination states
+  // Pagination states (server-side)
   const [resultsPerPage, setResultsPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
+  const [totalResults, setTotalResults] = useState(0);
 
-  // Sorting states
+  // Sorting states (sorts the loaded page)
   const [sortField, setSortField] = useState<keyof AdminBookingItem | null>(null);
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
 
   // Selected booking for View modal
   const [selectedBooking, setSelectedBooking] = useState<AdminBookingItem | null>(null);
 
-  // Filter the dummy data
-  const filtered = useMemo(() => {
-    return DUMMY_BOOKINGS.filter((b) => {
-      const q = searchQuery.toLowerCase();
-      const matchesSearch =
-        !q ||
-        b.bookingId.toLowerCase().includes(q) ||
-        b.hotel.toLowerCase().includes(q) ||
-        b.airlineName.toLowerCase().includes(q) ||
-        b.vendor.toLowerCase().includes(q) ||
-        b.departure.toLowerCase().includes(q);
-      const matchesAirline =
-        selectedAirline === "All Airlines" || b.airlineName === selectedAirline;
-      const matchesVendor =
-        selectedVendor === "All Vendors" || b.vendor === selectedVendor;
-      const matchesStatus =
-        selectedStatus === "All Statuses" || b.status === selectedStatus;
-      return matchesSearch && matchesAirline && matchesVendor && matchesStatus;
-    });
-  }, [searchQuery, selectedAirline, selectedVendor, selectedStatus]);
+  const [bookings, setBookings] = useState<AdminBookingItem[]>([]);
+  // Card totals: confirmed bookings matching the same filters (GET /hotel-bookings/summary).
+  const [summary, setSummary] = useState<AdminHotelBookingsSummaryDTO | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [airlines, setAirlines] = useState<AirlineListItemDTO[]>([]);
+  const [providers, setProviders] = useState<HotelProviderDTO[]>([]);
 
-  const sorted = useMemo(
-    () => sortData(filtered, sortField, sortOrder, []),
-    [filtered, sortField, sortOrder]
+  // Filter options from the API
+  useEffect(() => {
+    airlinesService
+      .getAirlines({ page: 1, limit: 100 })
+      .then((res) => setAirlines(res.airlines || []))
+      .catch((err) => console.error("Failed to load airlines for filter", err));
+    adminHotelBookingsService
+      .getHotelProviders()
+      .then(setProviders)
+      .catch((err) => console.error("Failed to load providers for filter", err));
+  }, []);
+
+  const airlineOptions = useMemo(
+    () => [
+      { value: "All Airlines", label: "All Airlines" },
+      ...airlines.map((a) => ({ value: String(a.id), label: `${a.name} (${a.code})` })),
+    ],
+    [airlines],
   );
 
-  const totalResults = sorted.length;
+  const vendorOptions = useMemo(
+    () => [
+      { value: "All Vendors", label: "All Vendors" },
+      ...providers.map((p) => ({
+        value: String(p.id),
+        label: p.isActive ? p.name : `${p.name} (inactive)`,
+      })),
+    ],
+    [providers],
+  );
+
+  // Bookings: filters and pagination are applied by the API; search is debounced.
+  useEffect(() => {
+    let isMounted = true;
+    const timeoutId = setTimeout(async () => {
+      setIsLoading(true);
+      try {
+        const start = formatUtcStartDate(startDate);
+        const end = formatUtcEndDate(endDate);
+        if (start && end && new Date(start).getTime() >= new Date(end).getTime()) {
+          if (isMounted) {
+            setBookings([]);
+            setTotalResults(0);
+            setSummary(null);
+          }
+          return;
+        }
+        // The table and the cards use the same filters.
+        const filters = {
+          search: searchQuery.trim() || undefined,
+          airlineId: selectedAirline !== "All Airlines" ? Number(selectedAirline) : undefined,
+          providerId: selectedVendor !== "All Vendors" ? Number(selectedVendor) : undefined,
+          status: selectedStatus !== "All Statuses" ? selectedStatus : undefined,
+          startDate: start,
+          endDate: end,
+        };
+        const [res, summaryRes] = await Promise.all([
+          adminHotelBookingsService.getHotelBookings({
+            ...filters,
+            page: currentPage,
+            limit: resultsPerPage,
+          }),
+          adminHotelBookingsService.getHotelBookingsSummary(filters),
+        ]);
+        if (isMounted) {
+          setBookings(res.hotelBookings.map(toAdminBookingItem));
+          setTotalResults(res.total);
+          setSummary(summaryRes);
+        }
+      } catch (err: any) {
+        if (isMounted) {
+          toast.error(err.message || "Failed to load hotel bookings");
+          setBookings([]);
+          setTotalResults(0);
+          setSummary(null);
+        }
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    }, 300);
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, [
+    searchQuery,
+    selectedAirline,
+    selectedVendor,
+    selectedStatus,
+    startDate,
+    endDate,
+    currentPage,
+    resultsPerPage,
+  ]);
+
+  const paginated = useMemo(
+    () => sortData(bookings, sortField, sortOrder, []),
+    [bookings, sortField, sortOrder]
+  );
   const totalPages = Math.max(1, Math.ceil(totalResults / resultsPerPage));
-  const paginated = sorted.slice(
-    (currentPage - 1) * resultsPerPage,
-    currentPage * resultsPerPage
-  );
 
-  // KPI summary computed from filtered set
-  const totalPaymentsByAirlines = filtered.reduce((s, b) => s + b.totalCost, 0);
-  const totalPaidToHotels = filtered.reduce(
-    (s, b) => s + (b.totalCost - b.earnings),
-    0
-  );
-  const totalEarnings = filtered.reduce((s, b) => s + b.earnings, 0);
 
   const handleClearAll = () => {
     setSearchQuery("");
@@ -389,7 +311,7 @@ export default function BookingsPage() {
               setSelectedAirline(val);
               setCurrentPage(1);
             }}
-            options={AIRLINE_OPTIONS}
+            options={airlineOptions}
             widthClass="w-80 max-w-[calc(100vw-2rem)]"
             triggerWidthClass="w-[180px]"
             maxListHeightClass="max-h-60"
@@ -403,10 +325,11 @@ export default function BookingsPage() {
               setSelectedVendor(val);
               setCurrentPage(1);
             }}
-            options={VENDOR_OPTIONS}
-            widthClass="w-44"
+            options={vendorOptions}
+            widthClass="w-80 max-w-[calc(100vw-2rem)]"
             triggerWidthClass="w-[150px]"
             maxListHeightClass="max-h-60"
+            searchable
           />
 
           {/* Status Dropdown */}
@@ -443,45 +366,48 @@ export default function BookingsPage() {
           />
         </FiltersCard>
 
-        {/* 3 KPI Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Card 1 */}
-          <div className="flex items-start justify-between rounded-[12px] border border-[#E5E7EB] bg-white px-4 py-4 hover:shadow-sm transition-shadow">
-            <div className="flex flex-col gap-1.5">
-              <p className="text-base text-[#6B7280]">Total Payments by Airlines</p>
-              <h3 className="text-2xl font-semibold text-[#1F2937]">
-                {fmt(totalPaymentsByAirlines)}
-              </h3>
-            </div>
-            <div className="rounded-[8px] bg-[#F3F4F6] p-2.5 text-[#0F2757] flex items-center justify-center h-11 w-11 shrink-0">
-              <DollarSign className="h-5 w-5" />
-            </div>
-          </div>
-
-          {/* Card 2 */}
-          <div className="flex items-start justify-between rounded-[12px] border border-[#E5E7EB] bg-white px-4 py-4 hover:shadow-sm transition-shadow">
-            <div className="flex flex-col gap-1.5">
-              <p className="text-base text-[#6B7280]">Total Paid to Hotels</p>
-              <h3 className="text-2xl font-semibold text-[#1F2937]">
-                {fmt(totalPaidToHotels)}
-              </h3>
-            </div>
-            <div className="rounded-[8px] bg-[#F3F4F6] p-2.5 text-[#0F2757] flex items-center justify-center h-11 w-11 shrink-0">
-              <Hotel className="h-5 w-5" />
-            </div>
-          </div>
-
-          {/* Card 3 */}
-          <div className="flex items-start justify-between rounded-[12px] border border-[#E5E7EB] bg-white px-4 py-4 hover:shadow-sm transition-shadow">
-            <div className="flex flex-col gap-1.5">
-              <p className="text-base text-[#6B7280]">Total Earnings</p>
-              <h3 className="text-2xl font-semibold text-[#1F2937]">
-                {fmt(totalEarnings)}
-              </h3>
-            </div>
-            <div className="rounded-[8px] bg-[#F3F4F6] p-2.5 text-[#0F2757] flex items-center justify-center h-11 w-11 shrink-0">
-              <TrendingUp className="h-5 w-5" />
-            </div>
+        {/* KPI cards: confirmed bookings matching the filters */}
+        <div className="space-y-2">
+          <p className="text-[13px] text-[#6B7280]">
+            Totals of confirmed bookings matching the filters
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+            <StatCard
+              title="Total Earnings"
+              value={summary ? fmt(summary.totalEarnings) : "—"}
+              hint={
+                summary
+                  ? `Fee ${fmt(summary.totalPlatformFee)} · Supplier margin ${fmt(summary.totalSupplierMargin)}`
+                  : undefined
+              }
+              icon={<TrendingUp className="h-5 w-5" />}
+            />
+            <StatCard
+              title="Billed to Airlines"
+              value={summary ? fmt(summary.totalCost) : "—"}
+              hint={
+                summary
+                  ? `From ${summary.totalBookings.toLocaleString()} confirmed booking${summary.totalBookings === 1 ? "" : "s"}`
+                  : undefined
+              }
+              icon={<DollarSign className="h-5 w-5" />}
+            />
+            <StatCard
+              title="Paid to Hotels"
+              value={summary ? fmt(summary.totalPaidToHotels) : "—"}
+              hint="Supplier cost"
+              icon={<Hotel className="h-5 w-5" />}
+            />
+            <StatCard
+              title="Confirmed Bookings"
+              value={summary ? summary.totalBookings.toLocaleString() : "—"}
+              hint={
+                summary
+                  ? `${summary.totalRooms.toLocaleString()} room${summary.totalRooms === 1 ? "" : "s"} · ${summary.totalPassengers.toLocaleString()} passenger${summary.totalPassengers === 1 ? "" : "s"}`
+                  : undefined
+              }
+              icon={<BedDouble className="h-5 w-5" />}
+            />
           </div>
         </div>
 
@@ -493,8 +419,8 @@ export default function BookingsPage() {
                 <TableHead className="min-w-[120px]">
                   <SortHeader label="Booking ID" field="bookingId" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                 </TableHead>
-                <TableHead className="min-w-[90px]">
-                  <SortHeader label="Airline ID" field="airlineId" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                <TableHead className="min-w-[170px]">
+                  <SortHeader label="Created" field="createdAt" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                 </TableHead>
                 <TableHead className="min-w-[160px]">
                   <SortHeader label="Airline" field="airlineName" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
@@ -527,7 +453,13 @@ export default function BookingsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paginated.length === 0 ? (
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={12} className="py-12 text-center">
+                    <Loader2 className="mx-auto h-6 w-6 animate-spin text-[#0F2757]" />
+                  </TableCell>
+                </TableRow>
+              ) : paginated.length === 0 ? (
                 <TableEmptyState
                   colSpan={12}
                   icon={Search}
@@ -540,8 +472,8 @@ export default function BookingsPage() {
                     <TableCell className="font-medium text-[#1F2937]">
                       {b.bookingId}
                     </TableCell>
-                    <TableCell className="text-[#6B7280]">
-                      {b.airlineId}
+                    <TableCell className="text-[#6B7280] whitespace-nowrap">
+                      {formatCreatedAt(b.createdAt)}
                     </TableCell>
                     <TableCell className="font-medium text-[#1F2937]">
                       {b.airlineName}

@@ -48,7 +48,9 @@ import {
   GetHotelBookingsSummaryQueryDto,
   HotelBookingDetailResponseDto,
   HotelBookingListResponseDto,
+  HotelBookingAdminListResponseDto,
   HotelBookingsSummaryResponseDto,
+  HotelBookingsAdminSummaryResponseDto,
   SendHotelBookingEmailResponseDto,
 } from "./dto";
 import { Logger } from "winston";
@@ -60,8 +62,10 @@ import { Logger } from "winston";
 @Controller("hotel-bookings")
 @ApiExtraModels(
   HotelBookingListResponseDto,
+  HotelBookingAdminListResponseDto,
   HotelBookingDetailResponseDto,
   HotelBookingsSummaryResponseDto,
+  HotelBookingsAdminSummaryResponseDto,
 )
 export class HotelBookingsController {
   constructor(private readonly service: HotelBookingsService) {}
@@ -81,13 +85,18 @@ export class HotelBookingsController {
   @ApiOperation({
     summary: "List hotel bookings",
     description:
-      "Returns paginated hotel bookings with optional filters: destinationAirportId, cancelledFlightId, search (hotel booking id, flight number, hotel name, or passenger email), startDate/endDate (hotel booking creation time; ISO 8601 timestamps with timezone, start inclusive, end exclusive). Platform users can filter by airlineId; airline users only see their own airline's hotel bookings.",
+      "Returns paginated hotel bookings with optional filters: destinationAirportId, cancelledFlightId, startDate/endDate (hotel booking creation time; ISO 8601 timestamps with timezone, start inclusive, end exclusive). Airline users only see their own airline's bookings; search matches hotel booking id, flight number, hotel name or passenger email; providerId and status are ignored. Platform users get HotelBookingAdminListResponseDto (airline, provider, destination airport, hotel id/name, passengers, rooms, full pricing incl. buyingPrice, supplierMargin and totalEarning) and can also filter by airlineId, providerId and status (confirmed, in_progress, manual_check); their search matches hotel booking id or hotel name.",
   })
   @ApiOkResponse({
     schema: {
       properties: {
         success: { type: "boolean", example: true },
-        data: { $ref: getSchemaPath(HotelBookingListResponseDto) },
+        data: {
+          oneOf: [
+            { $ref: getSchemaPath(HotelBookingListResponseDto) },
+            { $ref: getSchemaPath(HotelBookingAdminListResponseDto) },
+          ],
+        },
       },
     },
   })
@@ -99,7 +108,9 @@ export class HotelBookingsController {
     @Query() query: GetHotelBookingsQueryDto,
     @RequestId() requestId: string,
     @RequestLogger() requestLogger: Logger,
-  ): Promise<BaseResponseDto<HotelBookingListResponseDto>> {
+  ): Promise<
+    BaseResponseDto<HotelBookingListResponseDto | HotelBookingAdminListResponseDto>
+  > {
     const data = await this.service.listHotelBookings(
       req.user,
       query,
@@ -115,8 +126,12 @@ export class HotelBookingsController {
   // ── GET /hotel-bookings/summary ───────────────────────────────────────────
   // Registered before ":id" so "summary" isn't swallowed by the :id route.
   @Get("summary")
-  @RequireUserTypes(UserType.AIRLINE)
+  @RequireUserTypes(UserType.PLATFORM, UserType.AIRLINE)
   @RequireAccessControl({
+    platform: {
+      asset: PlatformAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.VIEW],
+    },
     airline: {
       asset: [AirlineAsset.BOOKINGS, AirlineAsset.DASHBOARD],
       access: [AccessAction.VIEW],
@@ -125,13 +140,18 @@ export class HotelBookingsController {
   @ApiOperation({
     summary: "Get hotel bookings summary",
     description:
-      "Returns totals for the authenticated airline's live hotel bookings (the same rows as the hotel bookings list): totalBookings, totalPassengers, totalRooms, totalCost, totalPlatformFee. Also returns totalPnrs (all PNRs on the airline's cancelled flights) and totalAllocatedPnrs (PNRs on flights that are allocated, paid or published). Optional filters: destinationAirportId, cancelledFlightId, search, startDate/endDate (hotel booking creation time; ISO 8601 timestamps with timezone, start inclusive, end exclusive). destinationAirportId and cancelledFlightId apply to every total; search and startDate/endDate only narrow the hotel booking totals, not the PNR counts. Airline users only, requires VIEW access on the Bookings tab.",
+      "Returns totals for the authenticated airline's live hotel bookings (the same rows as the hotel bookings list): totalBookings, totalPassengers, totalRooms, totalCost, totalPlatformFee. Also returns totalPnrs (all PNRs on the airline's cancelled flights) and totalAllocatedPnrs (PNRs on flights that are allocated, paid or published). Optional filters: destinationAirportId, cancelledFlightId, search, startDate/endDate (hotel booking creation time; ISO 8601 timestamps with timezone, start inclusive, end exclusive). destinationAirportId and cancelledFlightId apply to every total; search and startDate/endDate only narrow the hotel booking totals, not the PNR counts. Airline users need VIEW access on the Bookings tab. Platform users (VIEW on CANCELLED_FLIGHTS) get HotelBookingsAdminSummaryResponseDto instead: totals of CONFIRMED hotel bookings only (totalBookings, totalPassengers, totalRooms, totalCost, totalPlatformFee, totalSupplierMargin, totalDiscounts, totalEarnings, totalPaidToHotels), filtered like the admin list by airlineId, providerId, search (hotel booking id or hotel name) and startDate/endDate; status is accepted but not applied.",
   })
   @ApiOkResponse({
     schema: {
       properties: {
         success: { type: "boolean", example: true },
-        data: { $ref: getSchemaPath(HotelBookingsSummaryResponseDto) },
+        data: {
+          oneOf: [
+            { $ref: getSchemaPath(HotelBookingsSummaryResponseDto) },
+            { $ref: getSchemaPath(HotelBookingsAdminSummaryResponseDto) },
+          ],
+        },
       },
     },
   })
@@ -140,7 +160,11 @@ export class HotelBookingsController {
     @Query() query: GetHotelBookingsSummaryQueryDto,
     @RequestId() requestId: string,
     @RequestLogger() requestLogger: Logger,
-  ): Promise<BaseResponseDto<HotelBookingsSummaryResponseDto>> {
+  ): Promise<
+    BaseResponseDto<
+      HotelBookingsSummaryResponseDto | HotelBookingsAdminSummaryResponseDto
+    >
+  > {
     const data = await this.service.getHotelBookingsSummary(
       req.user,
       query,
