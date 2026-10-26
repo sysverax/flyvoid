@@ -17,6 +17,7 @@ import { AirlineModule } from "./airline/airline.module";
 import { AirportModule } from "./airline/airport.module";
 import { CancelledFlightsModule } from "./cancelled-flights/cancelled-flights.module";
 import { HotelBookingsModule } from "./hotel-bookings/hotel-bookings.module";
+import { HotelAvailabilityModule } from "./hotel-availability/hotel-availability.module";
 import { DashboardModule } from "./dashboard/dashboard.module";
 
 @Module({
@@ -32,6 +33,7 @@ import { DashboardModule } from "./dashboard/dashboard.module";
     AirportModule,
     CancelledFlightsModule,
     HotelBookingsModule,
+    HotelAvailabilityModule,
     DashboardModule,
   ],
 })

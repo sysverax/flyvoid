@@ -29,6 +29,8 @@ export interface HotelProviderDTO {
   code: string;
   name: string;
   isActive: boolean;
+  /** We have an integration for it and its credentials are set (searchable on the Hotels page). */
+  isConfigured: boolean;
 }
 
 /** GET /hotel-bookings/summary for platform users: totals of CONFIRMED bookings. */

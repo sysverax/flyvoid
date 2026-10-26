@@ -20,6 +20,7 @@ import { RequestId } from "../common/decorators/request-id.decorator";
 import { RequestLogger } from "../common/decorators/request-logger.decorator";
 import { createBadRequestErrorSchema } from "../common/constants/swagger.constants";
 import { ProviderEntity } from "../cancelled-flights/entities/provider.entity";
+import { HotelProviderRegistry } from "../cancelled-flights/hotel-providers/hotel-provider.registry";
 import {
   GetHotelProvidersQueryDto,
   HotelProviderListResponseDto,
@@ -37,6 +38,7 @@ export class HotelProvidersController {
   constructor(
     @InjectRepository(ProviderEntity)
     private readonly providerRepository: Repository<ProviderEntity>,
+    private readonly providerRegistry: HotelProviderRegistry,
   ) {}
 
   // ── GET /hotel-providers ─────────────────────────────────────────────────
@@ -44,7 +46,7 @@ export class HotelProvidersController {
   @ApiOperation({
     summary: "List hotel providers",
     description:
-      "Platform users only (no extra permission). Returns every hotel supplier (id, code, name, isActive), ordered by name; not paginated. Optional isActive=true/false filter. Used for the hotel bookings provider filter.",
+      "Platform users only (no extra permission). Returns every hotel supplier (id, code, name, isActive, isConfigured), ordered by name; not paginated. Optional isActive=true/false filter. isConfigured is true when we have an integration for the supplier and its credentials are set (only those can be searched on GET /hotel-availability). Used for the hotel bookings provider filter and the Hotels page.",
   })
   @ApiOkResponse({
     schema: {
@@ -74,6 +76,7 @@ export class HotelProvidersController {
           code,
           name,
           isActive,
+          isConfigured: this.providerRegistry.isConfigured(code),
         })),
       },
       requestId,

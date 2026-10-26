@@ -14,6 +14,7 @@ import fs from "node:fs/promises";
 import {
   AvailabilityHotel,
   AvailabilityRoomRate,
+  TaxAtProperty,
   HotelBookingOutcomeUnknownError,
   HotelContentDetails,
   HotelProvider,
@@ -292,6 +293,19 @@ export class HotelbedsProvider implements HotelProvider {
     };
   }
 
+  /** Hotelbeds rate taxes already in the net price (included) or paid at the hotel. */
+  private rateTaxes(rate: any, included: boolean): TaxAtProperty[] {
+    const taxes = Array.isArray(rate?.taxes?.taxes) ? rate.taxes.taxes : [];
+    return taxes
+      .filter((tax: any) => tax && Boolean(tax.included) === included)
+      .map((tax: any) => ({
+        name: String(tax.type ?? "Tax"),
+        amount: Number(tax.amount ?? 0),
+        currencyCode: tax.currency ? String(tax.currency) : null,
+      }))
+      .filter((tax: TaxAtProperty) => Number.isFinite(tax.amount));
+  }
+
   private normalizeAvailabilityHotels(rawHotels: any[]): AvailabilityHotel[] {
     return rawHotels
       .map((hotel: any) => {
@@ -350,10 +364,14 @@ export class HotelbedsProvider implements HotelProvider {
                   paymentType: rate.paymentType
                     ? String(rate.paymentType)
                     : null,
+                  taxesIncluded: this.rateTaxes(rate, true),
+                  taxesAtProperty: this.rateTaxes(rate, false),
                 };
               }),
         );
 
+        const latitude = Number(hotel.latitude);
+        const longitude = Number(hotel.longitude);
         return {
           hotelCode,
           hotelName,
@@ -361,6 +379,12 @@ export class HotelbedsProvider implements HotelProvider {
           address,
           stars,
           rates,
+          latitude:
+            hotel.latitude != null && Number.isFinite(latitude) ? latitude : null,
+          longitude:
+            hotel.longitude != null && Number.isFinite(longitude)
+              ? longitude
+              : null,
         };
       })
       .filter((hotel) => hotel.rates.length > 0);

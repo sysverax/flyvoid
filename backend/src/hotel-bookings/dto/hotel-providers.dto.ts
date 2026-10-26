@@ -21,7 +21,7 @@ export class HotelProviderDto {
   @ApiProperty({ example: 1 })
   id!: number;
 
-  @ApiProperty({ example: "RATEHAWK" })
+  @ApiProperty({ example: "ratehawk" })
   code!: string;
 
   @ApiProperty({ example: "RateHawk" })
@@ -29,6 +29,12 @@ export class HotelProviderDto {
 
   @ApiProperty({ example: true })
   isActive!: boolean;
+
+  @ApiProperty({
+    example: true,
+    description: "We have an integration for this supplier and its credentials are set",
+  })
+  isConfigured!: boolean;
 }
 
 export class HotelProviderListResponseDto {

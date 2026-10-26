@@ -30,6 +30,17 @@ export interface AvailabilityRoomRate {
   paymentType: string | null;
   /** Multiroom order rate: the rooms booked as one order; prices are the order total. */
   rooms?: RoomOccupancy[];
+  // Display-only details (admin hotel availability page); allocation ignores them.
+  /** Guests the room sleeps, when the supplier says. */
+  maxGuests?: number | null;
+  /** Taxes already in the price. */
+  taxesIncluded?: TaxAtProperty[];
+  /** Taxes not in the price; the guest pays them at the hotel. */
+  taxesAtProperty?: TaxAtProperty[];
+  /** Penalty-free cancellation until this time, when the supplier gives it directly. */
+  freeCancellationBefore?: string | null;
+  /** Room amenities, e.g. "Wi-Fi", "Air conditioning". */
+  features?: string[];
 }
 
 export interface AvailabilityHotel {
@@ -41,6 +52,9 @@ export interface AvailabilityHotel {
   rates: AvailabilityRoomRate[];
   /** Radius of the search ring that first found the hotel (config.hotelSearch.unit). */
   radius?: number;
+  /** Supplier coordinates, when search returns them. */
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 /** Static hotel data from a supplier's content API, stored in our hotels table. */
@@ -115,6 +129,11 @@ export interface SupplierSearchOptions {
   residency?: string | null;
   /** Search only this radius (in config.hotelSearch.unit) instead of widening from the default. */
   radius?: number;
+  /**
+   * Keep hotels whose rates have taxes payable at the hotel. Allocation drops
+   * them (passengers must not pay); the admin availability page shows them.
+   */
+  includePayAtHotel?: boolean;
 }
 
 /** Supplier-neutral result of re-validating a rate before booking. */
