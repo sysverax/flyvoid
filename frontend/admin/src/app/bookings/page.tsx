@@ -68,8 +68,26 @@ export interface AdminBookingItem {
   vendorReference?: string;
   transferReference?: string;
   completedAt?: string;
+  /** When the hotel booking was created (ISO 8601, UTC); sorts correctly as text. */
+  createdAt?: string;
   failedAt?: string;
   failureReason?: string;
+}
+
+/** e.g. "Oct 25, 2026, 10:15 AM" in the viewer's local time; "—" when missing. */
+function formatCreatedAt(iso?: string): string {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  return isNaN(date.getTime())
+    ? "—"
+    : date.toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      });
 }
 
 /** API booking → the row shape the table and BookingDetailModal use. */
@@ -93,6 +111,7 @@ function toAdminBookingItem(dto: AdminHotelBookingDTO): AdminBookingItem {
     hotelCommission: dto.pricing.supplierMargin,
     discount: dto.pricing.discount,
     buyingPrice: dto.pricing.buyingPrice,
+    createdAt: dto.createdAt,
   };
 }
 
@@ -400,8 +419,8 @@ export default function BookingsPage() {
                 <TableHead className="min-w-[120px]">
                   <SortHeader label="Booking ID" field="bookingId" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                 </TableHead>
-                <TableHead className="min-w-[90px]">
-                  <SortHeader label="Airline ID" field="airlineId" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                <TableHead className="min-w-[170px]">
+                  <SortHeader label="Created" field="createdAt" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                 </TableHead>
                 <TableHead className="min-w-[160px]">
                   <SortHeader label="Airline" field="airlineName" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
@@ -453,8 +472,8 @@ export default function BookingsPage() {
                     <TableCell className="font-medium text-[#1F2937]">
                       {b.bookingId}
                     </TableCell>
-                    <TableCell className="text-[#6B7280]">
-                      {b.airlineId}
+                    <TableCell className="text-[#6B7280] whitespace-nowrap">
+                      {formatCreatedAt(b.createdAt)}
                     </TableCell>
                     <TableCell className="font-medium text-[#1F2937]">
                       {b.airlineName}
