@@ -20,7 +20,10 @@ import { HotelContentService } from "./hotel-content.service";
 import { CancelledFlightsRepository } from "./cancelled-flights.repository";
 import { AiService } from "../common/ai/ai.service";
 import { HOTEL_PROVIDER } from "./hotel-providers/hotel-provider.interface";
-import { hotelProviderRegistration } from "./hotel-providers/hotel-provider.registry";
+import {
+  HotelProviderRegistry,
+  hotelProviderRegistration,
+} from "./hotel-providers/hotel-provider.registry";
 import { PdfService } from "../common/pdf/pdf.service";
 
 @Module({
@@ -47,7 +50,7 @@ import { PdfService } from "../common/pdf/pdf.service";
     HotelContentService,
     CancelledFlightsRepository,
     AiService,
-    hotelProviderRegistration,
+    ...hotelProviderRegistration,
     PdfService,
   ],
   exports: [
@@ -55,6 +58,8 @@ import { PdfService } from "../common/pdf/pdf.service";
     HotelAllocationService,
     AiService,
     HOTEL_PROVIDER,
+    HotelProviderRegistry,
+    HotelContentService,
   ],
 })
 export class CancelledFlightsModule {}

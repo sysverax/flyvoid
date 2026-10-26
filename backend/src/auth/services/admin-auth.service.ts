@@ -491,11 +491,18 @@ export class AuthService {
       logger,
     );
     await this.authRepository.updateLastLogin(admin.id, new Date(), logger);
+    // Super admins have every asset, including ones added after they were
+    // created; others get their stored rows.
     const accessControls =
-      await this.authRepository.findPlatformAccessControlsByAdminId(
-        admin.id,
-        logger,
-      );
+      admin.role === AdminRole.SUPER_ADMIN
+        ? this.buildSuperAdminAccessControls().map(({ asset, access }) => ({
+            moduleKey: asset,
+            permissions: access,
+          }))
+        : await this.authRepository.findPlatformAccessControlsByAdminId(
+            admin.id,
+            logger,
+          );
 
     logger.info("Admin signin success", {
       context: this.context,

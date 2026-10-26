@@ -12,6 +12,7 @@ import {
   Menu,
   X,
   Users,
+  Hotel,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { PAYMENTS_ENABLED } from "@/src/lib/constants";
@@ -26,6 +27,7 @@ const navItems = [
   { title: "Airports", icon: "/icons/airport.svg", path: "/airports", key: "airports" },
   { title: "Cancellation", icon: "/icons/cancel.svg", path: "/cancellation", key: "cancellation" },
   { title: "Bookings", icon: "/icons/booking.svg", path: "/bookings", key: "bookings" },
+  { title: "Hotels", icon: Hotel, path: "/hotels", key: "hotels" },
   { title: "Payments", icon: "/icons/payment.svg", path: "/payments", key: "payments" },
   { title: "Onboarding", icon: "/icons/onboarding.svg", path: "/onboarding", key: "onboarding" },
   { title: "Audit Logs", icon: FileText, path: "/audit-logs", key: "auditLogs" },

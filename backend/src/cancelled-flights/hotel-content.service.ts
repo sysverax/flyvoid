@@ -18,6 +18,13 @@ import {
   HotelProvider,
 } from "./hotel-providers/hotel-provider.interface";
 
+/** A supplier other than the env-selected one (e.g. the admin availability page). */
+export interface HotelContentSource {
+  /** providers.code, e.g. "ratehawk". */
+  code: string;
+  adapter: HotelProvider;
+}
+
 /**
  * Keeps static hotel data in our hotels table: fetched from the supplier's
  * content API when a hotel is missing or older than the refresh window, and
@@ -43,8 +50,12 @@ export class HotelContentService
 
   /** Whether this supplier's static data is kept in our hotels table. */
   private get usesStoredContent(): boolean {
+    return this.storesContent(this.hotelProvider);
+  }
+
+  private storesContent(adapter: HotelProvider): boolean {
     return (
-      !!this.hotelProvider.fetchHotelsStaticContent &&
+      !!adapter.fetchHotelsStaticContent &&
       config.hotelSearch.isAllowFetchHotelDetails
     );
   }
@@ -75,13 +86,16 @@ export class HotelContentService
     hotelCodes: string[],
     requestId: string,
     requestLogger: Logger,
+    source?: HotelContentSource,
   ): Promise<Map<string, HotelEntity>> {
+    const provider = source?.code ?? this.provider;
+    const adapter = source?.adapter ?? this.hotelProvider;
     const codes = [...new Set(hotelCodes.filter(Boolean))];
     let hotels = await this.cancelledFlightsRepository.findHotelsByCodes(
-      this.provider,
+      provider,
       codes,
     );
-    if (this.usesStoredContent) {
+    if (this.storesContent(adapter)) {
       const staleBefore = Date.now() - config.hotelContent.staleAfterMs;
       const byCode = new Map(
         hotels.map((hotel) => [hotel.providerHotelId, hotel]),
@@ -92,16 +106,16 @@ export class HotelContentService
       });
       if (toFetch.length > 0) {
         try {
-          const contents = await this.hotelProvider.fetchHotelsStaticContent!(
+          const contents = await adapter.fetchHotelsStaticContent!(
             toFetch,
             requestId,
           );
           await this.cancelledFlightsRepository.saveHotelContent(
-            this.provider,
+            provider,
             contents,
           );
           hotels = await this.cancelledFlightsRepository.findHotelsByCodes(
-            this.provider,
+            provider,
             codes,
           );
           requestLogger.info("Fetched static hotel content", {

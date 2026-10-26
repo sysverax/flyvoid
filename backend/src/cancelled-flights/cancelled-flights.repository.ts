@@ -7,8 +7,8 @@ import {
   Not,
   Repository,
   SelectQueryBuilder,
+  QueryDeepPartialEntity,
 } from "typeorm";
-import { QueryDeepPartialEntity } from "typeorm/query-builder/QueryPartialEntity";
 import { config } from "../config/config";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
 import { AirportEntity } from "../airline/entities/airport.entity";

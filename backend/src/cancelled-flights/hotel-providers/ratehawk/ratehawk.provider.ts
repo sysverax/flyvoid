@@ -702,11 +702,16 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
 
   /** Taxes ETG says are payable at the hotel must be shown to the guest. */
   private taxesAtProperty(payment: any): TaxAtProperty[] {
+    return this.taxesWhere(payment, false);
+  }
+
+  /** ETG taxes already included in the rate price (included_by_supplier) or not. */
+  private taxesWhere(payment: any, included: boolean): TaxAtProperty[] {
     const taxes = Array.isArray(payment?.tax_data?.taxes)
       ? payment.tax_data.taxes
       : [];
     return taxes
-      .filter((tax: any) => tax && tax.included_by_supplier === false)
+      .filter((tax: any) => tax && tax.included_by_supplier === included)
       .map((tax: any) => ({
         name: this.humanize(String(tax.name ?? "tax")),
         amount: Number(tax.amount ?? 0),
@@ -765,9 +770,12 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     rawHotels: any[],
     checkin: string,
     checkout: string,
+    includePayAtHotel = false,
   ): AvailabilityHotel[] {
     return rawHotels
-      .filter((hotel: any) => !this.chargesAtProperty(hotel))
+      .filter(
+        (hotel: any) => includePayAtHotel || !this.chargesAtProperty(hotel),
+      )
       .map((hotel: any) => {
         const hid = Number(hotel.hid);
         // Stars and the real name come from our hotels table (Content API), not search.
@@ -840,6 +848,20 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
               rateComments: this.taxComments(payment),
               paymentType: payment.type ? String(payment.type) : null,
               ...(rooms.length > 1 ? { rooms } : {}),
+              // ETG rg_ext.capacity: guests the room sleeps (0 = unknown).
+              maxGuests: Number(rate.rg_ext?.capacity) > 0
+                ? Number(rate.rg_ext.capacity)
+                : null,
+              taxesIncluded: this.taxesWhere(payment, true),
+              taxesAtProperty: this.taxesAtProperty(payment),
+              freeCancellationBefore: payment.cancellation_penalties
+                ?.free_cancellation_before
+                ? String(payment.cancellation_penalties.free_cancellation_before)
+                : null,
+              features: (Array.isArray(rate.amenities_data)
+                ? rate.amenities_data
+                : []
+              ).map((amenity: unknown) => this.humanize(String(amenity))),
             } satisfies AvailabilityRoomRate;
           })
           .filter(
@@ -1048,6 +1070,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         mergedRawHotels,
         checkInDate,
         checkOutDate,
+        options?.includePayAtHotel,
       );
     } catch (error: any) {
       requestLogger.error(`Error querying RateHawk API: ${error.message}`, {
