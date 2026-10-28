@@ -396,6 +396,7 @@ export default function AirlinesPage() {
         logo: updatedFields.logoUrl || undefined,
         currency: updatedFields.currency,
         address: updatedFields.address,
+        platformFeePercentage: Number(updatedFields.platformFeePercentage),
         isActive,
         isSuspended,
         adminFirstName: updatedFields.adminFirstName,
@@ -797,6 +798,7 @@ export default function AirlinesPage() {
         onClose={() => setEditTarget(null)}
         onSave={handleSaveEdit}
         isSaving={isSaving}
+        onCreditLimitUpdated={() => fetchAirlines(false)}
       />
 
       <SuspendAirlineDialog

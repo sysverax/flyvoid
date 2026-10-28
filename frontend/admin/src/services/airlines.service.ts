@@ -188,6 +188,37 @@ export interface WalletSummaryDTO {
   totalCreditUsed: number;
 }
 
+export interface CreditLimitUpdateDTO {
+  airlineId: number;
+  walletId: number;
+  previousCreditLimit: number;
+  creditLimit: number;
+  balance: number;
+  lockedAmount: number;
+  /** balance + creditLimit - lockedAmount; negative blocks new hotel allocations. */
+  availableBalance: number;
+  currency: string;
+  reason: string;
+  changedAt: string;
+}
+
+export interface CreditLimitHistoryDTO {
+  airlineId: number;
+  creditLimit: number;
+  balance: number;
+  lockedAmount: number;
+  availableBalance: number;
+  currency: string;
+  history: Array<{
+    id: number;
+    previousCreditLimit: number;
+    newCreditLimit: number;
+    reason: string;
+    changedBy: { id: number; name: string; email: string } | null;
+    changedAt: string;
+  }>;
+}
+
 export const airlinesService = {
   /** Totals over the airlines matching the same filters as getAirlines (all when none). */
   async getWalletsSummary(params?: {
@@ -268,6 +299,29 @@ export const airlinesService = {
       return data;
     } catch (error: any) {
       throw new Error(extractErrorMessage(error, "Failed to update airline."));
+    }
+  },
+
+  /** PATCH /wallets/:airlineId/credit-limit (AIRLINES EDIT): any amount >= 0 with a reason. */
+  async updateCreditLimit(
+    airlineId: number,
+    payload: { creditLimit: number; reason: string }
+  ): Promise<CreditLimitUpdateDTO> {
+    try {
+      const { data } = await apiClient.patch(`/wallets/${airlineId}/credit-limit`, payload);
+      return data.data;
+    } catch (error: any) {
+      throw new Error(extractErrorMessage(error, "Failed to update credit limit."));
+    }
+  },
+
+  /** GET /wallets/:airlineId/credit-limit/history: current wallet figures and every change, newest first. */
+  async getCreditLimitHistory(airlineId: number): Promise<CreditLimitHistoryDTO> {
+    try {
+      const { data } = await apiClient.get(`/wallets/${airlineId}/credit-limit/history`);
+      return data.data;
+    } catch (error: any) {
+      throw new Error(extractErrorMessage(error, "Failed to fetch credit limit history."));
     }
   },
 

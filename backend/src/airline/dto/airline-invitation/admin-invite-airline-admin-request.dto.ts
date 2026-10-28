@@ -5,7 +5,6 @@ import {
   IsInt,
   IsNotEmpty,
   IsNumber,
-  IsPositive,
   Matches,
   Max,
   IsOptional,
@@ -208,7 +207,7 @@ export class AdminInviteAirlineAdminRequestDto {
 
   @ApiProperty({
     description:
-      "Platform fee percentage charged to this airline (up to 2 decimal places, must be greater than 0 and less than 100)",
+      "Platform fee percentage charged to this airline (up to 2 decimal places, 0 or more and less than 100)",
     example: 12.5,
   })
   @IsNumber(
@@ -218,7 +217,7 @@ export class AdminInviteAirlineAdminRequestDto {
         "platformFeePercentage must be a number with up to 2 decimal places",
     },
   )
-  @IsPositive({ message: "platformFeePercentage must be greater than 0" })
+  @Min(0, { message: "platformFeePercentage must be 0 or more" })
   @Max(99.99, { message: "platformFeePercentage must be less than 100" })
   platformFeePercentage!: number;
 }

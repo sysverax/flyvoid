@@ -990,8 +990,18 @@ export class CancelledFlightsRepository {
      */
     maxUserRuns?: number,
     keepError = false,
+    /**
+     * The airline's current fee. Frozen on the flight when it has no frozen
+     * fee yet (its first allocation run); later runs keep the frozen one.
+     */
+    platformFeeToFreeze?: number,
   ): Promise<
-    | { claimed: true; previousStatus: FlightStatus }
+    | {
+        claimed: true;
+        previousStatus: FlightStatus;
+        /** The fee this run must use: the flight's frozen fee. */
+        platformFeePercentage: number;
+      }
     | {
         claimed: false;
         reason: "running" | "status" | "missing" | "limit";
@@ -1009,6 +1019,8 @@ export class CancelledFlightsRepository {
         .setLock("pessimistic_write")
         .select("flight.status", "status")
         .addSelect("flight.hotel_allocation_runs", "runs")
+        .addSelect("flight.platform_fee_percentage", "feePercentage")
+        .addSelect("flight.platform_fee_locked_at", "feeLockedAt")
         .addSelect(
           "EXTRACT(EPOCH FROM (now() - flight.updated_at)) * 1000",
           "ageMs",
@@ -1017,6 +1029,8 @@ export class CancelledFlightsRepository {
         .getRawOne<{
           status: FlightStatus;
           runs: number;
+          feePercentage: string | number | null;
+          feeLockedAt: Date | null;
           ageMs: string | number;
         }>();
       if (!row) {
@@ -1046,6 +1060,10 @@ export class CancelledFlightsRepository {
           status: row.status,
         };
       }
+      const freezeFee = !row.feeLockedAt && platformFeeToFreeze !== undefined;
+      const platformFeePercentage = freezeFee
+        ? platformFeeToFreeze
+        : Number(row.feePercentage ?? 0);
       await manager.update(
         CancelledFlightEntity,
         { id: cancelledFlightId },
@@ -1053,9 +1071,24 @@ export class CancelledFlightsRepository {
           status: FlightStatus.HOTEL_ALLOCATION_IN_PROGRESS,
           hotelAllocationRunId: runId,
           ...(!keepError && { hotelAllocationError: null }),
+          ...(freezeFee && {
+            platformFeePercentage,
+            platformFeeLockedAt: () => "now()",
+          }),
         },
       );
-      return { claimed: true as const, previousStatus: row.status };
+      if (freezeFee) {
+        requestLogger.info("Froze platform fee for cancelled flight", {
+          context: this.context,
+          cancelledFlightId,
+          platformFeePercentage,
+        });
+      }
+      return {
+        claimed: true as const,
+        previousStatus: row.status,
+        platformFeePercentage,
+      };
     });
   }
 

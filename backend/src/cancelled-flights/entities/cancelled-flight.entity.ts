@@ -153,6 +153,17 @@ export class CancelledFlightEntity {
   })
   platformFeePercentage?: number;
 
+  /**
+   * When platformFeePercentage was frozen for this cancellation (its first
+   * allocation run). Null: not frozen yet, the airline's current fee applies.
+   */
+  @Column({
+    name: "platform_fee_locked_at",
+    type: "timestamptz",
+    nullable: true,
+  })
+  platformFeeLockedAt?: Date | null;
+
   @Column({
     name: "total_platform_fee",
     type: "decimal",

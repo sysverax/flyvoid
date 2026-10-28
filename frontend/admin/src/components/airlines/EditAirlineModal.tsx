@@ -7,6 +7,7 @@ import { Airline } from "@/src/types/airlines";
 import { cn } from "@/src/lib/utils";
 import { toast } from "react-toastify";
 import { airlinesService } from "@/src/services/airlines.service";
+import { CreditLimitDialog } from "@/src/components/airlines/CreditLimitDialog";
 import { Dropdown, DropdownOption } from "@/src/components/ui/Dropdown";
 import {
   Table,
@@ -104,7 +105,7 @@ function validate(key: string, value: any): string {
       const num = Number(v);
       if (isNaN(num)) return "Platform Fee must be a valid number";
       if (!/^\d+(\.\d{1,2})?$/.test(v)) return "Platform Fee can have up to 2 decimal places";
-      if (num <= 0) return "Platform Fee must be greater than 0";
+      if (num < 0) return "Platform Fee must be 0 or more";
       if (num >= 100) return "Platform Fee must be less than 100";
       return "";
     }
@@ -119,6 +120,8 @@ interface EditAirlineModalProps {
   onClose: () => void;
   onSave: (updatedFields: Partial<Airline>, assignAirportIds: number[], disableAirportIds: number[]) => void;
   isSaving?: boolean;
+  /** The credit limit is changed through its own dialog and saved at once. */
+  onCreditLimitUpdated?: (creditLimit: number) => void;
 }
 
 type Errors = Partial<Record<string, string>>;
@@ -129,6 +132,7 @@ export function EditAirlineModal({
   onClose,
   onSave,
   isSaving = false,
+  onCreditLimitUpdated,
 }: EditAirlineModalProps) {
   useLockBodyScroll(isOpen);
 
@@ -163,6 +167,7 @@ export function EditAirlineModal({
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [isLoadingAirports, setIsLoadingAirports] = useState(false);
 
+  const [isCreditLimitOpen, setIsCreditLimitOpen] = useState(false);
   const [errors, setErrors] = useState<Errors>({});
   const [touched, setTouched] = useState<Partial<Record<string, boolean>>>({});
 
@@ -246,7 +251,9 @@ export function EditAirlineModal({
     if (!airline) return false;
     const keys = Object.keys(editFormState) as Array<keyof typeof editFormState>;
     const anyFieldChanged = keys.some((k) => {
-      if (k === "creditLimit" || k === "platformFeePercentage") {
+      // Saved by its own dialog, not by this form.
+      if (k === "creditLimit") return false;
+      if (k === "platformFeePercentage") {
         return Number(editFormState[k]) !== Number(airline[k]);
       }
       return String(editFormState[k] ?? "").trim() !== String(airline[k] ?? "").trim();
@@ -537,18 +544,22 @@ export function EditAirlineModal({
                   {err("adminJobTitle")}
                 </Field>
                 <Field label="Credit Limit" required className="col-span-1">
-                  <input
-                    type="number"
-                    value={editFormState.creditLimit}
-                    onChange={(e) => {
-                      const val = Number(e.target.value);
-                      setEditFormState({ ...editFormState, creditLimit: val });
-                      if (touched["creditLimit"]) setErr("creditLimit", validate("creditLimit", val));
-                    }}
-                    onBlur={handleBlur("creditLimit")}
-                    className={ic("creditLimit")}
-                  />
-                  {err("creditLimit")}
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={`${editFormState.currency || ""} ${Number(editFormState.creditLimit).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`.trim()}
+                      className={cn(inputCls, "bg-[#F3F4F6] text-[#6B7280] cursor-default")}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setIsCreditLimitOpen(true)}
+                      className="h-11 shrink-0 rounded-[8px] border border-[#D1D5DB] px-3 text-[14px] font-medium text-[#1F2937] transition-colors hover:bg-[#F3F4F6] cursor-pointer"
+                    >
+                      Update
+                    </button>
+                  </div>
+                  <p className="mt-1 text-xs text-[#6B7280]">Saved immediately with a reason; kept in the credit limit history.</p>
                 </Field>
                 <Field label="Platform Fee (%)" required className="col-span-1">
                   <input
@@ -746,6 +757,19 @@ export function EditAirlineModal({
           </div>
         </form>
       </div>
+
+      {airline && (
+        <CreditLimitDialog
+          isOpen={isCreditLimitOpen}
+          airlineId={Number(airline.id)}
+          airlineName={airline.airlineName}
+          onClose={() => setIsCreditLimitOpen(false)}
+          onUpdated={(creditLimit) => {
+            setEditFormState((state) => ({ ...state, creditLimit }));
+            onCreditLimitUpdated?.(creditLimit);
+          }}
+        />
+      )}
     </>
   );
 }

@@ -16,6 +16,9 @@ import {
   TRANSACTION_TYPES,
 } from "./constants";
 import {
+  CreditLimitHistoryResponseDto,
+  CreditLimitUpdateResponseDto,
+  UpdateCreditLimitRequestDto,
   CreateWalletAdjustmentRequestDto,
   GetWalletsSummaryQueryDto,
   GetWalletTransactionsQueryDto,
@@ -165,6 +168,180 @@ export class WalletService {
       creditLimit: Number(result.wallet.creditLimit),
       reason: dto.reason ?? null,
       createdAt: result.transaction.createdAt.toISOString(),
+    };
+  }
+
+  // ── Update credit limit (platform only) ─────────────────────────────────
+
+  /**
+   * Sets an onboarded airline's credit limit and records the change in
+   * wallet_credit_limit_history. Any value >= 0 is allowed, even below what
+   * the airline already uses: available balance then goes negative and the
+   * next hotel allocation's wallet lock fails until the wallet is topped up.
+   * Runs that already hold their lock are not affected. Not a balance
+   * movement, so no wallet transaction is written.
+   */
+  async updateCreditLimit(
+    authenticatedUser: AuthenticatedUser,
+    airlineId: number,
+    dto: UpdateCreditLimitRequestDto,
+    requestId: string,
+    requestLogger: Logger,
+  ): Promise<CreditLimitUpdateResponseDto> {
+    requestLogger.info("Updating airline credit limit", {
+      context: this.context,
+      airlineId,
+      creditLimit: dto.creditLimit,
+      adminId: authenticatedUser.sub,
+    });
+
+    const result = await this.dataSource.transaction(async (manager) => {
+      // Same row lock as adjustments and allocation wallet locks, so the
+      // change cannot interleave with a lock, charge or adjustment.
+      const wallet = await this.walletRepository.lockWalletByAirlineId(
+        airlineId,
+        requestId,
+        manager,
+      );
+      if (!wallet) {
+        requestLogger.warn("Wallet not found for airline", {
+          context: this.context,
+          airlineId,
+        });
+        throw new NotFoundException({
+          message: `Wallet not found for airline '${airlineId}'`,
+          details: `No wallet exists for airline '${airlineId}'; it is created when the airline finishes onboarding`,
+          solution:
+            "Update the credit limit on the invitation until the airline is onboarded",
+        });
+      }
+
+      const previousCreditLimit = this.round(Number(wallet.creditLimit));
+      const creditLimit = this.round(dto.creditLimit);
+      if (previousCreditLimit === creditLimit) {
+        throw new BadRequestException({
+          message: `Credit limit is already ${creditLimit}`,
+          details: "The new credit limit is the same as the current one",
+          solution: "Enter a different credit limit",
+        });
+      }
+
+      await this.walletRepository.updateCreditLimit(
+        wallet.id,
+        creditLimit,
+        requestId,
+        manager,
+      );
+      const history = await this.walletRepository.recordCreditLimitChange(
+        {
+          walletId: wallet.id,
+          previousCreditLimit,
+          newCreditLimit: creditLimit,
+          reason: dto.reason,
+          changedByAdminId: authenticatedUser.sub,
+        },
+        requestId,
+        manager,
+      );
+      return { wallet, previousCreditLimit, creditLimit, history };
+    });
+
+    const balance = this.round(Number(result.wallet.balance));
+    const lockedAmount = this.round(Number(result.wallet.lockedAmount));
+    const availableBefore = this.round(
+      balance + result.previousCreditLimit - lockedAmount,
+    );
+    const availableBalance = this.round(
+      balance + result.creditLimit - lockedAmount,
+    );
+    const changeLog = {
+      context: this.context,
+      airlineId,
+      walletId: result.wallet.id,
+      historyId: result.history.id,
+      adminId: authenticatedUser.sub,
+      previousCreditLimit: result.previousCreditLimit,
+      creditLimit: result.creditLimit,
+      balance,
+      lockedAmount,
+      availableBefore,
+      availableBalance,
+    };
+    if (availableBalance < 0) {
+      requestLogger.warn(
+        "Credit limit updated; available balance is negative, new hotel allocations are blocked until the wallet is topped up",
+        changeLog,
+      );
+    } else {
+      requestLogger.info("Credit limit updated", changeLog);
+    }
+
+    return {
+      airlineId,
+      walletId: result.wallet.id,
+      previousCreditLimit: result.previousCreditLimit,
+      creditLimit: result.creditLimit,
+      balance,
+      lockedAmount,
+      availableBalance,
+      currency: result.wallet.currency,
+      reason: dto.reason,
+      changedAt: result.history.createdAt.toISOString(),
+    };
+  }
+
+  /** An airline's credit limit changes, newest first (onboarding included). */
+  async getCreditLimitHistory(
+    airlineId: number,
+    requestId: string,
+    requestLogger: Logger,
+  ): Promise<CreditLimitHistoryResponseDto> {
+    const wallet = await this.walletRepository.findWalletByAirlineId(
+      airlineId,
+      requestId,
+    );
+    if (!wallet) {
+      throw new NotFoundException({
+        message: `Wallet not found for airline '${airlineId}'`,
+        details: `No wallet exists for airline '${airlineId}'`,
+        solution: "The wallet is created when the airline finishes onboarding",
+      });
+    }
+    const rows = await this.walletRepository.findCreditLimitHistoryWithAdmins(
+      wallet.id,
+      requestId,
+    );
+    requestLogger.info("Fetched credit limit history", {
+      context: this.context,
+      airlineId,
+      walletId: wallet.id,
+      entries: rows.length,
+    });
+    const creditLimit = this.round(Number(wallet.creditLimit));
+    const balance = this.round(Number(wallet.balance));
+    const lockedAmount = this.round(Number(wallet.lockedAmount));
+    return {
+      airlineId,
+      creditLimit,
+      balance,
+      lockedAmount,
+      availableBalance: this.round(balance + creditLimit - lockedAmount),
+      currency: wallet.currency,
+      history: rows.map((row) => ({
+        id: Number(row.id),
+        previousCreditLimit: Number(row.previousCreditLimit),
+        newCreditLimit: Number(row.newCreditLimit),
+        reason: row.reason,
+        changedBy:
+          row.adminId === null || row.adminId === undefined
+            ? null
+            : {
+                id: Number(row.adminId),
+                name: `${row.adminFirstName ?? ""} ${row.adminLastName ?? ""}`.trim(),
+                email: row.adminEmail ?? "",
+              },
+        changedAt: new Date(row.createdAt).toISOString(),
+      })),
     };
   }
 

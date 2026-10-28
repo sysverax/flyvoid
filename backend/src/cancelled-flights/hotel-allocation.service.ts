@@ -1225,6 +1225,21 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     };
   }
 
+  /**
+   * A cancellation's platform fee: frozen at its first allocation run, so
+   * later runs and manual bookings keep it; until then the airline's current fee.
+   */
+  private feeForFlight(
+    flight: Pick<CancelledFlightEntity, "platformFeePercentage" | "platformFeeLockedAt">,
+    user: AuthenticatedRequest["user"],
+  ): number {
+    return Number(
+      flight.platformFeeLockedAt
+        ? flight.platformFeePercentage
+        : (user.platformFeePercentage ?? config.platformFeePercentage),
+    );
+  }
+
   /** User-started runs per flight: the first allocation plus one retry. */
   private static readonly MAX_USER_ALLOCATION_RUNS = 2;
 
@@ -1240,8 +1255,11 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     requestId: string,
     requestLogger: Logger,
   ): Promise<HotelAllocationsDto> {
-    const platformFeePercentage =
-      user.platformFeePercentage ?? config.platformFeePercentage;
+    // The airline's current fee; the claim freezes it on the flight at its
+    // first run, and later runs use the frozen fee instead.
+    const airlineFeePercentage = Number(
+      user.platformFeePercentage ?? config.platformFeePercentage,
+    );
     requestLogger.info("Starting flight-level hotel allocation and booking", {
       context: this.context,
       flightId,
@@ -1290,6 +1308,8 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       runId,
       requestLogger,
       HotelAllocationService.MAX_USER_ALLOCATION_RUNS,
+      false,
+      airlineFeePercentage,
     );
     if (!run.claimed) {
       if (run.reason === "limit") {
@@ -1310,10 +1330,13 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       );
     }
 
+    const platformFeePercentage = run.platformFeePercentage;
     requestLogger.info("Hotel allocation run started in the background", {
       context: this.context,
       flightId,
       runId,
+      platformFeePercentage,
+      airlineFeePercentage,
     });
     void this.executeAllocationRun(
       {
@@ -1358,11 +1381,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         ),
         this.getSupplierCheckState(flightId),
       ]);
-    const platformFeePercentage = Number(
-      flight.platformFeePercentage ??
-        user.platformFeePercentage ??
-        config.platformFeePercentage,
-    );
+    const platformFeePercentage = this.feeForFlight(flight, user);
     return this.buildAllocationSummary(
       flight,
       bookings,
@@ -3863,8 +3882,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       })),
       party: { adults: booking.adults, children: booking.children },
       paymentData: dto.paymentData,
-      platformFeePercentage:
-        user.platformFeePercentage ?? config.platformFeePercentage,
+      platformFeePercentage: this.feeForFlight(flight, user),
       requestId,
       requestLogger,
       onAttemptStarted: attemptStarted,

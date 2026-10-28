@@ -5,3 +5,5 @@ export * from "./wallet-transaction-list-response.dto";
 export * from "./wallet-balance-response.dto";
 export * from "./wallet-summary-response.dto";
 export * from "./get-wallets-summary-query.dto";
+export * from "./update-credit-limit-request.dto";
+export * from "./credit-limit-response.dto";
