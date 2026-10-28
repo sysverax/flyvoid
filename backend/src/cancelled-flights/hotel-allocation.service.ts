@@ -79,6 +79,7 @@ import {
   toRoomNeeds,
 } from "./hotel-allocation.planner";
 import { BookHotelRequestDto } from "./dto/book-hotel-request.dto";
+import { daysBetween } from "./stay-dates";
 
 type AllocationStatus =
   | "RECOMMENDED"
@@ -91,11 +92,10 @@ interface RoomSplitPlan {
   fallbacks: RoomOccupancy[][];
 }
 
+/** The flight's saved stay: calendar dates (YYYY-MM-DD), check-out exclusive. */
 interface StayDates {
   checkIn: string;
   checkOut: string;
-  checkInDate: Date;
-  checkOutDate: Date;
 }
 
 interface AllocationRunContext {
@@ -189,10 +189,6 @@ const withAirportDistance = (
     ),
   };
 };
-
-/** Calendar date (YYYY-MM-DD) of a stay Date, in the server's local time. */
-const toDateOnly = (date: Date): string =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
 const room = (adults: number, children = 0): RoomOccupancy => ({
   adults,
@@ -888,44 +884,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       );
     }
 
-    const checkIn = flight.cancellationDate;
-    if (!checkIn) {
-      requestLogger.warn(
-        `Cancellation date not found for flight '${flightId}'`,
-        {
-          context: this.context,
-          flightId,
-        },
-      );
-      throw new BadRequestException(
-        `Cancellation date not found for flight '${flightId}'`,
-      );
-    }
-
-    const checkInDateObj = new Date(checkIn);
-    if (Number.isNaN(checkInDateObj.getTime())) {
-      requestLogger.warn(
-        `Invalid cancellation date '${checkIn}' for flight '${flightId}'`,
-        {
-          context: this.context,
-          flightId,
-        },
-      );
-      throw new BadRequestException(
-        `Invalid cancellation date '${checkIn}' for flight '${flightId}'`,
-      );
-    }
-
-    const checkOutDateObj = new Date(checkInDateObj);
-    checkOutDateObj.setDate(checkOutDateObj.getDate() + 1);
-    const checkOut = checkOutDateObj.toISOString().split("T")[0];
-    requestLogger.info(
-      `Calculated check-in date ${checkIn} and check-out date ${checkOut} for flight '${flightId}'`,
-      {
-        context: this.context,
-        flightId,
-      },
-    );
+    const { checkIn, checkOut } = this.resolveStayDates(flight, requestLogger);
 
     const departureAirport = flight.departureAirport;
     if (!departureAirport) {
@@ -1973,33 +1932,27 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     flight: CancelledFlightEntity,
     requestLogger: Logger,
   ): StayDates {
-    const checkIn = flight.cancellationDate;
-    if (!checkIn) {
+    const { checkInDate: checkIn, checkOutDate: checkOut } = flight;
+    if (!checkIn || !checkOut || checkOut <= checkIn) {
       requestLogger.warn(
-        `Cancellation date not found for flight '${flight.id}'`,
+        `Invalid stay dates '${checkIn}' to '${checkOut}' for flight '${flight.id}'`,
         {
           context: this.context,
           flightId: flight.id,
         },
       );
       throw new BadRequestException(
-        `Cancellation date not found for flight '${flight.id}'`,
+        `Invalid stay dates '${checkIn}' to '${checkOut}' for flight '${flight.id}'`,
       );
     }
-    const checkInDate = new Date(checkIn);
-    if (Number.isNaN(checkInDate.getTime())) {
-      throw new BadRequestException(
-        `Invalid cancellation date '${checkIn}' for flight '${flight.id}'`,
-      );
-    }
-    const checkOutDate = new Date(checkInDate);
-    checkOutDate.setDate(checkOutDate.getDate() + 1);
-    return {
-      checkIn: String(checkIn),
-      checkOut: checkOutDate.toISOString().split("T")[0],
-      checkInDate,
-      checkOutDate,
-    };
+    requestLogger.info(
+      `Using stay ${checkIn} to ${checkOut} (${daysBetween(checkIn, checkOut)} nights) for flight '${flight.id}'`,
+      {
+        context: this.context,
+        flightId: flight.id,
+      },
+    );
+    return { checkIn, checkOut };
   }
 
   /**
@@ -2641,7 +2594,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
   private async attemptHotelBooking(input: {
     flight: CancelledFlightEntity;
     booking: BookingEntity;
-    stay: { checkInDate: Date; checkOutDate: Date };
+    stay: StayDates;
     rooms: Array<{ rateKey: string; shape?: RoomOccupancy }>;
     hotel?: { hotelCode: string; hotelName: string; category: string };
     candidateId?: number | null;
@@ -2676,8 +2629,8 @@ export class HotelAllocationService implements OnApplicationBootstrap {
           hotelCode: input.hotel?.hotelCode ?? null,
           hotelName: input.hotel?.hotelName ?? null,
           category: input.hotel?.category ?? null,
-          checkInDate: toDateOnly(input.stay.checkInDate),
-          checkOutDate: toDateOnly(input.stay.checkOutDate),
+          checkInDate: input.stay.checkIn,
+          checkOutDate: input.stay.checkOut,
           platformFeePercentage: input.platformFeePercentage,
         },
         requestLogger,
