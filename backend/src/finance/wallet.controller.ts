@@ -3,6 +3,9 @@ import {
   Controller,
   Get,
   HttpCode,
+  Param,
+  ParseIntPipe,
+  Patch,
   Post,
   Query,
   Req,
@@ -41,6 +44,9 @@ import {
 import { AuthenticatedRequest } from "../auth/interfaces/authenticated-request.interface";
 import { WalletService } from "./wallet.service";
 import {
+  CreditLimitHistoryResponseDto,
+  CreditLimitUpdateResponseDto,
+  UpdateCreditLimitRequestDto,
   CreateWalletAdjustmentRequestDto,
   GetWalletTransactionsQueryDto,
   WalletAdjustmentResponseDto,
@@ -56,6 +62,8 @@ import {
 @RequireUserTypes(UserType.PLATFORM, UserType.AIRLINE)
 @Controller("wallets")
 @ApiExtraModels(
+  CreditLimitUpdateResponseDto,
+  CreditLimitHistoryResponseDto,
   WalletAdjustmentResponseDto,
   WalletTransactionListResponseDto,
   WalletBalanceResponseDto,
@@ -120,6 +128,108 @@ export class WalletController {
       data,
       requestId,
       "Wallet adjustment created successfully",
+    );
+  }
+
+  // ── PATCH /wallets/:airlineId/credit-limit ───────────────────────────────
+  @Patch(":airlineId/credit-limit")
+  @RequireUserTypes(UserType.PLATFORM)
+  @RequireAccessControl({
+    platform: {
+      asset: PlatformAsset.AIRLINES,
+      access: [AccessAction.EDIT],
+    },
+  })
+  @ApiOperation({
+    summary: "Update an airline's credit limit",
+    description:
+      "Platform users with AIRLINES EDIT. Sets an onboarded airline's credit limit to any amount >= 0 (up to 2 decimals) and records previous/new/reason/admin in the credit limit history; reason is required. The limit may be set below what the airline already uses: availableBalance (balance + creditLimit - lockedAmount) then goes negative and new hotel allocations are blocked until the wallet is topped up. Allocation runs already holding their wallet lock are not affected. No wallet transaction is created (not a balance movement). The wallet row is locked during the update. 400 when the value equals the current limit; 404 when the airline has no wallet (not onboarded yet).",
+  })
+  @ApiOkResponse({
+    schema: {
+      properties: {
+        success: { type: "boolean", example: true },
+        data: { $ref: getSchemaPath(CreditLimitUpdateResponseDto) },
+      },
+    },
+  })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/wallets/5/credit-limit",
+      "Wallet not found for airline '5'",
+    ),
+  })
+  @ApiBadRequestResponse({
+    schema: createBadRequestErrorSchema("/api/v1/wallets/5/credit-limit"),
+  })
+  async updateCreditLimit(
+    @Req() req: AuthenticatedRequest,
+    @Param("airlineId", ParseIntPipe) airlineId: number,
+    @Body() dto: UpdateCreditLimitRequestDto,
+    @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
+  ): Promise<BaseResponseDto<CreditLimitUpdateResponseDto>> {
+    requestLogger.info("Updating airline credit limit", {
+      context: this.context,
+      airlineId,
+      dto,
+    });
+    const data = await this.service.updateCreditLimit(
+      req.user,
+      airlineId,
+      dto,
+      requestId,
+      requestLogger,
+    );
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Credit limit updated successfully",
+    );
+  }
+
+  // ── GET /wallets/:airlineId/credit-limit/history ─────────────────────────
+  @Get(":airlineId/credit-limit/history")
+  @RequireUserTypes(UserType.PLATFORM)
+  @RequireAccessControl({
+    platform: {
+      asset: PlatformAsset.AIRLINES,
+      access: [AccessAction.VIEW],
+    },
+  })
+  @ApiOperation({
+    summary: "Credit limit history of an airline",
+    description:
+      "Platform users with AIRLINES VIEW. The wallet's current creditLimit, balance, lockedAmount and availableBalance, plus every credit limit change, newest first, including the initial limit set at onboarding: previous and new limit, reason, admin (id, name, email) and time. Not paginated.",
+  })
+  @ApiOkResponse({
+    schema: {
+      properties: {
+        success: { type: "boolean", example: true },
+        data: { $ref: getSchemaPath(CreditLimitHistoryResponseDto) },
+      },
+    },
+  })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/wallets/5/credit-limit/history",
+      "Wallet not found for airline '5'",
+    ),
+  })
+  async getCreditLimitHistory(
+    @Param("airlineId", ParseIntPipe) airlineId: number,
+    @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
+  ): Promise<BaseResponseDto<CreditLimitHistoryResponseDto>> {
+    const data = await this.service.getCreditLimitHistory(
+      airlineId,
+      requestId,
+      requestLogger,
+    );
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Credit limit history fetched successfully",
     );
   }
 

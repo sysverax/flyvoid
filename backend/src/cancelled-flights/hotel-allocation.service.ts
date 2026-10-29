@@ -79,6 +79,7 @@ import {
   toRoomNeeds,
 } from "./hotel-allocation.planner";
 import { BookHotelRequestDto } from "./dto/book-hotel-request.dto";
+import { daysBetween } from "./stay-dates";
 
 type AllocationStatus =
   | "RECOMMENDED"
@@ -91,11 +92,10 @@ interface RoomSplitPlan {
   fallbacks: RoomOccupancy[][];
 }
 
+/** The flight's saved stay: calendar dates (YYYY-MM-DD), check-out exclusive. */
 interface StayDates {
   checkIn: string;
   checkOut: string;
-  checkInDate: Date;
-  checkOutDate: Date;
 }
 
 interface AllocationRunContext {
@@ -189,10 +189,6 @@ const withAirportDistance = (
     ),
   };
 };
-
-/** Calendar date (YYYY-MM-DD) of a stay Date, in the server's local time. */
-const toDateOnly = (date: Date): string =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
 const room = (adults: number, children = 0): RoomOccupancy => ({
   adults,
@@ -888,44 +884,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       );
     }
 
-    const checkIn = flight.cancellationDate;
-    if (!checkIn) {
-      requestLogger.warn(
-        `Cancellation date not found for flight '${flightId}'`,
-        {
-          context: this.context,
-          flightId,
-        },
-      );
-      throw new BadRequestException(
-        `Cancellation date not found for flight '${flightId}'`,
-      );
-    }
-
-    const checkInDateObj = new Date(checkIn);
-    if (Number.isNaN(checkInDateObj.getTime())) {
-      requestLogger.warn(
-        `Invalid cancellation date '${checkIn}' for flight '${flightId}'`,
-        {
-          context: this.context,
-          flightId,
-        },
-      );
-      throw new BadRequestException(
-        `Invalid cancellation date '${checkIn}' for flight '${flightId}'`,
-      );
-    }
-
-    const checkOutDateObj = new Date(checkInDateObj);
-    checkOutDateObj.setDate(checkOutDateObj.getDate() + 1);
-    const checkOut = checkOutDateObj.toISOString().split("T")[0];
-    requestLogger.info(
-      `Calculated check-in date ${checkIn} and check-out date ${checkOut} for flight '${flightId}'`,
-      {
-        context: this.context,
-        flightId,
-      },
-    );
+    const { checkIn, checkOut } = this.resolveStayDates(flight, requestLogger);
 
     const departureAirport = flight.departureAirport;
     if (!departureAirport) {
@@ -1225,6 +1184,21 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     };
   }
 
+  /**
+   * A cancellation's platform fee: frozen at its first allocation run, so
+   * later runs and manual bookings keep it; until then the airline's current fee.
+   */
+  private feeForFlight(
+    flight: Pick<CancelledFlightEntity, "platformFeePercentage" | "platformFeeLockedAt">,
+    user: AuthenticatedRequest["user"],
+  ): number {
+    return Number(
+      flight.platformFeeLockedAt
+        ? flight.platformFeePercentage
+        : (user.platformFeePercentage ?? config.platformFeePercentage),
+    );
+  }
+
   /** User-started runs per flight: the first allocation plus one retry. */
   private static readonly MAX_USER_ALLOCATION_RUNS = 2;
 
@@ -1240,8 +1214,11 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     requestId: string,
     requestLogger: Logger,
   ): Promise<HotelAllocationsDto> {
-    const platformFeePercentage =
-      user.platformFeePercentage ?? config.platformFeePercentage;
+    // The airline's current fee; the claim freezes it on the flight at its
+    // first run, and later runs use the frozen fee instead.
+    const airlineFeePercentage = Number(
+      user.platformFeePercentage ?? config.platformFeePercentage,
+    );
     requestLogger.info("Starting flight-level hotel allocation and booking", {
       context: this.context,
       flightId,
@@ -1290,6 +1267,8 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       runId,
       requestLogger,
       HotelAllocationService.MAX_USER_ALLOCATION_RUNS,
+      false,
+      airlineFeePercentage,
     );
     if (!run.claimed) {
       if (run.reason === "limit") {
@@ -1310,10 +1289,13 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       );
     }
 
+    const platformFeePercentage = run.platformFeePercentage;
     requestLogger.info("Hotel allocation run started in the background", {
       context: this.context,
       flightId,
       runId,
+      platformFeePercentage,
+      airlineFeePercentage,
     });
     void this.executeAllocationRun(
       {
@@ -1358,11 +1340,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         ),
         this.getSupplierCheckState(flightId),
       ]);
-    const platformFeePercentage = Number(
-      flight.platformFeePercentage ??
-        user.platformFeePercentage ??
-        config.platformFeePercentage,
-    );
+    const platformFeePercentage = this.feeForFlight(flight, user);
     return this.buildAllocationSummary(
       flight,
       bookings,
@@ -1973,33 +1951,27 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     flight: CancelledFlightEntity,
     requestLogger: Logger,
   ): StayDates {
-    const checkIn = flight.cancellationDate;
-    if (!checkIn) {
+    const { checkInDate: checkIn, checkOutDate: checkOut } = flight;
+    if (!checkIn || !checkOut || checkOut <= checkIn) {
       requestLogger.warn(
-        `Cancellation date not found for flight '${flight.id}'`,
+        `Invalid stay dates '${checkIn}' to '${checkOut}' for flight '${flight.id}'`,
         {
           context: this.context,
           flightId: flight.id,
         },
       );
       throw new BadRequestException(
-        `Cancellation date not found for flight '${flight.id}'`,
+        `Invalid stay dates '${checkIn}' to '${checkOut}' for flight '${flight.id}'`,
       );
     }
-    const checkInDate = new Date(checkIn);
-    if (Number.isNaN(checkInDate.getTime())) {
-      throw new BadRequestException(
-        `Invalid cancellation date '${checkIn}' for flight '${flight.id}'`,
-      );
-    }
-    const checkOutDate = new Date(checkInDate);
-    checkOutDate.setDate(checkOutDate.getDate() + 1);
-    return {
-      checkIn: String(checkIn),
-      checkOut: checkOutDate.toISOString().split("T")[0],
-      checkInDate,
-      checkOutDate,
-    };
+    requestLogger.info(
+      `Using stay ${checkIn} to ${checkOut} (${daysBetween(checkIn, checkOut)} nights) for flight '${flight.id}'`,
+      {
+        context: this.context,
+        flightId: flight.id,
+      },
+    );
+    return { checkIn, checkOut };
   }
 
   /**
@@ -2641,7 +2613,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
   private async attemptHotelBooking(input: {
     flight: CancelledFlightEntity;
     booking: BookingEntity;
-    stay: { checkInDate: Date; checkOutDate: Date };
+    stay: StayDates;
     rooms: Array<{ rateKey: string; shape?: RoomOccupancy }>;
     hotel?: { hotelCode: string; hotelName: string; category: string };
     candidateId?: number | null;
@@ -2676,8 +2648,8 @@ export class HotelAllocationService implements OnApplicationBootstrap {
           hotelCode: input.hotel?.hotelCode ?? null,
           hotelName: input.hotel?.hotelName ?? null,
           category: input.hotel?.category ?? null,
-          checkInDate: toDateOnly(input.stay.checkInDate),
-          checkOutDate: toDateOnly(input.stay.checkOutDate),
+          checkInDate: input.stay.checkIn,
+          checkOutDate: input.stay.checkOut,
           platformFeePercentage: input.platformFeePercentage,
         },
         requestLogger,
@@ -3863,8 +3835,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       })),
       party: { adults: booking.adults, children: booking.children },
       paymentData: dto.paymentData,
-      platformFeePercentage:
-        user.platformFeePercentage ?? config.platformFeePercentage,
+      platformFeePercentage: this.feeForFlight(flight, user),
       requestId,
       requestLogger,
       onAttemptStarted: attemptStarted,

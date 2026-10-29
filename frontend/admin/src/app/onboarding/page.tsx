@@ -635,7 +635,7 @@ export default function OnboardingPage() {
                       {inv.creditLimit > 0 ? `$${inv.creditLimit.toLocaleString()}` : "N/A"}
                     </TableCell>
                     <TableCell className={cn(inv.status === "Revoked" && "opacity-50")}>
-                      {inv.platformFeePercentage > 0 ? `${inv.platformFeePercentage}%` : "N/A"}
+                      {inv.platformFeePercentage != null ? `${inv.platformFeePercentage}%` : "N/A"}
                     </TableCell>
                     <TableCell className={cn(inv.status === "Revoked" && "opacity-50")}>
                       <StatusBadge status={inv.status} />

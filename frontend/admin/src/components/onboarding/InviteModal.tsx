@@ -79,7 +79,7 @@ function validate(key: keyof InviteFormState, value: string): string {
       const num = Number(v);
       if (isNaN(num)) return "Platform Fee must be a valid number";
       if (!/^\d+(\.\d{1,2})?$/.test(v)) return "Platform Fee can have up to 2 decimal places";
-      if (num <= 0) return "Platform Fee must be greater than 0";
+      if (num < 0) return "Platform Fee must be 0 or more";
       if (num >= 100) return "Platform Fee must be less than 100";
       return "";
     }

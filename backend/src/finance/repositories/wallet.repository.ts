@@ -10,6 +10,7 @@ import { WalletCreditLimitHistoryEntity } from "../entities/wallet-credit-limit-
 import { TRANSACTION_TYPES, TRANSACTION_REFERENCE_TYPES } from "../constants";
 import { toUtcTimestampParam } from "../../common/utils/date-range.util";
 import { AirlineEntity } from "../../airline/entities/airline.entity";
+import { AdminEntity } from "../../admin/entities/admin.entity";
 import {
   AirlineListFilters,
   applyAirlineListFilters,
@@ -296,6 +297,48 @@ export class WalletRepository {
       where: { walletId },
       order: { createdAt: "DESC" },
     });
+  }
+
+  /** Credit limit changes with the admin who made each one, newest first. */
+  async findCreditLimitHistoryWithAdmins(
+    walletId: number,
+    requestId: string,
+  ): Promise<
+    Array<{
+      id: number;
+      previousCreditLimit: string;
+      newCreditLimit: string;
+      reason: string;
+      createdAt: Date;
+      adminId: number | null;
+      adminFirstName: string | null;
+      adminLastName: string | null;
+      adminEmail: string | null;
+    }>
+  > {
+    this.logger.debug(
+      "Finding credit limit history with admins by wallet id",
+      this.context,
+      requestId,
+      { walletId },
+    );
+
+    return this.creditLimitHistoryRepository
+      .createQueryBuilder("history")
+      .leftJoin(AdminEntity, "admin", "admin.id = history.changedByAdminId")
+      .select("history.id", "id")
+      .addSelect("history.previousCreditLimit", "previousCreditLimit")
+      .addSelect("history.newCreditLimit", "newCreditLimit")
+      .addSelect("history.reason", "reason")
+      .addSelect("history.createdAt", "createdAt")
+      .addSelect("admin.id", "adminId")
+      .addSelect("admin.firstName", "adminFirstName")
+      .addSelect("admin.lastName", "adminLastName")
+      .addSelect("admin.email", "adminEmail")
+      .where("history.walletId = :walletId", { walletId })
+      .orderBy("history.createdAt", "DESC")
+      .addOrderBy("history.id", "DESC")
+      .getRawMany();
   }
 
   // ─── Transaction list / summary ───────────────────────────────────────────
