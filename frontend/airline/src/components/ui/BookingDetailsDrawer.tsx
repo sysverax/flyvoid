@@ -264,6 +264,14 @@ export function BookingDetailsDrawer({
 
   const hotelWebsite = hotel?.website?.trim() || null;
 
+  const hotelPolicies = hotel?.hotelPolicies;
+  const hasHotelPolicies = !!(
+    hotelPolicies?.checkInTime ||
+    hotelPolicies?.checkOutTime ||
+    hotelPolicies?.extraInfo?.trim() ||
+    hotelPolicies?.items?.length
+  );
+
   const hotelPhones: Array<{ phoneNumber: string; phoneType: string }> =
     (hotel as any)?.contact?.phones || [];
   const phoneByType = (type: string) =>
@@ -798,7 +806,7 @@ export function BookingDetailsDrawer({
             </div>
           </div>
 
-          {hotel?.hotelPolicies && (
+          {hotelPolicies && hasHotelPolicies && (
             <>
               <div className="h-px bg-[#E5E7EB] w-full" />
               <div>
@@ -833,7 +841,7 @@ export function BookingDetailsDrawer({
                   {hotel.hotelPolicies.extraInfo && (
                     <p className="whitespace-pre-line">{hotel.hotelPolicies.extraInfo}</p>
                   )}
-                  {hotel.hotelPolicies.items.map((item: { category: string; details: string[] }) => (
+                  {(hotel.hotelPolicies.items ?? []).map((item: { category: string; details: string[] }) => (
                     <div key={item.category}>
                       <span className="font-semibold text-gray-900">{item.category}:</span>{" "}
                       {item.details.join(" · ")}
