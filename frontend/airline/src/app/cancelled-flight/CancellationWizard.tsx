@@ -4465,12 +4465,12 @@ export default function CancellationWizard({
             </div>
 
             {/* Success Alert */}
-            <div className="w-full bg-[#EBF7EE] border border-[#C8E6C9] px-4 py-3.5 rounded-xl text-sm flex items-center justify-start gap-2.5 text-[#2E7D32]">
+            {/* <div className="w-full bg-[#EBF7EE] border border-[#C8E6C9] px-4 py-3.5 rounded-xl text-sm flex items-center justify-start gap-2.5 text-[#2E7D32]">
               <CheckCircle2 className="w-4.5 h-4.5 text-[#2E7D32] shrink-0" />
               <span className="font-medium">
                 Payment successfully processed for this cancelled flight.
               </span>
-            </div>
+            </div> */}
 
             {/* Warning / Note Alert */}
             <div className="w-full bg-[#FFF8E1] border border-[#FFE082] px-4 py-3.5 rounded-xl text-sm text-[#B76E00] text-center">
