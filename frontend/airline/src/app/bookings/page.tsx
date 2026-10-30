@@ -48,7 +48,7 @@ export interface Booking {
   flight: string;
   airport: string;
   destinationName?: string;
-  departure: string;
+  arrival: string;
   hotel: string;
   contactEmail: string;
   passengers: number;
@@ -87,7 +87,7 @@ function mapHotelBookingDTOToBooking(dto: HotelBookingDTO): Booking {
     flight: dto.flightNumber || "N/A",
     airport: dto.destinationAirport?.code || "N/A",
     destinationName: dto.destinationAirport?.name || "",
-    departure: dto.destinationAirport?.code || "N/A",
+    arrival: dto.destinationAirport?.code || "N/A",
     hotel: dto.hotelName || "N/A",
     contactEmail: dto.passenger?.email || "N/A",
     passengers: dto.passenger ? adults + children : 0,
@@ -560,8 +560,8 @@ export default function BookingsPage() {
                 </TableHead>
                 <TableHead className="min-w-[130px]">
                   <SortHeader
-                    label="Departure"
-                    field="departure"
+                    label="Arrival"
+                    field="arrival"
                     sortField={sortField}
                     sortOrder={sortOrder}
                     onSort={handleSort}
@@ -704,7 +704,7 @@ export default function BookingsPage() {
                           title="View"
                         >
                           {viewingId ===
-                          (b.numericId || b.id.replace(/\D/g, "")) ? (
+                            (b.numericId || b.id.replace(/\D/g, "")) ? (
                             <svg
                               className="animate-spin h-[20px] w-[20px] text-[#0F2757]"
                               fill="none"

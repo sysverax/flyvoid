@@ -48,6 +48,7 @@ export const walletService = {
   },
 
   async getWalletTransactions(params?: {
+    search?: string;
     type?: string;
     status?: string;
     startDate?: string;

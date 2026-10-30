@@ -75,7 +75,7 @@ export default function WalletPage() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   // Fetch Wallet Transactions from GET /api/v1/wallets/transactions
-  const fetchWalletTransactions = async () => {
+  const fetchWalletTransactions = async (isMounted = true) => {
     setIsLoadingTransactions(true);
     try {
       const typeParam =
@@ -93,19 +93,34 @@ export default function WalletPage() {
         formattedEndDate &&
         new Date(formattedStartDate).getTime() >= new Date(formattedEndDate).getTime()
       ) {
-        setTransactions([]);
-        setTotalResults(0);
+        if (isMounted) {
+          setTransactions([]);
+          setTotalResults(0);
+        }
         return;
       }
 
+      const trimmedSearch = searchQuery.trim();
+      let searchParam: string | undefined = undefined;
+
+      if (trimmedSearch) {
+        if (/^w(t(x(\s*-?\s*)?)?)?$/i.test(trimmedSearch)) {
+          searchParam = undefined;
+        } else {
+          searchParam = trimmedSearch.replace(/^WTX\s*-?\s*/i, "").trim() || undefined;
+        }
+      }
+
       const res = await walletService.getWalletTransactions({
-        type: typeParam,
+        search: searchParam,
         status: statusParam,
         startDate: formattedStartDate,
         endDate: formattedEndDate,
         page: currentPage,
         limit: resultsPerPage,
       });
+
+      if (!isMounted) return;
 
       const mapped: WalletTransaction[] = (res.transactions || []).map(
         (tx: WalletTransactionItemDTO) => {
@@ -148,17 +163,36 @@ export default function WalletPage() {
       setTransactions(mapped);
       setTotalResults(res.pagination?.totalCount || mapped.length);
     } catch (err: any) {
+      if (!isMounted) return;
       console.error("Failed to fetch wallet transactions:", err);
       setTransactions([]);
       setTotalResults(0);
     } finally {
-      setIsLoadingTransactions(false);
+      if (isMounted) {
+        setIsLoadingTransactions(false);
+      }
     }
   };
 
   useEffect(() => {
-    fetchWalletTransactions();
-  }, [selectedType, selectedStatus, startDate, endDate, currentPage, resultsPerPage]);
+    let isMounted = true;
+
+    const timeoutId = setTimeout(() => {
+      fetchWalletTransactions(isMounted);
+    }, 300);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, [
+    searchQuery,
+    selectedStatus,
+    startDate,
+    endDate,
+    currentPage,
+    resultsPerPage,
+  ]);
 
   const handleClearAll = () => {
     setSearchQuery("");
@@ -171,38 +205,27 @@ export default function WalletPage() {
     setCurrentPage(1);
   };
 
-  // Local search filter
-  const filteredTransactions = useMemo(() => {
-    if (!searchQuery.trim()) return transactions;
-    const query = searchQuery.trim().toLowerCase();
-    return transactions.filter(
-      (tx) =>
-        tx.id.toLowerCase().includes(query) ||
-        tx.reason.toLowerCase().includes(query)
-    );
-  }, [transactions, searchQuery]);
-
   // Sort transactions
   const sortedTransactions = useMemo(() => {
-    if (!sortField) return filteredTransactions;
+    if (!sortField) return transactions;
 
     if (sortField === "id") {
-      return [...filteredTransactions].sort((a, b) => {
+      return [...transactions].sort((a, b) => {
         const diff = (a.rawId ?? 0) - (b.rawId ?? 0);
         return sortOrder === "asc" ? diff : -diff;
       });
     }
 
     if (sortField === "date") {
-      return [...filteredTransactions].sort((a, b) => {
+      return [...transactions].sort((a, b) => {
         const timeA = a.rawDate ? new Date(a.rawDate).getTime() : 0;
         const timeB = b.rawDate ? new Date(b.rawDate).getTime() : 0;
         return sortOrder === "asc" ? timeA - timeB : timeB - timeA;
       });
     }
 
-    return sortData(filteredTransactions, sortField, sortOrder, ["rawDate", "date"]);
-  }, [filteredTransactions, sortField, sortOrder]);
+    return sortData(transactions, sortField, sortOrder, ["rawDate", "date"]);
+  }, [transactions, sortField, sortOrder]);
 
   const totalPages = Math.max(1, Math.ceil(totalResults / resultsPerPage));
 
