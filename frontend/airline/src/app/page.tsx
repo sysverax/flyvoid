@@ -76,6 +76,9 @@ const formatXAxisTick = (label: string) => {
   return label;
 };
 
+const xAxisInterval = (granularity?: string): number | "preserveStartEnd" =>
+  granularity === "hour" ? 1 : "preserveStartEnd";
+
 const formatSpendYAxis = (val: number) => {
   if (val >= 1_000_000) {
     return `$${(val / 1_000_000).toFixed(val % 1_000_000 === 0 ? 0 : 1)}M`;
@@ -464,7 +467,7 @@ export default function DashboardPage() {
                     axisLine={false}
                     tickLine={false}
                     tickMargin={12}
-                    interval="preserveStartEnd"
+                    interval={xAxisInterval(hotelSpendData?.granularity)}
                     tickFormatter={formatXAxisTick}
                   />
                   <YAxis
@@ -546,7 +549,7 @@ export default function DashboardPage() {
                       axisLine={false}
                       tickLine={false}
                       tickMargin={12}
-                      interval="preserveStartEnd"
+                      interval={xAxisInterval(affectedPassengersData?.granularity)}
                       tickFormatter={formatXAxisTick}
                     />
                     <YAxis
@@ -620,7 +623,7 @@ export default function DashboardPage() {
                       axisLine={false}
                       tickLine={false}
                       tickMargin={12}
-                      interval="preserveStartEnd"
+                      interval={xAxisInterval(cancelledFlightsData?.granularity)}
                       tickFormatter={formatXAxisTick}
                     />
                     <YAxis
