@@ -47,7 +47,9 @@ import {
   HotelProvider,
   HotelRateCheck,
   RoomOccupancy,
+  TaxAtProperty,
 } from "./hotel-providers/hotel-provider.interface";
+import { cancellationOf } from "../hotel-availability/hotel-availability.mapper";
 import { AiService } from "../common/ai/ai.service";
 import { AuthenticatedRequest } from "../auth/interfaces/authenticated-request.interface";
 import { config } from "../config/config";
@@ -55,6 +57,7 @@ import { distanceKm } from "../common/utils/geo.util";
 import { HOTEL_STARS_BY_CLASS } from "../common/constants/hotel-stars.constants";
 import {
   HotelAllocationBookingResultDto,
+  PnrFailureCode,
   HotelAllocationProgressDto,
   HotelAllocationsDto,
   PnrBookingStatus,
@@ -194,6 +197,50 @@ const room = (adults: number, children = 0): RoomOccupancy => ({
   adults,
   children,
 });
+
+/**
+ * A FAILED PNR's reason as a code, from the messages markPnrFailed stores,
+ * so the UI can explain it and pre-fill the manual hotel search.
+ */
+export const pnrFailureCode = (reason: string | null): PnrFailureCode => {
+  const text = reason ?? "";
+  if (text.includes("No room split rule configured")) return "NO_ROOM_SPLIT";
+  if (text.startsWith("Invalid passenger data")) return "INVALID_PASSENGERS";
+  if (text.startsWith("No hotel near the airport has rooms left")) {
+    return "NO_AVAILABILITY";
+  }
+  if (
+    text.startsWith("No remaining hotel candidates could be booked") ||
+    text.startsWith("Gave up after")
+  ) {
+    return "BOOKING_REJECTED";
+  }
+  return "OTHER";
+};
+
+/** One room of a hotel option: the cheapest rate for that room, with its terms. */
+interface SelectedRoomRate {
+  adults: number;
+  children: number;
+  rateKey: string;
+  roomName: string;
+  boardName: string;
+  price: number;
+  currency: string;
+  /** Free cancellation until this time; null when non-refundable or unknown. */
+  freeCancellationUntil: string | null;
+  /** First penalty after the deadline (supplier currency). */
+  cancellationPenalty: number | null;
+  /** Taxes the guest pays at the hotel, not in the price. */
+  taxesAtProperty: TaxAtProperty[];
+}
+
+/** Supplier room limits for a user-set arrangement (RateHawk: 1–9 rooms per order). */
+const ROOM_LIMITS = {
+  maxRooms: 9,
+  maxAdultsPerRoom: 6,
+  maxChildrenPerRoom: 4,
+} as const;
 
 const ROOM_SPLIT_RULES: Record<string, RoomSplitPlan> = {
   "1_0": { preferred: [room(1)], fallbacks: [] },
@@ -640,15 +687,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
   private getBestRatesForHotelAndSplit(
     rates: AvailabilityRoomRate[],
     split: RoomOccupancy[],
-  ): Array<{
-    adults: number;
-    children: number;
-    rateKey: string;
-    roomName: string;
-    boardName: string;
-    price: number;
-    currency: string;
-  }> | null {
+  ): SelectedRoomRate[] | null {
     if (this.hotelProvider.searchMultiRoomOrders && split.length > 1) {
       const order = orderRatesFor({ rates }, split).sort(
         (a, b) => a.netPrice - b.netPrice,
@@ -657,6 +696,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         return null;
       }
       const prices = this.splitAmount(order.netPrice, order.rooms!.length);
+      const terms = this.rateTerms(order);
       return order.rooms!.map((room, index) => ({
         adults: room.adults,
         children: room.children,
@@ -665,6 +705,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         boardName: order.boardName,
         price: prices[index],
         currency: order.currency,
+        ...terms,
       }));
     }
     const buckets = new Map<string, AvailabilityRoomRate[]>();
@@ -678,15 +719,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       }
     }
 
-    const selected: Array<{
-      adults: number;
-      children: number;
-      rateKey: string;
-      roomName: string;
-      boardName: string;
-      price: number;
-      currency: string;
-    }> = [];
+    const selected: SelectedRoomRate[] = [];
 
     for (const occupancy of split) {
       const key = this.roomShapeKey(occupancy);
@@ -707,10 +740,30 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         boardName: best.boardName,
         price: this.roundCurrency(best.netPrice),
         currency: best.currency,
+        ...this.rateTerms(best),
       });
     }
 
     return selected;
+  }
+
+  /** Cancellation deadline and pay-at-hotel taxes of a rate, for display. */
+  private rateTerms(
+    rate: AvailabilityRoomRate,
+  ): Pick<
+    SelectedRoomRate,
+    "freeCancellationUntil" | "cancellationPenalty" | "taxesAtProperty"
+  > {
+    const cancellation = cancellationOf(rate);
+    return {
+      freeCancellationUntil: cancellation.freeUntil,
+      cancellationPenalty: cancellation.penaltyAmount,
+      taxesAtProperty: (rate.taxesAtProperty ?? []).map((tax) => ({
+        name: tax.name,
+        amount: this.roundCurrency(tax.amount),
+        currencyCode: tax.currencyCode,
+      })),
+    };
   }
   /** Hotel options for one PNR, searched with its room split and priced for all of its rooms. */
   async getHotelRecommendations(
@@ -736,23 +789,58 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       flightId,
       requestLogger,
     );
+    // A PNR without a configured split can still be searched with rooms the
+    // user sets; without them the response says why and searches nothing.
     const split = this.resolveRoomSplitPlan(booking, requestLogger);
-    if (!split.plan) {
-      throw new BadRequestException(split.reason);
+    const splitOptions = split.plan
+      ? [split.plan.preferred, ...split.plan.fallbacks]
+      : [];
+    if (query.rooms) {
+      const roomsError = this.customRoomsError(booking, query.rooms);
+      if (roomsError) {
+        throw new BadRequestException(roomsError);
+      }
     }
-    const splitOptions = [split.plan.preferred, ...split.plan.fallbacks];
-    if (
-      query.rooms &&
-      !this.validateSplit(booking.adults, booking.children, query.rooms)
-    ) {
-      throw new BadRequestException(
-        `Rooms must hold exactly ${booking.adults} adult(s) and ${booking.children} child(ren), with at least one adult per room`,
-      );
-    }
-    const rooms = query.rooms ?? split.plan.preferred;
+    const rooms = query.rooms ?? split.plan?.preferred ?? null;
     const radius = query.radius ?? config.hotelSearch.defaultRadius;
     const stay = this.resolveStayDates(flight, requestLogger);
     const stars = this.starRule(booking.travelClass);
+    const details = {
+      bookingId: booking.id,
+      pnr: booking.pnr,
+      travelClass: booking.travelClass,
+      adults: booking.adults,
+      children: booking.children,
+      checkInDate: stay.checkIn,
+      checkOutDate: stay.checkOut,
+      radius,
+      radiusUnit: config.hotelSearch.unit,
+      defaultRadius: config.hotelSearch.defaultRadius,
+      minStars: stars.min,
+      maxRadius: Math.max(
+        config.hotelSearch.defaultRadius,
+        config.hotelSearch.maxRadius,
+      ),
+      roomLimits: ROOM_LIMITS,
+      /** False when no arrangement can place this party (an adult in every room). */
+      arrangementPossible: this.arrangementPossible(booking),
+      /** Why there is no recommended split; null when there is one. */
+      splitError: split.plan ? null : (split.reason ?? "No room split"),
+      splitOptions: splitOptions.map((option, index) => ({
+        rooms: option,
+        recommended: index === 0,
+      })),
+    };
+    if (!rooms) {
+      requestLogger.info("No room split for PNR; waiting for custom rooms", {
+        context: this.context,
+        flightId,
+        bookingId,
+        reason: details.splitError,
+        arrangementPossible: details.arrangementPossible,
+      });
+      return { ...details, rooms: null, options: [] };
+    }
 
     let hotels: AvailabilityHotel[] = [];
     try {
@@ -771,16 +859,58 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       if (!(error instanceof NotFoundException)) throw error;
     }
 
+    // Photo and coordinates from our hotels table (already fetched by the
+    // search's enrichment), so the cards cost no extra supplier calls.
+    const stored = hotels.length
+      ? await this.hotelContentService
+          .ensureHotelContent(
+            hotels.map((hotel) => hotel.hotelCode),
+            requestId,
+            requestLogger,
+          )
+          .catch(() => new Map())
+      : new Map();
+    const airport = flight.departureAirport;
     const options = hotels
       .map((hotel) => {
         const selected = this.getBestRatesForHotelAndSplit(hotel.rates, rooms);
         if (!selected) return null;
+        const content = stored.get(hotel.hotelCode);
+        const latitude =
+          content?.latitude != null ? Number(content.latitude) : null;
+        const longitude =
+          content?.longitude != null ? Number(content.longitude) : null;
+        // The whole PNR is refundable only until the earliest room deadline.
+        const deadlines = selected.map((room) => room.freeCancellationUntil);
+        const freeCancellationUntil = deadlines.every(Boolean)
+          ? [...(deadlines as string[])].sort(
+              (a, b) => Date.parse(a) - Date.parse(b),
+            )[0]
+          : null;
         return {
           hotelCode: hotel.hotelCode,
           hotelName: hotel.hotelName,
           stars: hotel.stars,
           meetsMinimum: hotel.stars >= stars.min,
           address: hotel.address,
+          imageUrl: content?.imageUrl ?? null,
+          latitude,
+          longitude,
+          distanceKm:
+            latitude !== null &&
+            longitude !== null &&
+            airport?.latitude != null &&
+            airport?.longitude != null
+              ? distanceKm(
+                  {
+                    latitude: Number(airport.latitude),
+                    longitude: Number(airport.longitude),
+                  },
+                  { latitude, longitude },
+                )
+              : null,
+          freeCancellationUntil,
+          mealPlans: [...new Set(selected.map((room) => room.boardName))],
           totalPrice: this.roundCurrency(
             selected.reduce((sum, room) => sum + room.price, 0),
           ),
@@ -808,25 +938,82 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       options: options.length,
     });
 
-    return {
-      bookingId: booking.id,
-      pnr: booking.pnr,
-      adults: booking.adults,
-      children: booking.children,
-      radius,
-      radiusUnit: config.hotelSearch.unit,
-      minStars: stars.min,
-      maxRadius: Math.max(
-        config.hotelSearch.defaultRadius,
-        config.hotelSearch.maxRadius,
-      ),
-      rooms,
-      splitOptions: splitOptions.map((option, index) => ({
-        rooms: option,
-        recommended: index === 0,
-      })),
-      options,
-    };
+    return { ...details, rooms, options };
+  }
+
+  /**
+   * Static profile of one hotel for the manual booking detail view: photo,
+   * address, contact, amenities, policies and distance from the flight's
+   * departure airport. From our hotels table (or the supplier's lookup when it
+   * has no content API); no availability search.
+   */
+  async getHotelDetailsForFlight(
+    flightId: number,
+    hotelCode: string,
+    user: AuthenticatedRequest["user"],
+    requestId: string,
+    requestLogger: Logger,
+  ) {
+    const flight = await this.requireAirlineFlight(
+      flightId,
+      user,
+      requestLogger,
+    );
+    const details = withAirportDistance(
+      await this.hotelContentService
+        .getHotelDetails(hotelCode, requestId, requestLogger)
+        .catch(() => null),
+      flight.departureAirport,
+    );
+    if (!details) {
+      requestLogger.warn("Hotel details not available", {
+        context: this.context,
+        flightId,
+        hotelCode,
+      });
+      throw new NotFoundException(
+        `Details for hotel '${hotelCode}' are not available`,
+      );
+    }
+    requestLogger.info("Fetched hotel details for manual booking", {
+      context: this.context,
+      flightId,
+      hotelCode,
+    });
+    return { hotelCode, ...details };
+  }
+
+  /** Why rooms the user set cannot hold this PNR; null when they can. */
+  private customRoomsError(
+    booking: Pick<BookingEntity, "adults" | "children">,
+    rooms: RoomOccupancy[],
+  ): string | null {
+    if (rooms.length < 1 || rooms.length > ROOM_LIMITS.maxRooms) {
+      return `Use 1 to ${ROOM_LIMITS.maxRooms} rooms`;
+    }
+    if (rooms.some((room) => room.adults > ROOM_LIMITS.maxAdultsPerRoom)) {
+      return `A room can hold at most ${ROOM_LIMITS.maxAdultsPerRoom} adults`;
+    }
+    if (rooms.some((room) => room.children > ROOM_LIMITS.maxChildrenPerRoom)) {
+      return `A room can hold at most ${ROOM_LIMITS.maxChildrenPerRoom} children`;
+    }
+    if (!this.validateSplit(booking.adults, booking.children, rooms)) {
+      return `Rooms must hold exactly ${booking.adults} adult(s) and ${booking.children} child(ren), with at least one adult per room`;
+    }
+    return null;
+  }
+
+  /** Whether any arrangement within ROOM_LIMITS places the party with an adult in every room. */
+  private arrangementPossible(
+    booking: Pick<BookingEntity, "adults" | "children">,
+  ): boolean {
+    const { adults, children } = booking;
+    if (adults < 1 || children < 0) return false;
+    const roomsWithAdult = Math.min(adults, ROOM_LIMITS.maxRooms);
+    return (
+      adults <= ROOM_LIMITS.maxRooms * ROOM_LIMITS.maxAdultsPerRoom &&
+      children <= roomsWithAdult * ROOM_LIMITS.maxChildrenPerRoom
+    );
   }
 
   /** One entry per hotel, holding its per-room and multiroom order rates. */
@@ -3665,6 +3852,12 @@ export class HotelAllocationService implements OnApplicationBootstrap {
             : null,
           attempts: attemptCount,
           reason: row?.reason ?? null,
+          reasonCode:
+            bookingStatus === "FAILED"
+              ? pnrFailureCode(row?.reason ?? null)
+              : null,
+          adults: booking.adults,
+          children: booking.children,
         };
       });
     const count = (status: PnrBookingStatus) =>

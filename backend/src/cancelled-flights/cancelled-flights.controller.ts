@@ -1203,6 +1203,48 @@ export class CancelledFlightsController {
 
   // ── POST /cancelled-flights/:id/hotel-bookings ───────────────────
 
+  // ── GET /cancelled-flights/:id/hotels/:hotelCode ─────────────────────────
+  @Get(":id/hotels/:hotelCode")
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.VIEW],
+    },
+  })
+  @ApiOperation({
+    summary: "Hotel details for manual booking",
+    description:
+      "Static profile of one supplier hotel (the hotelCode from GET .../bookings/:bookingId/hotel-recommendations): name, stars, address, contact, coordinates, distance from the flight's departure airport, image, website, amenities and policies (check-in/out times and rules). Read from our stored hotel content; no availability search. 404 when the flight is not the airline's or no details are stored for the hotel.",
+  })
+  @ApiParam({ name: "id", description: "Cancelled flight id" })
+  @ApiParam({ name: "hotelCode", description: "Supplier hotel code" })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/cancelled-flights/:id/hotels/:hotelCode",
+      "Details for hotel '7302095' are not available",
+    ),
+  })
+  async getHotelDetails(
+    @Req() request: AuthenticatedRequest,
+    @Param("id", ParseIntPipe) id: number,
+    @Param("hotelCode") hotelCode: string,
+    @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
+  ): Promise<BaseResponseDto<object>> {
+    const data = await this.hotelAllocationService.getHotelDetailsForFlight(
+      id,
+      hotelCode,
+      request.user,
+      requestId,
+      requestLogger,
+    );
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Hotel details fetched successfully",
+    );
+  }
+
   // ── GET /cancelled-flights/:id/bookings/:bookingId/hotel-recommendations ──
   @Get(":id/bookings/:bookingId/hotel-recommendations")
   @RequireAccessControl({

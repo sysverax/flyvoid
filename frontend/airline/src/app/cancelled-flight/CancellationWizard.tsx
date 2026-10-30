@@ -3595,6 +3595,45 @@ export default function CancellationWizard({
                     </span>
                   )}
                 </div>
+                {(() => {
+                  const needsAction = hotelAllocations.results.filter(
+                    (r) => r.bookingStatus === "FAILED",
+                  );
+                  if (needsAction.length === 0 || !hasPermission("edit")) {
+                    return null;
+                  }
+                  return (
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm">
+                      <div className="flex items-center gap-2 text-red-700">
+                        <AlertCircle className="h-4 w-4 shrink-0" />
+                        <span>
+                          <span className="font-semibold">
+                            {needsAction.length} PNR
+                            {needsAction.length === 1 ? "" : "s"} need
+                            {needsAction.length === 1 ? "s" : ""} your action
+                          </span>{" "}
+                          · find and book a hotel manually.
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          document
+                            .getElementById(
+                              `allocation-row-${needsAction[0].bookingId}`,
+                            )
+                            ?.scrollIntoView({
+                              behavior: "smooth",
+                              block: "center",
+                            })
+                        }
+                        className="font-medium text-red-700 underline-offset-2 hover:underline cursor-pointer"
+                      >
+                        Show
+                      </button>
+                    </div>
+                  );
+                })()}
                 <div className="border border-gray-200 rounded-xl overflow-x-auto">
                   <Table>
                     <TableHeader>
@@ -3607,14 +3646,28 @@ export default function CancellationWizard({
                         </TableHead>
                         <TableHead className="min-w-[80px]">Attempts</TableHead>
                         <TableHead className="min-w-[240px]">Details</TableHead>
-                        <TableHead className="w-[72px] text-right">
+                        <TableHead className="w-[130px] text-right">
                           Action
                         </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {hotelAllocations.results.map((r) => (
-                        <TableRow key={r.bookingId}>
+                      {/* PNRs needing action first; otherwise the API's order. */}
+                      {[...hotelAllocations.results]
+                        .sort(
+                          (a, b) =>
+                            Number(b.bookingStatus === "FAILED") -
+                            Number(a.bookingStatus === "FAILED"),
+                        )
+                        .map((r) => (
+                        <TableRow
+                          key={r.bookingId}
+                          id={`allocation-row-${r.bookingId}`}
+                          className={cn(
+                            r.bookingStatus === "FAILED" &&
+                              "bg-red-50/40 hover:bg-red-50/70",
+                          )}
+                        >
                           <TableCell className="font-medium text-gray-900">
                             {r.pnr}
                           </TableCell>
@@ -3644,11 +3697,12 @@ export default function CancellationWizard({
                                 <button
                                   type="button"
                                   onClick={() => setFailedBookingForHotel(r)}
-                                  className="inline-flex size-8 items-center justify-center rounded-lg border border-gray-200 text-[#0F2757] transition-colors hover:border-[#0F2757]/30 hover:bg-[#0F2757]/5"
-                                  title="Find and book a hotel"
+                                  className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-lg bg-[#0F2757] px-3 text-xs font-medium text-white transition-colors hover:bg-[#162259] cursor-pointer"
+                                  title="Find and book a hotel for this PNR"
                                   aria-label={`Find a hotel for PNR ${r.pnr}`}
                                 >
                                   <Building2 className="h-4 w-4" />
+                                  Find hotel
                                 </button>
                               )}
                           </TableCell>
@@ -4674,6 +4728,10 @@ export default function CancellationWizard({
         isOpen={!!failedBookingForHotel}
         flightId={flightId}
         booking={failedBookingForHotel}
+        queue={(hotelAllocations?.results ?? []).filter(
+          (r) => r.bookingStatus === "FAILED",
+        )}
+        onNavigate={setFailedBookingForHotel}
         onClose={() => setFailedBookingForHotel(null)}
         onBooked={async () => {
           if (!flightId) return;

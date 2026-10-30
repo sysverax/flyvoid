@@ -121,7 +121,34 @@ export class HotelAllocationBookingResultDto {
     nullable: true,
   })
   reason: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      "FAILED PNRs only: NO_ROOM_SPLIT (no room arrangement for the party; set rooms manually), INVALID_PASSENGERS (passenger data cannot be allocated), NO_AVAILABILITY (no hotel had rooms for the split), BOOKING_REJECTED (supplier refused every candidate), OTHER",
+    enum: [
+      "NO_ROOM_SPLIT",
+      "INVALID_PASSENGERS",
+      "NO_AVAILABILITY",
+      "BOOKING_REJECTED",
+      "OTHER",
+    ],
+    nullable: true,
+  })
+  reasonCode: PnrFailureCode | null;
+
+  @ApiProperty({ description: "Adults on the PNR", example: 2 })
+  adults: number;
+
+  @ApiProperty({ description: "Children on the PNR", example: 1 })
+  children: number;
 }
+
+export type PnrFailureCode =
+  | "NO_ROOM_SPLIT"
+  | "INVALID_PASSENGERS"
+  | "NO_AVAILABILITY"
+  | "BOOKING_REJECTED"
+  | "OTHER";
 
 export class HotelAllocationsDto {
   @ApiProperty({ description: "ID of the cancelled flight", example: 1 })
