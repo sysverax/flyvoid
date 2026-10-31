@@ -5,6 +5,7 @@ import { cn } from "@/src/lib/utils";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { countries } from "countries-list";
+import { splitNotes } from "@/src/lib/booking-fields";
 
 export interface PassengerBookingDetailDrawerProps {
   isOpen: boolean;
@@ -58,12 +59,8 @@ export function PassengerBookingDetailDrawer({
   const isBusiness =
     travelClass === "Business" || travelClass === "First Class";
 
-  const rawNotes: string[] = [
-    ...(Array.isArray(booking?.tags) ? booking.tags : []),
-    ...(Array.isArray(booking?.specialNotes) ? booking.specialNotes : []),
-    ...(booking?.additionalNotes ? [booking.additionalNotes] : []),
-    ...(booking?.notes ? [booking.notes] : []),
-  ].filter(Boolean);
+  // Special Notes is one text: presets and free text, comma-separated.
+  const rawNotes: string[] = splitNotes(booking?.specialNotes);
 
   const content = (
     <>

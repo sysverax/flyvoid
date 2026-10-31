@@ -80,8 +80,10 @@ export interface HotelBookingDetailPassengerDTO {
   travelClass: string;
   adults: number;
   children: number;
-  specialNotes?: string[];
-  additionalNotes?: string;
+  /** One age per child (0-12). */
+  childAges?: number[];
+  /** Special Notes as entered: presets and free text, comma-separated. */
+  specialNotes?: string | null;
   createdAt: string;
   updatedAt?: string | null;
 }

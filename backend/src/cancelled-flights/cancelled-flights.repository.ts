@@ -13,6 +13,7 @@ import { config } from "../config/config";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
 import { AirportEntity } from "../airline/entities/airport.entity";
 import { BookingEntity } from "./entities/booking.entity";
+import { BookingImportFailureEntity } from "./entities/booking-import-failure.entity";
 import {
   FlightStatus,
   HotelAllocationStatus,
@@ -221,6 +222,8 @@ export class CancelledFlightsRepository {
     private readonly flightRepo: Repository<CancelledFlightEntity>,
     @InjectRepository(BookingEntity)
     private readonly bookingRepo: Repository<BookingEntity>,
+    @InjectRepository(BookingImportFailureEntity)
+    private readonly importFailureRepo: Repository<BookingImportFailureEntity>,
     private readonly walletHoldRepository: WalletHoldRepository,
   ) {}
 
@@ -716,17 +719,100 @@ export class CancelledFlightsRepository {
     await this.bookingRepo.remove(entity);
   }
 
-  // Bulk creation of bookings, used for CSV import
-  async saveBookings(
-    payloads: Partial<BookingEntity>[],
+  /** CSV import: valid rows as bookings and failed rows, in one transaction. */
+  async saveBookingImport(
+    bookings: Partial<BookingEntity>[],
+    failures: Partial<BookingImportFailureEntity>[],
     requestLogger: Logger,
-  ): Promise<BookingEntity[]> {
-    requestLogger.info("Bulk saving bookings", {
+  ): Promise<{
+    bookings: BookingEntity[];
+    failures: BookingImportFailureEntity[];
+  }> {
+    requestLogger.info("Saving booking import", {
       context: this.context,
-      count: payloads.length,
+      bookings: bookings.length,
+      failures: failures.length,
     });
-    const entities = payloads.map((p) => this.bookingRepo.create(p));
-    return this.bookingRepo.save(entities);
+    return this.manager.transaction(async (manager) => {
+      const bookingRepo = manager.getRepository(BookingEntity);
+      const failureRepo = manager.getRepository(BookingImportFailureEntity);
+      const savedBookings = bookings.length
+        ? await bookingRepo.save(bookings.map((b) => bookingRepo.create(b)))
+        : [];
+      const savedFailures = failures.length
+        ? await failureRepo.save(failures.map((f) => failureRepo.create(f)))
+        : [];
+      return { bookings: savedBookings, failures: savedFailures };
+    });
+  }
+
+  /**
+   * Saves the booking that fixes a failed CSV row and deletes that row, in one
+   * transaction. Null when the failed row is no longer there (nothing saved).
+   */
+  async createBookingFromImportFailure(
+    payload: Partial<BookingEntity>,
+    failureId: number,
+    requestLogger: Logger,
+  ): Promise<BookingEntity | null> {
+    requestLogger.info("Creating booking from failed import row", {
+      context: this.context,
+      cancelledFlightId: payload.cancelledFlightId,
+      failureId,
+      pnr: payload.pnr,
+    });
+    return this.manager.transaction(async (manager) => {
+      const deleted = await manager
+        .getRepository(BookingImportFailureEntity)
+        .delete({ id: failureId, cancelledFlightId: payload.cancelledFlightId });
+      if (!deleted.affected) return null;
+      const bookingRepo = manager.getRepository(BookingEntity);
+      return bookingRepo.save(bookingRepo.create(payload));
+    });
+  }
+
+  async findImportFailures(
+    cancelledFlightId: number,
+    requestLogger: Logger,
+  ): Promise<BookingImportFailureEntity[]> {
+    requestLogger.info("Finding failed import rows", {
+      context: this.context,
+      cancelledFlightId,
+    });
+    return this.importFailureRepo.find({
+      where: { cancelledFlightId },
+      order: { createdAt: "ASC", rowNumber: "ASC", id: "ASC" },
+    });
+  }
+
+  async countImportFailures(
+    cancelledFlightId: number,
+    requestLogger: Logger,
+  ): Promise<number> {
+    requestLogger.info("Counting failed import rows", {
+      context: this.context,
+      cancelledFlightId,
+    });
+    return this.importFailureRepo.count({ where: { cancelledFlightId } });
+  }
+
+  /** Deletes one failed row, or every one when failureId is omitted. Returns the count. */
+  async deleteImportFailures(
+    cancelledFlightId: number,
+    requestLogger: Logger,
+    failureId?: number,
+  ): Promise<number> {
+    requestLogger.info("Deleting failed import rows", {
+      context: this.context,
+      cancelledFlightId,
+      failureId: failureId ?? "all",
+    });
+    const result = await this.importFailureRepo.delete(
+      failureId === undefined
+        ? { cancelledFlightId }
+        : { cancelledFlightId, id: failureId },
+    );
+    return result.affected ?? 0;
   }
 
   async findBookingsByFlightIdWithPagination(

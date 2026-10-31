@@ -81,6 +81,7 @@ import {
   supplyTarget,
   toRoomNeeds,
 } from "./hotel-allocation.planner";
+import { deriveSpecialNotes } from "./booking-notes";
 import { BookHotelRequestDto } from "./dto/book-hotel-request.dto";
 import { daysBetween } from "./stay-dates";
 
@@ -571,7 +572,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
 
   private toGroupKey(booking: BookingEntity): string {
     const passengerProfile = booking.children > 0 ? "family" : "standard";
-    const notes = [...(booking.specialNotes ?? [])].sort().join("|");
+    const notes = [...deriveSpecialNotes(booking.specialNotes)].sort().join("|");
     return `${booking.travelClass}|${passengerProfile}|${notes}`;
   }
 
@@ -632,7 +633,11 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     for (const [groupKey, groupBookings] of groupedBookings.entries()) {
       const first = groupBookings[0];
       const specialNotes = Array.from(
-        new Set(groupBookings.flatMap((booking) => booking.specialNotes ?? [])),
+        new Set(
+          groupBookings.flatMap((booking) =>
+            deriveSpecialNotes(booking.specialNotes),
+          ),
+        ),
       );
 
       try {
@@ -3749,7 +3754,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     hotelName: string,
     category: string,
   ): string {
-    const specialNotes = booking.specialNotes ?? [];
+    const specialNotes = deriveSpecialNotes(booking.specialNotes);
     const { min } = this.starRule(booking.travelClass);
     return (
       `Booked ${hotelName}${category ? ` (${category})` : ""} for ${booking.travelClass} class` +

@@ -80,29 +80,18 @@ import {
   HotelSummaryCancelledFlightSummaryDto,
   HotelBookingItemDTO,
   HotelBookingDetailDataDto,
+  FailedBookingDTO,
 } from "@/src/services/cancellation.service";
+import { resizeChildAges, validateChildAge } from "@/src/lib/booking-fields";
+import { ChildAgesInputs } from "@/src/components/bookings/ChildAgesInputs";
+import { SpecialNotesField } from "@/src/components/bookings/SpecialNotesField";
+import { CsvUploadTips } from "@/src/components/bookings/CsvImportGuide";
+import { FailedBookingsTable } from "@/src/components/bookings/FailedBookingsTable";
+import { Dialog } from "@/src/components/ui/Dialog";
 import {
   airportsService,
   AirportOptionDTO,
 } from "@/src/services/airports.service";
-
-const NOTE_TAG_TO_ENUM: Record<string, string> = {
-  "Wheelchair Assistance": "wheelchair_assistance",
-  "Medical Needs": "medical_needs",
-  Infant: "infant",
-  "Late Arrival": "late_arrival",
-  "Dietary Requirements": "dietary_requirements",
-  "Elderly Passenger": "elderly_passenger",
-};
-
-const ENUM_TO_NOTE_TAG: Record<string, string> = {
-  wheelchair_assistance: "Wheelchair Assistance",
-  medical_needs: "Medical Needs",
-  infant: "Infant",
-  late_arrival: "Late Arrival",
-  dietary_requirements: "Dietary Requirements",
-  elderly_passenger: "Elderly Passenger",
-};
 
 const TRAVEL_CLASS_TO_ENUM: Record<string, string> = {
   "First Class": "first_class",
@@ -168,8 +157,9 @@ interface ManualBooking {
   travelClass: string;
   adults: number;
   children: number;
-  notes: string;
-  tags: string[];
+  childAges: number[];
+  /** Special Notes: presets and free text, comma-separated. */
+  specialNotes: string;
 }
 
 export interface Cancellation {
@@ -607,7 +597,9 @@ export default function CancellationWizard({
   const [bookingChildren, setBookingChildren] = useState("0");
   const [bookingNotesText, setBookingNotesText] = useState("");
   const [bookingResidency, setBookingResidency] = useState("");
-  const [selectedNoteTags, setSelectedNoteTags] = useState<string[]>([]);
+  const [bookingChildAges, setBookingChildAges] = useState<string[]>([]);
+  const [childAgesTouched, setChildAgesTouched] = useState(false);
+  const childAgeErrors = bookingChildAges.map(validateChildAge);
 
   // Step 2 Validation & Error State (matching admin invite modal)
   type Step2Field =
@@ -758,6 +750,9 @@ export default function CancellationWizard({
 
   const handleBookingChildrenChange = (val: string) => {
     setBookingChildren(val);
+    setBookingChildAges((prev) =>
+      resizeChildAges(prev, /^\d+$/.test(val.trim()) ? Number(val) : 0),
+    );
     if (step2Touched.children) {
       const msg = validateStep2("children", val);
       setStep2Errors((prev) => ({ ...prev, children: msg || undefined }));
@@ -774,9 +769,14 @@ export default function CancellationWizard({
     validBookings: number;
     errorBookings: number;
   } | null>(null);
-  const [importErrors, setImportErrors] = useState<
-    Array<{ row: number; errors: string[] }>
-  >([]);
+  // Failed CSV rows, kept on the server until fixed or deleted.
+  const [failedBookings, setFailedBookings] = useState<FailedBookingDTO[]>([]);
+  const [editingFailedId, setEditingFailedId] = useState<number | null>(null);
+  const [bookingListTab, setBookingListTab] = useState<"failed" | "bookings">(
+    "failed",
+  );
+  const [isDeleteAllFailedOpen, setIsDeleteAllFailedOpen] = useState(false);
+  const [isDeletingFailed, setIsDeletingFailed] = useState(false);
 
   // Manifest File Upload (Excel simulator)
   const [isManifestUploaded, setIsManifestUploaded] = useState(false);
@@ -858,10 +858,8 @@ export default function CancellationWizard({
           travelClass: ENUM_TO_TRAVEL_CLASS[b.travelClass] || "Economy",
           adults: b.adults || 1,
           children: b.children || 0,
-          notes: b.additionalNotes || b.notes || "",
-          tags: (b.specialNotes || []).map(
-            (sn: string) => ENUM_TO_NOTE_TAG[sn] || sn,
-          ),
+          childAges: Array.isArray(b.childAges) ? b.childAges : [],
+          specialNotes: b.specialNotes || "",
         }));
         setAddedBookings(mapped);
       }
@@ -869,6 +867,14 @@ export default function CancellationWizard({
       console.error("Failed to load bookings:", err);
     } finally {
       setIsLoadingBookings(false);
+    }
+  };
+
+  const fetchFailedBookings = async (fId: number) => {
+    try {
+      setFailedBookings(await cancellationService.listFailedBookings(fId));
+    } catch (err: unknown) {
+      console.error("Failed to load failed bookings:", err);
     }
   };
 
@@ -1029,6 +1035,7 @@ export default function CancellationWizard({
     preloadedReviewRef.current = null;
     if (activeStep === 2 && flightId) {
       fetchBookings(flightId);
+      fetchFailedBookings(flightId);
     } else if (activeStep === 3 && flightId) {
       if (!preloadedReview) fetchReviewData(flightId);
       if (addedBookings.length === 0) {
@@ -1502,8 +1509,8 @@ export default function CancellationWizard({
         travelClass: "Economy",
         adults: 1,
         children: 0,
-        notes: "Dietary Requirements",
-        tags: ["Dietary Requirements"],
+        childAges: [],
+        specialNotes: "Dietary Requirements",
       },
       {
         id: "mock2",
@@ -1516,22 +1523,131 @@ export default function CancellationWizard({
         travelClass: "Business",
         adults: 2,
         children: 1,
-        notes: "Wheelchair Assistance",
-        tags: ["Wheelchair Assistance"],
+        childAges: [7],
+        specialNotes: "Wheelchair Assistance",
       },
     ];
     setAddedBookings(mockBookings);
   };
 
-  const handleNoteTagClick = (tag: string) => {
-    if (selectedNoteTags.includes(tag)) {
-      setSelectedNoteTags((prev) => prev.filter((t) => t !== tag));
-    } else {
-      setSelectedNoteTags((prev) => [...prev, tag]);
+  const resetBookingForm = () => {
+    setEditingBookingId(null);
+    setEditingFailedId(null);
+    setBookingPnr("");
+    setBookingFirstName("");
+    setBookingLastName("");
+    setBookingEmail("");
+    setBookingPhone("");
+    setBookingResidency("");
+    setBookingClass("Economy");
+    setBookingAdults("1");
+    setBookingChildren("0");
+    setBookingChildAges([]);
+    setChildAgesTouched(false);
+    setBookingNotesText("");
+    setStep2Errors({});
+    setStep2Touched({});
+  };
+
+  const scrollToBookingForm = () => {
+    setTimeout(() => {
+      const pnrInput = document.querySelector(
+        'input[placeholder="e.g., ABC123"]',
+      );
+      pnrInput?.scrollIntoView({ behavior: "smooth", block: "center" });
+      (pnrInput as HTMLInputElement)?.focus();
+    }, 50);
+  };
+
+  /** Loads a failed CSV row into the form, with its errors shown. */
+  const handleEditFailedBooking = (failed: FailedBookingDTO) => {
+    const v = failed.values;
+    resetBookingForm();
+    setBookingTab("manual");
+    setEditingFailedId(failed.id);
+    setBookingPnr(v.pnr);
+    setBookingFirstName(v.firstName);
+    setBookingLastName(v.lastName);
+    setBookingEmail(v.email);
+    setBookingPhone(v.phone);
+    // Only a recognised code/value fits the dropdowns; otherwise pick again.
+    setBookingResidency(
+      COUNTRY_OPTIONS.some((o) => o.value === v.residency) ? v.residency : "",
+    );
+    setBookingClass(ENUM_TO_TRAVEL_CLASS[v.travelClass] ?? "");
+    setBookingAdults(v.adults);
+    setBookingChildren(v.children);
+    setBookingChildAges(
+      resizeChildAges(
+        v.childAges,
+        /^\d+$/.test(v.children) ? Number(v.children) : 0,
+      ),
+    );
+    setBookingNotesText(v.specialNotes);
+
+    const values: Record<Step2Field, string> = {
+      pnr: v.pnr,
+      firstName: v.firstName,
+      lastName: v.lastName,
+      email: v.email,
+      phone: v.phone,
+      residency: COUNTRY_OPTIONS.some((o) => o.value === v.residency)
+        ? v.residency
+        : "",
+      travelClass: ENUM_TO_TRAVEL_CLASS[v.travelClass] ?? "",
+      adults: v.adults,
+      children: v.children,
+    };
+    const errs: Partial<Record<Step2Field, string>> = {};
+    const touched: Partial<Record<Step2Field, boolean>> = {};
+    (Object.keys(values) as Step2Field[]).forEach((field) => {
+      // The import's own message first: it names the bad value, which the
+      // dropdowns can't show (e.g. an unknown travel class becomes blank).
+      const serverError = failed.errors.find((e) => e.field === field);
+      const msg = serverError?.message || validateStep2(field, values[field]);
+      if (msg) errs[field] = msg;
+      touched[field] = true;
+    });
+    setStep2Errors(errs);
+    setStep2Touched(touched);
+    setChildAgesTouched(true);
+    scrollToBookingForm();
+  };
+
+  const handleDeleteFailedBooking = async (failed: FailedBookingDTO) => {
+    if (!flightId) return;
+    try {
+      await cancellationService.deleteFailedBooking(flightId, failed.id);
+      setFailedBookings((prev) => prev.filter((f) => f.id !== failed.id));
+      if (editingFailedId === failed.id) resetBookingForm();
+      toast.success(`Failed booking (row ${failed.rowNumber}) deleted`);
+    } catch (err: unknown) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to delete failed booking",
+      );
+    }
+  };
+
+  const handleDeleteAllFailedBookings = async () => {
+    if (!flightId) return;
+    setIsDeletingFailed(true);
+    try {
+      const res = await cancellationService.deleteAllFailedBookings(flightId);
+      setFailedBookings([]);
+      if (editingFailedId !== null) resetBookingForm();
+      setIsDeleteAllFailedOpen(false);
+      toast.success(res?.message || "Failed bookings deleted");
+    } catch (err: unknown) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to delete failed bookings",
+      );
+    } finally {
+      setIsDeletingFailed(false);
     }
   };
 
   const handleEditBooking = (booking: ManualBooking) => {
+    resetBookingForm();
     setBookingTab("manual");
     setEditingBookingId(booking.id);
     setBookingPnr(booking.pnr || "");
@@ -1543,16 +1659,14 @@ export default function CancellationWizard({
     setBookingClass(booking.travelClass || "Economy");
     setBookingAdults(String(booking.adults ?? 1));
     setBookingChildren(String(booking.children ?? 0));
-    setBookingNotesText(booking.notes || "");
-    setSelectedNoteTags(booking.tags || []);
-
-    setTimeout(() => {
-      const pnrInput = document.querySelector(
-        'input[placeholder="e.g., ABC123"]',
-      );
-      pnrInput?.scrollIntoView({ behavior: "smooth", block: "center" });
-      (pnrInput as HTMLInputElement)?.focus();
-    }, 50);
+    setBookingChildAges(
+      resizeChildAges(
+        (booking.childAges ?? []).map(String),
+        booking.children ?? 0,
+      ),
+    );
+    setBookingNotesText(booking.specialNotes || "");
+    scrollToBookingForm();
   };
 
   const handleDeleteBooking = async (id: string) => {
@@ -1592,16 +1706,21 @@ export default function CancellationWizard({
       try {
         const res = await cancellationService.importBookings(flightId, file);
         setIsManifestUploaded(true);
-        if (res?.data?.summary) {
-          setImportSummary(res.data.summary);
-        }
-        if (res?.data?.errorList && res.data.errorList.length > 0) {
-          setImportErrors(res.data.errorList);
+        const summary = res?.data?.summary ?? null;
+        setImportSummary(summary);
+        await Promise.all([
+          fetchBookings(flightId),
+          fetchFailedBookings(flightId),
+        ]);
+        if (summary && summary.errorBookings > 0) {
+          setBookingListTab("failed");
+          toast.warning(
+            res?.message ||
+              `${summary.validBookings} booking(s) imported, ${summary.errorBookings} failed`,
+          );
         } else {
-          setImportErrors([]);
+          toast.success(res?.message || "Bookings imported successfully");
         }
-        await fetchBookings(flightId);
-        toast.success(res?.message || "Bookings imported successfully");
       } catch (err: any) {
         toast.error(err.message || "Failed to import CSV bookings");
       } finally {
@@ -1645,7 +1764,11 @@ export default function CancellationWizard({
       const msg = validateStep2(f, values[f]);
       if (msg) errs[f] = msg;
     }
-    if (Object.keys(errs).length > 0) {
+    const adults = Number(bookingAdults);
+    const children = Number(bookingChildren) || 0;
+    const hasAgeErrors = bookingChildAges.some((age) => validateChildAge(age));
+
+    if (Object.keys(errs).length > 0 || hasAgeErrors) {
       setStep2Errors(errs);
       setStep2Touched({
         pnr: true,
@@ -1658,6 +1781,7 @@ export default function CancellationWizard({
         adults: true,
         children: true,
       });
+      setChildAgesTouched(true);
       setTimeout(() => {
         const first = document.querySelector(".step2-field-error");
         first?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1665,11 +1789,8 @@ export default function CancellationWizard({
       return;
     }
 
-    const mappedTravelClass = TRAVEL_CLASS_TO_ENUM[bookingClass] || "economy";
-    const mappedSpecialNotes = selectedNoteTags.map(
-      (t) => NOTE_TAG_TO_ENUM[t] || t.toLowerCase().replace(/\s+/g, "_"),
-    );
-
+    const childAges = bookingChildAges.map(Number);
+    const notes = bookingNotesText.trim();
     const payload: CreateBookingPayload = {
       pnr: bookingPnr.trim().toUpperCase(),
       firstName: bookingFirstName.trim(),
@@ -1677,86 +1798,71 @@ export default function CancellationWizard({
       email: bookingEmail.trim(),
       phone: bookingPhone.trim(),
       residency: bookingResidency,
-      travelClass: mappedTravelClass,
-      adults: Number(bookingAdults) || 1,
-      children: Number(bookingChildren) || 0,
-      specialNotes: mappedSpecialNotes,
-      additionalNotes: bookingNotesText.trim() || undefined,
+      travelClass: TRAVEL_CLASS_TO_ENUM[bookingClass],
+      adults,
+      children,
+      childAges,
+      specialNotes: notes || undefined,
+    };
+    const localBooking = {
+      pnr: payload.pnr,
+      firstName: payload.firstName,
+      lastName: payload.lastName,
+      email: payload.email,
+      phone: payload.phone,
+      residency: bookingResidency,
+      travelClass: bookingClass,
+      adults,
+      children,
+      childAges,
+      specialNotes: notes,
     };
 
     setIsSavingBooking(true);
     try {
-      if (editingBookingId) {
+      if (editingFailedId !== null && flightId) {
+        // Fixing a failed CSV row: saved as a booking, the failed row removed.
+        const res = await cancellationService.resolveFailedBooking(
+          flightId,
+          editingFailedId,
+          payload,
+        );
+        await Promise.all([
+          fetchBookings(flightId),
+          fetchFailedBookings(flightId),
+        ]);
+        toast.success(res?.message || "Booking saved");
+      } else if (editingBookingId) {
         if (flightId) {
-          await cancellationService.updateBooking(
-            flightId,
-            editingBookingId,
-            payload,
-          );
+          await cancellationService.updateBooking(flightId, editingBookingId, {
+            ...payload,
+            // null clears the notes on update; undefined would leave them as they were.
+            specialNotes: notes || null,
+          });
           await fetchBookings(flightId);
         } else {
           setAddedBookings((prev) =>
             prev.map((b) =>
-              b.id === editingBookingId
-                ? {
-                    ...b,
-                    pnr: bookingPnr,
-                    firstName: bookingFirstName,
-                    lastName: bookingLastName,
-                    email: bookingEmail,
-                    phone: bookingPhone,
-                    residency: bookingResidency,
-                    travelClass: bookingClass,
-                    adults: Number(bookingAdults) || 1,
-                    children: Number(bookingChildren) || 0,
-                    notes: bookingNotesText,
-                    tags: selectedNoteTags,
-                  }
-                : b,
+              b.id === editingBookingId ? { ...b, ...localBooking } : b,
             ),
           );
         }
         toast.success("Booking updated successfully");
-        setEditingBookingId(null);
       } else {
         if (flightId) {
           const res = await cancellationService.addBooking(flightId, payload);
           await fetchBookings(flightId);
           toast.success(res?.message || "Booking added successfully");
         } else {
-          const newB: ManualBooking = {
-            id: String(Date.now()),
-            pnr: bookingPnr,
-            firstName: bookingFirstName,
-            lastName: bookingLastName,
-            email: bookingEmail,
-            phone: bookingPhone,
-            residency: bookingResidency,
-            travelClass: bookingClass,
-            adults: Number(bookingAdults) || 1,
-            children: Number(bookingChildren) || 0,
-            notes: bookingNotesText,
-            tags: selectedNoteTags,
-          };
-          setAddedBookings((prev) => [...prev, newB]);
+          setAddedBookings((prev) => [
+            ...prev,
+            { id: String(Date.now()), ...localBooking },
+          ]);
           toast.success("Booking added");
         }
       }
 
-      // Reset booking form
-      setBookingPnr("");
-      setBookingFirstName("");
-      setBookingLastName("");
-      setBookingEmail("");
-      setBookingPhone("");
-      setBookingResidency("");
-      setBookingClass("Economy");
-      setBookingAdults("1");
-      setBookingChildren("0");
-      setBookingNotesText("");
-      setSelectedNoteTags([]);
-      setStep2Errors({});
-      setStep2Touched({});
+      resetBookingForm();
     } catch (error: any) {
       toast.error(error.message || "Failed to save booking");
     } finally {
@@ -1944,6 +2050,12 @@ export default function CancellationWizard({
     if (activeStep === 1) {
       await saveFlightStep1(true);
     } else if (activeStep === 2) {
+      if (failedBookings.length > 0) {
+        toast.error(
+          `Fix or delete the ${failedBookings.length} failed booking(s) before continuing.`,
+        );
+        return;
+      }
       if (addedBookings.length === 0) {
         toast.error("At least one booking is required.");
         return;
@@ -2380,6 +2492,7 @@ export default function CancellationWizard({
                   className="hidden"
                   onChange={handleCsvFileSelected}
                 />
+                <div className="border border-gray-200 rounded-2xl p-5 bg-white grid grid-cols-1 lg:grid-cols-[1fr_minmax(320px,420px)] gap-5">
                 <div
                   className={cn(
                     "border border-dashed rounded-xl py-12 px-6 flex flex-col items-center justify-center text-center transition-colors duration-200",
@@ -2434,12 +2547,11 @@ export default function CancellationWizard({
                     </div>
                   ) : (
                     <>
-                      <h4 className="text-[18px] font-semibold text-[#111827] mb-2 font-figtree">
-                        Upload Booking File
+                      <h4 className="text-[18px] font-semibold text-[#0F2757] mb-2 font-figtree">
+                        Upload booking file
                       </h4>
                       <p className="text-[15px] text-[#6B7280] mb-6 max-w-[400px]">
-                        Drag and drop a CSV file containing booking data, or
-                        click to browse your files
+                        Drag and drop your CSV here, or browse your files
                       </p>
                       <button
                         type="button"
@@ -2450,49 +2562,31 @@ export default function CancellationWizard({
                         className="h-[42px] bg-[#233159] hover:bg-[#1A2542] text-white px-6 rounded-[8px] font-medium text-[15px] flex items-center gap-2 mb-4 transition-colors cursor-pointer"
                       >
                         <Upload className="h-4 w-4" />
-                        Choose File
+                        Choose file
                       </button>
-                      <p className="text-[13px] text-[#9CA3AF]">
-                        Supports .csv • Max 10MB
-                      </p>
-                      <p className="text-[12px] text-[#9CA3AF] mt-2 max-w-[460px]">
-                        Columns: PNR, First Name, Last Name, Email, Phone,
-                        Passport Country (name or code, e.g. United States
-                        or US), Travel Class, Adults, Children, Special
-                        Notes, Additional Notes. Every row needs a Passport
-                        Country.
+                      <p className="text-[13px] text-[#6B7280]">
+                        .csv only · Maximum 10 MB
                       </p>
                     </>
                   )}
                 </div>
+                <CsvUploadTips />
+                </div>
 
-                {importSummary && (
-                  <div className="mt-4 p-4 rounded-xl border border-blue-200 bg-blue-50/50 flex items-center justify-between text-left">
+                {importSummary && importSummary.errorBookings > 0 && (
+                  <div className="mt-4 p-4 rounded-xl border border-red-200 bg-red-50/50 flex items-start gap-3 text-left">
+                    <AlertCircle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
                     <div>
-                      <h5 className="font-semibold text-blue-900 text-sm">
-                        Import Summary
+                      <h5 className="font-semibold text-red-900 text-sm">
+                        {importSummary.errorBookings} of{" "}
+                        {importSummary.totalBookings} row(s) could not be
+                        imported
                       </h5>
-                      <p className="text-xs text-blue-700 mt-0.5">
-                        Total: {importSummary.totalBookings} | Valid:{" "}
-                        {importSummary.validBookings} | Errors:{" "}
-                        {importSummary.errorBookings}
+                      <p className="text-xs text-red-700 mt-0.5">
+                        They are listed under Failed Bookings below with the
+                        problem on each row. Fix or delete them to continue.
                       </p>
                     </div>
-                  </div>
-                )}
-
-                {importErrors.length > 0 && (
-                  <div className="mt-3 p-4 rounded-xl border border-red-200 bg-red-50/50 text-left">
-                    <h5 className="font-semibold text-red-900 text-sm mb-1">
-                      Errors Encountered in CSV:
-                    </h5>
-                    <ul className="list-disc list-inside text-xs text-red-700 space-y-1">
-                      {importErrors.map((err, idx) => (
-                        <li key={idx}>
-                          Row {err.row}: {err.errors.join(", ")}
-                        </li>
-                      ))}
-                    </ul>
                   </div>
                 )}
               </div>
@@ -2500,27 +2594,19 @@ export default function CancellationWizard({
               <div className="border border-gray-200 rounded-xl p-5 bg-white space-y-4 text-left">
                 <div className="flex items-center justify-between">
                   <h4 className="font-semibold text-gray-900 text-base">
-                    {editingBookingId ? "Edit Booking" : "Add New Booking"}
+                    {editingFailedId !== null
+                      ? `Fix Failed Booking (Row ${
+                          failedBookings.find((f) => f.id === editingFailedId)
+                            ?.rowNumber ?? "?"
+                        })`
+                      : editingBookingId
+                        ? "Edit Booking"
+                        : "Add New Booking"}
                   </h4>
-                  {editingBookingId && (
+                  {(editingBookingId || editingFailedId !== null) && (
                     <button
                       type="button"
-                      onClick={() => {
-                        setEditingBookingId(null);
-                        setBookingPnr("");
-                        setBookingFirstName("");
-                        setBookingLastName("");
-                        setBookingEmail("");
-                        setBookingPhone("");
-                        setBookingResidency("");
-                        setBookingClass("Economy");
-                        setBookingAdults("1");
-                        setBookingChildren("0");
-                        setBookingNotesText("");
-                        setSelectedNoteTags([]);
-                        setStep2Errors({});
-                        setStep2Touched({});
-                      }}
+                      onClick={resetBookingForm}
                       className="text-xs text-gray-500 hover:text-gray-800 underline cursor-pointer"
                     >
                       Cancel Edit
@@ -2687,6 +2773,7 @@ export default function CancellationWizard({
                       value={bookingClass}
                       onChange={handleBookingClassChange}
                       options={TRAVEL_CLASS_OPTIONS}
+                      placeholder="Select class"
                       triggerWidthClass="w-full"
                       widthClass="w-full"
                       bgClass="bg-white"
@@ -2763,46 +2850,18 @@ export default function CancellationWizard({
                   </div>
                 </div>
 
-                <div className="flex flex-col gap-2 pt-1.5">
-                  <label className="text-base font-semibold text-gray-600">
-                    Special Notes (Optional)
-                  </label>
-                  <div className="flex flex-wrap gap-1.5 mb-1.5">
-                    {[
-                      "Wheelchair Assistance",
-                      "Medical Needs",
-                      "Infant",
-                      "Late Arrival",
-                      "Dietary Requirements",
-                      "Elderly Passenger",
-                    ].map((tag) => {
-                      const isSelected = selectedNoteTags.includes(tag);
-                      return (
-                        <button
-                          key={tag}
-                          type="button"
-                          onClick={() => handleNoteTagClick(tag)}
-                          className={cn(
-                            "rounded-full border text-xs px-3 py-1.5 font-medium cursor-pointer transition-all",
-                            isSelected
-                              ? "bg-[#0F2757] text-white border-[#0F2757]"
-                              : "bg-white hover:bg-slate-55 border-gray-200 text-gray-600 hover:border-gray-300",
-                          )}
-                        >
-                          {tag}
-                        </button>
-                      );
-                    })}
-                  </div>
+                <ChildAgesInputs
+                  ages={bookingChildAges}
+                  onChange={setBookingChildAges}
+                  onBlur={() => setChildAgesTouched(true)}
+                  errors={childAgeErrors}
+                  touched={childAgesTouched}
+                />
 
-                  <input
-                    type="text"
-                    placeholder="Additional notes (free text)"
-                    value={bookingNotesText}
-                    onChange={(e) => setBookingNotesText(e.target.value)}
-                    className="block h-10 w-full rounded-lg border border-[#D1D5DB] px-3 text-base text-gray-900 bg-[#F9FAFB] focus:bg-white focus:border-[#0F2757] focus:outline-none"
-                  />
-                </div>
+                <SpecialNotesField
+                  value={bookingNotesText}
+                  onChange={setBookingNotesText}
+                />
 
                 {hasPermission("edit") && (
                   <button
@@ -2819,16 +2878,67 @@ export default function CancellationWizard({
                     <span>
                       {isSavingBooking
                         ? "Saving..."
-                        : editingBookingId
-                          ? "Update Booking"
-                          : "Add Booking"}
+                        : editingFailedId !== null
+                          ? "Save Booking"
+                          : editingBookingId
+                            ? "Update Booking"
+                            : "Add Booking"}
                     </span>
                   </button>
                 )}
               </div>
             )}
 
-            {/* Bookings List / Table */}
+            {/* Failed / Bookings tabs, only while failed CSV rows exist */}
+            {failedBookings.length > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="inline-flex p-1 bg-gray-100/80 rounded-xl">
+                  {(
+                    [
+                      ["bookings", `Bookings (${addedBookings.length})`],
+                      ["failed", `Failed Bookings (${failedBookings.length})`],
+                    ] as const
+                  ).map(([tab, label]) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      onClick={() => setBookingListTab(tab)}
+                      className={cn(
+                        "px-5 py-2 text-[15px] font-medium rounded-lg transition-all duration-200 cursor-pointer",
+                        bookingListTab === tab
+                          ? "bg-white shadow-sm " +
+                              (tab === "failed"
+                                ? "text-red-600"
+                                : "text-[#0F2757]")
+                          : "text-gray-500 hover:text-gray-700",
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {bookingListTab === "failed" && hasPermission("edit") && (
+                  <button
+                    type="button"
+                    onClick={() => setIsDeleteAllFailedOpen(true)}
+                    className="flex items-center gap-2 border border-gray-200 bg-white hover:bg-red-50 text-red-600 font-medium py-2 px-4 rounded-lg transition-colors cursor-pointer text-sm"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete All Failed
+                  </button>
+                )}
+              </div>
+            )}
+
+            {failedBookings.length > 0 && bookingListTab === "failed" ? (
+              <FailedBookingsTable
+                failedBookings={failedBookings}
+                canEdit={hasPermission("edit")}
+                editingId={editingFailedId}
+                onEdit={handleEditFailedBooking}
+                onDelete={handleDeleteFailedBooking}
+              />
+            ) : (
             <div className="space-y-4">
               {addedBookings.length === 0 ? (
                 bookingTab === "manual" ? (
@@ -3058,6 +3168,34 @@ export default function CancellationWizard({
                 </div>
               )}
             </div>
+            )}
+
+            <Dialog.Root
+              isOpen={isDeleteAllFailedOpen}
+              onClose={isDeletingFailed ? () => {} : () => setIsDeleteAllFailedOpen(false)}
+            >
+              <Dialog.Header
+                title="Delete All Failed Bookings?"
+                onClose={isDeletingFailed ? () => {} : () => setIsDeleteAllFailedOpen(false)}
+              />
+              <Dialog.Body>
+                {failedBookings.length} failed booking(s) will be deleted and
+                not imported. Bookings already imported are not affected.
+              </Dialog.Body>
+              <Dialog.Footer>
+                <Dialog.Cancel
+                  onClick={() => setIsDeleteAllFailedOpen(false)}
+                  disabled={isDeletingFailed}
+                />
+                <Dialog.Action
+                  variant="danger"
+                  onClick={handleDeleteAllFailedBookings}
+                  disabled={isDeletingFailed}
+                >
+                  {isDeletingFailed ? "Deleting..." : "Delete All"}
+                </Dialog.Action>
+              </Dialog.Footer>
+            </Dialog.Root>
           </div>
         );
       case 3:
@@ -4635,6 +4773,7 @@ export default function CancellationWizard({
                     isAllocating ||
                     isCheckingAllocation ||
                     isProcessingPayment ||
+                    (activeStep === 2 && failedBookings.length > 0) ||
                     (activeStep === 5 && !!flightId && !allPnrsBooked) ||
                     (activeStep === 6 && !paymentConfirmed)
                   }
@@ -4645,6 +4784,7 @@ export default function CancellationWizard({
                       isAllocating ||
                       isCheckingAllocation ||
                       isProcessingPayment ||
+                      (activeStep === 2 && failedBookings.length > 0) ||
                       (activeStep === 5 && !!flightId && !allPnrsBooked) ||
                       (activeStep === 6 && !paymentConfirmed)
                       ? "bg-[#9CA3AF] text-white cursor-not-allowed border-none"

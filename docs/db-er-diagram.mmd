@@ -317,8 +317,8 @@ erDiagram
         varchar travel_class "TravelClass"
         integer adults
         integer children
-        text special_notes "SpecialNote[], nullable"
-        text additional_notes "nullable"
+        jsonb child_ages "number[], one age (0-12) per child"
+        text special_notes "nullable, Special Notes text: preset labels and free text"
         varchar allocation_status "HotelAllocationStatus, default draft"
         text allocation_reason "nullable"
         integer confirmed_hotel_booking_id "nullable, logical ref hotel_bookings.id"
@@ -327,6 +327,17 @@ erDiagram
         varchar plan_id "nullable"
         timestamp planned_at "nullable"
         jsonb room_plan "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    cancelled_flight_booking_import_failures {
+        integer id PK
+        integer cancelled_flight_id FK
+        varchar file_name "nullable"
+        integer row_number "row in the file, header = 1"
+        jsonb values "row values as text"
+        jsonb errors "[{field, message}]"
         timestamp created_at
         timestamp updated_at
     }
@@ -492,6 +503,7 @@ erDiagram
     airports ||--o{ cancelled_flights : "departure"
     airports ||--o{ cancelled_flights : "arrival"
     cancelled_flights ||--o{ cancelled_flight_bookings : "has passengers"
+    cancelled_flights ||--o{ cancelled_flight_booking_import_failures : "failed CSV rows"
 
     %% Hotel allocation
     providers ||--o{ hotels : "supplies"

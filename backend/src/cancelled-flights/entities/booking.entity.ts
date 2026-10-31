@@ -8,7 +8,7 @@ import {
   UpdateDateColumn,
 } from "typeorm";
 import { CancelledFlightEntity } from "./cancelled-flight.entity";
-import { HotelAllocationStatus, SpecialNote, TravelClass } from "./enums";
+import { HotelAllocationStatus, TravelClass } from "./enums";
 
 @Entity("cancelled_flight_bookings")
 export class BookingEntity {
@@ -46,15 +46,17 @@ export class BookingEntity {
   @Column({ name: "children", type: "integer", default: 0 })
   children!: number;
 
-  @Column({
-    name: "special_notes",
-    type: "simple-array",
-    nullable: true,
-  })
-  specialNotes!: SpecialNote[];
+  /** One age per child (0-12), so its length equals `children`. */
+  @Column({ name: "child_ages", type: "jsonb", default: () => "'[]'" })
+  childAges!: number[];
 
-  @Column({ name: "additional_notes", type: "text", nullable: true })
-  additionalNotes?: string | null;
+  /**
+   * Special Notes as entered: preset labels and free text, comma-separated.
+   * Hotel allocation reads the presets it lists with deriveSpecialNotes()
+   * (booking-notes.ts).
+   */
+  @Column({ name: "special_notes", type: "text", nullable: true })
+  specialNotes?: string | null;
 
   @ManyToOne(() => CancelledFlightEntity, (flight) => flight.bookings, {
     onDelete: "CASCADE",

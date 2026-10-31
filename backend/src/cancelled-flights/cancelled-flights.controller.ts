@@ -73,6 +73,7 @@ import {
   CancelledFlightAdminListResponseDto,
   CancelledFlightShortListResponseDto,
   ImportBookingResponseDto,
+  FailedBookingListResponseDto,
   UpdateBookingDto,
   ReviewCancelledFlightResponseDto,
   AllocateHotelDto,
@@ -107,6 +108,7 @@ import { CancelledFlightsSummaryResponseDto } from "./dto/cancelled-flights-summ
   CancelledFlightAdminListResponseDto,
   CancelledFlightShortListResponseDto,
   ImportBookingResponseDto,
+  FailedBookingListResponseDto,
   HotelAllocationsDto,
   HotelAllocationProgressDto,
   CancelledFlightHotelBookingListResponseDto,
@@ -445,7 +447,7 @@ export class CancelledFlightsController {
   @ApiOperation({
     summary: "Import bookings from a CSV file",
     description:
-      "Parses a .csv file and imports bookings for the cancelled flight.",
+      "Validates every row on its own (same rules as adding a booking). Valid rows are imported; invalid rows are kept as failed bookings with row-level errors, to fix or delete via /booking-import-failures. Only a file that can't be read as a bookings CSV (no header, unknown or missing columns, no rows) is rejected as a whole. Format: docs/bookings-csv-import.md.",
   })
   @ApiConsumes("multipart/form-data")
   @ApiBody({
@@ -504,11 +506,173 @@ export class CancelledFlightsController {
       requestId,
       requestLogger,
     );
+    const failed = data.summary.errorBookings;
     return BaseResponseDto.success(
       data,
       requestId,
-      "Bookings imported successfully",
+      failed === 0
+        ? `${data.summary.validBookings} booking(s) imported`
+        : `${data.summary.validBookings} booking(s) imported, ${failed} failed`,
     );
+  }
+
+  // ── GET /cancelled-flights/:id/booking-import-failures ──────────────────
+  @Get(":id/booking-import-failures")
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.VIEW],
+    },
+  })
+  @ApiOperation({
+    summary: "List failed bookings from CSV imports",
+    description:
+      "Rows that failed validation, with their values and row-level errors. They block confirming passenger details until fixed or deleted.",
+  })
+  @ApiParam({ name: "id", description: "Cancelled flight id" })
+  @ApiOkResponse({
+    schema: {
+      properties: {
+        success: { type: "boolean", example: true },
+        data: { $ref: getSchemaPath(FailedBookingListResponseDto) },
+      },
+    },
+  })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/cancelled-flights/:id/booking-import-failures",
+      "Cancelled flight not found",
+    ),
+  })
+  async listImportFailures(
+    @Param("id", ParseIntPipe) id: number,
+    @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
+  ): Promise<BaseResponseDto<FailedBookingListResponseDto>> {
+    const data = await this.service.listImportFailures(
+      id,
+      requestId,
+      requestLogger,
+    );
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Failed bookings fetched successfully",
+    );
+  }
+
+  // ── POST /cancelled-flights/:id/booking-import-failures/:failureId/resolve ─
+  @Post(":id/booking-import-failures/:failureId/resolve")
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.EDIT],
+    },
+  })
+  @ApiOperation({
+    summary: "Fix a failed booking",
+    description:
+      "Saves the corrected values as a booking (same rules as adding one) and removes the failed row, together.",
+  })
+  @ApiParam({ name: "id", description: "Cancelled flight id" })
+  @ApiParam({ name: "failureId", description: "Failed booking id" })
+  @ApiCreatedResponse({
+    schema: {
+      properties: {
+        success: { type: "boolean", example: true },
+        data: { $ref: "#/components/schemas/BookingResponseDto" },
+      },
+    },
+  })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/cancelled-flights/:id/booking-import-failures/:failureId/resolve",
+      "Failed booking not found",
+    ),
+  })
+  @ApiConflictResponse({
+    schema: createConflictErrorSchema(
+      "/api/v1/cancelled-flights/:id/booking-import-failures/:failureId/resolve",
+      "PNR already exists",
+    ),
+  })
+  async resolveImportFailure(
+    @Param("id", ParseIntPipe) id: number,
+    @Param("failureId", ParseIntPipe) failureId: number,
+    @Body() dto: CreateBookingDto,
+    @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
+  ): Promise<BaseResponseDto<BookingResponseDto>> {
+    const data = await this.service.resolveImportFailure(
+      id,
+      failureId,
+      dto,
+      requestId,
+      requestLogger,
+    );
+    return BaseResponseDto.success(data, requestId, "Booking saved");
+  }
+
+  // ── DELETE /cancelled-flights/:id/booking-import-failures ───────────────
+  @Delete(":id/booking-import-failures")
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.VIEW, AccessAction.EDIT],
+    },
+  })
+  @ApiOperation({ summary: "Delete all failed bookings of a flight" })
+  @ApiParam({ name: "id", description: "Cancelled flight id" })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/cancelled-flights/:id/booking-import-failures",
+      "Cancelled flight not found",
+    ),
+  })
+  async deleteAllImportFailures(
+    @Param("id", ParseIntPipe) id: number,
+    @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
+  ): Promise<BaseResponseDto<object>> {
+    const data = await this.service.deleteImportFailures(
+      id,
+      undefined,
+      requestId,
+      requestLogger,
+    );
+    return BaseResponseDto.success(data, requestId, data.message);
+  }
+
+  // ── DELETE /cancelled-flights/:id/booking-import-failures/:failureId ────
+  @Delete(":id/booking-import-failures/:failureId")
+  @RequireAccessControl({
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.VIEW, AccessAction.EDIT],
+    },
+  })
+  @ApiOperation({ summary: "Delete a failed booking" })
+  @ApiParam({ name: "id", description: "Cancelled flight id" })
+  @ApiParam({ name: "failureId", description: "Failed booking id" })
+  @ApiNotFoundResponse({
+    schema: createNotFoundErrorSchema(
+      "/api/v1/cancelled-flights/:id/booking-import-failures/:failureId",
+      "Failed booking not found",
+    ),
+  })
+  async deleteImportFailure(
+    @Param("id", ParseIntPipe) id: number,
+    @Param("failureId", ParseIntPipe) failureId: number,
+    @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
+  ): Promise<BaseResponseDto<object>> {
+    const data = await this.service.deleteImportFailures(
+      id,
+      failureId,
+      requestId,
+      requestLogger,
+    );
+    return BaseResponseDto.success(data, requestId, data.message);
   }
 
   // ── PUT /cancelled-flights/:id/bookings/:bookingId ───────────────────────
