@@ -592,7 +592,7 @@ export default function CancellationWizard({
   const [bookingLastName, setBookingLastName] = useState("");
   const [bookingEmail, setBookingEmail] = useState("");
   const [bookingPhone, setBookingPhone] = useState("");
-  const [bookingClass, setBookingClass] = useState("Economy");
+  const [bookingClass, setBookingClass] = useState("");
   const [bookingAdults, setBookingAdults] = useState("1");
   const [bookingChildren, setBookingChildren] = useState("0");
   const [bookingNotesText, setBookingNotesText] = useState("");
@@ -855,7 +855,7 @@ export default function CancellationWizard({
           email: b.email,
           phone: b.phone,
           residency: b.residency,
-          travelClass: ENUM_TO_TRAVEL_CLASS[b.travelClass] || "Economy",
+          travelClass: ENUM_TO_TRAVEL_CLASS[b.travelClass] ?? b.travelClass,
           adults: b.adults || 1,
           children: b.children || 0,
           childAges: Array.isArray(b.childAges) ? b.childAges : [],
@@ -1539,7 +1539,7 @@ export default function CancellationWizard({
     setBookingEmail("");
     setBookingPhone("");
     setBookingResidency("");
-    setBookingClass("Economy");
+    setBookingClass("");
     setBookingAdults("1");
     setBookingChildren("0");
     setBookingChildAges([]);
@@ -1656,7 +1656,7 @@ export default function CancellationWizard({
     setBookingEmail(booking.email || "");
     setBookingPhone(booking.phone || "");
     setBookingResidency(booking.residency || "");
-    setBookingClass(booking.travelClass || "Economy");
+    setBookingClass(booking.travelClass || "");
     setBookingAdults(String(booking.adults ?? 1));
     setBookingChildren(String(booking.children ?? 0));
     setBookingChildAges(

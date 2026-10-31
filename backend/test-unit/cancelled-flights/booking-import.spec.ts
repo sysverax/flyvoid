@@ -1,7 +1,9 @@
 import { describe, expect, it } from "@jest/globals";
 import {
   BookingCsvFormatError,
+  ImportedBooking,
   bookingRuleErrors,
+  matchesSavedBooking,
   parseBookingCsv,
 } from "../../src/cancelled-flights/booking-import";
 import {
@@ -247,5 +249,69 @@ describe("booking rules and notes", () => {
   it("matches travel classes by code or label only", () => {
     expect(parseTravelClass("first class")).toBe(TravelClass.FIRST_CLASS);
     expect(parseTravelClass("Economy Plus")).toBeNull();
+  });
+});
+
+describe("matchesSavedBooking", () => {
+  const row: ImportedBooking = {
+    pnr: "ABC123",
+    firstName: "John",
+    lastName: "Doe",
+    email: "john@example.com",
+    phone: "14165550101",
+    residency: "CA",
+    travelClass: TravelClass.FIRST_CLASS,
+    adults: 2,
+    children: 1,
+    childAges: [7],
+    specialNotes: null,
+  };
+
+  it("matches the same booking, ignoring email case and empty notes", () => {
+    expect(
+      matchesSavedBooking(row, {
+        ...row,
+        email: "John@Example.com",
+        specialNotes: "",
+      }),
+    ).toBe(true);
+  });
+
+  it.each([
+    ["first name", { firstName: "Jon" }],
+    ["travel class", { travelClass: TravelClass.ECONOMY }],
+    ["adults", { adults: 1 }],
+    ["child ages", { childAges: [8] }],
+    ["special notes", { specialNotes: "Late Arrival" }],
+  ])("does not match when %s differs", (_label, change) => {
+    expect(matchesSavedBooking(row, { ...row, ...change })).toBe(false);
+  });
+});
+
+describe("PNR case", () => {
+  const row = (pnr: string) =>
+    `${pnr},John,Doe,john@example.com,14165550101,ca,economy,1,0,,`;
+
+  it("stores the PNR trimmed and uppercase", () => {
+    const [parsed] = parseBookingCsv([HEADER, row(" abc123 ")].join("\n"), 9);
+    expect(parsed.booking?.pnr).toBe("ABC123");
+    expect(parsed.values.pnr).toBe("ABC123");
+  });
+
+  it("treats PNRs that differ only in case as duplicates in one file", () => {
+    const [first, second] = parseBookingCsv(
+      [HEADER, row("ABC123"), row("abc123")].join("\n"),
+      9,
+    );
+    expect(first.booking).not.toBeNull();
+    expect(second.booking).toBeNull();
+    expect(second.errors[0].message).toContain("Duplicate PNR 'ABC123'");
+  });
+
+  it("matches a saved booking whose PNR differs only in case", () => {
+    const [parsed] = parseBookingCsv([HEADER, row("abc123")].join("\n"), 9);
+    expect(
+      matchesSavedBooking(parsed.booking!, { ...parsed.booking!, pnr: "abc123" }),
+    ).toBe(true);
   });
 });

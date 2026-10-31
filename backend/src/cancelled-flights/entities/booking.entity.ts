@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
@@ -10,7 +11,11 @@ import {
 import { CancelledFlightEntity } from "./cancelled-flight.entity";
 import { HotelAllocationStatus, TravelClass } from "./enums";
 
+/** Unique (cancelled_flight_id, UPPER(BTRIM(pnr))); see migration 20261031. */
+export const BOOKING_PNR_UNIQUE_INDEX = "uq_cancelled_flight_bookings_flight_pnr";
+
 @Entity("cancelled_flight_bookings")
+@Index(BOOKING_PNR_UNIQUE_INDEX, { synchronize: false })
 export class BookingEntity {
   @PrimaryGeneratedColumn({ type: "integer" })
   id!: number;

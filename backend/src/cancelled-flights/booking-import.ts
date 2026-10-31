@@ -12,6 +12,7 @@ import { MAX_CHILD_AGE } from "./cancelled-flights.constants";
 import {
   BOOKING_MESSAGES,
   CreateBookingDto,
+  normalizePnr,
 } from "./dto/create-booking-request.dto";
 import { TravelClass } from "./entities/enums";
 
@@ -346,7 +347,7 @@ function parseRow(
   );
 
   const values: FailedBookingValues = {
-    pnr: text("pnr"),
+    pnr: normalizePnr(text("pnr")),
     firstName: text("firstName"),
     lastName: text("lastName"),
     email: text("email"),
@@ -495,10 +496,39 @@ function fitRowToHeader(
 }
 
 /**
+ * True when a valid row has the same details as the booking already saved for
+ * its PNR, so uploading the same file again skips it instead of failing it.
+ * PNR and email ignore case; Special Notes treat empty and missing alike.
+ */
+export function matchesSavedBooking(
+  row: ImportedBooking,
+  saved: Omit<ImportedBooking, "specialNotes"> & {
+    specialNotes?: string | null;
+  },
+): boolean {
+  const text = (value: string | null | undefined) => (value ?? "").trim();
+  const savedAges = saved.childAges ?? [];
+  return (
+    normalizePnr(row.pnr) === normalizePnr(saved.pnr) &&
+    text(row.firstName) === text(saved.firstName) &&
+    text(row.lastName) === text(saved.lastName) &&
+    text(row.email).toLowerCase() === text(saved.email).toLowerCase() &&
+    text(row.phone) === text(saved.phone) &&
+    text(row.residency).toUpperCase() === text(saved.residency).toUpperCase() &&
+    row.travelClass === saved.travelClass &&
+    row.adults === saved.adults &&
+    row.children === saved.children &&
+    row.childAges.length === savedAges.length &&
+    row.childAges.every((age, i) => age === Number(savedAges[i])) &&
+    normalizeNotes(row.specialNotes) === normalizeNotes(saved.specialNotes)
+  );
+}
+
+/**
  * Parses and validates a bookings CSV. Throws BookingCsvFormatError when the
  * file can't be read as one; otherwise returns every non-empty row, valid or
  * not. PNRs repeated within the file fail after their first row; PNRs already
- * on the flight are checked by the caller.
+ * on the flight are checked by the caller (see matchesSavedBooking).
  */
 export function parseBookingCsv(
   content: string,

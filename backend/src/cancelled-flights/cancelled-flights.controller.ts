@@ -506,14 +506,13 @@ export class CancelledFlightsController {
       requestId,
       requestLogger,
     );
-    const failed = data.summary.errorBookings;
-    return BaseResponseDto.success(
-      data,
-      requestId,
-      failed === 0
-        ? `${data.summary.validBookings} booking(s) imported`
-        : `${data.summary.validBookings} booking(s) imported, ${failed} failed`,
-    );
+    const { validBookings, skippedBookings, errorBookings } = data.summary;
+    const message = [
+      `${validBookings} booking(s) imported`,
+      ...(skippedBookings > 0 ? [`${skippedBookings} already added`] : []),
+      ...(errorBookings > 0 ? [`${errorBookings} failed`] : []),
+    ].join(", ");
+    return BaseResponseDto.success(data, requestId, message);
   }
 
   // ── GET /cancelled-flights/:id/booking-import-failures ──────────────────

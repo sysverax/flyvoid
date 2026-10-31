@@ -87,6 +87,13 @@ export class SummaryDto {
   @ApiProperty({ example: 8, description: "Rows imported as bookings" })
   validBookings!: number;
 
+  @ApiProperty({
+    example: 0,
+    description:
+      "Rows skipped because the same booking (same PNR and details) is already on the flight",
+  })
+  skippedBookings!: number;
+
   @ApiProperty({ example: 2, description: "Rows kept as failed bookings" })
   errorBookings!: number;
 }

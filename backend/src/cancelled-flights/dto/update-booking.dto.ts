@@ -23,11 +23,15 @@ import { MAX_CHILD_AGE } from "../cancelled-flights.constants";
 import {
   BOOKING_FIELD_RULES,
   BOOKING_MESSAGES,
+  normalizePnr,
 } from "./create-booking-request.dto";
 
 export class UpdateBookingDto {
   @ApiPropertyOptional({ example: "ABC123" })
   @IsOptional()
+  @Transform(({ value }) =>
+    typeof value === "string" ? normalizePnr(value) : value,
+  )
   @IsString({ message: BOOKING_MESSAGES.pnrRequired })
   @IsNotEmpty({ message: BOOKING_MESSAGES.pnrRequired })
   @MaxLength(BOOKING_FIELD_RULES.pnrMaxLength, {

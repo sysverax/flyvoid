@@ -21,6 +21,14 @@ import {
 import { MAX_CHILD_AGE } from "../cancelled-flights.constants";
 
 /**
+ * A PNR as stored: trimmed and uppercase. Record locators are uppercase
+ * letters/digits and airlines treat them case-insensitively, so "abc123" and
+ * "ABC123" are the same booking.
+ */
+export const normalizePnr = (value: string): string =>
+  value.trim().toUpperCase();
+
+/**
  * Booking field rules, shared by the API (create/update), the CSV import and
  * fixing a failed CSV row, so all three accept exactly the same values.
  * The airline portal's form checks the same rules
@@ -58,7 +66,14 @@ export const BOOKING_MESSAGES = {
 } as const;
 
 export class CreateBookingDto {
-  @ApiProperty({ example: "ABC123", maxLength: BOOKING_FIELD_RULES.pnrMaxLength })
+  @ApiProperty({
+    example: "ABC123",
+    maxLength: BOOKING_FIELD_RULES.pnrMaxLength,
+    description: "Trimmed and uppercased; unique per flight in any case",
+  })
+  @Transform(({ value }) =>
+    typeof value === "string" ? normalizePnr(value) : value,
+  )
   @IsString({ message: BOOKING_MESSAGES.pnrRequired })
   @IsNotEmpty({ message: BOOKING_MESSAGES.pnrRequired })
   @MaxLength(BOOKING_FIELD_RULES.pnrMaxLength, {

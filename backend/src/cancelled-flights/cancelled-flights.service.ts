@@ -8,7 +8,11 @@ import {
 } from "@nestjs/common";
 import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
 import { CancelledFlightsRepository } from "./cancelled-flights.repository";
-import { BookingEntity } from "./entities/booking.entity";
+import {
+  BOOKING_PNR_UNIQUE_INDEX,
+  BookingEntity,
+} from "./entities/booking.entity";
+import { QueryFailedError } from "typeorm";
 import {
   CancellationReason,
   FlightStatus,
@@ -64,9 +68,11 @@ import {
   BookingCsvFormatError,
   ParsedBookingRow,
   bookingRuleErrors,
+  matchesSavedBooking,
   parseBookingCsv,
 } from "./booking-import";
 import { normalizeNotes } from "./booking-notes";
+import { normalizePnr } from "./dto/create-booking-request.dto";
 
 @Injectable()
 export class CancelledFlightsService {
@@ -356,8 +362,11 @@ export class CancelledFlightsService {
       requestLogger,
     );
 
-    const booking = await this.cancelledFlightsRepository.createBooking(
-      payload,
+    const booking = await this.guardDuplicatePnr(
+      () =>
+        this.cancelledFlightsRepository.createBooking(payload, requestLogger),
+      `Booking with PNR '${payload.pnr}' already exists for this flight`,
+      flightId,
       requestLogger,
     );
 
@@ -421,6 +430,38 @@ export class CancelledFlightsService {
       childAges,
       specialNotes: normalizeNotes(dto.specialNotes),
     };
+  }
+
+  /**
+   * Runs a booking write; when the unique PNR index rejects it (another
+   * request saved the same PNR between our check and this write), answers
+   * 409 with `message` instead of a database error.
+   */
+  private async guardDuplicatePnr<T>(
+    write: () => Promise<T>,
+    message: string,
+    flightId: number,
+    requestLogger: Logger,
+  ): Promise<T> {
+    try {
+      return await write();
+    } catch (error) {
+      const driverError = (
+        error as { driverError?: { code?: string; constraint?: string } }
+      ).driverError;
+      if (
+        error instanceof QueryFailedError &&
+        driverError?.code === "23505" &&
+        driverError.constraint === BOOKING_PNR_UNIQUE_INDEX
+      ) {
+        requestLogger.warn("Rejected booking write: PNR saved concurrently", {
+          context: this.context,
+          flightId,
+        });
+        throw new ConflictException(message);
+      }
+      throw error;
+    }
   }
 
   private assertBookingRules(
@@ -491,7 +532,8 @@ export class CancelledFlightsService {
       throw error;
     }
 
-    // PNRs already on the flight fail too.
+    // A PNR already on the flight: the same details again (the file uploaded
+    // again) is skipped; different details fail the row.
     const validPnrs = rows
       .filter((row) => row.booking)
       .map((row) => row.booking!.pnr);
@@ -502,33 +544,55 @@ export class CancelledFlightsService {
           requestLogger,
         )
       : [];
-    const existingPnrs = new Set(existing.map((booking) => booking.pnr));
+    const existingByPnr = new Map(
+      existing.map((b) => [normalizePnr(b.pnr), b]),
+    );
+    const skippedRows = new Set<ParsedBookingRow>();
     for (const row of rows) {
-      if (row.booking && existingPnrs.has(row.booking.pnr)) {
+      const current = row.booking && existingByPnr.get(row.booking.pnr);
+      if (!row.booking || !current) continue;
+      if (matchesSavedBooking(row.booking, current)) {
+        skippedRows.add(row);
+      } else {
         row.errors.push({
           field: "pnr",
-          message: `PNR '${row.booking.pnr}' already exists for this flight`,
+          message: `PNR '${row.booking.pnr}' already exists for this flight with different details`,
         });
         row.booking = null;
       }
     }
 
-    const validRows = rows.filter((row) => row.booking);
+    const validRows = rows.filter(
+      (row) => row.booking && !skippedRows.has(row),
+    );
     const failedRows = rows.filter((row) => !row.booking);
     const fileName = file.originalname ? file.originalname.slice(0, 255) : null;
+    // Earlier failed rows for a PNR in this file are replaced by this upload:
+    // that row is now imported, skipped, or failed again with fresh errors.
+    const filePnrs = [
+      ...new Set(rows.map((row) => row.values.pnr).filter(Boolean)),
+    ];
 
-    const saved = await this.cancelledFlightsRepository.saveBookingImport(
-      validRows.map((row) => ({
-        cancelledFlightId: flightId,
-        ...row.booking!,
-      })),
-      failedRows.map((row) => ({
-        cancelledFlightId: flightId,
-        fileName,
-        rowNumber: row.rowNumber,
-        values: row.values,
-        errors: row.errors,
-      })),
+    const saved = await this.guardDuplicatePnr(
+      () =>
+        this.cancelledFlightsRepository.saveBookingImport(
+          flightId,
+          filePnrs,
+          validRows.map((row) => ({
+            cancelledFlightId: flightId,
+            ...row.booking!,
+          })),
+          failedRows.map((row) => ({
+            cancelledFlightId: flightId,
+            fileName,
+            rowNumber: row.rowNumber,
+            values: row.values,
+            errors: row.errors,
+          })),
+          requestLogger,
+        ),
+      "Another change added one of these PNRs to the flight at the same time. Nothing was imported; upload the file again.",
+      flightId,
       requestLogger,
     );
 
@@ -541,6 +605,7 @@ export class CancelledFlightsService {
       flightId,
       totalRows: rows.length,
       importedBookings: saved.bookings.length,
+      skippedRows: skippedRows.size,
       failedRows: saved.failures.length,
     };
     if (saved.failures.length > 0) {
@@ -557,6 +622,7 @@ export class CancelledFlightsService {
       summary: {
         totalBookings: rows.length,
         validBookings: saved.bookings.length,
+        skippedBookings: skippedRows.size,
         errorBookings: saved.failures.length,
       },
     };
@@ -597,12 +663,17 @@ export class CancelledFlightsService {
       requestLogger,
     );
 
-    const booking =
-      await this.cancelledFlightsRepository.createBookingFromImportFailure(
-        payload,
-        failureId,
-        requestLogger,
-      );
+    const booking = await this.guardDuplicatePnr(
+      () =>
+        this.cancelledFlightsRepository.createBookingFromImportFailure(
+          payload,
+          failureId,
+          requestLogger,
+        ),
+      `Booking with PNR '${payload.pnr}' already exists for this flight`,
+      flightId,
+      requestLogger,
+    );
     if (!booking) {
       requestLogger.warn("Failed import row not found for flight", {
         context: this.context,
@@ -719,7 +790,7 @@ export class CancelledFlightsService {
           flightId,
           requestLogger,
         );
-      if (conflict) {
+      if (conflict && conflict.id !== booking.id) {
         requestLogger.warn(
           "Rejected booking update: PNR already exists for flight",
           { context: this.context, flightId, bookingId, pnr: dto.pnr },
@@ -730,25 +801,31 @@ export class CancelledFlightsService {
       }
     }
 
-    const updated = await this.cancelledFlightsRepository.updateBooking(
-      booking,
-      {
-        ...(dto.pnr !== undefined && { pnr: dto.pnr }),
-        ...(dto.firstName !== undefined && { firstName: dto.firstName }),
-        ...(dto.lastName !== undefined && { lastName: dto.lastName }),
-        ...(dto.email !== undefined && { email: dto.email }),
-        ...(dto.phone !== undefined && { phone: dto.phone }),
-        ...(dto.residency !== undefined && { residency: dto.residency }),
-        ...(dto.travelClass !== undefined && {
-          travelClass: dto.travelClass,
-        }),
-        ...(dto.adults !== undefined && { adults: dto.adults }),
-        ...(dto.children !== undefined && { children: dto.children }),
-        ...(dto.childAges !== undefined && { childAges: dto.childAges }),
-        ...(dto.specialNotes !== undefined && {
-          specialNotes: normalizeNotes(dto.specialNotes),
-        }),
-      },
+    const updated = await this.guardDuplicatePnr(
+      () =>
+        this.cancelledFlightsRepository.updateBooking(
+          booking,
+          {
+            ...(dto.pnr !== undefined && { pnr: dto.pnr }),
+            ...(dto.firstName !== undefined && { firstName: dto.firstName }),
+            ...(dto.lastName !== undefined && { lastName: dto.lastName }),
+            ...(dto.email !== undefined && { email: dto.email }),
+            ...(dto.phone !== undefined && { phone: dto.phone }),
+            ...(dto.residency !== undefined && { residency: dto.residency }),
+            ...(dto.travelClass !== undefined && {
+              travelClass: dto.travelClass,
+            }),
+            ...(dto.adults !== undefined && { adults: dto.adults }),
+            ...(dto.children !== undefined && { children: dto.children }),
+            ...(dto.childAges !== undefined && { childAges: dto.childAges }),
+            ...(dto.specialNotes !== undefined && {
+              specialNotes: normalizeNotes(dto.specialNotes),
+            }),
+          },
+          requestLogger,
+        ),
+      `Booking with PNR '${dto.pnr}' already exists for this flight`,
+      flightId,
       requestLogger,
     );
 

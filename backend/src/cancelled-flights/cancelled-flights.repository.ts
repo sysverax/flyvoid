@@ -14,6 +14,7 @@ import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
 import { AirportEntity } from "../airline/entities/airport.entity";
 import { BookingEntity } from "./entities/booking.entity";
 import { BookingImportFailureEntity } from "./entities/booking-import-failure.entity";
+import { normalizePnr } from "./dto/create-booking-request.dto";
 import {
   FlightStatus,
   HotelAllocationStatus,
@@ -677,9 +678,16 @@ export class CancelledFlightsRepository {
       pnr,
       cancelledFlightId,
     });
-    return this.bookingRepo.findOne({ where: { pnr, cancelledFlightId } });
+    return this.bookingRepo
+      .createQueryBuilder("booking")
+      .where("booking.cancelledFlightId = :cancelledFlightId", {
+        cancelledFlightId,
+      })
+      .andWhere("UPPER(BTRIM(booking.pnr)) = :pnr", { pnr: normalizePnr(pnr) })
+      .getOne();
   }
 
+  /** Bookings of the flight for these PNRs, matched trimmed and in any case. */
   async findBookingsByFlightIdAndPnrs(
     cancelledFlightId: number,
     pnrs: string[],
@@ -690,9 +698,15 @@ export class CancelledFlightsRepository {
       cancelledFlightId,
       pnrs,
     });
-    return this.bookingRepo.find({
-      where: { cancelledFlightId, pnr: In(pnrs) },
-    });
+    return this.bookingRepo
+      .createQueryBuilder("booking")
+      .where("booking.cancelledFlightId = :cancelledFlightId", {
+        cancelledFlightId,
+      })
+      .andWhere("UPPER(BTRIM(booking.pnr)) IN (:...pnrs)", {
+        pnrs: pnrs.map(normalizePnr),
+      })
+      .getMany();
   }
 
   async updateBooking(
@@ -719,8 +733,14 @@ export class CancelledFlightsRepository {
     await this.bookingRepo.remove(entity);
   }
 
-  /** CSV import: valid rows as bookings and failed rows, in one transaction. */
+  /**
+   * CSV import, in one transaction: deletes the flight's earlier failed rows
+   * for the file's PNRs (trimmed, any case), then saves valid rows as bookings
+   * and failed rows.
+   */
   async saveBookingImport(
+    cancelledFlightId: number,
+    replaceFailedPnrs: string[],
     bookings: Partial<BookingEntity>[],
     failures: Partial<BookingImportFailureEntity>[],
     requestLogger: Logger,
@@ -730,12 +750,26 @@ export class CancelledFlightsRepository {
   }> {
     requestLogger.info("Saving booking import", {
       context: this.context,
+      cancelledFlightId,
       bookings: bookings.length,
       failures: failures.length,
+      replaceFailedPnrs: replaceFailedPnrs.length,
     });
     return this.manager.transaction(async (manager) => {
       const bookingRepo = manager.getRepository(BookingEntity);
       const failureRepo = manager.getRepository(BookingImportFailureEntity);
+      if (replaceFailedPnrs.length) {
+        await failureRepo
+          .createQueryBuilder()
+          .delete()
+          .where("cancelled_flight_id = :cancelledFlightId", {
+            cancelledFlightId,
+          })
+          .andWhere(`UPPER(BTRIM("values"->>'pnr')) IN (:...pnrs)`, {
+            pnrs: replaceFailedPnrs,
+          })
+          .execute();
+      }
       const savedBookings = bookings.length
         ? await bookingRepo.save(bookings.map((b) => bookingRepo.create(b)))
         : [];

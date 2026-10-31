@@ -6,6 +6,8 @@
 --     dropped. Hotel allocation reads the presets from the text.
 --  3. CSV rows that fail validation are kept as failed bookings so the user
 --     can fix or delete them; they are never imported silently.
+--  4. One booking per PNR per cancelled flight, ignoring case and spaces,
+--     enforced by a unique index.
 
 -- 1. Child ages ---------------------------------------------------------------
 ALTER TABLE public.cancelled_flight_bookings
@@ -79,3 +81,40 @@ CREATE TABLE IF NOT EXISTS public.cancelled_flight_booking_import_failures (
 
 CREATE INDEX IF NOT EXISTS idx_booking_import_failures_flight_id
   ON public.cancelled_flight_booking_import_failures (cancelled_flight_id);
+
+-- 4. Unique PNR per flight ----------------------------------------------------
+-- PNRs (record locators) are case-insensitive, so the key is the trimmed,
+-- uppercase PNR: "abc123" and "ABC123" are the same booking. The API stores
+-- PNRs in that form; older rows are left as entered and the index still
+-- compares them in that form. The index also closes the race where two
+-- requests (two imports, or an import and a fix) both pass the PNR check and
+-- both insert.
+
+-- Stop with a list if a flight already has the same PNR twice: those must be
+-- merged or deleted by hand first (which one to keep is a business decision).
+DO $$
+DECLARE
+  duplicates text;
+BEGIN
+  SELECT string_agg(
+           format('flight %s: %s (booking ids %s)',
+                  cancelled_flight_id, pnr_key, ids),
+           '; ')
+    INTO duplicates
+    FROM (
+          SELECT cancelled_flight_id,
+                 upper(btrim(pnr)) AS pnr_key,
+                 string_agg(id::text, ', ' ORDER BY id) AS ids
+            FROM public.cancelled_flight_bookings
+           GROUP BY cancelled_flight_id, upper(btrim(pnr))
+          HAVING count(*) > 1
+         ) d;
+  IF duplicates IS NOT NULL THEN
+    RAISE EXCEPTION
+      'Duplicate PNRs on cancelled flights (ignoring case): %. Merge or delete them, then run this migration again.',
+      duplicates;
+  END IF;
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_cancelled_flight_bookings_flight_pnr
+  ON public.cancelled_flight_bookings (cancelled_flight_id, upper(btrim(pnr)));

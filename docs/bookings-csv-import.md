@@ -31,7 +31,7 @@ imports bookings from a CSV file, and how rows that fail are kept and fixed.
 
 | Column | Required | Accepted values |
 |---|---|---|
-| PNR | Yes | Up to 20 characters. Unique within the file and the flight |
+| PNR | Yes | Up to 20 characters. Trimmed and uppercased (`abc123` is saved as `ABC123`). Unique within the file and the flight, ignoring case |
 | First Name | Yes | Up to 100 characters |
 | Last Name | Yes | Up to 100 characters |
 | Email | Yes | A valid email address, up to 255 characters |
@@ -78,8 +78,25 @@ required column missing, or a column with values but no header.
 
 **Single row** (kept as a failed booking, other rows still imported): any
 missing required value, any invalid value (the rules above), a PNR repeated in
-the file (rows after the first), or a PNR already on the flight. There are no
-fallback values: an empty or invalid cell is always an error, never a default.
+the file (rows after the first), or a PNR already on the flight with different
+details. There are no fallback values: an empty or invalid cell is always an
+error, never a default.
+
+**Uploading again**: the corrected file can be uploaded again as a whole.
+- A row whose PNR is already on the flight with the same details is skipped
+  (`summary.skippedBookings`), not failed. "Same" compares every column, with
+  email ignoring case and an empty Special Notes equal to none.
+- Failed rows from earlier uploads whose PNR (trimmed, any case) appears in the
+  new file are deleted first; that row is then imported, skipped, or failed
+  again with fresh errors.
+- A failed row whose PNR is not in the new file (for example, the PNR itself
+  was the typo and has since changed) stays; delete it under Failed Bookings.
+
+**Duplicate PNRs**: the database has a unique index on
+`(cancelled_flight_id, UPPER(BTRIM(pnr)))` (migration 20261031), so a PNR is
+saved once per flight even when two requests (two imports, or an import and a
+fix) run at the same time. The one that loses gets HTTP 409; for an import,
+nothing from that file is saved and it can simply be uploaded again.
 
 ## Failed bookings
 
