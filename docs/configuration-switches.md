@@ -16,6 +16,7 @@ controls, and which ones must match across apps.
 | [`FLIGHT_PAYMENT_STEP_ENABLED`](#flight_payment_step_enabled) | `false` | backend, airline portal, admin portal | ✅ all three |
 | [`DROPDOWN_LIMIT`](#dropdown_limit) | `10` | airline portal | – |
 | [`PLATFORM_FEE_PERCENT`](#platform_fee_percent) | `10` | airline portal | ⚠️ should match the backend fee (see below) |
+| [`MAX_CHILD_AGE`](#max_child_age) | `12` | backend, airline portal | ✅ both |
 
 Files:
 
@@ -123,6 +124,22 @@ The admin portal has no equivalent constant yet.
 `platformFeePercentage`, or `PLATFORM_FEE_PERCENTAGE` (env, default `10`,
 `backend/src/config/config.ts`). If either changes, this constant shows a wrong
 fee. Better long term: read the fee from the API instead of a constant.
+
+---
+
+## `MAX_CHILD_AGE`
+
+**Oldest age that counts as a child on a booking** (ages 0 to this, inclusive).
+Each child on a booking needs one age, checked by the booking form, the API
+(create/update booking, fixing a failed CSV row) and the CSV import.
+
+| | Backend | Airline portal |
+|---|---|---|
+| File | `backend/src/cancelled-flights/cancelled-flights.constants.ts` | `frontend/airline/src/lib/constants.ts` |
+| Used by | `CreateBookingDto` / `UpdateBookingDto`, `booking-import.ts` | booking form child age inputs, CSV guidelines |
+
+Change both together; the CSV format page (`docs/bookings-csv-import.md`)
+quotes the range too.
 
 ---
 
