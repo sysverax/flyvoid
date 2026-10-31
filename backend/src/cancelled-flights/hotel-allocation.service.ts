@@ -257,7 +257,7 @@ const ROOM_SPLIT_RULES: Record<string, RoomSplitPlan> = {
     fallbacks: [[room(3), room(2), room(1)]],
   },
   "7_0": {
-    preferred: [room(2), room(2), room(2), room(1)],
+    preferred: [room(4), room(3)],
     fallbacks: [[room(3), room(2), room(2)]],
   },
   "8_0": {
@@ -265,8 +265,8 @@ const ROOM_SPLIT_RULES: Record<string, RoomSplitPlan> = {
     fallbacks: [[room(3), room(2), room(2), room(1)]],
   },
   "9_0": {
-    preferred: [room(2), room(2), room(2), room(2), room(1)],
-    fallbacks: [[room(3), room(2), room(2), room(2)]],
+    preferred: [room(4), room(3), room(2)],
+    fallbacks: [[room(3), room(3), room(3)]],
   },
   "1_1": { preferred: [room(1, 1)], fallbacks: [] },
   "1_2": { preferred: [room(1, 2)], fallbacks: [] },
@@ -348,27 +348,27 @@ const ROOM_SPLIT_RULES: Record<string, RoomSplitPlan> = {
   },
   "6_1": {
     preferred: [room(2), room(2), room(2, 1)],
-    fallbacks: [[room(2), room(2), room(1, 1), room(1)]],
+    fallbacks: [[room(3), room(2), room(1, 1)]],
   },
   "6_2": {
     preferred: [room(2), room(2), room(2, 2)],
-    fallbacks: [[room(2), room(2), room(1, 1), room(1, 1)]],
+    fallbacks: [[room(2), room(2, 1), room(2, 1)]],
   },
   "6_3": {
     preferred: [room(2), room(2, 1), room(2, 2)],
-    fallbacks: [[room(2), room(2), room(1, 1), room(1, 2)]],
+    fallbacks: [[room(3), room(2, 1), room(1, 2)]],
   },
   "7_1": {
-    preferred: [room(2), room(2), room(2), room(1, 1)],
-    fallbacks: [[room(2), room(2), room(2, 1), room(1)]],
+    preferred: [room(3), room(2), room(2, 1)],
+    fallbacks: [[room(4), room(2), room(1, 1)]],
   },
   "7_2": {
-    preferred: [room(2), room(2), room(2), room(1, 2)],
-    fallbacks: [[room(2), room(2), room(2, 1), room(1, 1)]],
+    preferred: [room(4), room(2), room(1, 2)],
+    fallbacks: [[room(3), room(2, 1), room(2, 1)]],
   },
   "8_1": {
-    preferred: [room(2), room(2), room(2), room(2, 1)],
-    fallbacks: [[room(2), room(2), room(2), room(1, 1), room(1)]],
+    preferred: [room(3), room(3), room(2, 1)],
+    fallbacks: [[room(4), room(2), room(2, 1)]],
   },
 };
 
