@@ -73,8 +73,10 @@ export interface BookingDTO {
   travelClass: string;
   adults: number;
   children: number;
-  specialNotes?: string[];
-  additionalNotes?: string;
+  /** One age per child (0-12). */
+  childAges?: number[];
+  /** Special Notes as entered: presets and free text, comma-separated. */
+  specialNotes?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -89,21 +91,55 @@ export interface CreateBookingPayload {
   travelClass: string;
   adults: number;
   children: number;
-  specialNotes?: string[];
-  additionalNotes?: string;
+  childAges: number[];
+  specialNotes?: string | null;
+}
+
+export type BookingField =
+  | "pnr"
+  | "firstName"
+  | "lastName"
+  | "email"
+  | "phone"
+  | "residency"
+  | "travelClass"
+  | "adults"
+  | "children"
+  | "childAges"
+  | "specialNotes";
+
+/** A CSV row that failed validation, kept until it is fixed or deleted. */
+export interface FailedBookingDTO {
+  id: number;
+  /** Row in the file (header = row 1). */
+  rowNumber: number;
+  fileName: string | null;
+  /** Values as text: normalised where they parsed, otherwise as in the file. */
+  values: {
+    pnr: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string;
+    residency: string;
+    travelClass: string;
+    adults: string;
+    children: string;
+    childAges: string[];
+    specialNotes: string;
+  };
+  errors: Array<{ field: BookingField | null; message: string }>;
+  createdAt: string;
 }
 
 export interface ImportBookingResponse {
   bookings: BookingDTO[];
-  summary?: {
+  failedBookings: FailedBookingDTO[];
+  summary: {
     totalBookings: number;
     validBookings: number;
     errorBookings: number;
   };
-  errorList?: Array<{
-    row: number;
-    errors: string[];
-  }>;
 }
 
 export interface ReviewCancelledFlightData {
@@ -636,6 +672,67 @@ export const cancellationService = {
       return response.data;
     } catch (error: any) {
       throw new Error(extractErrorMessage(error, "Failed to delete booking"));
+    }
+  },
+
+  async listFailedBookings(
+    flightId: number | string,
+  ): Promise<FailedBookingDTO[]> {
+    try {
+      const response = await apiClient.get(
+        `/cancelled-flights/${flightId}/booking-import-failures`,
+      );
+      return response.data?.data?.failedBookings ?? [];
+    } catch (error: any) {
+      throw new Error(
+        extractErrorMessage(error, "Failed to fetch failed bookings"),
+      );
+    }
+  },
+
+  /** Saves a fixed failed row as a booking and removes the failed row. */
+  async resolveFailedBooking(
+    flightId: number | string,
+    failureId: number | string,
+    payload: CreateBookingPayload,
+  ) {
+    try {
+      const response = await apiClient.post(
+        `/cancelled-flights/${flightId}/booking-import-failures/${failureId}/resolve`,
+        payload,
+      );
+      return response.data;
+    } catch (error: any) {
+      throw new Error(extractErrorMessage(error, "Failed to save booking"));
+    }
+  },
+
+  async deleteFailedBooking(
+    flightId: number | string,
+    failureId: number | string,
+  ) {
+    try {
+      const response = await apiClient.delete(
+        `/cancelled-flights/${flightId}/booking-import-failures/${failureId}`,
+      );
+      return response.data;
+    } catch (error: any) {
+      throw new Error(
+        extractErrorMessage(error, "Failed to delete failed booking"),
+      );
+    }
+  },
+
+  async deleteAllFailedBookings(flightId: number | string) {
+    try {
+      const response = await apiClient.delete(
+        `/cancelled-flights/${flightId}/booking-import-failures`,
+      );
+      return response.data;
+    } catch (error: any) {
+      throw new Error(
+        extractErrorMessage(error, "Failed to delete failed bookings"),
+      );
     }
   },
 
