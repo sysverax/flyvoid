@@ -6,6 +6,7 @@ import { AirlineEntity } from "../airline/entities/airline.entity";
 import { AirportEntity } from "../airline/entities/airport.entity";
 import { CancelledFlightEntity } from "./entities/cancelled-flight.entity";
 import { BookingEntity } from "./entities/booking.entity";
+import { BookingImportFailureEntity } from "./entities/booking-import-failure.entity";
 import { HotelAllocationOptionEntity } from "./entities/hotel-allocation-option.entity";
 import { HotelBookingEntity } from "./entities/hotel-booking.entity";
 import { HotelBookingRoomEntity } from "./entities/hotel-booking-room.entity";
@@ -33,6 +34,7 @@ import { PdfService } from "../common/pdf/pdf.service";
     TypeOrmModule.forFeature([
       CancelledFlightEntity,
       BookingEntity,
+      BookingImportFailureEntity,
       ProviderEntity,
       HotelEntity,
       HotelAllocationOptionEntity,

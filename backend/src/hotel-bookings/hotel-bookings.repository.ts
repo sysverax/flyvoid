@@ -20,6 +20,28 @@ import {
   LIVE_HOTEL_BOOKING_CONDITION,
   toAllocationRecord,
 } from "../cancelled-flights/hotel-allocation.record";
+import { SupplierReferenceSource } from "./supplier-references";
+
+/** The stored references of a hotel booking, for supplierReferencesOf(). */
+export function supplierSourceOf(
+  hotelBooking: HotelBookingEntity,
+): SupplierReferenceSource {
+  return {
+    providerCode: hotelBooking.provider?.code ?? "",
+    rooms: (hotelBooking.rooms ?? []).map((room) => ({
+      roomNo: room.roomNo,
+      status: room.status,
+      partnerOrderId: room.partnerOrderId ?? null,
+      providerOrderId: room.providerOrderId ?? null,
+    })),
+    orderInfo: hotelBooking.providerOrderInfo ?? null,
+  };
+}
+
+/** A hotel booking with the supplier references stored for it. */
+export type HotelBookingWithSupplier = HotelBookingRecord & {
+  supplier: SupplierReferenceSource;
+};
 
 /** Flight statuses at which hotel allocation has finished. */
 const ALLOCATED_FLIGHT_STATUSES = [
@@ -48,7 +70,7 @@ export interface HotelBookingFilters {
 }
 
 /** A listed hotel booking with its provider and hotel id (platform view). */
-export type HotelBookingListRow = HotelBookingRecord & {
+export type HotelBookingListRow = HotelBookingWithSupplier & {
   provider: ProviderEntity | null;
   hotelId: number | null;
 };
@@ -178,6 +200,7 @@ export class HotelBookingsRepository {
     const [rows, totalCount] = await qb.getManyAndCount();
     const hotelBookings = rows.map((row) => ({
       ...(toAllocationRecord(row.booking, row) as HotelBookingRecord),
+      supplier: supplierSourceOf(row),
       provider: row.provider ?? null,
       hotelId: row.hotel?.id ?? null,
     }));
@@ -499,7 +522,7 @@ export class HotelBookingsRepository {
   async findHotelBookingById(
     id: number,
     requestLogger: Logger,
-  ): Promise<HotelBookingRecord | null> {
+  ): Promise<HotelBookingWithSupplier | null> {
     requestLogger.debug("Finding hotel booking by id", {
       context: this.context,
       id,
@@ -512,6 +535,7 @@ export class HotelBookingsRepository {
         hotel: true,
         rooms: true,
         candidate: true,
+        provider: true,
         cancelledFlight: {
           airline: true,
           departureAirport: true,
@@ -520,10 +544,13 @@ export class HotelBookingsRepository {
       },
     });
     return hotelBooking
-      ? (toAllocationRecord(
-          hotelBooking.booking,
-          hotelBooking,
-        ) as HotelBookingRecord)
+      ? {
+          ...(toAllocationRecord(
+            hotelBooking.booking,
+            hotelBooking,
+          ) as HotelBookingRecord),
+          supplier: supplierSourceOf(hotelBooking),
+        }
       : null;
   }
 }

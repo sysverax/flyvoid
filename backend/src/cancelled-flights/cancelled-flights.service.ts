@@ -8,14 +8,15 @@ import {
 } from "@nestjs/common";
 import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
 import { CancelledFlightsRepository } from "./cancelled-flights.repository";
-import { toCountryCode } from "./passport-country";
-import { BookingEntity } from "./entities/booking.entity";
+import {
+  BOOKING_PNR_UNIQUE_INDEX,
+  BookingEntity,
+} from "./entities/booking.entity";
+import { QueryFailedError } from "typeorm";
 import {
   CancellationReason,
   FlightStatus,
   HotelAllocationStatus,
-  SpecialNote,
-  TravelClass,
 } from "./entities/enums";
 import {
   CreateCancelledFlightDto,
@@ -31,6 +32,8 @@ import {
   CancelledFlightShortListItemDto,
   CancelledFlightShortListResponseDto,
   ImportBookingResponseDto,
+  FailedBookingDto,
+  FailedBookingListResponseDto,
   ReviewCancelledFlightResponseDto,
   AllocateHotelDto,
   BookHotelRequestDto,
@@ -60,6 +63,16 @@ import {
   HotelAllocationReportRow,
 } from "./templates/hotel-allocation-report.template";
 import { HotelAllocationRecord } from "./hotel-allocation.record";
+import { BookingImportFailureEntity } from "./entities/booking-import-failure.entity";
+import {
+  BookingCsvFormatError,
+  ParsedBookingRow,
+  bookingRuleErrors,
+  matchesSavedBooking,
+  parseBookingCsv,
+} from "./booking-import";
+import { normalizeNotes } from "./booking-notes";
+import { normalizePnr } from "./dto/create-booking-request.dto";
 
 @Injectable()
 export class CancelledFlightsService {
@@ -146,8 +159,8 @@ export class CancelledFlightsService {
       travelClass: booking.travelClass,
       adults: booking.adults,
       children: booking.children,
-      specialNotes: booking.specialNotes ?? [],
-      additionalNotes: booking.additionalNotes ?? null,
+      childAges: booking.childAges ?? [],
+      specialNotes: booking.specialNotes ?? null,
       createdAt: booking.createdAt.toISOString(),
       updatedAt: booking.updatedAt?.toISOString() ?? null,
     };
@@ -343,11 +356,45 @@ export class CancelledFlightsService {
     requestLogger: Logger,
   ): Promise<BookingResponseDto> {
     const flight = await this.requireFlight(flightId, requestLogger);
+    const payload = await this.validatedBookingPayload(
+      flightId,
+      dto,
+      requestLogger,
+    );
 
-    this.assertPassengerLimit(
+    const booking = await this.guardDuplicatePnr(
+      () =>
+        this.cancelledFlightsRepository.createBooking(payload, requestLogger),
+      `Booking with PNR '${payload.pnr}' already exists for this flight`,
+      flightId,
+      requestLogger,
+    );
+
+    await this.markFlightInProgressIfDraft(flight, requestLogger);
+
+    requestLogger.info("Booking added", {
+      context: this.context,
+      flightId,
+      bookingId: booking.id,
+      pnr: booking.pnr,
+    });
+
+    return this.toBookingResponse(booking);
+  }
+
+  /**
+   * A new booking's row values, after the rules the DTO can't express: the
+   * passenger limit, one age per child and a PNR not already on the flight.
+   */
+  private async validatedBookingPayload(
+    flightId: number,
+    dto: CreateBookingDto,
+    requestLogger: Logger,
+  ): Promise<Partial<BookingEntity>> {
+    const childAges = dto.childAges ?? [];
+    this.assertBookingRules(
       dto.pnr,
-      dto.adults,
-      dto.children,
+      { adults: dto.adults, children: dto.children, childAges },
       flightId,
       requestLogger,
     );
@@ -369,107 +416,88 @@ export class CancelledFlightsService {
       );
     }
 
-    const booking = await this.cancelledFlightsRepository.createBooking(
-      {
-        cancelledFlightId: flightId,
-        pnr: dto.pnr,
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-        email: dto.email,
-        phone: dto.phone,
-        residency: dto.residency,
-        travelClass: dto.travelClass,
-        adults: dto.adults,
-        children: dto.children,
-        specialNotes: dto.specialNotes ?? [],
-        additionalNotes: dto.additionalNotes ?? null,
-      },
-      requestLogger,
-    );
-
-    await this.markFlightInProgressIfDraft(flight, requestLogger);
-
-    requestLogger.info("Booking added", {
-      context: this.context,
-      flightId,
-      bookingId: booking.id,
-      pnr: booking.pnr,
-    });
-
-    return this.toBookingResponse(booking);
+    return {
+      cancelledFlightId: flightId,
+      pnr: dto.pnr,
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+      email: dto.email,
+      phone: dto.phone,
+      residency: dto.residency,
+      travelClass: dto.travelClass,
+      adults: dto.adults,
+      children: dto.children,
+      childAges,
+      specialNotes: normalizeNotes(dto.specialNotes),
+    };
   }
 
-  private assertPassengerLimit(
+  /**
+   * Runs a booking write; when the unique PNR index rejects it (another
+   * request saved the same PNR between our check and this write), answers
+   * 409 with `message` instead of a database error.
+   */
+  private async guardDuplicatePnr<T>(
+    write: () => Promise<T>,
+    message: string,
+    flightId: number,
+    requestLogger: Logger,
+  ): Promise<T> {
+    try {
+      return await write();
+    } catch (error) {
+      const driverError = (
+        error as { driverError?: { code?: string; constraint?: string } }
+      ).driverError;
+      if (
+        error instanceof QueryFailedError &&
+        driverError?.code === "23505" &&
+        driverError.constraint === BOOKING_PNR_UNIQUE_INDEX
+      ) {
+        requestLogger.warn("Rejected booking write: PNR saved concurrently", {
+          context: this.context,
+          flightId,
+        });
+        throw new ConflictException(message);
+      }
+      throw error;
+    }
+  }
+
+  private assertBookingRules(
     pnr: string,
-    adults: number,
-    children: number,
+    counts: { adults: number; children: number; childAges: number[] },
     flightId: number,
     requestLogger: Logger,
   ): void {
-    const passengers = adults + children;
-    if (passengers <= config.booking.maxPassengersPerPnr) return;
+    const errors = bookingRuleErrors(
+      counts,
+      config.booking.maxPassengersPerPnr,
+    );
+    if (errors.length === 0) return;
 
-    requestLogger.warn("Rejected booking: PNR exceeds passenger limit", {
+    requestLogger.warn("Rejected booking: passenger counts invalid", {
       context: this.context,
       flightId,
       pnr,
-      passengers,
+      adults: counts.adults,
+      children: counts.children,
+      childAges: counts.childAges.length,
       maxPassengers: config.booking.maxPassengersPerPnr,
     });
     throw new BadRequestException(
-      `PNR '${pnr}' has ${passengers} passengers. A single PNR can include a maximum of ${config.booking.maxPassengersPerPnr} passengers (adults and children combined). Please split larger groups across separate PNRs.`,
+      errors.map((error) => error.message).join(". "),
     );
   }
 
-  // Minimal RFC4180 parser: handles quoted fields (so a comma-separated
-  // special_notes cell doesn't shift later columns) and "" escaped quotes.
-  private parseCsvRows(content: string): string[][] {
-    const rows: string[][] = [];
-    let row: string[] = [];
-    let field = "";
-    let inQuotes = false;
-    const text = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  // ── Import bookings (CSV) ────────────────────────────────────────────────
 
-    for (let i = 0; i < text.length; i += 1) {
-      const char = text[i];
-
-      if (inQuotes) {
-        if (char === '"') {
-          if (text[i + 1] === '"') {
-            field += '"';
-            i += 1;
-          } else {
-            inQuotes = false;
-          }
-        } else {
-          field += char;
-        }
-        continue;
-      }
-
-      if (char === '"') {
-        inQuotes = true;
-      } else if (char === ",") {
-        row.push(field);
-        field = "";
-      } else if (char === "\n") {
-        row.push(field);
-        rows.push(row);
-        row = [];
-        field = "";
-      } else {
-        field += char;
-      }
-    }
-    if (field.length > 0 || row.length > 0) {
-      row.push(field);
-      rows.push(row);
-    }
-    return rows;
-  }
-
-  // ── Import preview ───────────────────────────────────────────────────────
-
+  /**
+   * Imports every valid row as a booking and keeps every invalid row as a
+   * failed booking, with its errors, to fix or delete later. A bad row never
+   * stops the others; only a file that can't be read as a bookings CSV is
+   * rejected as a whole (see booking-import.ts).
+   */
   async importBookings(
     flightId: number,
     file: { buffer: Buffer; originalname: string; mimetype: string },
@@ -483,242 +511,240 @@ export class CancelledFlightsService {
       originalname: file.originalname,
       sizeBytes: file.buffer.length,
     });
-    // Parse the CSV file
-    const csv = file.buffer.toString("utf-8");
-    const rows = this.parseCsvRows(csv);
-    if (!/passport/i.test(String(rows[0]?.[5] ?? ""))) {
-      throw new BadRequestException(
-        "The 6th column must be Passport Country (after Phone). Columns: PNR, First Name, Last Name, Email, Phone, Passport Country, Travel Class, Adults, Children, Special Notes, Additional Notes.",
+
+    let rows: ParsedBookingRow[];
+    try {
+      rows = parseBookingCsv(
+        file.buffer.toString("utf-8"),
+        config.booking.maxPassengersPerPnr,
       );
-    }
-    const pnrSet = new Set<string>();
-
-    const bookings: {
-      row: number;
-      pnr: string;
-      firstName: string;
-      lastName: string;
-      email: string;
-      phone: string;
-      residency: string;
-      travelClass: TravelClass;
-      adults: number;
-      children: number;
-      specialNotes: SpecialNote[];
-      additionalNotes: string | null;
-    }[] = [];
-    const errorsList: { row: number; errors: string[] }[] = [];
-    const badResidencyRows: string[] = [];
-    const oversizedPnrRows: string[] = [];
-    let validCount = 0;
-    let errorCount = 0;
-
-    rows.forEach((row, rowNumber) => {
-      if (rowNumber === 0) return; // skip header
-
-      const getValue = (col: number): string => String(row[col] ?? "").trim();
-
-      if (row.every((value) => String(value ?? "").trim() === "")) {
-        return;
-      }
-
-      const pnr = getValue(0);
-      const firstName = getValue(1);
-      const lastName = getValue(2);
-      const email = getValue(3);
-      const phone = getValue(4);
-      const residencyRaw = getValue(5);
-      const residency = toCountryCode(residencyRaw);
-      const travelClassRaw = getValue(6).toLowerCase();
-      const adultsRaw = parseInt(getValue(7), 10);
-      const childrenRaw = parseInt(getValue(8), 10);
-      const specialNotesRaw = getValue(9);
-      const additionalNotes = getValue(10) || null;
-
-      const errors: string[] = [];
-
-      if (!pnr) {
-        errors.push("PNR is required");
-      } else if (pnrSet.has(pnr)) {
-        errors.push(`Duplicate PNR '${pnr}' found in the file`);
-      } else {
-        pnrSet.add(pnr);
-      }
-      if (!firstName) errors.push("First Name is required");
-      if (!lastName) errors.push("Last Name is required");
-      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        errors.push("Email is invalid");
-      }
-      if (!phone) errors.push("Phone is required");
-      if (!residency) {
-        badResidencyRows.push(
-          residencyRaw ? `${rowNumber} ('${residencyRaw}')` : `${rowNumber} (empty)`,
-        );
-      }
-      const validTravelClasses = Object.values(TravelClass) as string[];
-      if (!validTravelClasses.includes(travelClassRaw)) {
-        errors.push(
-          `Travel Class must be one of: ${validTravelClasses.join(", ")}`,
-        );
-      }
-      if (isNaN(adultsRaw) || adultsRaw < 1) {
-        errors.push("Adults must be a number >= 1");
-      }
-      if (isNaN(childrenRaw) || childrenRaw < 0) {
-        errors.push("Children must be a number >= 0");
-      }
-      if (adultsRaw + childrenRaw > config.booking.maxPassengersPerPnr) {
-        oversizedPnrRows.push(
-          `row ${rowNumber} (PNR '${pnr}', ${adultsRaw + childrenRaw} passengers)`,
-        );
-      }
-
-      const validSpecialNotes = Object.values(SpecialNote) as string[];
-      const specialNotes: SpecialNote[] = specialNotesRaw
-        ? (specialNotesRaw
-            .split(",")
-            .map((s) => s.trim().toLowerCase())
-            .filter((s) => {
-              if (s && !validSpecialNotes.includes(s)) {
-                // errors.push(`Invalid special note: '${s}'`);
-                errors.push(
-                  `Special note must be one of: ${validSpecialNotes.join(", ")}`,
-                );
-                return false;
-              }
-              return !!s;
-            }) as SpecialNote[])
-        : [];
-
-      const isValid = errors.length === 0;
-      if (isValid) validCount++;
-      else {
-        errorCount++;
-        errorsList.push({ row: rowNumber, errors });
-      }
-
-      bookings.push({
-        row: rowNumber,
-        pnr,
-        firstName,
-        lastName,
-        email,
-        phone,
-        residency: residency ?? "",
-        travelClass: travelClassRaw as TravelClass,
-        adults: adultsRaw,
-        children: childrenRaw,
-        specialNotes,
-        additionalNotes,
-      });
-    });
-
-    if (badResidencyRows.length > 0) {
-      requestLogger.warn("Rejected booking import: rows without passport country", {
-        context: this.context,
-        flightId,
-        rows: badResidencyRows,
-      });
-      throw new BadRequestException(
-        `Passport Country is missing or not a recognised country in row(s) ${badResidencyRows.join(", ")}. Use a country name or 2-letter code (e.g. United States or US). Nothing was imported; fix the file and upload it again.`,
-      );
-    }
-
-    if (oversizedPnrRows.length > 0) {
-      requestLogger.warn("Rejected booking import: PNRs exceed passenger limit", {
-        context: this.context,
-        flightId,
-        rows: oversizedPnrRows,
-        maxPassengers: config.booking.maxPassengersPerPnr,
-      });
-      throw new BadRequestException(
-        `A single PNR can include a maximum of ${config.booking.maxPassengersPerPnr} passengers (adults and children combined). The following exceed this limit: ${oversizedPnrRows.join(", ")}. Nothing was imported; split larger groups across separate PNRs and upload the file again.`,
-      );
-    }
-
-    // Check for duplicate PNRs in the database
-    const existingBookings =
-      await this.cancelledFlightsRepository.findBookingsByFlightIdAndPnrs(
-        flightId,
-        Array.from(pnrSet),
-        requestLogger,
-      );
-
-    existingBookings.forEach((bookingEntity: BookingEntity) => {
-      const row = bookings.find((b) => b.pnr === bookingEntity.pnr);
-      if (row) {
-        errorsList.push({
-          row: row.row,
-          errors: [`PNR '${bookingEntity.pnr}' already exists for this flight`],
+    } catch (error) {
+      if (error instanceof BookingCsvFormatError) {
+        requestLogger.warn("Rejected booking import: file format", {
+          context: this.context,
+          flightId,
+          reason: error.message,
         });
-        errorCount++;
+        throw new BadRequestException(
+          `${error.message} Nothing was imported.`,
+        );
       }
-    });
-
-    if (errorCount > 0) {
-      requestLogger.warn("Booking import has rows with validation errors", {
-        context: this.context,
-        flightId,
-        totalRows: bookings.length,
-        errorCount,
-        validCount,
-      });
+      throw error;
     }
 
-    const toSave: {
-      cancelledFlightId: number;
-      pnr: string;
-      firstName: string;
-      lastName: string;
-      email: string;
-      phone: string;
-      residency: string;
-      travelClass: TravelClass;
-      adults: number;
-      children: number;
-      specialNotes: SpecialNote[];
-      additionalNotes: string | null;
-    }[] = bookings.map((b) => ({
-      cancelledFlightId: flightId,
-      pnr: b.pnr,
-      firstName: b.firstName,
-      lastName: b.lastName,
-      email: b.email,
-      phone: b.phone,
-      residency: b.residency,
-      travelClass: b.travelClass,
-      adults: b.adults,
-      children: b.children,
-      specialNotes: b.specialNotes,
-      additionalNotes: b.additionalNotes,
-    }));
+    // A PNR already on the flight: the same details again (the file uploaded
+    // again) is skipped; different details fail the row.
+    const validPnrs = rows
+      .filter((row) => row.booking)
+      .map((row) => row.booking!.pnr);
+    const existing = validPnrs.length
+      ? await this.cancelledFlightsRepository.findBookingsByFlightIdAndPnrs(
+          flightId,
+          validPnrs,
+          requestLogger,
+        )
+      : [];
+    const existingByPnr = new Map(
+      existing.map((b) => [normalizePnr(b.pnr), b]),
+    );
+    const skippedRows = new Set<ParsedBookingRow>();
+    for (const row of rows) {
+      const current = row.booking && existingByPnr.get(row.booking.pnr);
+      if (!row.booking || !current) continue;
+      if (matchesSavedBooking(row.booking, current)) {
+        skippedRows.add(row);
+      } else {
+        row.errors.push({
+          field: "pnr",
+          message: `PNR '${row.booking.pnr}' already exists for this flight with different details`,
+        });
+        row.booking = null;
+      }
+    }
 
-    const bookingFlights = await this.cancelledFlightsRepository.saveBookings(
-      toSave,
+    const validRows = rows.filter(
+      (row) => row.booking && !skippedRows.has(row),
+    );
+    const failedRows = rows.filter((row) => !row.booking);
+    const fileName = file.originalname ? file.originalname.slice(0, 255) : null;
+    // Earlier failed rows for a PNR in this file are replaced by this upload:
+    // that row is now imported, skipped, or failed again with fresh errors.
+    const filePnrs = [
+      ...new Set(rows.map((row) => row.values.pnr).filter(Boolean)),
+    ];
+
+    const saved = await this.guardDuplicatePnr(
+      () =>
+        this.cancelledFlightsRepository.saveBookingImport(
+          flightId,
+          filePnrs,
+          validRows.map((row) => ({
+            cancelledFlightId: flightId,
+            ...row.booking!,
+          })),
+          failedRows.map((row) => ({
+            cancelledFlightId: flightId,
+            fileName,
+            rowNumber: row.rowNumber,
+            values: row.values,
+            errors: row.errors,
+          })),
+          requestLogger,
+        ),
+      "Another change added one of these PNRs to the flight at the same time. Nothing was imported; upload the file again.",
+      flightId,
       requestLogger,
     );
 
-    if (bookingFlights.length > 0) {
+    if (saved.bookings.length > 0) {
       await this.markFlightInProgressIfDraft(flight, requestLogger);
     }
 
-    requestLogger.info("Booking import completed", {
+    const logMeta = {
       context: this.context,
       flightId,
-      totalRows: bookings.length,
-      validBookings: validCount,
-      errorBookings: errorCount,
-      savedBookings: bookingFlights.length,
-    });
+      totalRows: rows.length,
+      importedBookings: saved.bookings.length,
+      skippedRows: skippedRows.size,
+      failedRows: saved.failures.length,
+    };
+    if (saved.failures.length > 0) {
+      requestLogger.warn("Booking import has rows with validation errors", {
+        ...logMeta,
+        failedRowNumbers: failedRows.map((row) => row.rowNumber),
+      });
+    }
+    requestLogger.info("Booking import completed", logMeta);
 
     return {
-      bookings: bookingFlights.map((b) => this.toBookingResponse(b)),
+      bookings: saved.bookings.map((b) => this.toBookingResponse(b)),
+      failedBookings: saved.failures.map((f) => this.toFailedBookingResponse(f)),
       summary: {
-        totalBookings: bookings.length,
-        validBookings: validCount,
-        errorBookings: errorCount,
+        totalBookings: rows.length,
+        validBookings: saved.bookings.length,
+        skippedBookings: skippedRows.size,
+        errorBookings: saved.failures.length,
       },
-      errorList: errorsList,
+    };
+  }
+
+  // ── Failed import rows ───────────────────────────────────────────────────
+
+  async listImportFailures(
+    flightId: number,
+    requestId: string,
+    requestLogger: Logger,
+  ): Promise<FailedBookingListResponseDto> {
+    await this.requireFlight(flightId, requestLogger);
+    const failures = await this.cancelledFlightsRepository.findImportFailures(
+      flightId,
+      requestLogger,
+    );
+    return {
+      failedBookings: failures.map((f) => this.toFailedBookingResponse(f)),
+    };
+  }
+
+  /**
+   * Fixes a failed row: creates the booking from the corrected values (same
+   * rules as adding one) and deletes the failed row, together.
+   */
+  async resolveImportFailure(
+    flightId: number,
+    failureId: number,
+    dto: CreateBookingDto,
+    requestId: string,
+    requestLogger: Logger,
+  ): Promise<BookingResponseDto> {
+    const flight = await this.requireFlight(flightId, requestLogger);
+    const payload = await this.validatedBookingPayload(
+      flightId,
+      dto,
+      requestLogger,
+    );
+
+    const booking = await this.guardDuplicatePnr(
+      () =>
+        this.cancelledFlightsRepository.createBookingFromImportFailure(
+          payload,
+          failureId,
+          requestLogger,
+        ),
+      `Booking with PNR '${payload.pnr}' already exists for this flight`,
+      flightId,
+      requestLogger,
+    );
+    if (!booking) {
+      requestLogger.warn("Failed import row not found for flight", {
+        context: this.context,
+        flightId,
+        failureId,
+      });
+      throw new NotFoundException(
+        `Failed booking '${failureId}' not found for flight '${flightId}'`,
+      );
+    }
+
+    await this.markFlightInProgressIfDraft(flight, requestLogger);
+
+    requestLogger.info("Failed import row fixed and saved as booking", {
+      context: this.context,
+      flightId,
+      failureId,
+      bookingId: booking.id,
+      pnr: booking.pnr,
+    });
+    return this.toBookingResponse(booking);
+  }
+
+  /** Deletes one failed row, or all of the flight's when failureId is omitted. */
+  async deleteImportFailures(
+    flightId: number,
+    failureId: number | undefined,
+    requestId: string,
+    requestLogger: Logger,
+  ): Promise<{ message: string; deleted: number }> {
+    await this.requireFlight(flightId, requestLogger);
+    const deleted = await this.cancelledFlightsRepository.deleteImportFailures(
+      flightId,
+      requestLogger,
+      failureId,
+    );
+    if (failureId !== undefined && deleted === 0) {
+      requestLogger.warn("Failed import row not found for flight", {
+        context: this.context,
+        flightId,
+        failureId,
+      });
+      throw new NotFoundException(
+        `Failed booking '${failureId}' not found for flight '${flightId}'`,
+      );
+    }
+    requestLogger.info("Failed import rows deleted", {
+      context: this.context,
+      flightId,
+      failureId: failureId ?? "all",
+      deleted,
+    });
+    return {
+      message:
+        failureId === undefined
+          ? `${deleted} failed booking(s) deleted`
+          : "Failed booking deleted",
+      deleted,
+    };
+  }
+
+  private toFailedBookingResponse(
+    failure: BookingImportFailureEntity,
+  ): FailedBookingDto {
+    return {
+      id: failure.id,
+      rowNumber: failure.rowNumber,
+      fileName: failure.fileName ?? null,
+      values: failure.values,
+      errors: failure.errors,
+      createdAt: failure.createdAt.toISOString(),
     };
   }
 
@@ -738,11 +764,20 @@ export class CancelledFlightsService {
       requestLogger,
     );
 
-    if (dto.adults !== undefined || dto.children !== undefined) {
-      this.assertPassengerLimit(
+    // Counts are checked when any of them changes; untouched older bookings
+    // (saved before child ages existed) can still have other fields edited.
+    if (
+      dto.adults !== undefined ||
+      dto.children !== undefined ||
+      dto.childAges !== undefined
+    ) {
+      this.assertBookingRules(
         dto.pnr ?? booking.pnr,
-        dto.adults ?? booking.adults,
-        dto.children ?? booking.children,
+        {
+          adults: dto.adults ?? booking.adults,
+          children: dto.children ?? booking.children,
+          childAges: dto.childAges ?? booking.childAges ?? [],
+        },
         flightId,
         requestLogger,
       );
@@ -755,7 +790,7 @@ export class CancelledFlightsService {
           flightId,
           requestLogger,
         );
-      if (conflict) {
+      if (conflict && conflict.id !== booking.id) {
         requestLogger.warn(
           "Rejected booking update: PNR already exists for flight",
           { context: this.context, flightId, bookingId, pnr: dto.pnr },
@@ -766,27 +801,31 @@ export class CancelledFlightsService {
       }
     }
 
-    const updated = await this.cancelledFlightsRepository.updateBooking(
-      booking,
-      {
-        ...(dto.pnr !== undefined && { pnr: dto.pnr }),
-        ...(dto.firstName !== undefined && { firstName: dto.firstName }),
-        ...(dto.lastName !== undefined && { lastName: dto.lastName }),
-        ...(dto.email !== undefined && { email: dto.email }),
-        ...(dto.phone !== undefined && { phone: dto.phone }),
-        ...(dto.residency !== undefined && { residency: dto.residency }),
-        ...(dto.travelClass !== undefined && {
-          travelClass: dto.travelClass,
-        }),
-        ...(dto.adults !== undefined && { adults: dto.adults }),
-        ...(dto.children !== undefined && { children: dto.children }),
-        ...(dto.specialNotes !== undefined && {
-          specialNotes: dto.specialNotes ?? [],
-        }),
-        ...(dto.additionalNotes !== undefined && {
-          additionalNotes: dto.additionalNotes,
-        }),
-      },
+    const updated = await this.guardDuplicatePnr(
+      () =>
+        this.cancelledFlightsRepository.updateBooking(
+          booking,
+          {
+            ...(dto.pnr !== undefined && { pnr: dto.pnr }),
+            ...(dto.firstName !== undefined && { firstName: dto.firstName }),
+            ...(dto.lastName !== undefined && { lastName: dto.lastName }),
+            ...(dto.email !== undefined && { email: dto.email }),
+            ...(dto.phone !== undefined && { phone: dto.phone }),
+            ...(dto.residency !== undefined && { residency: dto.residency }),
+            ...(dto.travelClass !== undefined && {
+              travelClass: dto.travelClass,
+            }),
+            ...(dto.adults !== undefined && { adults: dto.adults }),
+            ...(dto.children !== undefined && { children: dto.children }),
+            ...(dto.childAges !== undefined && { childAges: dto.childAges }),
+            ...(dto.specialNotes !== undefined && {
+              specialNotes: normalizeNotes(dto.specialNotes),
+            }),
+          },
+          requestLogger,
+        ),
+      `Booking with PNR '${dto.pnr}' already exists for this flight`,
+      flightId,
       requestLogger,
     );
 
@@ -1286,6 +1325,22 @@ export class CancelledFlightsService {
       );
       throw new BadRequestException(
         `Cannot confirm passenger booking details for flight '${flightId}' with no bookings`,
+      );
+    }
+
+    // Failed CSV rows must be fixed or deleted first, so none is forgotten.
+    const failedRows =
+      await this.cancelledFlightsRepository.countImportFailures(
+        flightId,
+        requestLogger,
+      );
+    if (failedRows > 0) {
+      requestLogger.warn(
+        "Rejected passenger booking confirmation: failed import rows remain",
+        { context: this.context, flightId, failedRows },
+      );
+      throw new BadRequestException(
+        `${failedRows} failed booking(s) from a CSV import still need fixing or deleting before you continue`,
       );
     }
 

@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 // Shared branding for every generated PDF (invoices, vouchers, ...) so they
 // stay visually consistent with each other and with the frontend's own
 // navy/Figtree/airplane-icon branding (frontend/*/public/logo.svg).
@@ -10,12 +13,49 @@ export const PDF_BRAND = {
   greenBorder: "#A7F3D0",
 };
 
+// Figtree is embedded from the bundled @fontsource/figtree package, so PDF
+// rendering never needs internet access. Google Fonts is only a fallback when
+// the package files are missing.
+const FIGTREE_WEIGHTS = [400, 500, 600, 700];
+const FIGTREE_SUBSETS: Array<{ subset: string; unicodeRange: string }> = [
+  {
+    subset: "latin",
+    unicodeRange:
+      "U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD",
+  },
+  {
+    subset: "latin-ext",
+    unicodeRange:
+      "U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF",
+  },
+];
+
+function localFigtreeFontFaces(): string | null {
+  try {
+    const dir = path.join(
+      path.dirname(require.resolve("@fontsource/figtree/package.json")),
+      "files",
+    );
+    return FIGTREE_SUBSETS.flatMap(({ subset, unicodeRange }) =>
+      FIGTREE_WEIGHTS.map((weight) => {
+        const font = readFileSync(
+          path.join(dir, `figtree-${subset}-${weight}-normal.woff2`),
+        ).toString("base64");
+        return `@font-face { font-family: 'Figtree'; font-style: normal; font-weight: ${weight}; font-display: block; src: url(data:font/woff2;base64,${font}) format('woff2'); unicode-range: ${unicodeRange}; }`;
+      }),
+    ).join("\n");
+  } catch {
+    return null;
+  }
+}
+
 export const FONT_IMPORT =
+  localFigtreeFontFaces() ??
   "@import url('https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,300..900;1,300..900&display=swap');";
 
 export const FONT_FAMILY = "'Figtree', 'Helvetica Neue', Arial, sans-serif";
 
-// Inline FlyVoid logomark (airplane icon + wordmark), white-on-navy.
+// Inline Flyverax logomark (airplane icon + wordmark), white-on-navy.
 // Same mark used by the frontend apps' public/logo.svg.
 export const LOGO_SVG = `
   <svg width="150" height="37" viewBox="0 0 150 37" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -23,7 +63,7 @@ export const LOGO_SVG = `
     <g transform="translate(5.9, 8.5) scale(0.833)">
       <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2.5 1.5V22l4-1 4 1v-1.5L13 19v-5.5l8 2.5z" fill="white"/>
     </g>
-    <text x="40" y="26" font-family="'Figtree', 'Helvetica Neue', Arial, sans-serif" font-size="22" font-weight="700" letter-spacing="0.2" fill="white">FlyVoid</text>
+    <text x="40" y="26" font-family="'Figtree', 'Helvetica Neue', Arial, sans-serif" font-size="22" font-weight="700" letter-spacing="0.2" fill="white">Flyverax</text>
   </svg>
 `;
 

@@ -28,6 +28,7 @@ import {
 } from "@/src/services/cancellation.service";
 import { hotelBookingsService } from "@/src/services/hotel-bookings.service";
 import { PLATFORM_FEE_PERCENT } from "@/src/lib/constants";
+import { splitNotes } from "@/src/lib/booking-fields";
 import { useAuth } from "@/src/hooks/useAuth";
 
 interface BookingDetailsDrawerProps {
@@ -214,16 +215,8 @@ export function BookingDetailsDrawer({
   const isBusiness =
     travelClass === "Business" || travelClass === "First Class";
 
-  const notesList = [
-    ...(Array.isArray(pBooking?.specialNotes)
-      ? pBooking.specialNotes
-      : pBooking?.specialNotes
-        ? [pBooking.specialNotes]
-        : []),
-    ...(pBooking?.additionalNotes ? [pBooking.additionalNotes] : []),
-    ...(pBooking?.notes ? [pBooking.notes] : []),
-  ];
-  const notes = notesList.filter(Boolean).join(", ") || "N/A";
+  // Special Notes is one text: presets and free text, comma-separated.
+  const notes = splitNotes(pBooking?.specialNotes).join(", ") || "N/A";
 
   const hotelName = hotel?.hotelName || booking?.hotelName || "N/A";
   const hotelImageUrl = (hotel as any)?.imageUrl || null;

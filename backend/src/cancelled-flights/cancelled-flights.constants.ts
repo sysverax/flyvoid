@@ -11,6 +11,12 @@ import { FlightStatus } from "./entities/enums";
  */
 export const FLIGHT_PAYMENT_STEP_ENABLED = false;
 
+/**
+ * Oldest age that counts as a child on a booking (ages 0 to this, inclusive).
+ * Must match MAX_CHILD_AGE in frontend/airline/src/lib/constants.ts.
+ */
+export const MAX_CHILD_AGE = 12;
+
 /** Statuses from which a flight can be published. PAID keeps older flights publishable. */
 export const PUBLISHABLE_FLIGHT_STATUSES: FlightStatus[] =
   FLIGHT_PAYMENT_STEP_ENABLED

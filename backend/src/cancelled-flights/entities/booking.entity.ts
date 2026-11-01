@@ -2,15 +2,20 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from "typeorm";
 import { CancelledFlightEntity } from "./cancelled-flight.entity";
-import { HotelAllocationStatus, SpecialNote, TravelClass } from "./enums";
+import { HotelAllocationStatus, TravelClass } from "./enums";
+
+/** Unique (cancelled_flight_id, UPPER(BTRIM(pnr))); see migration 20261031. */
+export const BOOKING_PNR_UNIQUE_INDEX = "uq_cancelled_flight_bookings_flight_pnr";
 
 @Entity("cancelled_flight_bookings")
+@Index(BOOKING_PNR_UNIQUE_INDEX, { synchronize: false })
 export class BookingEntity {
   @PrimaryGeneratedColumn({ type: "integer" })
   id!: number;
@@ -46,15 +51,17 @@ export class BookingEntity {
   @Column({ name: "children", type: "integer", default: 0 })
   children!: number;
 
-  @Column({
-    name: "special_notes",
-    type: "simple-array",
-    nullable: true,
-  })
-  specialNotes!: SpecialNote[];
+  /** One age per child (0-12), so its length equals `children`. */
+  @Column({ name: "child_ages", type: "jsonb", default: () => "'[]'" })
+  childAges!: number[];
 
-  @Column({ name: "additional_notes", type: "text", nullable: true })
-  additionalNotes?: string | null;
+  /**
+   * Special Notes as entered: preset labels and free text, comma-separated.
+   * Hotel allocation reads the presets it lists with deriveSpecialNotes()
+   * (booking-notes.ts).
+   */
+  @Column({ name: "special_notes", type: "text", nullable: true })
+  specialNotes?: string | null;
 
   @ManyToOne(() => CancelledFlightEntity, (flight) => flight.bookings, {
     onDelete: "CASCADE",

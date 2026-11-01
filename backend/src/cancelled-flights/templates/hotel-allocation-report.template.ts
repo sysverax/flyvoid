@@ -358,10 +358,10 @@ export function buildHotelAllocationReportHtml(
   </div>
 
   <div class="footer-note">
-    This invoice reflects hotel accommodation arranged by FlyVoid on behalf of passengers affected by the
+    This invoice reflects hotel accommodation arranged by Flyverax on behalf of passengers affected by the
     cancellation of flight ${escapeHtml(flight.flightNumber)}. Amounts shown are payable by
     ${escapeHtml(airline.name)} as per the service agreement. For queries regarding this invoice, please
-    contact your FlyVoid account representative.
+    contact your Flyverax account representative.
   </div>
 </body>
 </html>

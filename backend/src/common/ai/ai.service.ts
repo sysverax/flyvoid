@@ -12,7 +12,7 @@ export class AiService {
   constructor(private readonly logger: LoggerService) {}
 
   private buildHotelRecommendationSystemPrompt(): string {
-    return `You are an AI assistant for a flight cancellation management system (Flyvoid).
+    return `You are an AI assistant for a flight cancellation management system (Flyverax).
 Your task is to analyze passenger booking context and recommend the most suitable hotels from a list of candidate hotels.
 
 You MUST respond with a valid JSON object matching the following structure:
