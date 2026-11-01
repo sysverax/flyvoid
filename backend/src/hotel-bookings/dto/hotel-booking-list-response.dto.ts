@@ -104,6 +104,24 @@ export class HotelBookingListItemDto {
   })
   status!: HotelAllocationStatus;
 
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: "102-4567890",
+    description:
+      "The hotel supplier's booking reference(s), exactly as issued (Hotelbeds booking reference; RateHawk/ETG order id), comma-separated when rooms have different ones. The same value is printed on the confirmation PDF. Null when none is stored.",
+  })
+  supplierReference!: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    enum: ["SUPPLIER_REFERENCE_MISSING"],
+    description:
+      "Set when the booking is confirmed but its voucher cannot be issued: SUPPLIER_REFERENCE_MISSING means a booked room has no supplier reference, so the PDF and email are refused until it is fixed.",
+  })
+  voucherIssue!: "SUPPLIER_REFERENCE_MISSING" | null;
+
   @ApiProperty({ example: "2026-09-10T10:00:00.000Z" })
   createdAt!: string;
 

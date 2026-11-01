@@ -250,7 +250,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     return !!this.keyId && !!this.apiKey;
   }
 
-  /** Production bookings must carry FlyVoid's booking confirmation email, never the airline's (B2B prices). */
+  /** Production bookings must carry Flyverax's booking confirmation email, never the airline's (B2B prices). */
   private assertBookingConfirmationEmail(): void {
     if (!this.useSandbox && !this.bookingConfirmationEmail) {
       throw new ServiceUnavailableException(

@@ -42,7 +42,7 @@ export class InviteAdminUserRequestDto {
 
   @ApiProperty({
     description: "Admin email address",
-    example: "jane.walker@flyvoid.com",
+    example: "jane.walker@flyverax.com",
   })
   @Transform(({ value }: { value: string }) => value.toLowerCase().trim())
   @IsEmail()

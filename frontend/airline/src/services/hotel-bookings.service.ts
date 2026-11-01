@@ -42,6 +42,10 @@ export interface HotelBookingDTO {
   totalRooms: number;
   totalPrice: number;
   status: string;
+  /** The hotel supplier's booking reference(s), as printed on the confirmation. */
+  supplierReference?: string | null;
+  /** SUPPLIER_REFERENCE_MISSING: confirmed, but the voucher is blocked until the reference is recorded. */
+  voucherIssue?: "SUPPLIER_REFERENCE_MISSING" | null;
   createdAt: string;
   updatedAt: string | null;
 }

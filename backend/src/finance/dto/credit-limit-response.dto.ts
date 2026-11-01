@@ -42,7 +42,7 @@ export class CreditLimitChangedByDto {
   @ApiProperty({ example: "Jane Doe" })
   name!: string;
 
-  @ApiProperty({ example: "jane@flyvoid.com" })
+  @ApiProperty({ example: "jane@flyverax.com" })
   email!: string;
 }
 
