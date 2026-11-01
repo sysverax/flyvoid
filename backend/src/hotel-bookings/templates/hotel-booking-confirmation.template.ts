@@ -410,7 +410,7 @@ export function buildHotelBookingConfirmationHtml(
   </div>
 
   <div class="footer-note">
-    This accommodation was arranged by FlyVoid on behalf of ${escapeHtml(input.airlineName)} for passengers
+    This accommodation was arranged by Flyverax on behalf of ${escapeHtml(input.airlineName)} for passengers
     affected by the cancellation of flight ${escapeHtml(flight.flightNumber)}. If you have any questions about
     this booking, please contact ${escapeHtml(input.airlineName)} directly, or ask hotel reception to verify
     this confirmation using the booking reference above.

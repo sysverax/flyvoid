@@ -13,7 +13,7 @@ export class AdminUserResponseDto {
 
   @ApiProperty({
     description: "Admin email",
-    example: "jane.walker@flyvoid.com",
+    example: "jane.walker@flyverax.com",
   })
   email!: string;
 

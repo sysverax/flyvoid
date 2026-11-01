@@ -130,7 +130,7 @@ function failureMessage(
   switch (booking.reasonCode) {
     case "NO_ROOM_SPLIT":
       return data && !data.arrangementPossible
-        ? `${party} can't be placed: every room needs an adult and holds at most ${data.roomLimits.maxChildrenPerRoom} children. This PNR has to be handled outside FlyVoid.`
+        ? `${party} can't be placed: every room needs an adult and holds at most ${data.roomLimits.maxChildrenPerRoom} children. This PNR has to be handled outside Flyverax.`
         : `There's no standard room arrangement for ${party}. Set the rooms yourself below, then search.`;
     case "NO_AVAILABILITY":
       return `Automatic booking found no hotel with rooms left for this arrangement${data ? ` (searched up to ${data.maxRadius} ${data.radiusUnit})` : ""}. Try another room arrangement or distance.`;
@@ -747,7 +747,7 @@ export function FailedBookingHotelDrawer({
 
           {!isLoading && !error && data && !arrangementPossible && (
             <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
-              This party can&apos;t be booked in FlyVoid. Arrange the stay with the
+              This party can&apos;t be booked in Flyverax. Arrange the stay with the
               hotel or your agent directly.
             </div>
           )}

@@ -15,7 +15,7 @@ export const FONT_IMPORT =
 
 export const FONT_FAMILY = "'Figtree', 'Helvetica Neue', Arial, sans-serif";
 
-// Inline FlyVoid logomark (airplane icon + wordmark), white-on-navy.
+// Inline Flyverax logomark (airplane icon + wordmark), white-on-navy.
 // Same mark used by the frontend apps' public/logo.svg.
 export const LOGO_SVG = `
   <svg width="150" height="37" viewBox="0 0 150 37" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -23,7 +23,7 @@ export const LOGO_SVG = `
     <g transform="translate(5.9, 8.5) scale(0.833)">
       <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2.5 1.5V22l4-1 4 1v-1.5L13 19v-5.5l8 2.5z" fill="white"/>
     </g>
-    <text x="40" y="26" font-family="'Figtree', 'Helvetica Neue', Arial, sans-serif" font-size="22" font-weight="700" letter-spacing="0.2" fill="white">FlyVoid</text>
+    <text x="40" y="26" font-family="'Figtree', 'Helvetica Neue', Arial, sans-serif" font-size="22" font-weight="700" letter-spacing="0.2" fill="white">Flyverax</text>
   </svg>
 `;
 

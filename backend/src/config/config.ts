@@ -85,7 +85,7 @@ export const config = {
       process.env.FORGOT_PASSWORD_RESET_TOKEN_EXPIRES_IN ?? "1h",
     initialPasswordResetTokenExpiresIn:
       process.env.INITIAL_PASSWORD_RESET_TOKEN_EXPIRES_IN ?? "15m",
-    twoFactorIssuer: process.env.TWO_FACTOR_ISSUER ?? "Flyvoid Admin",
+    twoFactorIssuer: process.env.TWO_FACTOR_ISSUER ?? "Flyverax Admin",
     twoFactorChallengeTokenExpiresIn:
       process.env.TWO_FACTOR_CHALLENGE_TOKEN_EXPIRES_IN ?? "5m",
     twoFactorEncryptionKey:
@@ -198,7 +198,7 @@ export const config = {
     isAllowSearchAPI: true,
     isAllowFetchHotelDetails: true,
   },
-  // FlyVoid inbox sent to hotel suppliers on every booking; receives the
+  // Flyverax inbox sent to hotel suppliers on every booking; receives the
   // booking confirmations and B2B-priced booking documents.
   bookingConfirmationEmail: (
     process.env.BOOKING_CONFIRMATION_EMAIL ?? ""

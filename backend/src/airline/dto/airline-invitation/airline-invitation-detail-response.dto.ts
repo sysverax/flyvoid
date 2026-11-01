@@ -23,7 +23,7 @@ export class AirlineInvitationHistoryItemDto {
   @ApiProperty({
     description:
       "Email of the platform admin who performed the action. Null for ACCEPTED events.",
-    example: "admin@flyvoid.com",
+    example: "admin@flyverax.com",
     nullable: true,
   })
   performedByAdminEmail!: string | null;
