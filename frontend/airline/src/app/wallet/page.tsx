@@ -2,7 +2,7 @@
 
 import { WalletSummaryCards } from "@/src/components/wallet/WalletSummaryCards";
 import { PageHeader } from "@/src/components/layout/PageHeader";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { Search } from "lucide-react";
 import {
   Table,
@@ -73,9 +73,10 @@ export default function WalletPage() {
   // Sorting state
   const [sortField, setSortField] = useState<keyof WalletTransaction | null>(null);
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const latestRequestIdRef = useRef(0);
 
   // Fetch Wallet Transactions from GET /api/v1/wallets/transactions
-  const fetchWalletTransactions = async (isMounted = true) => {
+  const fetchWalletTransactions = async (requestId: number, isMounted = true) => {
     setIsLoadingTransactions(true);
     try {
       const typeParam =
@@ -113,6 +114,7 @@ export default function WalletPage() {
 
       const res = await walletService.getWalletTransactions({
         search: searchParam,
+        type: typeParam,
         status: statusParam,
         startDate: formattedStartDate,
         endDate: formattedEndDate,
@@ -120,7 +122,7 @@ export default function WalletPage() {
         limit: resultsPerPage,
       });
 
-      if (!isMounted) return;
+      if (!isMounted || requestId !== latestRequestIdRef.current) return;
 
       const mapped: WalletTransaction[] = (res.transactions || []).map(
         (tx: WalletTransactionItemDTO) => {
@@ -163,7 +165,7 @@ export default function WalletPage() {
       setTransactions(mapped);
       setTotalResults(res.pagination?.totalCount || mapped.length);
     } catch (err: any) {
-      if (!isMounted) return;
+      if (!isMounted || requestId !== latestRequestIdRef.current) return;
       console.error("Failed to fetch wallet transactions:", err);
       setTransactions([]);
       setTotalResults(0);
@@ -176,9 +178,10 @@ export default function WalletPage() {
 
   useEffect(() => {
     let isMounted = true;
+    const currentRequestId = ++latestRequestIdRef.current;
 
     const timeoutId = setTimeout(() => {
-      fetchWalletTransactions(isMounted);
+      fetchWalletTransactions(currentRequestId, isMounted);
     }, 300);
 
     return () => {
@@ -187,6 +190,7 @@ export default function WalletPage() {
     };
   }, [
     searchQuery,
+    selectedType,
     selectedStatus,
     startDate,
     endDate,

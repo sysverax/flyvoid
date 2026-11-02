@@ -617,11 +617,13 @@ export default function PublishedDetailView({
                       ? `${totalPax} Passengers`
                       : `${totalPax || 1} Passenger`;
                   const hotelName = hb.hotelName || "Transit Hotel";
-                  const ratingVal = parseFloat(hb.rating) || 4;
-                  const stars = Math.min(
-                    5,
-                    Math.max(1, Math.round(ratingVal)),
-                  );
+                  const hasHotelBooking = hb.id > 0;
+                  const hasRating = hasHotelBooking && !!hb.rating;
+                  const ratingVal = hasRating ? parseFloat(hb.rating) : 0;
+                  const stars =
+                    ratingVal > 0
+                      ? Math.min(5, Math.max(1, Math.round(ratingVal)))
+                      : 0;
                   const rooms = hb.totalRooms || 1;
                   const bookingCost = Number(hb.totalCost) || 0;
 
@@ -656,14 +658,18 @@ export default function PublishedDetailView({
                         </TruncatedTooltip>
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center text-amber-400">
-                          {[...Array(stars)].map((_, i) => (
-                            <Star
-                              key={i}
-                              className="h-3 w-3 fill-current"
-                            />
-                          ))}
-                        </div>
+                        {stars > 0 ? (
+                          <div className="flex items-center text-amber-400">
+                            {[...Array(stars)].map((_, i) => (
+                              <Star
+                                key={i}
+                                className="h-3 w-3 fill-current"
+                              />
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
                       </TableCell>
                       <TableCell>{rooms}</TableCell>
                       <TableCell className="font-semibold text-gray-900">

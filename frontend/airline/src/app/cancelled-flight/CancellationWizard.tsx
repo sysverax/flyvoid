@@ -1101,7 +1101,6 @@ export default function CancellationWizard({
     const anythingBooked = (allocData.successfulPnrs ?? 0) > 0;
     if (allocData.lastRunError) {
       setAllocationError(allocData.lastRunError);
-      toast.error(allocData.lastRunError);
       if (!anythingBooked) return;
     }
     setHotelAllocations(allocData);
@@ -2142,16 +2141,7 @@ export default function CancellationWizard({
             return (
               <Fragment key={step.number}>
                 <div
-                  onClick={() => {
-                    if (isCompleted || (step.number < activeStep && flightId)) {
-                      changeStep(step.number);
-                    }
-                  }}
-                  className={cn(
-                    "flex flex-col items-center shrink-0 w-[140px] z-10",
-                    (isCompleted || (step.number < activeStep && !!flightId)) &&
-                      "cursor-pointer",
-                  )}
+                  className="flex flex-col items-center shrink-0 w-[140px] z-10 select-none"
                 >
                   {/* Circle */}
                   <div
@@ -4189,11 +4179,12 @@ export default function CancellationWizard({
                             hb.hotelName
                           ? `${hb.hotelName} (not confirmed)`
                           : "Not booked";
-                      const ratingVal = parseFloat(hb.rating) || 4;
-                      const stars = Math.min(
-                        5,
-                        Math.max(1, Math.round(ratingVal)),
-                      );
+                      const hasRating = hasHotelBooking && isConfirmed && !!hb.rating;
+                      const ratingVal = hasRating ? parseFloat(hb.rating) : 0;
+                      const stars =
+                        ratingVal > 0
+                          ? Math.min(5, Math.max(1, Math.round(ratingVal)))
+                          : 0;
                       const rooms = hb.totalRooms || 1;
                       const bookingCost = Number(hb.totalCost) || 0;
 
@@ -4253,14 +4244,18 @@ export default function CancellationWizard({
                             </span>
                           </TableCell>
                           <TableCell>
-                            <div className="flex items-center justify-start text-left text-amber-400">
-                              {[...Array(stars)].map((_, i) => (
-                                <Star
-                                  key={i}
-                                  className="h-3 w-3 fill-current"
-                                />
-                              ))}
-                            </div>
+                            {stars > 0 ? (
+                              <div className="flex items-center justify-start text-left text-amber-400">
+                                {[...Array(stars)].map((_, i) => (
+                                  <Star
+                                    key={i}
+                                    className="h-3 w-3 fill-current"
+                                  />
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
                           </TableCell>
                           <TableCell className="text-center">{rooms}</TableCell>
                           <TableCell className="font-semibold text-gray-900">
@@ -4773,7 +4768,7 @@ export default function CancellationWizard({
                     isAllocating ||
                     isCheckingAllocation ||
                     isProcessingPayment ||
-                    (activeStep === 2 && failedBookings.length > 0) ||
+                    (activeStep === 2 && (isUploadingCsv || isLoadingBookings || failedBookings.length > 0)) ||
                     (activeStep === 5 && !!flightId && !allPnrsBooked) ||
                     (activeStep === 6 && !paymentConfirmed)
                   }
@@ -4784,7 +4779,7 @@ export default function CancellationWizard({
                       isAllocating ||
                       isCheckingAllocation ||
                       isProcessingPayment ||
-                      (activeStep === 2 && failedBookings.length > 0) ||
+                      (activeStep === 2 && (isUploadingCsv || isLoadingBookings || failedBookings.length > 0)) ||
                       (activeStep === 5 && !!flightId && !allPnrsBooked) ||
                       (activeStep === 6 && !paymentConfirmed)
                       ? "bg-[#9CA3AF] text-white cursor-not-allowed border-none"
