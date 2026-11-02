@@ -1,4 +1,4 @@
--- Full Flyvoid schema creation script (PostgreSQL).
+-- Full Flyverax schema creation script (PostgreSQL).
 -- Creates all application tables in dependency-safe order.
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;

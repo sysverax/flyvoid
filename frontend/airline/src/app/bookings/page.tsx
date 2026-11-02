@@ -10,6 +10,7 @@ import {
   CalendarCheck,
   Users,
   DollarSign,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "react-toastify";
 import {
@@ -56,8 +57,13 @@ export interface Booking {
   totalCost: number;
   status: string;
   reason?: string;
+  /** Confirmed but its voucher is blocked (no supplier booking reference stored). */
+  voucherBlocked: boolean;
   raw?: HotelBookingDTO;
 }
+
+const VOUCHER_BLOCKED_HINT =
+  "Voucher on hold: the hotel supplier's booking reference is missing. Contact Flyverax support before sending the confirmation.";
 
 /** Cancelled flight dropdown label, e.g. "FV123 · 12 Oct 2026 · #45". */
 function cancelledFlightLabel(
@@ -94,6 +100,7 @@ function mapHotelBookingDTOToBooking(dto: HotelBookingDTO): Booking {
     rooms: Number(dto.totalRooms || 1),
     totalCost: Number(dto.totalPrice || 0),
     status: dto.status,
+    voucherBlocked: dto.voucherIssue === "SUPPLIER_REFERENCE_MISSING",
     raw: dto,
   };
 }
@@ -675,6 +682,14 @@ export default function BookingsPage() {
                           {b.hotel}
                         </div>
                       </TruncatedTooltip>
+                      {b.voucherBlocked && (
+                        <span
+                          className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700"
+                          title={VOUCHER_BLOCKED_HINT}
+                        >
+                          <AlertTriangle className="h-3 w-3" /> Voucher on hold
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <TruncatedTooltip text={b.contactEmail} side="top">
@@ -731,9 +746,9 @@ export default function BookingsPage() {
                         {hasPermission("export") && (
                           <button
                             onClick={() => handleDownloadReceipt(b)}
-                            disabled={exportingId === (b.numericId || b.id.replace(/\D/g, ""))}
-                            className="p-1 text-[#6B7280] hover:text-emerald-600 transition-colors cursor-pointer disabled:opacity-50"
-                            title="Download confirmation PDF"
+                            disabled={b.voucherBlocked || exportingId === (b.numericId || b.id.replace(/\D/g, ""))}
+                            className="p-1 text-[#6B7280] hover:text-emerald-600 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                            title={b.voucherBlocked ? VOUCHER_BLOCKED_HINT : "Download confirmation PDF"}
                           >
                             {exportingId === (b.numericId || b.id.replace(/\D/g, "")) ? (
                               <svg className="animate-spin h-[20px] w-[20px] text-emerald-600" fill="none" viewBox="0 0 24 24">
@@ -748,9 +763,9 @@ export default function BookingsPage() {
                         {hasPermission("edit") && (
                           <button
                             onClick={() => handleSendEmail(b)}
-                            disabled={sendingEmailId === (b.numericId || b.id.replace(/\D/g, ""))}
-                            className="p-1 text-[#6B7280] hover:text-blue-600 transition-colors cursor-pointer disabled:opacity-50"
-                            title="Send confirmation email"
+                            disabled={b.voucherBlocked || sendingEmailId === (b.numericId || b.id.replace(/\D/g, ""))}
+                            className="p-1 text-[#6B7280] hover:text-blue-600 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                            title={b.voucherBlocked ? VOUCHER_BLOCKED_HINT : "Send confirmation email"}
                           >
                             {sendingEmailId === (b.numericId || b.id.replace(/\D/g, "")) ? (
                               <svg

@@ -42,6 +42,10 @@ export interface HotelBookingDTO {
   totalRooms: number;
   totalPrice: number;
   status: string;
+  /** The hotel supplier's booking reference(s), as printed on the confirmation. */
+  supplierReference?: string | null;
+  /** SUPPLIER_REFERENCE_MISSING: confirmed, but the voucher is blocked until the reference is recorded. */
+  voucherIssue?: "SUPPLIER_REFERENCE_MISSING" | null;
   createdAt: string;
   updatedAt: string | null;
 }
@@ -80,8 +84,10 @@ export interface HotelBookingDetailPassengerDTO {
   travelClass: string;
   adults: number;
   children: number;
-  specialNotes?: string[];
-  additionalNotes?: string;
+  /** One age per child (0-12). */
+  childAges?: number[];
+  /** Special Notes as entered: presets and free text, comma-separated. */
+  specialNotes?: string | null;
   createdAt: string;
   updatedAt?: string | null;
 }

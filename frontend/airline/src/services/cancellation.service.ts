@@ -73,8 +73,10 @@ export interface BookingDTO {
   travelClass: string;
   adults: number;
   children: number;
-  specialNotes?: string[];
-  additionalNotes?: string;
+  /** One age per child (0-12). */
+  childAges?: number[];
+  /** Special Notes as entered: presets and free text, comma-separated. */
+  specialNotes?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -89,21 +91,55 @@ export interface CreateBookingPayload {
   travelClass: string;
   adults: number;
   children: number;
-  specialNotes?: string[];
-  additionalNotes?: string;
+  childAges: number[];
+  specialNotes?: string | null;
+}
+
+export type BookingField =
+  | "pnr"
+  | "firstName"
+  | "lastName"
+  | "email"
+  | "phone"
+  | "residency"
+  | "travelClass"
+  | "adults"
+  | "children"
+  | "childAges"
+  | "specialNotes";
+
+/** A CSV row that failed validation, kept until it is fixed or deleted. */
+export interface FailedBookingDTO {
+  id: number;
+  /** Row in the file (header = row 1). */
+  rowNumber: number;
+  fileName: string | null;
+  /** Values as text: normalised where they parsed, otherwise as in the file. */
+  values: {
+    pnr: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string;
+    residency: string;
+    travelClass: string;
+    adults: string;
+    children: string;
+    childAges: string[];
+    specialNotes: string;
+  };
+  errors: Array<{ field: BookingField | null; message: string }>;
+  createdAt: string;
 }
 
 export interface ImportBookingResponse {
   bookings: BookingDTO[];
-  summary?: {
+  failedBookings: FailedBookingDTO[];
+  summary: {
     totalBookings: number;
     validBookings: number;
     errorBookings: number;
   };
-  errorList?: Array<{
-    row: number;
-    errors: string[];
-  }>;
 }
 
 export interface ReviewCancelledFlightData {
@@ -187,7 +223,18 @@ export interface HotelAllocationBookingResult {
   providerBookingReference: string | null;
   attempts: number;
   reason: string | null;
+  /** FAILED PNRs only: why automatic booking failed. */
+  reasonCode: PnrFailureCode | null;
+  adults: number;
+  children: number;
 }
+
+export type PnrFailureCode =
+  | "NO_ROOM_SPLIT"
+  | "INVALID_PASSENGERS"
+  | "NO_AVAILABILITY"
+  | "BOOKING_REJECTED"
+  | "OTHER";
 
 export interface HotelAllocationsResponse {
   cancelledFlightId: number;
@@ -241,6 +288,36 @@ export interface HotelOptionRoom extends RoomOccupancy {
   boardName: string;
   price: number;
   currency: string;
+  /** Free cancellation until this time; null when non-refundable or unknown. */
+  freeCancellationUntil?: string | null;
+  /** First penalty after the deadline. */
+  cancellationPenalty?: number | null;
+  /** Taxes the guest pays at the hotel (not in the price). */
+  taxesAtProperty?: Array<{ name: string; amount: number; currencyCode: string | null }>;
+}
+
+/** GET /cancelled-flights/:id/hotels/:hotelCode: a hotel's stored profile. */
+export interface HotelDetails {
+  hotelCode: string;
+  name: string | null;
+  starRating: number | null;
+  address: string | null;
+  contact: {
+    phones: Array<{ phoneNumber: string; phoneType: string }>;
+    email: string | null;
+  };
+  latitude: number | null;
+  longitude: number | null;
+  distanceFromAirportKm: number | null;
+  imageUrl: string | null;
+  website: string | null;
+  amenities: string[];
+  policies: {
+    checkInTime: string | null;
+    checkOutTime: string | null;
+    extraInfo: string | null;
+    items: Array<{ category: string; details: string[] }>;
+  } | null;
 }
 
 export interface HotelRecommendation {
@@ -249,6 +326,14 @@ export interface HotelRecommendation {
   stars: number;
   meetsMinimum: boolean;
   address: string | null;
+  imageUrl?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  /** Straight-line km from the departure airport. */
+  distanceKm?: number | null;
+  /** Free cancellation for the whole PNR until this time (earliest room deadline). */
+  freeCancellationUntil?: string | null;
+  mealPlans?: string[];
   totalPrice: number;
   currency: string;
   rooms: HotelOptionRoom[];
@@ -257,15 +342,38 @@ export interface HotelRecommendation {
 export interface HotelRecommendationsResponse {
   bookingId: number;
   pnr: string;
+  travelClass: string;
   adults: number;
   children: number;
+  /** Stay dates (YYYY-MM-DD at the hotel). */
+  checkInDate: string;
+  checkOutDate: string;
   radius: number;
   radiusUnit: string;
+  /** Radius automatic booking starts from. */
+  defaultRadius: number;
   minStars: number;
   maxRadius: number;
-  rooms: RoomOccupancy[];
+  roomLimits: { maxRooms: number; maxAdultsPerRoom: number; maxChildrenPerRoom: number };
+  /** False when no arrangement can place this party with an adult in every room. */
+  arrangementPossible: boolean;
+  /** Why there is no recommended split; null when there is one. */
+  splitError: string | null;
+  /** Rooms searched; null when nothing was searched (no split and no custom rooms). */
+  rooms: RoomOccupancy[] | null;
   splitOptions: Array<{ rooms: RoomOccupancy[]; recommended: boolean }>;
   options: HotelRecommendation[];
+}
+
+/** An API error with its HTTP status (undefined for network errors). */
+export class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status?: number,
+  ) {
+    super(message);
+    this.name = "ApiRequestError";
+  }
 }
 
 export interface HotelSummaryCancelledFlightSummaryDto {
@@ -567,6 +675,67 @@ export const cancellationService = {
     }
   },
 
+  async listFailedBookings(
+    flightId: number | string,
+  ): Promise<FailedBookingDTO[]> {
+    try {
+      const response = await apiClient.get(
+        `/cancelled-flights/${flightId}/booking-import-failures`,
+      );
+      return response.data?.data?.failedBookings ?? [];
+    } catch (error: any) {
+      throw new Error(
+        extractErrorMessage(error, "Failed to fetch failed bookings"),
+      );
+    }
+  },
+
+  /** Saves a fixed failed row as a booking and removes the failed row. */
+  async resolveFailedBooking(
+    flightId: number | string,
+    failureId: number | string,
+    payload: CreateBookingPayload,
+  ) {
+    try {
+      const response = await apiClient.post(
+        `/cancelled-flights/${flightId}/booking-import-failures/${failureId}/resolve`,
+        payload,
+      );
+      return response.data;
+    } catch (error: any) {
+      throw new Error(extractErrorMessage(error, "Failed to save booking"));
+    }
+  },
+
+  async deleteFailedBooking(
+    flightId: number | string,
+    failureId: number | string,
+  ) {
+    try {
+      const response = await apiClient.delete(
+        `/cancelled-flights/${flightId}/booking-import-failures/${failureId}`,
+      );
+      return response.data;
+    } catch (error: any) {
+      throw new Error(
+        extractErrorMessage(error, "Failed to delete failed booking"),
+      );
+    }
+  },
+
+  async deleteAllFailedBookings(flightId: number | string) {
+    try {
+      const response = await apiClient.delete(
+        `/cancelled-flights/${flightId}/booking-import-failures`,
+      );
+      return response.data;
+    } catch (error: any) {
+      throw new Error(
+        extractErrorMessage(error, "Failed to delete failed bookings"),
+      );
+    }
+  },
+
   async confirmBookings(flightId: number | string) {
     try {
       const response = await apiClient.post(
@@ -638,8 +807,25 @@ export const cancellationService = {
       );
       return response.data;
     } catch (error: unknown) {
-      throw new Error(
+      throw new ApiRequestError(
         extractErrorMessage(error, "Failed to load hotel recommendations"),
+        (error as { response?: { status?: number } })?.response?.status,
+      );
+    }
+  },
+
+  async getHotelDetails(
+    flightId: number | string,
+    hotelCode: string,
+  ): Promise<HotelDetails> {
+    try {
+      const response = await apiClient.get(
+        `/cancelled-flights/${flightId}/hotels/${encodeURIComponent(hotelCode)}`,
+      );
+      return response.data.data;
+    } catch (error: unknown) {
+      throw new Error(
+        extractErrorMessage(error, "Failed to load hotel details"),
       );
     }
   },

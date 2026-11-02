@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -18,6 +19,7 @@ import { CONFIRMATION_FLIGHT_STATUSES } from "../cancelled-flights/cancelled-fli
 import {
   HotelBookingListRow,
   HotelBookingsRepository,
+  HotelBookingWithSupplier,
 } from "./hotel-bookings.repository";
 import {
   GetHotelBookingsQueryDto,
@@ -33,6 +35,15 @@ import {
 } from "./dto";
 import { PdfService } from "../common/pdf/pdf.service";
 import { buildHotelBookingConfirmationHtml } from "./templates/hotel-booking-confirmation.template";
+import * as QRCode from "qrcode";
+import { distanceKm } from "../common/utils/geo.util";
+import {
+  SupplierReferences,
+  supplierReferencesOf,
+  supplierReferenceText,
+  VOUCHER_ISSUE,
+  VoucherIssue,
+} from "./supplier-references";
 
 /** e.g. "'allocated', 'paid' or 'published'", for error messages. */
 const confirmationStatusesText = (): string => {
@@ -181,6 +192,7 @@ export class HotelBookingsService {
         totalRooms: hotelBooking.totalRooms,
         totalPrice: Number(hotelBooking.totalPrice),
         status: hotelBooking.status,
+        ...this.voucherFields(hotelBooking),
         createdAt: hotelBooking.createdAt.toISOString(),
         updatedAt: hotelBooking.updatedAt?.toISOString() ?? null,
       })),
@@ -376,20 +388,50 @@ export class HotelBookingsService {
 
     const flight = hotelBooking.cancelledFlight;
     const booking = hotelBooking.booking;
+    const references = this.requireSupplierReferences(
+      hotelBooking,
+      "pdf",
+      requestLogger,
+    );
+
+    const partnerOrderId =
+      references.provider === "ratehawk"
+        ? ([
+            ...new Set(
+              hotelBooking.supplier.rooms
+                .map((room) => room.partnerOrderId)
+                .filter((id): id is string => !!id),
+            ),
+          ].join(", ") || null)
+        : null;
+    const referenceQrDataUrl =
+      references.groups.length === 1
+        ? await QRCode.toDataURL(references.groups[0].reference, {
+            margin: 0,
+            width: 192,
+            errorCorrectionLevel: "M",
+          }).catch(() => null)
+        : null;
 
     const html = buildHotelBookingConfirmationHtml({
-      hotelBookingId: hotelBooking.id,
-      confirmationNumber: hotelBooking.bookingReference,
+      flyveraxConfirmationId: String(hotelBooking.id),
+      partnerOrderId,
+      references: references.groups,
+      referenceQrDataUrl,
       issuedDate: new Date().toLocaleDateString("en-US", {
         year: "numeric",
         month: "short",
         day: "2-digit",
       }),
+      airlineName: flight.airline.name,
+      // TODO(airline-support-contact): no passenger-facing airline support
+      // contact is stored yet; the "Need help?" section stays hidden until it is.
+      airlineSupport: null,
       guest: {
-        firstName: booking.firstName,
-        lastName: booking.lastName,
-        email: booking.email,
-        phone: booking.phone,
+        // Only the lead passenger's name is stored per PNR.
+        names: [`${booking.firstName} ${booking.lastName}`.trim()],
+        email: booking.email || null,
+        phone: booking.phone || null,
         pnr: booking.pnr,
         adults: booking.adults,
         children: booking.children,
@@ -405,7 +447,8 @@ export class HotelBookingsService {
         name: hotelBooking.hotelName,
         rating: hotelBooking.category,
         address: hotelBooking.address ?? null,
-        imageUrl: hotelBooking.imageUrl ?? null,
+        distanceFromAirportKm: this.distanceFromAirport(hotelBooking),
+        airportCode: flight.departureAirport?.iataCode ?? null,
         frontDeskPhone:
           hotelBooking.contact?.phones?.find(
             (p) => p.phoneType === "PHONEHOTEL",
@@ -421,8 +464,8 @@ export class HotelBookingsService {
         checkInDate: formatDate(hotelBooking.checkInDate),
         checkOutDate: formatDate(hotelBooking.checkOutDate),
         nights,
-        totalRooms: hotelBooking.totalRooms,
-        rooms: (hotelBooking.rooms ?? []).map((room) => ({
+        rooms: (hotelBooking.rooms ?? []).map((room, index) => ({
+          roomNo: index + 1,
           roomName: room.roomName,
           boardName: room.boardName,
           adults: room.adults,
@@ -430,7 +473,6 @@ export class HotelBookingsService {
           taxesAtProperty: room.taxesAtProperty ?? [],
         })),
       },
-      airlineName: flight.airline.name,
     });
 
     const pdf = await this.pdfService.renderHtmlToPdf(html, requestLogger);
@@ -486,6 +528,8 @@ export class HotelBookingsService {
       );
     }
 
+    this.requireSupplierReferences(hotelBooking, "email", requestLogger);
+
     const recipientEmail = hotelBooking.booking.email;
 
     // // TODO: Implement the actual email sending logic using SES or another email service
@@ -536,11 +580,81 @@ export class HotelBookingsService {
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
+  /** Stored distance (automatic allocation), else straight-line km from the hotel's and departure airport's coordinates. */
+  private distanceFromAirport(hotelBooking: HotelBookingWithSupplier): number | null {
+    if (hotelBooking.distanceFromAirportKm != null) {
+      return Number(hotelBooking.distanceFromAirportKm);
+    }
+    const airport = hotelBooking.cancelledFlight.departureAirport;
+    if (
+      hotelBooking.latitude == null ||
+      hotelBooking.longitude == null ||
+      airport?.latitude == null ||
+      airport?.longitude == null
+    ) {
+      return null;
+    }
+    return distanceKm(
+      { latitude: Number(airport.latitude), longitude: Number(airport.longitude) },
+      { latitude: Number(hotelBooking.latitude), longitude: Number(hotelBooking.longitude) },
+    );
+  }
+
+  /** The supplier reference shown to everyone (portal, voucher) and whether the voucher is blocked. */
+  private voucherFields(hotelBooking: HotelBookingWithSupplier): {
+    supplierReference: string | null;
+    voucherIssue: VoucherIssue | null;
+  } {
+    const references = supplierReferencesOf(hotelBooking.supplier);
+    const confirmed = hotelBooking.status === HotelAllocationStatus.CONFIRMED;
+    return {
+      supplierReference: supplierReferenceText(references) || null,
+      voucherIssue:
+        confirmed &&
+        (references.groups.length === 0 || references.missingRooms.length > 0)
+          ? VOUCHER_ISSUE.SUPPLIER_REFERENCE_MISSING
+          : null,
+    };
+  }
+
+  /**
+   * The supplier's references for a confirmed booking's voucher. When any
+   * booked room has none, the voucher is refused (409, code
+   * SUPPLIER_REFERENCE_MISSING) instead of printing another value: a
+   * reference the hotel cannot look up must never reach a passenger.
+   */
+  private requireSupplierReferences(
+    hotelBooking: HotelBookingWithSupplier,
+    purpose: "pdf" | "email",
+    requestLogger: Logger,
+  ): SupplierReferences {
+    const references = supplierReferencesOf(hotelBooking.supplier);
+    if (references.groups.length === 0 || references.missingRooms.length > 0) {
+      // No personal data in this log line.
+      requestLogger.warn("Voucher blocked: supplier booking reference missing", {
+        context: this.context,
+        hotelBookingId: hotelBooking.id,
+        provider: references.provider,
+        missingRooms: references.missingRooms,
+        purpose,
+      });
+      throw new ConflictException({
+        message: `Hotel booking '${hotelBooking.id}' has no supplier booking reference${references.missingRooms.length ? ` for room(s) ${references.missingRooms.join(", ")}` : ""}; the confirmation cannot be issued until it is added`,
+        code: VOUCHER_ISSUE.SUPPLIER_REFERENCE_MISSING,
+        detail:
+          "The voucher must show the hotel supplier's own booking reference, which is not stored for this booking",
+        solution:
+          "Check the booking with the supplier and record its reference, or contact Flyverax support",
+      });
+    }
+    return references;
+  }
+
   private async requireHotelBooking(
     hotelBookingId: number,
     user: AuthenticatedUser,
     requestLogger: Logger,
-  ): Promise<HotelBookingRecord> {
+  ): Promise<HotelBookingWithSupplier> {
     const hotelBooking = await this.repository.findHotelBookingById(
       hotelBookingId,
       requestLogger,
@@ -579,7 +693,7 @@ export class HotelBookingsService {
   }
 
   private toDetailDto(
-    hotelBooking: HotelBookingRecord,
+    hotelBooking: HotelBookingWithSupplier,
     user: AuthenticatedUser,
   ): HotelBookingDetailResponseDto {
     const flight = hotelBooking.cancelledFlight;
@@ -618,6 +732,7 @@ export class HotelBookingsService {
       }),
       status: hotelBooking.status,
       bookingReference: hotelBooking.bookingReference,
+      ...this.voucherFields(hotelBooking),
       paymentStatus: hotelBooking.paymentStatus,
       paidAt: hotelBooking.paidAt?.toISOString() ?? null,
       createdAt: hotelBooking.createdAt.toISOString(),
@@ -664,8 +779,8 @@ export class HotelBookingsService {
         travelClass: hotelBooking.booking.travelClass,
         adults: hotelBooking.booking.adults,
         children: hotelBooking.booking.children,
-        specialNotes: hotelBooking.booking.specialNotes ?? [],
-        additionalNotes: hotelBooking.booking.additionalNotes ?? null,
+        childAges: hotelBooking.booking.childAges ?? [],
+        specialNotes: hotelBooking.booking.specialNotes ?? null,
         createdAt: hotelBooking.booking.createdAt.toISOString(),
         updatedAt: hotelBooking.booking.updatedAt?.toISOString() ?? null,
       },

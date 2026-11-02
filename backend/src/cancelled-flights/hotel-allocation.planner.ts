@@ -8,6 +8,7 @@ import {
   CandidateRoomPlan,
 } from "./entities/hotel-allocation-option.entity";
 import { HotelBookingAttemptStatus } from "./entities/enums";
+import { deriveSpecialNotes } from "./booking-notes";
 
 export const CLASS_RANK: Record<string, number> = {
   first_class: 3,
@@ -34,7 +35,8 @@ export interface PrioritizedBooking {
   pnr: string;
   travelClass: string;
   children: number;
-  specialNotes?: string[] | null;
+  /** Special Notes text; only the presets it lists count for priority. */
+  specialNotes?: string | null;
 }
 
 export const shapeKey = (occupancy: {
@@ -77,8 +79,8 @@ export function compareBookingPriority(
 ): number {
   return (
     classRank(b.travelClass) - classRank(a.travelClass) ||
-    Number((b.specialNotes?.length ?? 0) > 0) -
-      Number((a.specialNotes?.length ?? 0) > 0) ||
+    Number(deriveSpecialNotes(b.specialNotes).length > 0) -
+      Number(deriveSpecialNotes(a.specialNotes).length > 0) ||
     Number(b.children > 0) - Number(a.children > 0) ||
     a.pnr.localeCompare(b.pnr) ||
     a.id - b.id

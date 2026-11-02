@@ -42,7 +42,7 @@ export class UpdateAdminUserRequestDto {
 
   @ApiPropertyOptional({
     description: "Admin email address",
-    example: "jane.walker@flyvoid.com",
+    example: "jane.walker@flyverax.com",
   })
   @IsOptional()
   @Transform(({ value }: { value: string }) =>

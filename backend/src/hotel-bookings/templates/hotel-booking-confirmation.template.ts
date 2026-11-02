@@ -2,7 +2,6 @@ import {
   escapeHtml,
   renderStars,
   LOGO_SVG,
-  PDF_BRAND,
   FONT_IMPORT,
   FONT_FAMILY,
   STARS_CSS,
@@ -11,8 +10,21 @@ import {
   HotelPolicies,
   TaxAtProperty,
 } from "../../cancelled-flights/hotel-providers/hotel-provider.interface";
+import { SupplierReferenceGroup } from "../supplier-references";
+
+// Flyverax product palette (frontend design tokens).
+const COLORS = {
+  navy: "#0F2757",
+  infoBg: "#F3F4F6",
+  text: "#1F2937",
+  muted: "#6B7280",
+  border: "#E5E7EB",
+  amberBg: "#FFFBEB",
+  amberBorder: "#FDE68A",
+};
 
 export interface HotelBookingConfirmationRoom {
+  roomNo: number;
   roomName: string;
   boardName: string;
   adults: number;
@@ -21,14 +33,28 @@ export interface HotelBookingConfirmationRoom {
 }
 
 export interface HotelBookingConfirmationInput {
-  hotelBookingId: number;
-  confirmationNumber: string;
+  /** Our hotel booking id, printed small for support use only. */
+  flyveraxConfirmationId: string;
+  /** Our own order id sent to the supplier (RateHawk partner_order_id), support use only. */
+  partnerOrderId: string | null;
+  /** Supplier references exactly as issued (at least one; checked by the caller). */
+  references: SupplierReferenceGroup[];
+  /** QR code image (data URL) of the supplier reference; shown only when there is one reference. */
+  referenceQrDataUrl: string | null;
   issuedDate: string;
+  airlineName: string;
+  /**
+   * Passenger-facing airline help contact. No such field is stored yet
+   * (airlines.contact_email / contact_phone are the onboarding company
+   * contact), so callers pass null and the "Need help?" section is omitted.
+   * TODO(airline-support-contact): pass the airline's support contact once stored.
+   */
+  airlineSupport: { phone: string | null; email: string | null } | null;
   guest: {
-    firstName: string;
-    lastName: string;
-    email: string;
-    phone: string;
+    /** Every guest name stored for the booking (today only the lead passenger). */
+    names: string[];
+    email: string | null;
+    phone: string | null;
     pnr: string;
     adults: number;
     children: number;
@@ -44,102 +70,270 @@ export interface HotelBookingConfirmationInput {
     name: string;
     rating: string;
     address: string | null;
-    imageUrl: string | null;
     frontDeskPhone: string | null;
     reservationsPhone: string | null;
+    distanceFromAirportKm: number | null;
+    /** IATA code of the airport the distance is measured from. */
+    airportCode: string | null;
   };
   stay: {
     checkInDate: string;
     checkOutDate: string;
     nights: number;
-    totalRooms: number;
     rooms: HotelBookingConfirmationRoom[];
   };
-  airlineName: string;
 }
 
-function renderTaxesAtProperty(rooms: HotelBookingConfirmationRoom[]): string {
-  const lines = rooms.flatMap((room, index) =>
-    room.taxesAtProperty.map(
-      (tax) =>
-        `<tr><td>Room ${index + 1}</td><td>${escapeHtml(tax.name)}</td><td class="strong">${escapeHtml(
-          `${tax.amount.toFixed(2)} ${tax.currencyCode ?? ""}`.trim(),
-        )}</td></tr>`,
-    ),
-  );
-  if (lines.length === 0) {
+const plural = (count: number, one: string, many: string) =>
+  `${count} ${count === 1 ? one : many}`;
+
+/** "2 Adults, 1 Child". Children's ages are never shown (they are not reliably stored). */
+const paxLabel = (adults: number, children: number) =>
+  [
+    adults > 0 ? plural(adults, "Adult", "Adults") : null,
+    children > 0 ? plural(children, "Child", "Children") : null,
+  ]
+    .filter(Boolean)
+    .join(", ") || "-";
+
+const ROOM_ONLY = /\b(room only|no meals?|nomeal|without meals?)\b/i;
+const isRoomOnly = (board: string) => !board.trim() || ROOM_ONLY.test(board);
+
+/** Local taxes payable at the hotel, totalled per currency across all rooms. */
+function taxTotals(rooms: HotelBookingConfirmationRoom[]) {
+  const totals = new Map<string, number>();
+  for (const room of rooms) {
+    for (const tax of room.taxesAtProperty) {
+      if (!Number.isFinite(tax.amount) || tax.amount <= 0) continue;
+      const currency = (tax.currencyCode ?? "").trim();
+      totals.set(currency, (totals.get(currency) ?? 0) + tax.amount);
+    }
+  }
+  return [...totals.entries()].map(([currency, amount]) => ({ currency, amount }));
+}
+
+const money = (amount: number, currency: string) =>
+  `${amount.toFixed(2)}${currency ? ` ${currency}` : ""}`;
+
+/** Deposit rules as the hotel states them (policy items whose category mentions a deposit). */
+function depositLines(policies: HotelPolicies | null): string[] {
+  return (policies?.items ?? [])
+    .filter((item) => /deposit/i.test(item.category))
+    .flatMap((item) => item.details)
+    .filter((detail) => detail.trim().length > 0);
+}
+
+/** What the hotel says guests must present, found in its policy text. */
+function presentRequirements(policies: HotelPolicies | null): string[] {
+  const textBlob = [
+    policies?.extraInfo ?? "",
+    ...(policies?.items ?? []).flatMap((item) => item.details),
+  ].join(" \n ");
+  const found: string[] = [];
+  if (/photo\s*id|photo identification|government[- ]issued id|valid id|identity (card|document)|passport/i.test(textBlob)) {
+    found.push("photo ID");
+  }
+  if (/credit\s*card/i.test(textBlob)) {
+    found.push("a credit card");
+  }
+  return found;
+}
+
+function renderReferences(input: HotelBookingConfirmationInput): string {
+  const groups = input.references;
+  const single = groups.length === 1;
+  const rows = groups
+    .map((group) => {
+      const roomsLabel = single
+        ? ""
+        : `<span class="ref-rooms">Room${group.rooms.length > 1 ? "s" : ""} ${group.rooms.join(", ")}</span>`;
+      const hotelConf = group.hotelConfirmation
+        ? `<div class="ref-hotel"><span class="ref-label">Hotel confirmation no.</span> <span class="ref-hotel-value">${escapeHtml(group.hotelConfirmation)}</span></div>`
+        : "";
+      return `<div class="ref-row">${roomsLabel}<div class="ref-value">${escapeHtml(group.reference)}</div>${hotelConf}</div>`;
+    })
+    .join("");
+  // A QR code only for a single reference, so it never encodes just one room's.
+  const qr =
+    single && input.referenceQrDataUrl
+      ? `<img class="ref-qr" src="${input.referenceQrDataUrl}" alt="Booking reference QR code" />`
+      : "";
+  return `
+  <div class="ref-box avoid-break">
+    <div class="ref-main">
+      <div class="ref-title">Booking reference &ndash; show this at check-in</div>
+      ${rows}
+    </div>
+    ${qr}
+  </div>`;
+}
+
+function renderPayOrShow(input: HotelBookingConfirmationInput): string {
+  const totals = taxTotals(input.stay.rooms);
+  const deposits = depositLines(input.hotel.policies);
+  const present = presentRequirements(input.hotel.policies);
+  if (totals.length === 0 && deposits.length === 0 && present.length === 0) {
     return "";
   }
+  const taxRooms = input.stay.rooms.filter((room) =>
+    room.taxesAtProperty.some((tax) => Number.isFinite(tax.amount) && tax.amount > 0),
+  );
+  const taxDetail =
+    taxRooms.length > 1
+      ? `<div class="pay-detail">${taxRooms
+          .map(
+            (room) =>
+              `Room ${room.roomNo}: ${room.taxesAtProperty
+                .filter((tax) => Number.isFinite(tax.amount) && tax.amount > 0)
+                .map((tax) => `${escapeHtml(tax.name)} ${escapeHtml(money(tax.amount, (tax.currencyCode ?? "").trim()))}`)
+                .join(", ")}`,
+          )
+          .join(" &middot; ")}</div>`
+      : taxRooms.length === 1
+        ? `<div class="pay-detail">${taxRooms[0].taxesAtProperty
+            .filter((tax) => Number.isFinite(tax.amount) && tax.amount > 0)
+            .map((tax) => escapeHtml(tax.name))
+            .join(", ")}</div>`
+        : "";
+  const items: string[] = [];
+  if (totals.length > 0) {
+    items.push(`
+      <li>
+        <span class="strong">Local taxes, paid by the guest at the hotel: ${totals
+          .map((total) => escapeHtml(money(total.amount, total.currency)))
+          .join(" + ")} in total</span>
+        ${taxDetail}
+      </li>`);
+  }
+  for (const deposit of deposits) {
+    items.push(`<li><span class="strong">Deposit:</span> ${escapeHtml(deposit)}</li>`);
+  }
+  if (present.length > 0) {
+    items.push(
+      `<li><span class="strong">Please present ${present.join(" and ")}</span> at check-in.</li>`,
+    );
+  }
   return `
-  <div class="section-title">Taxes Payable at the Hotel &ndash; Paid by the Guest</div>
-  <div class="policy-note">
-    These local taxes are not included in the prepaid booking. They are collected by the hotel and must be paid by the guest at check-in or check-out.
-  </div>
-  <table>
-    <thead>
-      <tr>
-        <th>Room</th>
-        <th>Tax</th>
-        <th>Amount</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${lines.join("")}
-    </tbody>
-  </table>`;
+  <div class="pay-box avoid-break">
+    <div class="pay-title">What you may need to pay or show at the hotel</div>
+    <ul class="pay-list">${items.join("")}</ul>
+  </div>`;
 }
 
 function renderPolicies(policies: HotelPolicies | null): string {
-  if (!policies) {
-    return "";
-  }
+  if (!policies) return "";
   const times = [
     policies.checkInTime ? `Check-in from <span class="strong">${escapeHtml(policies.checkInTime)}</span>` : null,
     policies.checkOutTime ? `Check-out by <span class="strong">${escapeHtml(policies.checkOutTime)}</span>` : null,
   ].filter(Boolean);
+  // Deposits are listed in the pay-or-show box above.
+  const items = policies.items.filter((item) => !/deposit/i.test(item.category));
+  if (times.length === 0 && !policies.extraInfo && items.length === 0) return "";
   return `
-  <div class="section-title">Hotel Policies &ndash; Please Read Before Check-in</div>
-  <div class="policies">
-    <div class="policy-note">
-      The room stay is prepaid. Items marked &ldquo;payable at the property&rdquo; (for example city tax, deposits or extra services)
-      are not covered by this voucher and must be settled directly with the hotel. The guest must comply with these conditions at check-in.
+  <div class="section avoid-break">
+    <div class="section-title">Hotel policies</div>
+    <div class="policies">
+      ${times.length ? `<div class="policy-line">${times.join(" &middot; ")}</div>` : ""}
+      ${policies.extraInfo ? `<div class="policy-extra">${escapeHtml(policies.extraInfo)}</div>` : ""}
+      ${items
+        .map(
+          (item) => `<div class="policy-item"><span class="strong">${escapeHtml(item.category)}:</span> ${item.details
+            .map((detail) => escapeHtml(detail))
+            .join(" &middot; ")}</div>`,
+        )
+        .join("")}
     </div>
-    ${times.length ? `<div class="policy-line">${times.join(" &middot; ")}</div>` : ""}
-    ${policies.extraInfo ? `<div class="policy-extra">${escapeHtml(policies.extraInfo)}</div>` : ""}
-    ${policies.items
-      .map(
-        (item) => `<div class="policy-item"><span class="strong">${escapeHtml(item.category)}:</span> ${item.details
-          .map((detail) => escapeHtml(detail))
-          .join(" &middot; ")}</div>`,
-      )
-      .join("")}
   </div>`;
 }
 
-function renderRoomRow(room: HotelBookingConfirmationRoom): string {
-  const paxParts = [
-    room.adults > 0
-      ? `${room.adults} Adult${room.adults > 1 ? "s" : ""}`
-      : null,
-    room.children > 0
-      ? `${room.children} Child${room.children > 1 ? "ren" : ""}`
-      : null,
-  ].filter(Boolean);
-
-  return `
+function renderRooms(input: HotelBookingConfirmationInput): string {
+  // Reference per room only when the rooms have different references.
+  const perRoomRef = input.references.length > 1;
+  const refOf = (roomNo: number) =>
+    input.references.find((group) => group.rooms.includes(roomNo))?.reference ?? "-";
+  const rows = input.stay.rooms
+    .map(
+      (room) => `
     <tr>
-      <td class="strong">${escapeHtml(room.roomName)}</td>
-      <td>${escapeHtml(paxParts.join(", ") || "-")}</td>
-      <td>${escapeHtml(room.boardName)}</td>
-    </tr>
-  `;
+      <td class="nowrap">Room ${room.roomNo}</td>
+      <td class="strong wrap">${escapeHtml(room.roomName)}</td>
+      <td>${escapeHtml(paxLabel(room.adults, room.children))}</td>
+      <td class="wrap">${escapeHtml(room.boardName || "Room only")}</td>
+      ${perRoomRef ? `<td class="wrap mono">${escapeHtml(refOf(room.roomNo))}</td>` : ""}
+    </tr>`,
+    )
+    .join("");
+  return `
+  <div class="section">
+    <div class="section-title">Rooms</div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 12%">Room</th>
+          <th>Room type</th>
+          <th style="width: 18%">Guests</th>
+          <th style="width: 24%">Meal plan</th>
+          ${perRoomRef ? `<th style="width: 20%">Booking reference</th>` : ""}
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
+
+function renderGoodToKnow(input: HotelBookingConfirmationInput): string {
+  const rooms = input.stay.rooms;
+  const allRoomOnly = rooms.every((room) => isRoomOnly(room.boardName));
+  const lines = [
+    allRoomOnly
+      ? "Meals are not included. The guest pays for any meals at the hotel."
+      : "Meals: as listed per room above. Other meals are not included.",
+    // Flyverax books rooms only; transfers are never part of the booking.
+    "Airport transfers are not included.",
+    `If your flight is rebooked and you no longer need this room, please contact ${escapeHtml(input.airlineName)} as soon as possible.`,
+  ];
+  return `
+  <div class="section avoid-break">
+    <div class="section-title">Good to know</div>
+    <ul class="know-list">${lines.map((line) => `<li>${line}</li>`).join("")}</ul>
+  </div>`;
+}
+
+function renderHelp(input: HotelBookingConfirmationInput): string {
+  const support = input.airlineSupport;
+  if (!support || (!support.phone && !support.email)) return "";
+  const parts = [
+    support.phone ? `Phone: <span class="strong">${escapeHtml(support.phone)}</span>` : null,
+    support.email ? `Email: <span class="strong">${escapeHtml(support.email)}</span>` : null,
+  ].filter(Boolean);
+  return `
+  <div class="help-box avoid-break">
+    <span class="strong">Need help?</span> Contact ${escapeHtml(input.airlineName)} &middot; ${parts.join(" &middot; ")}
+  </div>`;
 }
 
 export function buildHotelBookingConfirmationHtml(
   input: HotelBookingConfirmationInput,
 ): string {
   const { guest, flight, hotel, stay } = input;
-  const guestName = `${guest.firstName} ${guest.lastName}`;
+  const allRoomOnly = stay.rooms.every((room) => isRoomOnly(room.boardName));
+  const prepaid = allRoomOnly
+    ? `Room prepaid by ${escapeHtml(input.airlineName)}`
+    : `Room and meals prepaid by ${escapeHtml(input.airlineName)}`;
+  const names = guest.names.filter((name) => name.trim().length > 0);
+  const distance =
+    hotel.distanceFromAirportKm != null && Number.isFinite(hotel.distanceFromAirportKm)
+      ? `${hotel.distanceFromAirportKm.toFixed(1)} km from ${hotel.airportCode ? `${escapeHtml(hotel.airportCode)} airport` : "the airport"}`
+      : null;
+  const phones = [
+    hotel.frontDeskPhone ? `Front desk: <span class="strong">${escapeHtml(hotel.frontDeskPhone)}</span>` : null,
+    hotel.reservationsPhone ? `Reservations: <span class="strong">${escapeHtml(hotel.reservationsPhone)}</span>` : null,
+  ].filter(Boolean);
+  const contactLine = [
+    guest.email ? escapeHtml(guest.email) : null,
+    guest.phone ? escapeHtml(guest.phone) : null,
+  ].filter(Boolean);
+  const totalRooms = stay.rooms.length;
 
   return `
 <!doctype html>
@@ -151,271 +345,202 @@ export function buildHotelBookingConfirmationHtml(
   * { box-sizing: border-box; }
   body {
     font-family: ${FONT_FAMILY};
-    color: #1f2430;
-    font-size: 11px;
+    color: ${COLORS.text};
+    font-size: 10.5px;
+    line-height: 1.45;
     margin: 0;
+    overflow-wrap: anywhere;
   }
+  .strong { font-weight: 600; color: ${COLORS.text}; }
+  .muted { color: ${COLORS.muted}; }
+  .small { font-size: 9px; }
+  .nowrap { white-space: nowrap; }
+  .wrap { overflow-wrap: anywhere; word-break: break-word; }
+  .mono { font-variant-numeric: tabular-nums; }
+  .avoid-break { break-inside: avoid; page-break-inside: avoid; }
+
   .header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    border-bottom: 3px solid ${PDF_BRAND.navy};
-    padding-bottom: 14px;
-    margin-bottom: 20px;
+    align-items: flex-start;
+    gap: 16px;
+    padding-bottom: 10px;
+    border-bottom: 3px solid ${COLORS.navy};
   }
   .brand-logo {
-    background: ${PDF_BRAND.navy};
-    border-radius: 8px;
-    padding: 10px 14px;
     display: inline-flex;
-    align-items: center;
-  }
-  .brand-logo svg { display: block; height: 26px; width: auto; }
-  .brand-sub {
-    margin-top: 3px;
-    font-size: 10px;
-    color: #6b7280;
-  }
-  .doc-title {
-    text-align: right;
-  }
-  .doc-title h1 {
-    margin: 0;
-    font-size: 15px;
-    letter-spacing: 0.3px;
-    color: #1f2430;
-    white-space: nowrap;
-  }
-  .doc-title .sub {
-    font-size: 10.5px;
-    color: #6b7280;
-    margin-top: 2px;
-  }
-  .doc-meta {
-    margin-top: 8px;
-    font-size: 10.5px;
-    color: #44485a;
-  }
-  .doc-meta div { margin-top: 2px; }
-  .prepaid-banner {
-    background: ${PDF_BRAND.greenBg};
-    border: 1px solid ${PDF_BRAND.greenBorder};
+    background: ${COLORS.navy};
     border-radius: 8px;
-    padding: 14px 16px;
-    margin-bottom: 20px;
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
+    padding: 6px 12px 6px 8px;
   }
-  .prepaid-banner .check {
-    color: ${PDF_BRAND.green};
-    font-size: 18px;
-    line-height: 1;
-    font-weight: 700;
-  }
-  .prepaid-banner .title {
-    color: ${PDF_BRAND.green};
-    font-weight: 700;
-    font-size: 13px;
-    letter-spacing: 0.3px;
-  }
-  .prepaid-banner .desc {
-    margin-top: 3px;
-    font-size: 10.5px;
-    color: #1f2430;
-    line-height: 1.5;
-  }
-  .hotel-image {
-    width: 100%;
-    max-height: 170px;
-    object-fit: cover;
-    border-radius: 8px;
-    margin-bottom: 20px;
-    display: block;
-  }
-  .info-grid {
-    display: flex;
-    gap: 16px;
-    margin-bottom: 20px;
-  }
-  .info-box {
-    flex: 1;
-    background: #f6f8fb;
-    border-radius: 6px;
-    padding: 12px 14px;
-  }
-  .info-box h3 {
-    margin: 0 0 6px 0;
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: #6b7280;
-  }
-  .info-box .line { font-size: 11px; margin-top: 2px; }
-  .info-box .line.strong { font-weight: 700; font-size: 12.5px; }
-  .section-title {
-    font-size: 12px;
-    font-weight: 700;
-    color: ${PDF_BRAND.navy};
-    margin: 22px 0 8px 0;
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-  th {
-    background: ${PDF_BRAND.navy};
-    color: #ffffff;
-    text-align: left;
-    font-size: 9.5px;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-    padding: 8px 10px;
-  }
-  td {
-    padding: 8px 10px;
-    border-bottom: 1px solid #e5e8ee;
-    font-size: 10.5px;
-  }
-  tbody tr:nth-child(even) { background: #f9fafc; }
-  .strong { font-weight: 700; }
-  .muted { color: #6b7280; }
-  ${STARS_CSS}
-  .footer-note {
-    margin-top: 32px;
-    font-size: 9.5px;
-    color: #8a8f9c;
-    border-top: 1px solid #e5e8ee;
-    padding-top: 12px;
-    line-height: 1.6;
-  }
-  .policies {
-    border: 1px solid #e5e8ee;
-    border-radius: 6px;
-    padding: 12px 14px;
-    font-size: 10.5px;
-    line-height: 1.55;
-  }
-  .policy-note {
-    background: #fff8e6;
-    border: 1px solid #f2d999;
-    border-radius: 4px;
-    padding: 8px 10px;
-    margin-bottom: 8px;
-    font-size: 10px;
-  }
-  .policy-line { margin-bottom: 6px; }
-  .policy-extra { white-space: pre-line; margin-bottom: 6px; }
-  .policy-item { margin-top: 3px; }
-  .ref-strip {
-    margin-top: 22px;
+  .brand-sub { margin-top: 5px; font-size: 9.5px; color: ${COLORS.muted}; }
+  .doc-title { text-align: right; }
+  .doc-title h1 { margin: 2px 0 2px; font-size: 16px; font-weight: 700; color: ${COLORS.navy}; letter-spacing: 0.3px; }
+  .doc-title .muted { font-size: 9.5px; }
+
+  .ref-box {
+    margin-top: 12px;
     display: flex;
     justify-content: space-between;
-    font-size: 10px;
-    color: #6b7280;
-    border-top: 1px dashed #d8dde6;
-    padding-top: 10px;
+    align-items: center;
+    gap: 14px;
+    border: 2px solid ${COLORS.navy};
+    border-radius: 8px;
+    padding: 10px 14px;
   }
+  .ref-main { min-width: 0; flex: 1; }
+  .ref-title { font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: ${COLORS.navy}; }
+  .ref-row { margin-top: 4px; }
+  .ref-rooms { font-size: 9.5px; color: ${COLORS.muted}; margin-right: 6px; }
+  .ref-value { display: inline; font-size: 18px; font-weight: 700; color: ${COLORS.text}; letter-spacing: 0.4px; overflow-wrap: anywhere; }
+  .ref-hotel { margin-top: 2px; font-size: 10.5px; }
+  .ref-label { color: ${COLORS.muted}; }
+  .ref-hotel-value { font-weight: 600; }
+  .ref-qr { width: 64px; height: 64px; flex-shrink: 0; }
+
+  .prepaid {
+    margin-top: 10px;
+    background: ${COLORS.navy};
+    color: white;
+    border-radius: 6px;
+    padding: 7px 12px;
+    font-size: 11.5px;
+    font-weight: 600;
+  }
+  .prepaid-sub { font-weight: 400; font-size: 9.5px; opacity: 0.85; margin-left: 6px; }
+
+  .grid { display: flex; gap: 10px; margin-top: 10px; }
+  .card { flex: 1; min-width: 0; background: ${COLORS.infoBg}; border-radius: 8px; padding: 9px 12px; }
+  .card-label { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: ${COLORS.muted}; margin-bottom: 3px; }
+  .big { font-size: 14px; font-weight: 700; color: ${COLORS.text}; }
+  .date-row { display: flex; gap: 14px; }
+  .date-row > div { min-width: 0; }
+  .hotel-name { font-size: 15px; font-weight: 700; color: ${COLORS.text}; }
+  .hotel-address { font-size: 12px; margin-top: 2px; }
+
+  .section { margin-top: 12px; }
+  .section-title {
+    font-size: 10.5px;
+    font-weight: 700;
+    color: ${COLORS.navy};
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 5px;
+  }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; page-break-inside: avoid; }
+  th {
+    background: ${COLORS.navy};
+    color: white;
+    text-align: left;
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    padding: 6px 8px;
+  }
+  td { padding: 6px 8px; border-bottom: 1px solid ${COLORS.border}; vertical-align: top; }
+
+  .pay-box {
+    margin-top: 12px;
+    background: ${COLORS.amberBg};
+    border: 1px solid ${COLORS.amberBorder};
+    border-radius: 8px;
+    padding: 9px 12px;
+  }
+  .pay-title { font-size: 10.5px; font-weight: 700; color: ${COLORS.navy}; text-transform: uppercase; letter-spacing: 0.5px; }
+  .pay-list { margin: 5px 0 0; padding-left: 16px; }
+  .pay-list li { margin-top: 2px; }
+  .pay-detail { color: ${COLORS.muted}; font-size: 9.5px; }
+
+  .policies { background: ${COLORS.infoBg}; border-radius: 8px; padding: 8px 12px; }
+  .policy-line { margin-bottom: 3px; }
+  .policy-extra { white-space: pre-line; margin-bottom: 3px; }
+  .policy-item { margin-top: 2px; }
+
+  .know-list { margin: 0; padding-left: 16px; }
+  .know-list li { margin-top: 1px; }
+
+  .help-box { margin-top: 12px; background: ${COLORS.infoBg}; border-radius: 8px; padding: 8px 12px; }
+
+  .footer {
+    margin-top: 14px;
+    border-top: 1px solid ${COLORS.border};
+    padding-top: 8px;
+    font-size: 9px;
+    color: ${COLORS.muted};
+    line-height: 1.5;
+  }
+  .footer-meta { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 4px; }
+  ${STARS_CSS}
 </style>
 </head>
 <body>
-  <div class="header">
+  <div class="header avoid-break">
     <div>
-      <div class="brand-logo">
-        ${LOGO_SVG}
-      </div>
+      <div class="brand-logo">${LOGO_SVG}</div>
       <div class="brand-sub">Disruption Hotel Accommodation Services</div>
     </div>
     <div class="doc-title">
       <h1>HOTEL BOOKING CONFIRMATION</h1>
-      <div class="sub">Accommodation Voucher - Present at Check-in</div>
-      <div class="doc-meta">
-        <div><strong>Confirmation No:</strong> ${escapeHtml(input.confirmationNumber)}</div>
-        <div><strong>Issued:</strong> ${escapeHtml(input.issuedDate)}</div>
+      <div class="muted">Accommodation voucher &middot; present at check-in</div>
+      <div class="muted">Issued ${escapeHtml(input.issuedDate)}</div>
+    </div>
+  </div>
+
+  ${renderReferences(input)}
+
+  <div class="prepaid avoid-break">
+    &#10003; ${prepaid}<span class="prepaid-sub">following the cancellation of flight ${escapeHtml(flight.flightNumber)}</span>
+  </div>
+
+  <div class="grid avoid-break">
+    <div class="card">
+      <div class="card-label">${names.length > 1 ? "Guests" : "Guest"}</div>
+      <div class="big">${names.length ? names.map((name) => escapeHtml(name)).join("<br/>") : "-"}</div>
+      <div>PNR: <span class="strong">${escapeHtml(guest.pnr)}</span> &middot; ${escapeHtml(paxLabel(guest.adults, guest.children))}</div>
+      ${contactLine.length ? `<div class="muted">${contactLine.join(" &middot; ")}</div>` : ""}
+    </div>
+    <div class="card">
+      <div class="card-label">Stay</div>
+      <div class="date-row">
+        <div><div class="muted">Check-in</div><div class="big">${escapeHtml(stay.checkInDate)}</div></div>
+        <div><div class="muted">Check-out</div><div class="big">${escapeHtml(stay.checkOutDate)}</div></div>
       </div>
+      <div>${plural(stay.nights, "night", "nights")} &middot; ${plural(totalRooms, "room", "rooms")}</div>
     </div>
   </div>
 
-  <div class="prepaid-banner">
-    <div class="check">&#10003;</div>
-    <div>
-      <div class="title">FULLY PREPAID &ndash; NO PAYMENT REQUIRED AT CHECK-IN</div>
-      <div class="desc">
-        This accommodation has been paid in full by ${escapeHtml(input.airlineName)} on behalf of the
-        guest named below, following the cancellation of flight ${escapeHtml(flight.flightNumber)}.
-        No further payment is due from the guest for the room stay${
-          stay.rooms.some((room) => room.taxesAtProperty.length > 0)
-            ? ", except the local taxes listed below, which the hotel collects from the guest"
-            : ""
-        }. Please present this confirmation at check-in.
-      </div>
+  <div class="grid avoid-break">
+    <div class="card">
+      <div class="card-label">Hotel</div>
+      <div class="hotel-name">${escapeHtml(hotel.name)}</div>
+      <div>${renderStars(hotel.rating)}</div>
+      ${hotel.address ? `<div class="hotel-address">${escapeHtml(hotel.address)}</div>` : ""}
+      ${distance ? `<div class="muted">${distance}</div>` : ""}
+      ${phones.length ? `<div>${phones.join(" &middot; ")}</div>` : ""}
     </div>
   </div>
 
-  ${
-    hotel.imageUrl
-      ? `<img class="hotel-image" src="${escapeHtml(hotel.imageUrl)}" alt="${escapeHtml(hotel.name)}" onerror="this.style.display='none'" />`
-      : ""
-  }
-
-  <div class="info-grid">
-    <div class="info-box">
-      <h3>Guest</h3>
-      <div class="line strong">${escapeHtml(guestName)}</div>
-      <div class="line">PNR: ${escapeHtml(guest.pnr)}</div>
-      <div class="line">${escapeHtml(guest.email)}</div>
-      <div class="line">${escapeHtml(guest.phone)}</div>
-      <div class="line">${guest.adults} Adult${guest.adults !== 1 ? "s" : ""}, ${guest.children} Child${guest.children !== 1 ? "ren" : ""}</div>
-    </div>
-    <div class="info-box">
-      <h3>Hotel</h3>
-      <div class="line strong">${escapeHtml(hotel.name)}</div>
-      <div class="line">${renderStars(hotel.rating)}</div>
-      ${hotel.address ? `<div class="line">${escapeHtml(hotel.address)}</div>` : ""}
-      ${hotel.frontDeskPhone ? `<div class="line"><span class="muted">Front Desk:</span> ${escapeHtml(hotel.frontDeskPhone)}</div>` : ""}
-      ${hotel.reservationsPhone ? `<div class="line"><span class="muted">Reservations:</span> ${escapeHtml(hotel.reservationsPhone)}</div>` : ""}
-    </div>
-    <div class="info-box">
-      <h3>Stay</h3>
-      <div class="line"><span class="muted">Check-in:</span> <span class="strong">${escapeHtml(stay.checkInDate)}</span></div>
-      <div class="line"><span class="muted">Check-out:</span> <span class="strong">${escapeHtml(stay.checkOutDate)}</span></div>
-      <div class="line">${stay.nights} Night${stay.nights !== 1 ? "s" : ""}, ${stay.totalRooms} Room${stay.totalRooms !== 1 ? "s" : ""}</div>
-    </div>
-  </div>
-
-  <div class="section-title">Room Details</div>
-  <table>
-    <thead>
-      <tr>
-        <th>Room Type</th>
-        <th>Occupancy</th>
-        <th>Board / Meal Plan</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${stay.rooms.map((room) => renderRoomRow(room)).join("")}
-    </tbody>
-  </table>
-
-  ${renderTaxesAtProperty(stay.rooms)}
-
+  ${renderRooms(input)}
+  ${renderPayOrShow(input)}
   ${renderPolicies(hotel.policies)}
+  ${renderGoodToKnow(input)}
+  ${renderHelp(input)}
 
-  <div class="ref-strip">
-    <div>Flight ${escapeHtml(flight.flightNumber)}: ${escapeHtml(flight.departure)} &rarr; ${escapeHtml(flight.arrival)}</div>
-    <div>Cancelled on ${escapeHtml(flight.cancellationDate)}</div>
-    <div>Hotel Booking ID: ${input.hotelBookingId}</div>
-  </div>
-
-  <div class="footer-note">
-    This accommodation was arranged by FlyVoid on behalf of ${escapeHtml(input.airlineName)} for passengers
-    affected by the cancellation of flight ${escapeHtml(flight.flightNumber)}. If you have any questions about
-    this booking, please contact ${escapeHtml(input.airlineName)} directly, or ask hotel reception to verify
-    this confirmation using the booking reference above.
+  <div class="footer avoid-break">
+    <div>
+      This accommodation was arranged by Flyverax on behalf of ${escapeHtml(input.airlineName)} for passengers affected by the
+      cancellation of flight ${escapeHtml(flight.flightNumber)} (${escapeHtml(flight.departure)} &rarr; ${escapeHtml(flight.arrival)},
+      cancelled on ${escapeHtml(flight.cancellationDate)}). Hotel reception can verify this booking with the booking reference above.
+    </div>
+    <div class="footer-meta">
+      <span>Flyverax confirmation ID: ${escapeHtml(input.flyveraxConfirmationId)}</span>
+      ${input.partnerOrderId ? `<span>Partner order ID: ${escapeHtml(input.partnerOrderId)}</span>` : ""}
+      <span>For support use only</span>
+    </div>
   </div>
 </body>
-</html>
-`;
+</html>`;
 }
