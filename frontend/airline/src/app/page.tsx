@@ -76,6 +76,9 @@ const formatXAxisTick = (label: string) => {
   return label;
 };
 
+const xAxisInterval = (granularity?: string): number | "preserveStartEnd" =>
+  granularity === "hour" ? 1 : "preserveStartEnd";
+
 const formatSpendYAxis = (val: number) => {
   if (val >= 1_000_000) {
     return `$${(val / 1_000_000).toFixed(val % 1_000_000 === 0 ? 0 : 1)}M`;
@@ -139,7 +142,7 @@ export default function DashboardPage() {
     setIsLoadingCancelledFlights(true);
     setIsLoadingSummary(true);
 
-    const timeFrame = TIME_FRAME_MAP[selectedPeriod] || "month";
+    const timeFrame = TIME_FRAME_MAP[selectedPeriod] || "week";
 
     dashboardService
       .getHotelSpendTrend(timeFrame)
@@ -434,7 +437,7 @@ export default function DashboardPage() {
               Hotel Spend Trend
             </div>
             <div className="text-sm text-gray-500 font-figtree mt-0.5">
-              Hotel allocation spending · {selectedPeriod} {hotelSpendData?.granularity ? formatGranularity(hotelSpendData.granularity) : "(Monthly)"}
+              Hotel allocation spending · {hotelSpendData?.granularity ? formatGranularity(hotelSpendData.granularity).replace(/[()]/g, "") : "Daily"}
             </div>
           </div>
           <div className="w-full h-[260px]">
@@ -448,8 +451,8 @@ export default function DashboardPage() {
                 >
                   <defs>
                     <linearGradient id="hotelSpendGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#CBD5E1" stopOpacity={0.65} />
-                      <stop offset="100%" stopColor="#CBD5E1" stopOpacity={0.05} />
+                      <stop offset="0%" stopColor="#1B2B6B" stopOpacity={0.25} />
+                      <stop offset="100%" stopColor="#1B2B6B" stopOpacity={0.02} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid
@@ -464,6 +467,7 @@ export default function DashboardPage() {
                     axisLine={false}
                     tickLine={false}
                     tickMargin={12}
+                    interval={xAxisInterval(hotelSpendData?.granularity)}
                     tickFormatter={formatXAxisTick}
                   />
                   <YAxis
@@ -497,7 +501,7 @@ export default function DashboardPage() {
                     strokeWidth={2}
                     fillOpacity={1}
                     fill="url(#hotelSpendGradient)"
-                    dot={false}
+                    dot={{ fill: "#1B2B6B", r: 3.5, stroke: "#1B2B6B", strokeWidth: 1 }}
                     activeDot={{ r: 5, fill: "#1B2B6B", stroke: "#FFFFFF", strokeWidth: 2 }}
                   />
                 </AreaChart>
@@ -515,7 +519,7 @@ export default function DashboardPage() {
                 Affected Passengers Trend
               </div>
               <div className="text-sm text-gray-500 font-figtree mt-0.5">
-                Passengers affected · {affectedPassengersData?.granularity ? formatGranularity(affectedPassengersData.granularity).replace(/[()]/g, "") : "Monthly"}
+                Passengers affected · {affectedPassengersData?.granularity ? formatGranularity(affectedPassengersData.granularity).replace(/[()]/g, "") : "Daily"}
               </div>
             </div>
             <div className="w-full h-[280px]">
@@ -523,10 +527,16 @@ export default function DashboardPage() {
                 <ChartLoadingState height="h-[280px]" />
               ) : mounted ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart
+                  <AreaChart
                     data={chartPassengers}
                     margin={{ top: 15, right: 10, left: -15, bottom: 0 }}
                   >
+                    <defs>
+                      <linearGradient id="affectedPassengersGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#1E2B4C" stopOpacity={0.25} />
+                        <stop offset="100%" stopColor="#1E2B4C" stopOpacity={0.02} />
+                      </linearGradient>
+                    </defs>
                     <CartesianGrid
                       strokeDasharray="4 4"
                       stroke="#E5E7EB"
@@ -539,6 +549,7 @@ export default function DashboardPage() {
                       axisLine={false}
                       tickLine={false}
                       tickMargin={12}
+                      interval={xAxisInterval(affectedPassengersData?.granularity)}
                       tickFormatter={formatXAxisTick}
                     />
                     <YAxis
@@ -564,15 +575,17 @@ export default function DashboardPage() {
                       ]}
                       labelFormatter={(label: any) => label}
                     />
-                    <Line
+                    <Area
                       type="monotone"
                       dataKey="passengers"
                       stroke="#1E2B4C"
                       strokeWidth={2}
+                      fillOpacity={1}
+                      fill="url(#affectedPassengersGradient)"
                       dot={{ fill: "#1E2B4C", r: 3.5, stroke: "#1E2B4C", strokeWidth: 1 }}
                       activeDot={{ r: 5, fill: "#1E2B4C", stroke: "#FFFFFF", strokeWidth: 2 }}
                     />
-                  </LineChart>
+                  </AreaChart>
                 </ResponsiveContainer>
               ) : null}
             </div>
@@ -585,7 +598,7 @@ export default function DashboardPage() {
                 Cancelled Flights Trend
               </div>
               <div className="text-sm text-gray-500 font-figtree mt-0.5">
-                Cancelled flights handled · {cancelledFlightsData?.granularity ? formatGranularity(cancelledFlightsData.granularity).replace(/[()]/g, "") : "Monthly"}
+                Cancelled flights handled · {cancelledFlightsData?.granularity ? formatGranularity(cancelledFlightsData.granularity).replace(/[()]/g, "") : "Daily"}
               </div>
             </div>
             <div className="w-full h-[280px]">
@@ -610,6 +623,7 @@ export default function DashboardPage() {
                       axisLine={false}
                       tickLine={false}
                       tickMargin={12}
+                      interval={xAxisInterval(cancelledFlightsData?.granularity)}
                       tickFormatter={formatXAxisTick}
                     />
                     <YAxis
@@ -639,6 +653,7 @@ export default function DashboardPage() {
                       dataKey="flights"
                       fill="#203663"
                       radius={[4, 4, 0, 0]}
+                      minPointSize={1}
                     />
                   </BarChart>
                 </ResponsiveContainer>
