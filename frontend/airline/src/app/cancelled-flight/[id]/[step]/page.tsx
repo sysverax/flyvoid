@@ -140,7 +140,11 @@ export default function CancelledFlightStepPage({ params }: StepPageProps) {
         }}
         onStepChange={(nextStep, currentFlightId) => {
           const fId = currentFlightId || id;
-          router.push(`/cancelled-flight/${fId}/step-${nextStep}`);
+          window.history.replaceState(
+            null,
+            "",
+            `/cancelled-flight/${fId}/step-${nextStep}`,
+          );
         }}
         onSave={() => {
           router.push(`/cancelled-flight/${id}`);
