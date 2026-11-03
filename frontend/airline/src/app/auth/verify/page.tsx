@@ -333,7 +333,7 @@ export default function VerifyPage() {
       <div className="flex flex-col items-center mb-8 text-center select-none animate-fadeIn">
         <div className="w-16 h-16 bg-[#0F2757] rounded-[12px] flex items-center justify-center mb-6">
           <img
-            src="/icons/plane1.svg"
+            src="/flyverax-mark.svg"
             alt="Flyverax Logo"
             className="h-8 w-8 brightness-0 invert"
           />
