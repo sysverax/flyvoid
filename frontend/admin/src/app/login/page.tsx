@@ -124,7 +124,7 @@ export default function LoginPage() {
         {/* Rounded Blue Square Logo Box */}
         <div className="w-16 h-16 bg-primary rounded-[12px] flex items-center justify-center mb-6">
           <img
-            src="/icons/plane1.svg"
+            src="/flyverax-mark.svg"
             alt="Flyverax Logo"
             className="h-8 w-8"
           />

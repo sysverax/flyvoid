@@ -55,14 +55,12 @@ export const FONT_IMPORT =
 
 export const FONT_FAMILY = "'Figtree', 'Helvetica Neue', Arial, sans-serif";
 
-// Inline Flyverax logomark (airplane icon + wordmark), white-on-navy.
-// Same mark used by the frontend apps' public/logo.svg.
+// Inline Flyverax logo (icon mark + wordmark), white-on-navy.
+// Same artwork as the frontend apps' public/logo.svg.
 export const LOGO_SVG = `
   <svg width="150" height="37" viewBox="0 0 150 37" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect x="0" y="3" width="31" height="31" rx="8" fill="white" fill-opacity="0.14"/>
-    <g transform="translate(5.9, 8.5) scale(0.833)">
-      <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2.5 1.5V22l4-1 4 1v-1.5L13 19v-5.5l8 2.5z" fill="white"/>
-    </g>
+    <rect x="0" y="3" width="31" height="31" rx="7.4" fill="white" fill-opacity="0.14"/>
+    <g transform="translate(0,3) scale(0.03875) translate(-112,-112)"><g transform="translate(512.00,512.00) scale(1.1674) translate(126.93,0.00)" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="2.57" stroke-linejoin="round"><path d="M0.00,0.00 L-196.38,-118.00 L-285.70,-118.00 L-89.31,0.00 L-285.70,118.00 L-196.38,118.00Z"/><path d="M-190.00,0.00 L-283.20,-56.00 L-372.51,-56.00 L-279.31,0.00 L-372.51,56.00 L-283.20,56.00Z"/><path d="M-279.3137852148764,-20.7 L104,-20.7 C134,-20.7 150,-12.42 150,0 C150,12.42 134,20.7 104,20.7 L-279.3137852148764,20.7 Z"/></g></g>
     <text x="40" y="26" font-family="'Figtree', 'Helvetica Neue', Arial, sans-serif" font-size="22" font-weight="700" letter-spacing="0.2" fill="white">Flyverax</text>
   </svg>
 `;
