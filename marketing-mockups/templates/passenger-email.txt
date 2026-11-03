@@ -1,0 +1,17 @@
+Subject: Your hotel is confirmed: Flight {{flight_number}} cancelled
+Preheader: Hotel confirmed: Flight {{flight_number}}
+
+Hello {{passenger_first_name}},
+
+Your flight {{flight_number}} with {{airline_name}} has been cancelled. A hotel room has been booked for you.
+
+Hotel: {{hotel_name}}, {{hotel_city}}
+Check-in: {{checkin_date}}
+Check-out: {{checkout_date}}
+Booking reference: {{supplier_booking_reference}}
+
+Your confirmation is attached. Show it, or the booking reference, at the hotel reception when you check in.
+
+For questions about your flight, please contact {{airline_name}}.
+
+Arranged by Flyverax on behalf of {{airline_name}}.

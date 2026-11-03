@@ -1,0 +1,16 @@
+Subject: Invoice {{invoice_number}}: Flight {{flight_number}}, hotel accommodation
+Preheader: {{booking_count}} bookings, total {{currency}} {{total}}
+
+Hello {{airline_name}} team,
+
+Attached is invoice {{invoice_number}} for the hotel accommodation arranged for passengers of cancelled flight {{flight_number}} on {{cancellation_date}}. The PDF lists each booking with its hotel, rooms and cost.
+
+Flight: {{flight_number}}
+Bookings: {{booking_count}}
+Hotel cost: {{currency}} {{hotel_cost}}
+Platform fee: {{currency}} {{platform_fee}}
+Total: {{currency}} {{total}}
+
+For questions about this invoice, contact {{support_email}}.
+
+Flyverax, a Sysverax product

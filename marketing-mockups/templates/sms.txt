@@ -1,0 +1,1 @@
+{{airline_name}}: Your hotel for cancelled flight {{flight_number}} is confirmed: {{hotel_name}}, {{hotel_city}}. Check-in {{checkin_date}}. Ref: {{supplier_booking_reference}}. Details: {{details_url}}

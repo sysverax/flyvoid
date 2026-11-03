@@ -1,0 +1,4 @@
+node_modules/
+# Generated: re-create with `npm run build`
+build/
+exports/

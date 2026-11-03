@@ -1,0 +1,20 @@
+{
+  "name": "flyverax-marketing-mockups",
+  "private": true,
+  "description": "Concept mock-ups of Flyverax passenger and airline notifications. Not wired to any real email or SMS service.",
+  "type": "module",
+  "scripts": {
+    "pdf-preview": "tsx scripts/pdf-preview.mts",
+    "stills": "node scripts/render-stills.mjs",
+    "videos": "node scripts/render-videos.mjs",
+    "build": "npm run pdf-preview && npm run stills && npm run videos && npm run film",
+    "film": "node scripts/render-film.mjs"
+  },
+  "devDependencies": {
+    "@fontsource/figtree": "^5.2.5",
+    "ffmpeg-static": "^5.2.0",
+    "playwright": "^1.49.1",
+    "qrcode": "^1.5.4",
+    "tsx": "^4.19.2"
+  }
+}
