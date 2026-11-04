@@ -119,6 +119,7 @@ describe("retried webhook for a booking settled part-way", () => {
       refreshFlightTotals: jest.fn(async (..._args: any[]) => ({})),
       promoteFlightAfterLateConfirmation: jest.fn(async (..._args: any[]) => false),
       markPnrFailed: jest.fn(async (..._args: any[]) => false),
+      appendLateWebhookNote: jest.fn(async (..._args: any[]) => undefined),
     };
     const service = new HotelAllocationService(
       repository as any,

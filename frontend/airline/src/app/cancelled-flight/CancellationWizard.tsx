@@ -829,6 +829,7 @@ export default function CancellationWizard({
                 setSelectedReasonTag(reasonVal);
               }
             }
+            if (f.status) setFlightStatus(f.status.toLowerCase());
             if (f.status?.toLowerCase() === "paid") {
               setPaymentConfirmed(true);
             }
@@ -884,6 +885,14 @@ export default function CancellationWizard({
   );
   // Used once, for the step the page was opened on.
   const preloadedReviewRef = useRef(initialReview ?? null);
+  // Passenger bookings can only change before hotel allocation starts (the
+  // backend refuses changes after that); step 2 is then read-only.
+  const [flightStatus, setFlightStatus] = useState<string | null>(
+    initialReview?.flight?.status?.toLowerCase() ?? null,
+  );
+  const bookingsLocked =
+    !!flightStatus && flightStatus !== "draft" && flightStatus !== "in_progress";
+  const canEditBookings = hasPermission("edit") && !bookingsLocked;
   const [isLoadingReview, setIsLoadingReview] = useState(false);
 
   // Step 4 Allocation state
@@ -1036,6 +1045,14 @@ export default function CancellationWizard({
     if (activeStep === 2 && flightId) {
       fetchBookings(flightId);
       fetchFailedBookings(flightId);
+      // The status may have moved on since the page opened (e.g. Back from step 4).
+      cancellationService
+        .reviewFlight(flightId)
+        .then((res) => {
+          const status = (res?.data?.flight || (res as any)?.flight)?.status;
+          if (status) setFlightStatus(String(status).toLowerCase());
+        })
+        .catch(() => undefined);
     } else if (activeStep === 3 && flightId) {
       if (!preloadedReview) fetchReviewData(flightId);
       if (addedBookings.length === 0) {
@@ -2061,7 +2078,8 @@ export default function CancellationWizard({
       }
       changeStep(3);
     } else if (activeStep === 3) {
-      if (!flightId) {
+      // Already confirmed (allocation started): nothing to confirm again.
+      if (!flightId || bookingsLocked) {
         changeStep(4);
         return;
       }
@@ -2069,6 +2087,7 @@ export default function CancellationWizard({
       try {
         const res = await cancellationService.confirmBookings(flightId);
         toast.success(res?.message || "Passenger booking details confirmed");
+        setFlightStatus("passengers_booking_confirmed");
         changeStep(4);
       } catch (error: any) {
         toast.error(error.message || "Failed to confirm passenger details");
@@ -2443,6 +2462,16 @@ export default function CancellationWizard({
               </div>
             </div>
 
+            {bookingsLocked ? (
+              <div className="flex items-start gap-3 p-4 rounded-xl border border-amber-200 bg-amber-50/60 text-left">
+                <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                <p className="text-sm text-amber-800">
+                  Hotel allocation has started for this flight, so its bookings
+                  can no longer be added, edited or deleted.
+                </p>
+              </div>
+            ) : (
+              <>
             {/* Sub-view Tabs */}
             <div className="inline-flex p-1 bg-gray-100/80 rounded-xl mb-2">
               <button
@@ -2879,6 +2908,9 @@ export default function CancellationWizard({
               </div>
             )}
 
+              </>
+            )}
+
             {/* Failed / Bookings tabs, only while failed CSV rows exist */}
             {failedBookings.length > 0 && (
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2907,7 +2939,7 @@ export default function CancellationWizard({
                     </button>
                   ))}
                 </div>
-                {bookingListTab === "failed" && hasPermission("edit") && (
+                {bookingListTab === "failed" && canEditBookings && (
                   <button
                     type="button"
                     onClick={() => setIsDeleteAllFailedOpen(true)}
@@ -2923,7 +2955,7 @@ export default function CancellationWizard({
             {failedBookings.length > 0 && bookingListTab === "failed" ? (
               <FailedBookingsTable
                 failedBookings={failedBookings}
-                canEdit={hasPermission("edit")}
+                canEdit={canEditBookings}
                 editingId={editingFailedId}
                 onEdit={handleEditFailedBooking}
                 onDelete={handleDeleteFailedBooking}
@@ -3071,7 +3103,7 @@ export default function CancellationWizard({
                           <TableHead className="min-w-[100px] text-center">
                             Class
                           </TableHead>
-                          {hasPermission("edit") && (
+                          {canEditBookings && (
                             <TableHead className="min-w-[80px] text-center">
                               Actions
                             </TableHead>
@@ -3116,7 +3148,7 @@ export default function CancellationWizard({
                                   {b.travelClass}
                                 </span>
                               </TableCell>
-                              {hasPermission("edit") && (
+                              {canEditBookings && (
                                 <TableCell className="text-center">
                                   <div className="flex items-center justify-center gap-2">
                                     <button

@@ -20,6 +20,8 @@ const logger = createLogger({
 });
 
 const HOUR = 60 * 60 * 1000;
+const MINUTE = 60 * 1000;
+const WAIT = 65 * MINUTE; // 1 h 5 min
 const FLIGHT_ID = 7;
 
 function attempt(
@@ -82,6 +84,7 @@ function setup(attempts: any[] = []) {
     ),
     findAllocationsByFlightId: jest.fn(async (..._args: any[]) => []),
     isAttemptStale: jest.fn(async (..._args: any[]) => false),
+    appendLateWebhookNote: jest.fn(async (..._args: any[]) => undefined),
     recordWebhookOrderStatus: jest.fn(async (..._args: any[]) => true),
     findOrderRoomStatuses: jest.fn(
       async (..._args: any[]) => ["pending"],
@@ -111,7 +114,7 @@ beforeEach(() => {
   savedMode = hotelBooking.statusMode;
   savedDelay = hotelBooking.webhookFinalCheckDelayMs;
   hotelBooking.statusMode = "webhook";
-  hotelBooking.webhookFinalCheckDelayMs = 12 * HOUR;
+  hotelBooking.webhookFinalCheckDelayMs = WAIT;
 });
 
 afterEach(() => {
@@ -121,9 +124,9 @@ afterEach(() => {
 });
 
 describe("HOTEL_BOOKING_STATUS_MODE=webhook", () => {
-  it("does not call the status endpoint before the 12-hour check is due", async () => {
+  it("does not call the status endpoint before the 1 h 5 min check is due", async () => {
     const { service, provider, repository } = setup([
-      attempt({ sentAgoMs: 11 * HOUR }),
+      attempt({ sentAgoMs: 60 * MINUTE }),
     ]);
 
     const open = await service.reconcileManualChecks(
@@ -139,19 +142,19 @@ describe("HOTEL_BOOKING_STATUS_MODE=webhook", () => {
     expect(repository.finishBookingAttempt).not.toHaveBeenCalled();
   });
 
-  it("schedules the one status check 12 hours after the booking was sent", async () => {
+  it("schedules the one status check 1 h 5 min after the booking was sent", async () => {
     jest.useFakeTimers();
-    const { service } = setup([attempt({ sentAgoMs: 2 * HOUR })]);
-    const sentAt = Date.now() - 2 * HOUR;
+    const { service } = setup([attempt({ sentAgoMs: 10 * MINUTE })]);
+    const sentAt = Date.now() - 10 * MINUTE;
 
     await service.scheduleWebhookStatusCheck(FLIGHT_ID, "req", logger);
 
-    expect(service.nextSupplierCheckAt.get(FLIGHT_ID)).toBe(sentAt + 12 * HOUR);
+    expect(service.nextSupplierCheckAt.get(FLIGHT_ID)).toBe(sentAt + WAIT);
     jest.clearAllTimers();
   });
 
-  it("confirms the booking when the 12-hour check says booked", async () => {
-    const { service, provider } = setup([attempt({ sentAgoMs: 13 * HOUR })]);
+  it("confirms the booking when the 1 h 5 min check says booked", async () => {
+    const { service, provider } = setup([attempt({ sentAgoMs: 70 * MINUTE })]);
     provider.checkBookingStatus.mockResolvedValue({ state: "booked", code: null });
 
     await service.reconcileManualChecks(FLIGHT_ID, "req", logger, true, Date.now());
@@ -160,9 +163,9 @@ describe("HOTEL_BOOKING_STATUS_MODE=webhook", () => {
     expect(service.confirmAttemptFromWebhook).toHaveBeenCalledTimes(1);
   });
 
-  it("fails the booking when the 12-hour check says failed", async () => {
+  it("fails the booking when the 1 h 5 min check says failed", async () => {
     const { service, provider, repository } = setup([
-      attempt({ sentAgoMs: 13 * HOUR }),
+      attempt({ sentAgoMs: 70 * MINUTE }),
     ]);
     provider.checkBookingStatus.mockResolvedValue({ state: "failed", code: "soldout" });
 
@@ -170,17 +173,28 @@ describe("HOTEL_BOOKING_STATUS_MODE=webhook", () => {
 
     const [, , changes] = repository.finishBookingAttempt.mock.calls[0] as any[];
     expect(changes.failureCode).toBe(HotelBookingFailureCode.SUPPLIER_REJECTED);
+    expect(changes.failureReason).toContain(
+      "supplier reported soldout (status check after no booking webhook within 1 h 5 min)",
+    );
     expect(repository.markPnrFailed).toHaveBeenCalledTimes(1);
   });
 
   it.each([
-    ["still processing", (p: any) => p.mockResolvedValue({ state: "processing", code: null })],
-    ["status API error", (p: any) => p.mockRejectedValue(new Error("502 Bad Gateway"))],
+    [
+      "still processing",
+      (p: any) => p.mockResolvedValue({ state: "processing", code: null }),
+      "the status check returned no final status (processing)",
+    ],
+    [
+      "status API error",
+      (p: any) => p.mockRejectedValue(new Error("502 Bad Gateway")),
+      "the status check returned no final status (status check error: 502 Bad Gateway)",
+    ],
   ])(
     "marks the booking failed with a reason when the final check gets no final status (%s)",
-    async (_label, arrange) => {
+    async (_label, arrange, checkText) => {
       const { service, provider, repository } = setup([
-        attempt({ sentAgoMs: 13 * HOUR }),
+        attempt({ sentAgoMs: 70 * MINUTE }),
       ]);
       arrange(provider.checkBookingStatus);
 
@@ -198,7 +212,11 @@ describe("HOTEL_BOOKING_STATUS_MODE=webhook", () => {
       expect(changes.status).toBe(HotelBookingAttemptStatus.FAILED);
       expect(changes.failureCode).toBe(HotelBookingFailureCode.NO_FINAL_STATUS);
       expect(changes.failureReason).toContain(
-        "no booking webhook or final status came back within 12 hours",
+        "No booking webhook from the supplier within 1 h 5 min",
+      );
+      expect(changes.failureReason).toContain(checkText);
+      expect(changes.failureReason).toContain(
+        "check with the supplier before rebooking (refs: order-1)",
       );
       expect(repository.markPnrFailed).toHaveBeenCalledTimes(1);
     },
@@ -207,7 +225,7 @@ describe("HOTEL_BOOKING_STATUS_MODE=webhook", () => {
   it("keeps a partial booking (some rooms booked) open instead of failing it", async () => {
     const { service, repository } = setup([
       attempt({
-        sentAgoMs: 13 * HOUR,
+        sentAgoMs: 70 * MINUTE,
         rooms: [{ status: "booked" }, { status: "pending" }],
       }),
     ]);
@@ -224,9 +242,9 @@ describe("HOTEL_BOOKING_STATUS_MODE=webhook", () => {
     expect(repository.markPnrFailed).not.toHaveBeenCalled();
   });
 
-  it("confirms at the 12-hour check, without a status call, a booking whose webhook result was already saved", async () => {
+  it("confirms at the 1 h 5 min check, without a status call, a booking whose webhook result was already saved", async () => {
     const { service, provider } = setup([
-      attempt({ sentAgoMs: 13 * HOUR, rooms: [{ status: "booked" }] }),
+      attempt({ sentAgoMs: 70 * MINUTE, rooms: [{ status: "booked" }] }),
     ]);
 
     await service.reconcileManualChecks(FLIGHT_ID, "req", logger, true, Date.now());
@@ -248,7 +266,7 @@ describe("HOTEL_BOOKING_STATUS_MODE=webhook", () => {
   });
 
   it("reports 'busy' when another run holds the flight, so the check is retried", async () => {
-    const { service, repository } = setup([attempt({ sentAgoMs: 13 * HOUR })]);
+    const { service, repository } = setup([attempt({ sentAgoMs: 70 * MINUTE })]);
     repository.claimFlightAllocationRun.mockResolvedValue({
       claimed: false,
       reason: "running",
@@ -298,6 +316,62 @@ describe("HOTEL_BOOKING_STATUS_MODE=webhook", () => {
       "Booking status webhook contradicts a settled attempt; check with the supplier",
       expect.objectContaining({ knownStatus: "pending" }),
     );
+  });
+});
+
+describe("webhook mode: webhook after the final check failed the booking", () => {
+  const failedByCheck = () => ({
+    ...attempt({ status: HotelBookingAttemptStatus.FAILED }),
+    failureCode: HotelBookingFailureCode.NO_FINAL_STATUS,
+  });
+  const webhook = (reportedStatus: string) => ({
+    provider: "ratehawk",
+    reference: "order-1",
+    reportedStatus,
+    requestId: "req",
+    requestLogger: logger,
+  });
+
+  it.each(["completed", "failed"])(
+    "rejects a late '%s' webhook and adds it to the failure message",
+    async (reported) => {
+      const { service, repository } = setup([failedByCheck()]);
+
+      await expect(
+        service.handleSupplierBookingStatus(webhook(reported)),
+      ).resolves.toBe("ignored");
+
+      expect(repository.finishBookingAttempt).not.toHaveBeenCalled();
+      expect(repository.appendLateWebhookNote).toHaveBeenCalledWith(
+        1,
+        21,
+        expect.stringContaining(`(ref order-1): supplier reported "${reported}"`),
+      );
+    },
+  );
+
+  it("flags a late 'completed' as a possible booking to check", async () => {
+    const { service, repository } = setup([failedByCheck()]);
+
+    await service.handleSupplierBookingStatus(webhook("completed"));
+
+    const [, , note] = repository.appendLateWebhookNote.mock.calls[0] as any[];
+    expect(note).toContain("the hotel may be booked after all, check with the supplier");
+  });
+
+  it("adds nothing for a matching webhook on a booking the supplier rejected", async () => {
+    const rejected = {
+      ...attempt({
+        status: HotelBookingAttemptStatus.FAILED,
+        rooms: [{ status: "failed" }],
+      }),
+      failureCode: HotelBookingFailureCode.SUPPLIER_REJECTED,
+    };
+    const { service, repository } = setup([rejected]);
+
+    await service.handleSupplierBookingStatus(webhook("failed"));
+
+    expect(repository.appendLateWebhookNote).not.toHaveBeenCalled();
   });
 });
 

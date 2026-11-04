@@ -171,7 +171,7 @@ export const config = {
     // Webhook mode: the one status check, counted from when the booking was sent.
     webhookFinalCheckDelayMs: parseInt(
       process.env.HOTEL_WEBHOOK_FINAL_CHECK_DELAY_MS ??
-        String(12 * 60 * 60 * 1000),
+        String(65 * 60 * 1000),
       10,
     ),
   },

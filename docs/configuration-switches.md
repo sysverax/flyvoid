@@ -171,7 +171,7 @@ it is settled. The mode is set in the backend environment (`.env`) and read in
 | Variable | Default | Rule |
 |---|---|---|
 | `HOTEL_BOOKING_STATUS_MODE` | `webhook` | `webhook` or `status` (any other value stops startup) |
-| `HOTEL_WEBHOOK_FINAL_CHECK_DELAY_MS` | `43200000` (12 h) | webhook mode: the one status check, counted from when the booking was sent |
+| `HOTEL_WEBHOOK_FINAL_CHECK_DELAY_MS` | `3900000` (1 h 5 min) | webhook mode: the one status check, counted from when the booking was sent |
 | `HOTEL_POST_RUN_CHECK_INTERVAL_MS` / `HOTEL_POST_RUN_CHECK_COUNT` | 5 min / `2` | status mode: the re-check schedule after a run |
 
 **`webhook`:**
@@ -185,11 +185,12 @@ it is settled. The mode is set in the backend environment (`.env`) and read in
    applied as is, with no status call. RateHawk gets 200 only once the result
    is saved; if anything fails it gets 503 and sends the webhook again.
    Webhooks for bookings already settled are acknowledged and ignored.
-3. The status endpoint is not called until 12 hours after the booking was
-   sent. If the booking is still `MANUAL_CHECK` then, it is called once.
-   `completed` confirms it and `failed` fails it. Anything else (still
-   processing, or a status API error) marks it `FAILED` with code
-   `no_final_status` and a reason.
+3. The status endpoint is not called until 1 h 5 min after the booking was
+   sent (after RateHawk's webhook retries at 30 s … 5 min have passed). If the
+   booking is still `MANUAL_CHECK` then, it is called once and the result is
+   logged. `completed` confirms it and `failed` fails it. Anything else
+   (still processing, or a status API error) marks it `FAILED` with code
+   `no_final_status` and a reason naming the wait and what the check returned.
 4. The due time comes from the stored send time, so a restart does not reset
    it. A check that finds another run holding the flight is retried every
    `HOTEL_POST_RUN_CHECK_INTERVAL_MS`.
@@ -202,9 +203,11 @@ times. Incoming webhooks are acknowledged with 200 and ignored.
 
 Notes:
 
-- **Late webhook:** a `completed` webhook that arrives for a booking already
-  failed for no final status is logged as an error ("contradicts a settled
-  attempt"). Reconcile it with the supplier by hand.
+- **Late webhook:** a webhook that arrives after the check failed the booking
+  (or one contradicting a failed booking) is not applied. Its status and time
+  are appended to the failure message (on the booking attempt, and on the
+  PNR while it has not been rebooked), and RateHawk gets 200. A late
+  `completed` is also logged as an error: reconcile it with the supplier.
 - **Hotelbeds:** these modes do not apply. It has no status endpoint and no
   webhooks, so its `MANUAL_CHECK` bookings are always resolved by hand.
 

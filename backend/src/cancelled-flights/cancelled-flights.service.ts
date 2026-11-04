@@ -227,7 +227,8 @@ export class CancelledFlightsService {
     requestId: string,
     requestLogger: Logger,
   ): Promise<CancelledFlightResponseDto> {
-    const flight = await this.requireFlight(flightId, requestLogger);
+    // Only the owning airline updates a flight (platform users included get 404).
+    const flight = await this.findFlightOrThrow(flightId, requestLogger);
 
     if (flight.airlineId !== airlineId) {
       requestLogger.warn(
@@ -351,11 +352,12 @@ export class CancelledFlightsService {
 
   async addBooking(
     flightId: number,
+    user: AuthenticatedUser,
     dto: CreateBookingDto,
     requestId: string,
     requestLogger: Logger,
   ): Promise<BookingResponseDto> {
-    const flight = await this.requireFlight(flightId, requestLogger);
+    const flight = await this.requireEditableFlight(flightId, user, requestLogger);
     const payload = await this.validatedBookingPayload(
       flightId,
       dto,
@@ -500,11 +502,12 @@ export class CancelledFlightsService {
    */
   async importBookings(
     flightId: number,
+    user: AuthenticatedUser,
     file: { buffer: Buffer; originalname: string; mimetype: string },
     requestId: string,
     requestLogger: Logger,
   ): Promise<ImportBookingResponseDto> {
-    const flight = await this.requireFlight(flightId, requestLogger);
+    const flight = await this.requireEditableFlight(flightId, user, requestLogger);
     requestLogger.info("Parsing booking import CSV", {
       context: this.context,
       flightId,
@@ -632,10 +635,11 @@ export class CancelledFlightsService {
 
   async listImportFailures(
     flightId: number,
+    user: AuthenticatedUser,
     requestId: string,
     requestLogger: Logger,
   ): Promise<FailedBookingListResponseDto> {
-    await this.requireFlight(flightId, requestLogger);
+    await this.requireFlight(flightId, user, requestLogger);
     const failures = await this.cancelledFlightsRepository.findImportFailures(
       flightId,
       requestLogger,
@@ -651,12 +655,13 @@ export class CancelledFlightsService {
    */
   async resolveImportFailure(
     flightId: number,
+    user: AuthenticatedUser,
     failureId: number,
     dto: CreateBookingDto,
     requestId: string,
     requestLogger: Logger,
   ): Promise<BookingResponseDto> {
-    const flight = await this.requireFlight(flightId, requestLogger);
+    const flight = await this.requireEditableFlight(flightId, user, requestLogger);
     const payload = await this.validatedBookingPayload(
       flightId,
       dto,
@@ -700,11 +705,12 @@ export class CancelledFlightsService {
   /** Deletes one failed row, or all of the flight's when failureId is omitted. */
   async deleteImportFailures(
     flightId: number,
+    user: AuthenticatedUser,
     failureId: number | undefined,
     requestId: string,
     requestLogger: Logger,
   ): Promise<{ message: string; deleted: number }> {
-    await this.requireFlight(flightId, requestLogger);
+    await this.requireFlight(flightId, user, requestLogger);
     const deleted = await this.cancelledFlightsRepository.deleteImportFailures(
       flightId,
       requestLogger,
@@ -752,12 +758,13 @@ export class CancelledFlightsService {
 
   async updateBooking(
     flightId: number,
+    user: AuthenticatedUser,
     bookingId: number,
     dto: UpdateBookingDto,
     requestId: string,
     requestLogger: Logger,
   ): Promise<BookingResponseDto> {
-    await this.requireFlight(flightId, requestLogger);
+    await this.requireEditableFlight(flightId, user, requestLogger);
     const booking = await this.requireBookingForFlight(
       bookingId,
       flightId,
@@ -842,11 +849,12 @@ export class CancelledFlightsService {
 
   async deleteBooking(
     flightId: number,
+    user: AuthenticatedUser,
     bookingId: number,
     requestId: string,
     requestLogger: Logger,
   ) {
-    await this.requireFlight(flightId, requestLogger);
+    await this.requireEditableFlight(flightId, user, requestLogger);
     const booking = await this.requireBookingForFlight(
       bookingId,
       flightId,
@@ -1108,6 +1116,7 @@ export class CancelledFlightsService {
   // ── List bookings ────────────────────────────────────────────────────────
   async listBookings(
     flightId: number,
+    user: AuthenticatedUser,
     pagination: PaginationQueryDto,
     requestId: string,
     requestLogger: Logger,
@@ -1115,7 +1124,7 @@ export class CancelledFlightsService {
     const page = pagination.page || 1;
     const limit = pagination.limit || 10;
 
-    await this.requireFlight(flightId, requestLogger);
+    await this.requireFlight(flightId, user, requestLogger);
     requestLogger.info("Fetching bookings for cancelled flight", {
       context: this.context,
       flightId,
@@ -1149,6 +1158,7 @@ export class CancelledFlightsService {
   // ── Review ───────────────────────────────────────────────────────────────
   async reviewFlight(
     flightId: number,
+    user: AuthenticatedUser,
     requestId: string,
     requestLogger: Logger,
   ): Promise<ReviewCancelledFlightResponseDto> {
@@ -1170,6 +1180,7 @@ export class CancelledFlightsService {
       });
       throw new NotFoundException(`Cancelled flight '${flightId}' not found`);
     }
+    this.assertFlightAccess(flight, user, requestLogger);
 
     if (bookingStats.totalBookings === 0) {
       requestLogger.warn("Reviewing cancelled flight with no bookings yet", {
@@ -1245,7 +1256,72 @@ export class CancelledFlightsService {
     });
   }
 
-  private async requireFlight(flightId: number, requestLogger: Logger) {
+  /**
+   * The cancelled flight the user may act on: airline users only their own
+   * airline's flights, platform users any flight.
+   */
+  private async requireFlight(
+    flightId: number,
+    user: AuthenticatedUser,
+    requestLogger: Logger,
+  ) {
+    const flight = await this.findFlightOrThrow(flightId, requestLogger);
+    this.assertFlightAccess(flight, user, requestLogger);
+    return flight;
+  }
+
+  /**
+   * A flight whose passenger bookings may still change: only before hotel
+   * allocation (draft / in progress). Afterwards a PNR may have a paid hotel
+   * booking, so adding, editing or deleting PNRs is refused with 409.
+   */
+  private async requireEditableFlight(
+    flightId: number,
+    user: AuthenticatedUser,
+    requestLogger: Logger,
+  ) {
+    const flight = await this.requireFlight(flightId, user, requestLogger);
+    if (
+      flight.status !== FlightStatus.DRAFT &&
+      flight.status !== FlightStatus.IN_PROGRESS
+    ) {
+      requestLogger.warn(
+        "Rejected booking change: hotel allocation has started",
+        { context: this.context, flightId, status: flight.status },
+      );
+      throw new ConflictException(
+        "Bookings can't be changed after hotel allocation has started",
+      );
+    }
+    return flight;
+  }
+
+  /**
+   * 404 (not 403) for another airline's flight, so its id is not revealed.
+   * Users that are neither platform nor airline users are refused too.
+   */
+  private assertFlightAccess(
+    flight: CancelledFlightEntity,
+    user: AuthenticatedUser,
+    requestLogger: Logger,
+  ): void {
+    const allowed =
+      user.userType === UserType.PLATFORM ||
+      (user.userType === UserType.AIRLINE &&
+        !!user.airlineId &&
+        flight.airlineId === user.airlineId);
+    if (allowed) return;
+    requestLogger.warn("Rejected access to another airline's cancelled flight", {
+      context: this.context,
+      flightId: flight.id,
+      userId: user.sub,
+      userType: user.userType,
+      airlineId: user.airlineId,
+    });
+    throw new NotFoundException(`Cancelled flight '${flight.id}' not found`);
+  }
+
+  private async findFlightOrThrow(flightId: number, requestLogger: Logger) {
     const flight = await this.cancelledFlightsRepository.findFlightById(
       flightId,
       requestLogger,
@@ -1284,6 +1360,7 @@ export class CancelledFlightsService {
 
   async confirmPassengerBookingDetails(
     flightId: number,
+    user: AuthenticatedUser,
     requestId: string,
     requestLogger: Logger,
   ): Promise<CancelledFlightResponseDto> {
@@ -1307,6 +1384,7 @@ export class CancelledFlightsService {
       );
       throw new NotFoundException(`Cancelled flight '${flightId}' not found`);
     }
+    this.assertFlightAccess(flight, user, requestLogger);
 
     if (flight.status !== FlightStatus.IN_PROGRESS) {
       requestLogger.warn(
@@ -1368,6 +1446,7 @@ export class CancelledFlightsService {
   // ── List bookings ────────────────────────────────────────────────────────
   async listHotelBookings(
     flightId: number,
+    user: AuthenticatedUser,
     pagination: PaginationQueryDto,
     requestId: string,
     requestLogger: Logger,
@@ -1375,7 +1454,7 @@ export class CancelledFlightsService {
     const page = pagination.page || 1;
     const limit = pagination.limit || 10;
 
-    await this.requireFlight(flightId, requestLogger);
+    await this.requireFlight(flightId, user, requestLogger);
     requestLogger.info("Fetching hotel bookings for cancelled flight", {
       context: this.context,
       flightId,
@@ -1560,9 +1639,11 @@ export class CancelledFlightsService {
   // ── Hotel Summary of a cancelled flight ───────────────────────────────────────────────
   async hotelSummaryByFlight(
     flightId: number,
+    user: AuthenticatedUser,
     requestId: string,
     requestLogger: Logger,
   ): Promise<HotelSummaryCancelledFlightResponseDto> {
+    await this.requireFlight(flightId, user, requestLogger);
     const hotelSummary =
       await this.cancelledFlightsRepository.findHotelSummaryByFlightId(
         flightId,
@@ -1603,6 +1684,7 @@ export class CancelledFlightsService {
 
   async processPayment(
     flightId: number,
+    user: AuthenticatedUser,
     requestId: string,
     requestLogger: Logger,
   ): Promise<CancelledFlightResponseDto> {
@@ -1616,7 +1698,7 @@ export class CancelledFlightsService {
       );
     }
 
-    const flight = await this.requireFlight(flightId, requestLogger);
+    const flight = await this.requireFlight(flightId, user, requestLogger);
 
     if (flight.status !== FlightStatus.ALLOCATED) {
       requestLogger.warn(
@@ -1665,10 +1747,11 @@ export class CancelledFlightsService {
 
   async publishFlight(
     flightId: number,
+    user: AuthenticatedUser,
     requestId: string,
     requestLogger: Logger,
   ): Promise<CancelledFlightResponseDto> {
-    const flight = await this.requireFlight(flightId, requestLogger);
+    const flight = await this.requireFlight(flightId, user, requestLogger);
 
     if (!PUBLISHABLE_FLIGHT_STATUSES.includes(flight.status)) {
       requestLogger.warn("Rejected flight publish: flight not ready to publish", {
