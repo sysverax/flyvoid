@@ -2319,6 +2319,50 @@ export class CancelledFlightsRepository {
     });
   }
 
+  /**
+   * Webhook mode: saves a booking webhook's result on the rooms of an order
+   * whose booking is still in its live wait (attempt PENDING), for that wait
+   * to pick up. Returns false when the attempt is no longer PENDING.
+   */
+  async recordWebhookOrderStatus(
+    attemptId: number,
+    bookingId: number,
+    reference: string,
+    status: "booked" | "failed",
+  ): Promise<boolean> {
+    return this.manager.transaction(async (manager) => {
+      await this.lockBooking(manager, bookingId);
+      const pending = await manager.getRepository(HotelBookingEntity).exists({
+        where: { id: attemptId, status: HotelBookingAttemptStatus.PENDING },
+      });
+      if (!pending) return false;
+      await manager.query(
+        `UPDATE hotel_booking_rooms
+            SET status = $3,
+                failure_reason = CASE WHEN $3 = 'failed' THEN 'failed (booking webhook)' ELSE NULL END,
+                updated_at = now()
+          WHERE hotel_booking_id = $1
+            AND partner_order_id = $2
+            AND status = 'pending'`,
+        [attemptId, reference, status],
+      );
+      return true;
+    });
+  }
+
+  /** Room statuses of one supplier order of an attempt. */
+  async findOrderRoomStatuses(
+    attemptId: number,
+    reference: string,
+  ): Promise<string[]> {
+    const rows = (await this.manager.query(
+      `SELECT status FROM hotel_booking_rooms
+        WHERE hotel_booking_id = $1 AND partner_order_id = $2`,
+      [attemptId, reference],
+    )) as Array<{ status: string }>;
+    return rows.map((row) => row.status);
+  }
+
   async findAttemptBySupplierReference(
     provider: string,
     reference: string,
@@ -2500,6 +2544,75 @@ export class CancelledFlightsRepository {
     );
   }
 
+  /**
+   * Appends a late webhook's report to a FAILED attempt's failure reason, and
+   * to the PNR's reason while that attempt is still its latest one.
+   */
+  async appendLateWebhookNote(
+    attemptId: number,
+    bookingId: number,
+    note: string,
+  ): Promise<void> {
+    await retryOnLockConflict(() =>
+      this.manager.transaction(async (manager) => {
+        await this.lockBooking(manager, bookingId);
+        await manager.query(
+          `UPDATE hotel_bookings
+              SET failure_reason = CONCAT_WS(' ', failure_reason, $2::text),
+                  updated_at = now()
+            WHERE id = $1 AND status = $3`,
+          [attemptId, note, HotelBookingAttemptStatus.FAILED],
+        );
+        await manager.query(
+          `UPDATE cancelled_flight_bookings
+              SET allocation_reason = CONCAT_WS(' ', allocation_reason, $2::text)
+            WHERE id = $1
+              AND allocation_status = $4
+              AND NOT EXISTS (
+                SELECT 1 FROM hotel_bookings
+                 WHERE booking_id = $1 AND id > $3
+              )`,
+          [bookingId, note, attemptId, HotelAllocationStatus.FAILED],
+        );
+      }),
+    );
+  }
+
+  /**
+   * Releases a PNR's HELD wallet share (a failed manual booking). A share
+   * already charged or released is left alone.
+   */
+  async releaseWalletShare(
+    bookingId: number,
+    reason: string,
+    requestLogger: Logger,
+  ): Promise<void> {
+    await retryOnLockConflict(() =>
+      this.manager.transaction(async (manager) => {
+        await this.lockBooking(manager, bookingId);
+        const pnr = await manager
+          .getRepository(BookingEntity)
+          .findOne({ where: { id: bookingId }, select: { id: true, cancelledFlightId: true } });
+        if (!pnr) return;
+        const flight = await manager.getRepository(CancelledFlightEntity).findOne({
+          where: { id: pnr.cancelledFlightId },
+          select: { id: true, airlineId: true },
+        });
+        if (!flight) return;
+        await this.walletHoldRepository.releaseBookings(
+          manager,
+          {
+            airlineId: flight.airlineId,
+            cancelledFlightId: flight.id,
+            bookingIds: [bookingId],
+            reason,
+          },
+          requestLogger,
+        );
+      }),
+    );
+  }
+
   private async markPnrFailedOnce(
     bookingId: number,
     reason: string,
@@ -2614,6 +2727,111 @@ export class CancelledFlightsRepository {
       });
     }
     return bookingIds.size;
+  }
+
+  /**
+   * Manual booking attempts (no run) still PENDING after staleMs, e.g. left by
+   * a restart mid-booking. Sent ones become MANUAL_CHECK (the supplier may
+   * have booked; their wallet share stays held); unsent ones become FAILED
+   * and their wallet share is released, so the PNR can be booked again.
+   * staleMs must exceed the longest manual booking, so attempts still running
+   * on another instance are not touched.
+   */
+  async recoverInterruptedManualAttempts(
+    staleMs: number,
+    requestLogger: Logger,
+  ): Promise<Array<{ cancelledFlightId: number; bookingId: number; sent: boolean }>> {
+    const stale = (await this.manager.query(
+      `SELECT id, booking_id, cancelled_flight_id,
+              provider_request_sent_at IS NOT NULL AS sent
+         FROM hotel_bookings
+        WHERE status = $1
+          AND run_id IS NULL
+          AND updated_at < now() - ($2 * interval '1 millisecond')`,
+      [HotelBookingAttemptStatus.PENDING, staleMs],
+    )) as Array<{
+      id: number;
+      booking_id: number;
+      cancelled_flight_id: number;
+      sent: boolean;
+    }>;
+
+    const recovered: Array<{
+      cancelledFlightId: number;
+      bookingId: number;
+      sent: boolean;
+    }> = [];
+    for (const row of stale) {
+      const attemptId = Number(row.id);
+      const bookingId = Number(row.booking_id);
+      const cancelledFlightId = Number(row.cancelled_flight_id);
+      const done = await retryOnLockConflict(() =>
+        this.manager.transaction(async (manager) => {
+          await this.lockBooking(manager, bookingId);
+          const result = await manager
+            .createQueryBuilder()
+            .update(HotelBookingEntity)
+            .set(
+              row.sent
+                ? {
+                    status: HotelBookingAttemptStatus.MANUAL_CHECK,
+                    failureCode: HotelBookingFailureCode.INTERRUPTED_AFTER_REQUEST,
+                    failureReason:
+                      "Booking was interrupted after the request was sent to the supplier; outcome unknown",
+                  }
+                : {
+                    status: HotelBookingAttemptStatus.FAILED,
+                    failureCode: HotelBookingFailureCode.INTERRUPTED_BEFORE_REQUEST,
+                    failureReason:
+                      "Booking was interrupted before the request was sent to the supplier",
+                    failedAt: () => "now()",
+                    paymentStatus: HotelBookingPaymentStatus.FAILED,
+                  },
+            )
+            .where("id = :attemptId", { attemptId })
+            .andWhere("status = :pending", {
+              pending: HotelBookingAttemptStatus.PENDING,
+            })
+            .andWhere(
+              row.sent
+                ? "provider_request_sent_at IS NOT NULL"
+                : "provider_request_sent_at IS NULL",
+            )
+            .execute();
+          if ((result.affected ?? 0) !== 1) return false;
+          if (!row.sent) {
+            const flight = await manager
+              .getRepository(CancelledFlightEntity)
+              .findOne({
+                where: { id: cancelledFlightId },
+                select: { id: true, airlineId: true },
+              });
+            if (flight) {
+              await this.walletHoldRepository.releaseBookings(
+                manager,
+                {
+                  airlineId: flight.airlineId,
+                  cancelledFlightId,
+                  bookingIds: [bookingId],
+                  reason: "Manual hotel booking interrupted before the supplier request",
+                },
+                requestLogger,
+              );
+            }
+          }
+          await this.applyEffectiveState(manager, bookingId);
+          return true;
+        }),
+      );
+      if (done) recovered.push({ cancelledFlightId, bookingId, sent: row.sent });
+    }
+    if (recovered.length > 0) {
+      requestLogger.warn("Recovered interrupted manual hotel booking attempts", {
+        context: this.context,
+        recovered,
+      });
+    }
+    return recovered;
   }
 
   private async lockBooking(

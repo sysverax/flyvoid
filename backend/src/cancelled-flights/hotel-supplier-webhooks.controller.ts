@@ -70,6 +70,14 @@ export class HotelSupplierWebhooksController {
       });
       throw new UnauthorizedException("Webhook timestamp is too old");
     }
+    // Status mode settles bookings from status checks only; 200 stops retries.
+    if (config.hotelBooking.statusMode !== "webhook") {
+      requestLogger.info(
+        "Ignored RateHawk booking webhook: HOTEL_BOOKING_STATUS_MODE is 'status'",
+        meta,
+      );
+      return { status: "ok" };
+    }
     if (
       await this.cancelledFlightsRepository.isWebhookTokenUsed(
         HotelProviderCode.RATEHAWK,
