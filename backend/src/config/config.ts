@@ -18,6 +18,15 @@ const selectedEnvFile = envFileByCommand[lifecycleEvent] ?? ".env";
 
 dotenv.config({ path: selectedEnvFile, quiet: true });
 
+function parseBookingStatusMode(value: string | undefined): "webhook" | "status" {
+  const mode = (value ?? "").trim().toLowerCase();
+  if (mode === "" || mode === "webhook") return "webhook";
+  if (mode === "status") return "status";
+  throw new Error(
+    `Invalid HOTEL_BOOKING_STATUS_MODE '${value}': use 'webhook' or 'status'`,
+  );
+}
+
 export const config = {
   cors: {
     allowedOrigins: process.env.CORS_ALLOWED_ORIGINS ?? "",
@@ -154,6 +163,15 @@ export const config = {
     ),
     staleBookingAttemptMs: parseInt(
       process.env.HOTEL_BOOKING_ATTEMPT_STALE_MS ?? String(60 * 60 * 1000),
+      10,
+    ),
+    // How bookings get their final status: "webhook" (default) or "status".
+    // See docs/configuration-switches.md.
+    statusMode: parseBookingStatusMode(process.env.HOTEL_BOOKING_STATUS_MODE),
+    // Webhook mode: the one status check, counted from when the booking was sent.
+    webhookFinalCheckDelayMs: parseInt(
+      process.env.HOTEL_WEBHOOK_FINAL_CHECK_DELAY_MS ??
+        String(12 * 60 * 60 * 1000),
       10,
     ),
   },

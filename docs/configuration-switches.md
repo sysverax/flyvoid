@@ -160,6 +160,56 @@ after check-in. See `backend/src/cancelled-flights/stay-dates.ts`.
 
 ---
 
+## Hotel booking status mode (backend environment)
+
+**How a hotel booking gets its final status from the supplier (RateHawk).**
+After the booking request, the booking waits up to 180 seconds for its result.
+With no result by then it shows as `MANUAL_CHECK` and cannot be rebooked until
+it is settled. The mode is set in the backend environment (`.env`) and read in
+`backend/src/config/config.ts` as `config.hotelBooking`.
+
+| Variable | Default | Rule |
+|---|---|---|
+| `HOTEL_BOOKING_STATUS_MODE` | `webhook` | `webhook` or `status` (any other value stops startup) |
+| `HOTEL_WEBHOOK_FINAL_CHECK_DELAY_MS` | `43200000` (12 h) | webhook mode: the one status check, counted from when the booking was sent |
+| `HOTEL_POST_RUN_CHECK_INTERVAL_MS` / `HOTEL_POST_RUN_CHECK_COUNT` | 5 min / `2` | status mode: the re-check schedule after a run |
+
+**`webhook`:**
+
+1. During the 180-second wait the booking status is not polled. The result
+   comes from the supplier's booking webhook
+   (`POST /webhooks/ratehawk/booking-status`): `completed` confirms the
+   booking, `failed` fails it and the next hotel is tried. No webhook in 180
+   seconds: `MANUAL_CHECK`, and no other hotel is tried.
+2. A webhook for a `MANUAL_CHECK` booking settles it. The reported status is
+   applied as is, with no status call. RateHawk gets 200 only once the result
+   is saved; if anything fails it gets 503 and sends the webhook again.
+   Webhooks for bookings already settled are acknowledged and ignored.
+3. The status endpoint is not called until 12 hours after the booking was
+   sent. If the booking is still `MANUAL_CHECK` then, it is called once.
+   `completed` confirms it and `failed` fails it. Anything else (still
+   processing, or a status API error) marks it `FAILED` with code
+   `no_final_status` and a reason.
+4. The due time comes from the stored send time, so a restart does not reset
+   it. A check that finds another run holding the flight is retried every
+   `HOTEL_POST_RUN_CHECK_INTERVAL_MS`.
+5. "Retry remaining bookings" is not held back while bookings wait for their
+   webhook, because retry runs skip `MANUAL_CHECK` PNRs.
+
+**`status`:** the earlier behaviour. Status checks run at the end of the run
+and then every `HOTEL_POST_RUN_CHECK_INTERVAL_MS`, `HOTEL_POST_RUN_CHECK_COUNT`
+times. Incoming webhooks are acknowledged with 200 and ignored.
+
+Notes:
+
+- **Late webhook:** a `completed` webhook that arrives for a booking already
+  failed for no final status is logged as an error ("contradicts a settled
+  attempt"). Reconcile it with the supplier by hand.
+- **Hotelbeds:** these modes do not apply. It has no status endpoint and no
+  webhooks, so its `MANUAL_CHECK` bookings are always resolved by hand.
+
+---
+
 ## Adding a new switch
 
 1. Put it in the app's constants file (table above), with a comment saying what

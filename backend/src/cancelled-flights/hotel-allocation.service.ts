@@ -47,6 +47,7 @@ import {
   HotelProvider,
   HotelRateCheck,
   RoomOccupancy,
+  SUPPLIER_BOOKING_WAIT_MS,
   TaxAtProperty,
 } from "./hotel-providers/hotel-provider.interface";
 import { cancellationOf } from "../hotel-availability/hotel-availability.mapper";
@@ -1789,13 +1790,155 @@ export class HotelAllocationService implements OnApplicationBootstrap {
   }
 
   /**
-   * MANUAL_CHECK bookings left after a run are checked again with the
-   * supplier every postRunCheckIntervalMs, postRunCheckCount times (default:
-   * every 5 min, twice). Still no final status after the last check: marked
-   * FAILED (partial bookings stay MANUAL_CHECK).
+   * MANUAL_CHECK bookings left after a run (HOTEL_BOOKING_STATUS_MODE):
+   * - "status": checked again with the supplier every postRunCheckIntervalMs,
+   *   postRunCheckCount times (default: every 5 min, twice).
+   * - "webhook": settled by the supplier's webhook (no status calls); checked
+   *   once, webhookFinalCheckDelayMs (default 12 h) after the booking was sent.
+   * Still no final status after the last check: marked FAILED (partial
+   * bookings stay MANUAL_CHECK).
    */
   private static postRunCheckCount(): number {
     return Math.max(1, config.hotelBooking.postRunCheckCount);
+  }
+
+  private static webhookMode(): boolean {
+    return config.hotelBooking.statusMode === "webhook";
+  }
+
+  /** Longest delay setTimeout accepts (about 24.8 days). */
+  private static readonly MAX_TIMER_MS = 2_147_483_647;
+
+  /** How often the live wait looks for a saved booking webhook. */
+  private static readonly WEBHOOK_WAIT_POLL_MS = 2000;
+
+  /**
+   * Webhooks are saved for the live wait only until this long before it ends,
+   * so one saved at the last moment is not missed when the wait gives up.
+   */
+  private static readonly WEBHOOK_HANDOFF_MARGIN_MS = 10_000;
+
+  /**
+   * Webhook mode live wait: watches the order's rooms for the result a booking
+   * webhook saved (any instance may receive it), for SUPPLIER_BOOKING_WAIT_MS.
+   * null when no webhook came.
+   */
+  private async awaitBookingWebhook(
+    attemptId: number,
+    reference: string,
+  ): Promise<"booked" | "failed" | null> {
+    const deadline = Date.now() + SUPPLIER_BOOKING_WAIT_MS;
+    for (;;) {
+      const statuses =
+        await this.cancelledFlightsRepository.findOrderRoomStatuses(
+          attemptId,
+          reference,
+        );
+      if (statuses.some((status) => status === "failed")) return "failed";
+      if (statuses.length > 0 && statuses.every((status) => status === "booked")) {
+        return "booked";
+      }
+      if (Date.now() >= deadline) return null;
+      await new Promise((resolve) =>
+        setTimeout(resolve, HotelAllocationService.WEBHOOK_WAIT_POLL_MS),
+      );
+    }
+  }
+
+  /** Webhook mode: when an open attempt gets its one status check. */
+  private static webhookFinalCheckDueAt(attempt: HotelBookingEntity): number {
+    const sentAt = new Date(
+      attempt.providerRequestSentAt ?? attempt.createdAt,
+    ).getTime();
+    return sentAt + config.hotelBooking.webhookFinalCheckDelayMs;
+  }
+
+  /**
+   * Webhook mode: schedules the flight's next status check. Due times come
+   * from the DB, so a restart reschedules them correctly. futureOnly skips
+   * checks already past due (they just ran); retryInMs re-runs a check that
+   * could not take the flight's run lock.
+   */
+  private async scheduleWebhookStatusCheck(
+    flightId: number,
+    requestId: string,
+    requestLogger: Logger,
+    options: { futureOnly?: boolean; retryInMs?: number } = {},
+  ): Promise<void> {
+    try {
+      let dueAt: number;
+      if (options.retryInMs !== undefined) {
+        dueAt = Date.now() + options.retryInMs;
+      } else {
+        const now = Date.now();
+        const attempts =
+          await this.cancelledFlightsRepository.findManualCheckAttempts(
+            flightId,
+            config.hotelProvider.name,
+          );
+        // Every MANUAL_CHECK attempt: one whose rooms already carry a webhook
+        // result (e.g. saved just before a crash) is settled from them.
+        const due = attempts
+          .map(HotelAllocationService.webhookFinalCheckDueAt)
+          .filter((at) => !options.futureOnly || at > now);
+        if (due.length === 0) return;
+        dueAt = Math.min(...due);
+      }
+      const scheduled = this.nextSupplierCheckAt.get(flightId);
+      if (scheduled !== undefined && scheduled <= dueAt) return;
+      this.nextSupplierCheckAt.set(flightId, dueAt);
+
+      const timer = setTimeout(
+        () => {
+          if (this.nextSupplierCheckAt.get(flightId) === dueAt) {
+            this.nextSupplierCheckAt.delete(flightId);
+          }
+          this.runPostRunCheck(
+            flightId,
+            requestId,
+            requestLogger,
+            true,
+            Date.now(),
+          )
+            .then((result) => {
+              if (result === "busy") {
+                return this.scheduleWebhookStatusCheck(
+                  flightId,
+                  requestId,
+                  requestLogger,
+                  { retryInMs: config.hotelBooking.postRunCheckIntervalMs },
+                );
+              }
+              if (typeof result === "number" && result > 0) {
+                return this.scheduleWebhookStatusCheck(
+                  flightId,
+                  requestId,
+                  requestLogger,
+                  { futureOnly: true },
+                );
+              }
+            })
+            .catch((error: any) =>
+              requestLogger.error("Webhook-mode status check failed", {
+                context: this.context,
+                flightId,
+                error: error?.message,
+              }),
+            );
+        },
+        Math.min(
+          Math.max(0, dueAt - Date.now()),
+          HotelAllocationService.MAX_TIMER_MS,
+        ),
+      );
+      timer.unref();
+    } catch (error: any) {
+      requestLogger.error("Could not schedule webhook-mode status check", {
+        context: this.context,
+        flightId,
+        error: error?.message,
+      });
+    }
   }
 
   private schedulePostRunCheck(
@@ -1804,6 +1947,10 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     requestLogger: Logger,
     check = 0,
   ): void {
+    if (HotelAllocationService.webhookMode()) {
+      void this.scheduleWebhookStatusCheck(flightId, requestId, requestLogger);
+      return;
+    }
     const dueAt = Date.now() + config.hotelBooking.postRunCheckIntervalMs;
     this.nextSupplierCheckAt.set(flightId, dueAt);
     const clearDue = () => {
@@ -1815,7 +1962,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       const last = check === HotelAllocationService.postRunCheckCount() - 1;
       this.runPostRunCheck(flightId, requestId, requestLogger, last)
         .then((unresolved) => {
-          if (unresolved !== null && unresolved > 0 && !last) {
+          if (typeof unresolved === "number" && unresolved > 0 && !last) {
             this.schedulePostRunCheck(
               flightId,
               requestId,
@@ -1841,13 +1988,19 @@ export class HotelAllocationService implements OnApplicationBootstrap {
 
   private readonly nextSupplierCheckAt = new Map<number, number>();
 
-  /** Post-run check under the flight's run lock; null when it could not be claimed. */
+  /**
+   * Post-run check under the flight's run lock. Returns how many attempts are
+   * still open; "busy" when another run holds the lock; null when the flight
+   * cannot be claimed for another reason. dueBy (webhook mode) checks only
+   * attempts whose final check is due by then.
+   */
   private async runPostRunCheck(
     flightId: number,
     requestId: string,
     requestLogger: Logger,
     lastCheck: boolean,
-  ): Promise<number | null> {
+    dueBy?: number,
+  ): Promise<number | "busy" | null> {
     const open = await this.cancelledFlightsRepository.findManualCheckAttempts(
       flightId,
       config.hotelProvider.name,
@@ -1877,7 +2030,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         reason: claim.reason,
         status: claim.status,
       });
-      return null;
+      return claim.reason === "running" ? "busy" : null;
     }
     const heartbeat = setInterval(
       () =>
@@ -1895,6 +2048,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         requestId,
         requestLogger,
         lastCheck,
+        dueBy,
       );
     } finally {
       clearInterval(heartbeat);
@@ -1916,7 +2070,12 @@ export class HotelAllocationService implements OnApplicationBootstrap {
   private async getSupplierCheckState(
     flightId: number,
   ): Promise<{ awaiting: boolean; nextCheckAt: Date | null }> {
-    if (!this.hotelProvider.checkBookingStatus) {
+    // Webhook mode waits hours for a final status; retry runs skip
+    // MANUAL_CHECK PNRs, so the other PNRs need not wait for it.
+    if (
+      !this.hotelProvider.checkBookingStatus ||
+      HotelAllocationService.webhookMode()
+    ) {
       return { awaiting: false, nextCheckAt: null };
     }
     const intervalMs = config.hotelBooking.postRunCheckIntervalMs;
@@ -1960,7 +2119,14 @@ export class HotelAllocationService implements OnApplicationBootstrap {
   ): Promise<void> {
     const { flight, requestLogger } = run;
     try {
-      await this.reconcileManualChecks(flight.id, run.requestId, requestLogger);
+      // Webhook mode checks the status only once, when the final check is due.
+      if (!HotelAllocationService.webhookMode()) {
+        await this.reconcileManualChecks(
+          flight.id,
+          run.requestId,
+          requestLogger,
+        );
+      }
       const rows =
         await this.cancelledFlightsRepository.findAllocationsByFlightId(
           flight.id,
@@ -1998,7 +2164,8 @@ export class HotelAllocationService implements OnApplicationBootstrap {
   /**
    * Checks each MANUAL_CHECK attempt's open supplier orders and settles it
    * when the outcome is known. Partial bookings stay MANUAL_CHECK. On the
-   * last check, an attempt with no final status is marked FAILED. Returns
+   * last check, an attempt with no final status is marked FAILED. dueBy
+   * (webhook mode) skips attempts whose final check is not due yet. Returns
    * how many attempts are still open.
    */
   private async reconcileManualChecks(
@@ -2006,6 +2173,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     requestId: string,
     requestLogger: Logger,
     lastCheck = false,
+    dueBy?: number,
   ): Promise<number> {
     if (!this.hotelProvider.checkBookingStatus) {
       return 0;
@@ -2024,6 +2192,13 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         bookingId: attempt.bookingId,
         failureCode: attempt.failureCode,
       };
+      if (
+        dueBy !== undefined &&
+        HotelAllocationService.webhookFinalCheckDueAt(attempt) > dueBy
+      ) {
+        unresolved += 1;
+        continue;
+      }
       const orders = toProviderOrders(attempt.rooms);
       try {
         let failureDetail: string | null = null;
@@ -2099,13 +2274,14 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       .toISOString()
       .replace("T", " ")
       .slice(0, 16);
-    const waitedMin =
-      (HotelAllocationService.postRunCheckCount() *
-        config.hotelBooking.postRunCheckIntervalMs) /
-      60000;
+    const waited = HotelAllocationService.webhookMode()
+      ? `no booking webhook or final status came back within ` +
+        `${config.hotelBooking.webhookFinalCheckDelayMs / 3_600_000} hours`
+      : `no final status came back within ` +
+        `${(HotelAllocationService.postRunCheckCount() * config.hotelBooking.postRunCheckIntervalMs) / 60000} ` +
+        `minutes after the allocation run`;
     const reason =
-      `Booking at ${hotelName} was sent to the supplier at ${sentAt} UTC, but no ` +
-      `final status came back within ${waitedMin} minutes after the allocation run; ` +
+      `Booking at ${hotelName} was sent to the supplier at ${sentAt} UTC, but ${waited}; ` +
       `marked as failed (refs: ${[...new Set(orders.map((o) => o.reference))].join(", ") || "none"}).`;
     const settled = await this.cancelledFlightsRepository.finishBookingAttempt(
       attempt.id,
@@ -3080,6 +3256,9 @@ export class HotelAllocationService implements OnApplicationBootstrap {
               }
               orders.push(...unitOrders);
             },
+            awaitBookingWebhook: HotelAllocationService.webhookMode()
+              ? (reference) => this.awaitBookingWebhook(attemptId, reference)
+              : undefined,
           },
           unit.check.bookingKey ?? unit.rateKey,
           input.paymentData,
@@ -3300,8 +3479,10 @@ export class HotelAllocationService implements OnApplicationBootstrap {
   }
 
   /**
-   * Supplier booking status webhook. The payload is not signed, so the status is
-   * always re-checked with the supplier before an open attempt is settled.
+   * Supplier booking status webhook (webhook mode; status mode ignores them).
+   * The reported status is applied as is: saved for the booking's live wait
+   * while it runs, or settled on a MANUAL_CHECK attempt. The signature covers
+   * only the timestamp and token, not the order or status.
    */
   async handleSupplierBookingStatus(input: {
     provider: string;
@@ -3338,8 +3519,13 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       const knownStatus = toProviderOrders(attempt.rooms).find(
         (order) => order.reference === reference,
       )?.status;
+      // A FAILED attempt whose order is still pending was failed for having no
+      // final status in time; a late "completed" means it was booked after all.
       const contradicts =
-        (reportedStatus === "completed" && knownStatus === "failed") ||
+        (reportedStatus === "completed" &&
+          (knownStatus === "failed" ||
+            (attempt.status === HotelBookingAttemptStatus.FAILED &&
+              knownStatus === "pending"))) ||
         (reportedStatus === "failed" && knownStatus === "booked");
       if (contradicts) {
         requestLogger.error(
@@ -3351,9 +3537,43 @@ export class HotelAllocationService implements OnApplicationBootstrap {
           "Booking status webhook for a settled attempt",
           attemptMeta,
         );
+        // A confirmed attempt: a retry after an earlier delivery failed
+        // part-way may have missed these steps; both are safe to repeat.
+        // (Failed attempts are left alone: most were failed by the live wait,
+        // and the PNR may already be on its next attempt.)
+        if (attempt.status === HotelBookingAttemptStatus.SUCCESS) {
+          await this.cancelledFlightsRepository.refreshFlightTotals(
+            attempt.cancelledFlightId,
+            requestLogger,
+          );
+          await this.cancelledFlightsRepository.promoteFlightAfterLateConfirmation(
+            attempt.cancelledFlightId,
+          );
+        }
       }
       return "ignored";
     }
+
+    // Webhook mode: the webhook's status is applied as reported, with no
+    // status call.
+    const state =
+      reportedStatus === "completed"
+        ? "booked"
+        : reportedStatus === "failed"
+          ? "failed"
+          : null;
+    if (!state) {
+      requestLogger.warn(
+        "Booking status webhook with an unknown status; ignored",
+        attemptMeta,
+      );
+      return "ignored";
+    }
+
+    const orderRooms = (attempt.rooms ?? []).filter(
+      (room) => room.partnerOrderId === reference,
+    );
+    if (orderRooms.length === 0) return "ignored";
 
     if (
       attempt.status === HotelBookingAttemptStatus.PENDING &&
@@ -3362,47 +3582,42 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         config.hotelBooking.staleBookingAttemptMs,
       ))
     ) {
+      // The booking is in its live wait: save the result for the wait to pick
+      // up. Near the end of the wait, ask for a retry instead; the wait then
+      // saves the attempt as MANUAL_CHECK and the retry settles it.
+      const waitStartedAt = Math.min(
+        ...orderRooms.map((room) => new Date(room.createdAt).getTime()),
+      );
+      const inWait =
+        Date.now() - waitStartedAt <
+        SUPPLIER_BOOKING_WAIT_MS - HotelAllocationService.WEBHOOK_HANDOFF_MARGIN_MS;
+      if (
+        inWait &&
+        (await this.cancelledFlightsRepository.recordWebhookOrderStatus(
+          attempt.id,
+          attempt.bookingId,
+          reference,
+          state,
+        ))
+      ) {
+        requestLogger.info(
+          "Booking status webhook saved for the booking's live wait",
+          { ...attemptMeta, state },
+        );
+        return "processed";
+      }
       requestLogger.info(
-        "Booking status webhook arrived while the booking is still in progress; asking for a retry",
+        "Booking status webhook arrived at the end of the booking's live wait; asking for a retry",
         attemptMeta,
       );
       return "retry";
     }
 
-    if (!this.hotelProvider.checkBookingStatus) {
-      requestLogger.error(
-        "Cannot confirm booking status webhook: the configured hotel provider differs",
-        { ...attemptMeta, configuredProvider: config.hotelProvider.name },
-      );
-      return "retry";
-    }
-
-    const confirmed = await this.hotelProvider.checkBookingStatus(
-      reference,
-      requestId,
-    );
-    requestLogger.info("Confirmed booking status with the supplier", {
-      ...attemptMeta,
-      confirmedState: confirmed.state,
-      code: confirmed.code,
-    });
-    if (confirmed.state === "processing") {
-      return "retry";
-    }
-    if ((confirmed.state === "booked") !== (reportedStatus === "completed")) {
-      requestLogger.warn(
-        "Supplier status differs from the webhook; using the supplier status",
-        { ...attemptMeta, confirmedState: confirmed.state },
-      );
-    }
-
     const orders = toProviderOrders(attempt.rooms);
-    const orderRooms = orders.filter((entry) => entry.reference === reference);
-    if (orderRooms.length === 0) return "ignored";
-    const failureReason =
-      confirmed.state === "failed" ? (confirmed.code ?? "failed") : null;
-    for (const order of orderRooms) {
-      order.status = confirmed.state;
+    const failureReason = state === "failed" ? "failed (booking webhook)" : null;
+    for (const order of orders) {
+      if (order.reference !== reference) continue;
+      order.status = state;
       order.failureReason = failureReason;
     }
 

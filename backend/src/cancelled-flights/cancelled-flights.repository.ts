@@ -2319,6 +2319,50 @@ export class CancelledFlightsRepository {
     });
   }
 
+  /**
+   * Webhook mode: saves a booking webhook's result on the rooms of an order
+   * whose booking is still in its live wait (attempt PENDING), for that wait
+   * to pick up. Returns false when the attempt is no longer PENDING.
+   */
+  async recordWebhookOrderStatus(
+    attemptId: number,
+    bookingId: number,
+    reference: string,
+    status: "booked" | "failed",
+  ): Promise<boolean> {
+    return this.manager.transaction(async (manager) => {
+      await this.lockBooking(manager, bookingId);
+      const pending = await manager.getRepository(HotelBookingEntity).exists({
+        where: { id: attemptId, status: HotelBookingAttemptStatus.PENDING },
+      });
+      if (!pending) return false;
+      await manager.query(
+        `UPDATE hotel_booking_rooms
+            SET status = $3,
+                failure_reason = CASE WHEN $3 = 'failed' THEN 'failed (booking webhook)' ELSE NULL END,
+                updated_at = now()
+          WHERE hotel_booking_id = $1
+            AND partner_order_id = $2
+            AND status = 'pending'`,
+        [attemptId, reference, status],
+      );
+      return true;
+    });
+  }
+
+  /** Room statuses of one supplier order of an attempt. */
+  async findOrderRoomStatuses(
+    attemptId: number,
+    reference: string,
+  ): Promise<string[]> {
+    const rows = (await this.manager.query(
+      `SELECT status FROM hotel_booking_rooms
+        WHERE hotel_booking_id = $1 AND partner_order_id = $2`,
+      [attemptId, reference],
+    )) as Array<{ status: string }>;
+    return rows.map((row) => row.status);
+  }
+
   async findAttemptBySupplierReference(
     provider: string,
     reference: string,
