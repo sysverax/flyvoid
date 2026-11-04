@@ -250,8 +250,35 @@ insert wallet transaction (§7)
 - A warning is logged when a charge leaves `available < 0`.
 - A flight that has **no hold at all** (allocated before wallet payment existed)
   is not charged; its bookings stay `payment_status = PENDING`.
-- A PNR whose share was already released (for example a manual booking of a
-  failed PNR) is still charged in full; there is just no lock to release.
+- A manual booking ("Find hotel") reserves its own share first (§6.8), so it
+  is charged against that share like a run booking.
+
+### 6.8 Manual bookings ("Find hotel")
+
+A manual booking reserves its PNR's cost right before the supplier is called,
+after the rate check (`attemptHotelBooking` with `reserveWallet`):
+
+```
+amount = rate-check price of all rooms + platform fee   (same formula as §4)
+reserveForRun(run_id = "manual-<attemptId>", items = [this PNR])
+  -> lock wallet row, check balance + creditLimit - lockedAmount - amount >= 0,
+     create the flight's hold if it has none, add the PNR's HELD item
+```
+
+- Not enough funds: the attempt fails with `insufficient_wallet_balance` and
+  the supplier is never called. The PNR stays bookable after a top-up.
+- The reservation fails for another reason: `wallet_reserve_failed`, again
+  with no supplier call.
+- Confirmed: charged as in §6.2.
+- Rejected by the supplier, or settled elsewhere before the request: the PNR's
+  HELD share is released at once.
+- Outcome unknown or partially booked (`MANUAL_CHECK`): the share stays HELD
+  until it is resolved (§6.5).
+- Interrupted by a restart (attempt left `PENDING`): a sweep at startup and
+  every 10 minutes picks up manual attempts untouched for
+  `HOTEL_BOOKING_ATTEMPT_STALE_MS` (60 min). Unsent ones fail and release the
+  share; sent ones become `MANUAL_CHECK`, keep the share and get the flight's
+  status check scheduled.
 
 ### 6.3 Fail (the supplier says the booking failed)
 

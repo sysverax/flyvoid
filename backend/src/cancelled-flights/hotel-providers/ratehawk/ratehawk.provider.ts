@@ -25,6 +25,7 @@ import {
   HotelRateCheck,
   HotelStaticContent,
   RoomOccupancy,
+  SUPPLIER_BOOKING_WAIT_MS,
   SupplierSearchOptions,
 } from "../hotel-provider.interface";
 
@@ -55,6 +56,7 @@ interface RatehawkBookingRequest {
   contactPhone?: string;
   userIp?: string;
   onSupplierOrderCreated?: (reference: string) => Promise<void>;
+  awaitBookingWebhook?: (reference: string) => Promise<"booked" | "failed" | null>;
 }
 
 /** Same shape as HotelbedsProvider.bookHotel's result, plus ETG's order number. */
@@ -188,7 +190,7 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
   private readonly bookingFormTimeoutMs = 60000;
   private readonly bookingStatusPollMs = 2500;
   private readonly geoHotelsLimit = 100;
-  private readonly bookingStatusTimeoutMs = 180000;
+  private readonly bookingStatusTimeoutMs = SUPPLIER_BOOKING_WAIT_MS;
   private static readonly RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
   private static readonly RETRYABLE_ERRORS = new Set([
     "timeout",
@@ -1795,26 +1797,44 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         finishWasTransient = true;
       }
 
-      try {
-        await this.waitForBookingCompletion(partnerOrderId, requestId, log);
-      } catch (error: any) {
-        // The dropped finish never reached ETG: send it once more for the same order.
-        if (
-          !finishWasTransient ||
-          !(error instanceof RatehawkApiError) ||
-          error.code !== "booking_finish_did_not_succeed"
-        ) {
-          throw error;
+      if (bookingData.awaitBookingWebhook) {
+        // Webhook mode: the result comes from ETG's webhook, not status polls.
+        const outcome = await bookingData.awaitBookingWebhook(partnerOrderId);
+        if (outcome === "failed") {
+          throw new RatehawkApiError(
+            "booking webhook",
+            200,
+            "failed",
+            "ETG reported the booking as failed",
+          );
         }
-        log.warn("RateHawk finish did not register; resending once", {
-          partnerOrderId,
-        });
+        if (outcome === null) {
+          throw new Error(
+            `no booking webhook within ${this.bookingStatusTimeoutMs / 1000}s`,
+          );
+        }
+      } else {
         try {
-          await sendFinish();
-        } catch (retryError: any) {
-          if (!this.isTransient(retryError)) throw retryError;
+          await this.waitForBookingCompletion(partnerOrderId, requestId, log);
+        } catch (error: any) {
+          // The dropped finish never reached ETG: send it once more for the same order.
+          if (
+            !finishWasTransient ||
+            !(error instanceof RatehawkApiError) ||
+            error.code !== "booking_finish_did_not_succeed"
+          ) {
+            throw error;
+          }
+          log.warn("RateHawk finish did not register; resending once", {
+            partnerOrderId,
+          });
+          try {
+            await sendFinish();
+          } catch (retryError: any) {
+            if (!this.isTransient(retryError)) throw retryError;
+          }
+          await this.waitForBookingCompletion(partnerOrderId, requestId, log);
         }
-        await this.waitForBookingCompletion(partnerOrderId, requestId, log);
       }
 
       // finish is paid with the form's `amount`; we record the show net as the

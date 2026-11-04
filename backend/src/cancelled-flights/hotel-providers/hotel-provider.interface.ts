@@ -122,7 +122,16 @@ export interface HotelBookingRequest {
   contactPhone?: string;
   /** Called with the supplier order reference before the booking request is sent. */
   onSupplierOrderCreated?: (reference: string) => Promise<void>;
+  /**
+   * Webhook mode: waits for the supplier's booking webhook instead of polling
+   * the booking status. Resolves "booked" / "failed", or null when no webhook
+   * came within SUPPLIER_BOOKING_WAIT_MS.
+   */
+  awaitBookingWebhook?: (reference: string) => Promise<"booked" | "failed" | null>;
 }
+
+/** Longest live wait for a booking's final status after the booking request. */
+export const SUPPLIER_BOOKING_WAIT_MS = 180_000;
 
 /** Guest's passport country (ISO 3166-1 alpha-2); suppliers price by it. */
 export interface SupplierSearchOptions {

@@ -420,6 +420,7 @@ export class CancelledFlightsController {
     ),
   })
   async addBooking(
+    @Req() req: AuthenticatedRequest,
     @Param("id", ParseIntPipe) id: number,
     @Body() dto: CreateBookingDto,
     @RequestId() requestId: string,
@@ -427,6 +428,7 @@ export class CancelledFlightsController {
   ): Promise<BaseResponseDto<BookingResponseDto>> {
     const data = await this.service.addBooking(
       id,
+      req.user,
       dto,
       requestId,
       requestLogger,
@@ -476,6 +478,7 @@ export class CancelledFlightsController {
     ),
   })
   async importBookings(
+    @Req() req: AuthenticatedRequest,
     @Param("id", ParseIntPipe) id: number,
     @UploadedFile()
     file: { buffer: Buffer; originalname: string; mimetype: string },
@@ -502,6 +505,7 @@ export class CancelledFlightsController {
     }
     const data = await this.service.importBookings(
       id,
+      req.user,
       file,
       requestId,
       requestLogger,
@@ -544,12 +548,14 @@ export class CancelledFlightsController {
     ),
   })
   async listImportFailures(
+    @Req() req: AuthenticatedRequest,
     @Param("id", ParseIntPipe) id: number,
     @RequestId() requestId: string,
     @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<FailedBookingListResponseDto>> {
     const data = await this.service.listImportFailures(
       id,
+      req.user,
       requestId,
       requestLogger,
     );
@@ -596,6 +602,7 @@ export class CancelledFlightsController {
     ),
   })
   async resolveImportFailure(
+    @Req() req: AuthenticatedRequest,
     @Param("id", ParseIntPipe) id: number,
     @Param("failureId", ParseIntPipe) failureId: number,
     @Body() dto: CreateBookingDto,
@@ -604,6 +611,7 @@ export class CancelledFlightsController {
   ): Promise<BaseResponseDto<BookingResponseDto>> {
     const data = await this.service.resolveImportFailure(
       id,
+      req.user,
       failureId,
       dto,
       requestId,
@@ -629,12 +637,14 @@ export class CancelledFlightsController {
     ),
   })
   async deleteAllImportFailures(
+    @Req() req: AuthenticatedRequest,
     @Param("id", ParseIntPipe) id: number,
     @RequestId() requestId: string,
     @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<object>> {
     const data = await this.service.deleteImportFailures(
       id,
+      req.user,
       undefined,
       requestId,
       requestLogger,
@@ -660,6 +670,7 @@ export class CancelledFlightsController {
     ),
   })
   async deleteImportFailure(
+    @Req() req: AuthenticatedRequest,
     @Param("id", ParseIntPipe) id: number,
     @Param("failureId", ParseIntPipe) failureId: number,
     @RequestId() requestId: string,
@@ -667,6 +678,7 @@ export class CancelledFlightsController {
   ): Promise<BaseResponseDto<object>> {
     const data = await this.service.deleteImportFailures(
       id,
+      req.user,
       failureId,
       requestId,
       requestLogger,
@@ -702,6 +714,7 @@ export class CancelledFlightsController {
     ),
   })
   async updateBooking(
+    @Req() req: AuthenticatedRequest,
     @Param("id", ParseIntPipe) id: number,
     @Param("bookingId", ParseIntPipe) bookingId: number,
     @Body() dto: UpdateBookingDto,
@@ -710,6 +723,7 @@ export class CancelledFlightsController {
   ): Promise<BaseResponseDto<object>> {
     const data = await this.service.updateBooking(
       id,
+      req.user,
       bookingId,
       dto,
       requestId,
@@ -755,6 +769,7 @@ export class CancelledFlightsController {
     ),
   })
   async deleteBooking(
+    @Req() req: AuthenticatedRequest,
     @Param("id", ParseIntPipe) id: number,
     @Param("bookingId", ParseIntPipe) bookingId: number,
     @RequestId() requestId: string,
@@ -762,6 +777,7 @@ export class CancelledFlightsController {
   ): Promise<BaseResponseDto<object>> {
     const data = await this.service.deleteBooking(
       id,
+      req.user,
       bookingId,
       requestId,
       requestLogger,
@@ -800,6 +816,7 @@ export class CancelledFlightsController {
     ),
   })
   async listBookings(
+    @Req() req: AuthenticatedRequest,
     @Param("id", ParseIntPipe) id: number,
     @Query() pagination: PaginationQueryDto,
     @RequestId() requestId: string,
@@ -807,6 +824,7 @@ export class CancelledFlightsController {
   ): Promise<BaseResponseDto<CancelledFlightBookingsListResponseDto>> {
     const data = await this.service.listBookings(
       id,
+      req.user,
       pagination,
       requestId,
       requestLogger,
@@ -848,11 +866,12 @@ export class CancelledFlightsController {
     ),
   })
   async reviewFlight(
+    @Req() req: AuthenticatedRequest,
     @Param("id", ParseIntPipe) id: number,
     @RequestId() requestId: string,
     @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<ReviewCancelledFlightResponseDto>> {
-    const data = await this.service.reviewFlight(id, requestId, requestLogger);
+    const data = await this.service.reviewFlight(id, req.user, requestId, requestLogger);
     return BaseResponseDto.success(
       data,
       requestId,
@@ -882,12 +901,14 @@ export class CancelledFlightsController {
     ),
   })
   async confirmPassengerBookingDetails(
+    @Req() req: AuthenticatedRequest,
     @Param("id", ParseIntPipe) id: number,
     @RequestId() requestId: string,
     @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<CancelledFlightResponseDto>> {
     const data = await this.service.confirmPassengerBookingDetails(
       id,
+      req.user,
       requestId,
       requestLogger,
     );
@@ -929,12 +950,14 @@ export class CancelledFlightsController {
     ),
   })
   async getHotelSummary(
+    @Req() req: AuthenticatedRequest,
     @Param("id", ParseIntPipe) id: number,
     @RequestId() requestId: string,
     @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<HotelSummaryCancelledFlightResponseDto>> {
     const data = await this.service.hotelSummaryByFlight(
       id,
+      req.user,
       requestId,
       requestLogger,
     );
@@ -976,6 +999,7 @@ export class CancelledFlightsController {
     ),
   })
   async listHotelBookings(
+    @Req() req: AuthenticatedRequest,
     @Param("id", ParseIntPipe) id: number,
     @Query() pagination: PaginationQueryDto,
     @RequestId() requestId: string,
@@ -986,6 +1010,7 @@ export class CancelledFlightsController {
     });
     const data = await this.service.listHotelBookings(
       id,
+      req.user,
       pagination,
       requestId,
       requestLogger,
@@ -1218,12 +1243,14 @@ export class CancelledFlightsController {
     ),
   })
   async processPayment(
+    @Req() req: AuthenticatedRequest,
     @Param("id", ParseIntPipe) id: number,
     @RequestId() requestId: string,
     @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<CancelledFlightResponseDto>> {
     const data = await this.service.processPayment(
       id,
+      req.user,
       requestId,
       requestLogger,
     );
@@ -1260,11 +1287,12 @@ export class CancelledFlightsController {
     ),
   })
   async publishFlight(
+    @Req() req: AuthenticatedRequest,
     @Param("id", ParseIntPipe) id: number,
     @RequestId() requestId: string,
     @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<CancelledFlightResponseDto>> {
-    const data = await this.service.publishFlight(id, requestId, requestLogger);
+    const data = await this.service.publishFlight(id, req.user, requestId, requestLogger);
     return BaseResponseDto.success(
       data,
       requestId,
@@ -1343,6 +1371,7 @@ export class CancelledFlightsController {
     ),
   })
   async getFlightHotelRecommendations(
+    @Req() req: AuthenticatedRequest,
     @Param("id", ParseIntPipe) id: number,
     @RequestId() requestId: string,
     @RequestLogger() requestLogger: Logger,
@@ -1354,6 +1383,7 @@ export class CancelledFlightsController {
     const data =
       await this.hotelAllocationService.getHotelRecommendationsForFlight(
         id,
+        req.user,
         requestId,
         requestLogger,
       );
