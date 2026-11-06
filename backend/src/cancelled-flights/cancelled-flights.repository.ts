@@ -230,6 +230,22 @@ export class CancelledFlightsRepository {
 
   // ── CancelledFlight ──────────────────────────────────────────────────────
 
+  /** An airport by IATA code, with what a hotel search needs (read only). */
+  async findAirportByIataCode(
+    iataCode: string,
+  ): Promise<AirportEntity | null> {
+    return this.manager.getRepository(AirportEntity).findOne({
+      where: { iataCode },
+      select: {
+        iataCode: true,
+        countryCode: true,
+        latitude: true,
+        longitude: true,
+        timezone: true,
+      },
+    });
+  }
+
   /** IATA code and IANA timezone of an airport (stay-date validation). */
   async findAirportTimezone(
     airportId: number,
