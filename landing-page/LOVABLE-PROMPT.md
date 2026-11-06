@@ -1,4 +1,10 @@
-# Flyverax landing page: Lovable prompts
+# Flyverax landing page: Lovable prompts (history)
+
+> **Historical record, no longer maintained.** These prompts generated the first version of the
+> site in Lovable. The site has since moved off Lovable: it is a static site on AWS S3 +
+> CloudFront, the demo form opens the visitor's email app (no server, no Resend, no database),
+> and the code in `landing-site/` (its README) is now the source of truth. Use this file only as
+> the content brief (copy, rules, brand) and for how the images were chosen.
 
 ## Values used in this prompt
 
