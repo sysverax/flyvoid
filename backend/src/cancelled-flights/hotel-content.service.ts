@@ -87,6 +87,7 @@ export class HotelContentService
     requestId: string,
     requestLogger: Logger,
     source?: HotelContentSource,
+    readOnly = false,
   ): Promise<Map<string, HotelEntity>> {
     const provider = source?.code ?? this.provider;
     const adapter = source?.adapter ?? this.hotelProvider;
@@ -110,6 +111,22 @@ export class HotelContentService
             toFetch,
             requestId,
           );
+          if (readOnly) {
+            // Same fields saveHotelContent stores, kept in memory only.
+            for (const content of contents) {
+              byCode.set(content.hotelCode, {
+                ...byCode.get(content.hotelCode),
+                providerHotelId: content.hotelCode,
+                name: content.name ?? "",
+                starRating: content.starRating,
+                address: content.address,
+                isActive: content.isActive,
+                latitude: content.latitude,
+                longitude: content.longitude,
+              } as HotelEntity);
+            }
+            return byCode;
+          }
           await this.cancelledFlightsRepository.saveHotelContent(
             provider,
             contents,
@@ -143,12 +160,16 @@ export class HotelContentService
     hotels: AvailabilityHotel[],
     requestId: string,
     requestLogger: Logger,
+    /** Use fetched content without saving it (read-only previews). */
+    readOnly = false,
   ): Promise<AvailabilityHotel[]> {
     if (!this.usesStoredContent || hotels.length === 0) return hotels;
     const stored = await this.ensureHotelContent(
       hotels.map((hotel) => hotel.hotelCode),
       requestId,
       requestLogger,
+      undefined,
+      readOnly,
     );
     const active = hotels.filter(
       (hotel) => stored.get(hotel.hotelCode)?.isActive !== false,

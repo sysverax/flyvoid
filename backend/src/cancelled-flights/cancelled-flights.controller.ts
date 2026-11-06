@@ -92,6 +92,10 @@ import { RequestLogger } from "../common/decorators/request-logger.decorator";
 import { Logger } from "winston";
 import { GetCancelledFlightsQueryDto } from "./dto/get-cancelled-flights-query.dto";
 import { HotelRecommendationsQueryDto } from "./dto/hotel-recommendations-query.dto";
+import {
+  PlanPreviewHotelsRequestDto,
+  PlanPreviewRequestDto,
+} from "./dto/plan-preview-request.dto";
 import { GetCancelledFlightsSummaryQueryDto } from "./dto/get-cancelled-flights-summary-query.dto";
 import { CancelledFlightsSummaryResponseDto } from "./dto/cancelled-flights-summary-response.dto";
 
@@ -1435,6 +1439,74 @@ export class CancelledFlightsController {
       data,
       requestId,
       "Hotel details fetched successfully",
+    );
+  }
+
+  // ── POST /cancelled-flights/plan-preview/hotels ─────────────────────────
+  @Post("plan-preview/hotels")
+  @HttpCode(HttpStatus.OK)
+  @RequireUserTypes(UserType.PLATFORM, UserType.AIRLINE)
+  @RequireAccessControl({
+    platform: {
+      asset: PlatformAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.VIEW],
+    },
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.VIEW],
+    },
+  })
+  @ApiOperation({
+    summary: "Test: all hotels near the airport for a room split (plain geo search)",
+    description:
+      "For testing; no flight or booking needed. Body: stay dates, airport, residency, one PNR's party (adults, children), room split (rooms) and an optional radius. Makes ONE supplier search around the airport at that radius for the rooms' occupancies and returns every hotel found, nearest first, with its distance from the airport, stars and all rates. No widening, no star filter, no supply buffer; hotels with taxes payable at the hotel and hotels the supplier reports closed (active: false) are included. Read only: nothing is saved, held or booked, and nothing is written to the database. Calls the supplier live (RateHawk: counts against the 10 searches/min shared with allocation).",
+  })
+  async previewHotels(
+    @Body() dto: PlanPreviewHotelsRequestDto,
+    @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
+  ): Promise<BaseResponseDto<object>> {
+    const data = await this.hotelAllocationService.previewHotels(
+      dto,
+      requestId,
+      requestLogger,
+    );
+    return BaseResponseDto.success(data, requestId, "Hotels fetched successfully");
+  }
+
+  // ── POST /cancelled-flights/plan-preview/recommendation ─────────────────
+  @Post("plan-preview/recommendation")
+  @HttpCode(HttpStatus.OK)
+  @RequireUserTypes(UserType.PLATFORM, UserType.AIRLINE)
+  @RequireAccessControl({
+    platform: {
+      asset: PlatformAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.VIEW],
+    },
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.VIEW],
+    },
+  })
+  @ApiOperation({
+    summary: "Test: ranked hotels and the hotel each PNR would get",
+    description:
+      "For testing allocation; the hotels body (without radius) plus allocation, minStars and supplyBufferRatio. Searches like an allocation run (widening until ceil(rooms × supplyBufferRatio) rooms per shape and whole sets are found) and ranks hotels exactly as an allocation run does (most stars first, 5 then 4 down to the minimum, then the lowest price within the same stars, then nearest search ring, pool before overflow; with no travel class the minimum is HOTEL_SEARCH_MIN_RATE) and shows, in `allocations`, the hotel each of the `allocation` PNRs would get when they take rooms in turn as a run does: all of a PNR's rooms in one hotel, the next PNR moving on when rooms run out. Assumes every booking succeeds. Nothing is booked, held or saved.",
+  })
+  async previewRecommendation(
+    @Body() dto: PlanPreviewRequestDto,
+    @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
+  ): Promise<BaseResponseDto<object>> {
+    const data = await this.hotelAllocationService.previewRecommendation(
+      dto,
+      requestId,
+      requestLogger,
+    );
+    return BaseResponseDto.success(
+      data,
+      requestId,
+      "Hotel recommendation computed successfully",
     );
   }
 
