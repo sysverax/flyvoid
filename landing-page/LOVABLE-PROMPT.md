@@ -364,18 +364,18 @@ Success state (replace the form inside the card, announce with aria-live="polite
   sent to your email." when sendConfirmationEmail is true.
 Error state: "Something went wrong. Please try again, or email us at hai@flyverax.com."
 
-Backend (use Lovable Cloud / Supabase):
-1. Table demo_requests: id (uuid), created_at, full_name, work_email, airline, role, hub_airport,
-   message, consent (boolean), consent_text (the exact checkbox text), page_url, user_agent.
-   Row Level Security ON: anonymous users may INSERT only; nobody may SELECT, UPDATE or DELETE from
-   the client. Only the service role can read.
-2. An edge function "submit-demo-request" that validates the input again on the server, applies a
-   simple rate limit (max 5 requests per IP per hour), inserts the row, and sends a notification
-   email to hai@flyverax.com with all fields (subject: "Demo request: {airline} - {full_name}").
-   Use Resend for email (I will add the RESEND_API_KEY secret). Reply-To = the requester's email.
-3. Optional, OFF by default (setting in site.ts: sendConfirmationEmail = false): a short
+Backend: EMAIL ONLY. No database, no Lovable Cloud / Supabase tables, no stored requests.
+1. One server function that validates the input again on the server, applies a best-effort
+   in-memory rate limit (max 5 requests per IP per hour), and sends a notification email to
+   hai@flyverax.com with all fields, the consent text, page URL and user agent
+   (subject: "Demo request: {airline} - {full_name}"). Reply-To = the requester's email.
+2. Use Resend. Secrets: RESEND_API_KEY and RESEND_FROM (e.g. "Flyverax <hai@flyverax.com>").
+   Never put keys in .env (it is committed) or in client code.
+3. The email is the only copy of a request: if it is not sent (missing key or Resend error), return
+   an error so the visitor sees the error state with hai@flyverax.com. Never show success for an
+   email that was not sent.
+4. Optional, OFF by default (setting in site.ts: sendConfirmationEmail = false): a short
    confirmation email to the requester ("We received your request").
-4. The form calls the edge function, never the table directly. Never expose keys in the client.
 
 =====================================================================
 6. SCREENSHOT AND IMAGE SLOTS
@@ -399,8 +399,9 @@ same header and footer. At the top of each, a clearly visible amber notice box:
 Privacy outline: who we are (Flyverax is a product of SYSVERAX (PVT) LTD, Sri Lanka, which is
 responsible for this website and the data collected through it; contact hai@flyverax.com for this
 website, and hai@sysverax.com for the company); what we collect through the demo form (the fields above, page URL, browser user
-agent); why (to respond to the request and arrange a demo); legal basis placeholder; how long we keep
-it (placeholder); who we share it with (our email provider and hosting provider, as processors);
+agent); why (to respond to the request and arrange a demo); legal basis placeholder; where it goes
+(not stored in a database: sent by email to hai@flyverax.com and kept in that mailbox); how long we
+keep it (placeholder); who we share it with (our email provider and hosting provider, as processors);
 your rights (access, correction, deletion: contact hai@flyverax.com); cookies (this site uses no
 tracking cookies); changes to this policy; last updated date.
 Terms outline: website use only (not the Flyverax service agreement); intellectual property;
@@ -418,6 +419,9 @@ no warranty for website content; limitation of liability placeholder; governing 
 - Canonical URL https://flyverax.com, lang="en".
 - Open Graph and Twitter card: title, description, and a 1200x630 share image (generate it: white
   background, flyverax-logo.png centred, the tagline "Calm in every disruption" below in navy).
+  Save it as public/og-image.png AND add the meta tags on every page: og:image and twitter:image
+  = https://flyverax.com/og-image.png, og:image:width 1200, og:image:height 630, og:image:alt
+  "Flyverax - Calm in every disruption".
 - Favicon from flyverax-icon.svg, plus apple-touch-icon 180px and a web manifest (theme colour #0A1F44).
 - JSON-LD: Organization (name Sysverax, url https://sysverax.com) and SoftwareApplication (name
   Flyverax, applicationCategory BusinessApplication, operatingSystem Web, publisher Sysverax).
@@ -453,7 +457,7 @@ Every component reads from this file. Empty values hide their element (or fall b
 - Every section in section 4 exists, in order, with the copy as written.
 - No invented figures, testimonials, logos, partner names, prices, badges or fake UI anywhere.
 - There is no "Coming soon" or roadmap section or badge anywhere.
-- The form validates, stores, emails, shows success and error states, and the honeypot works.
+- The form validates, emails (no database), shows success and error states, and the honeypot works.
 - Lighthouse accessibility and SEO 100 if possible; no console errors; works at 360px wide.
 ```
 
@@ -485,10 +489,11 @@ the video.
 
 **Prompt 4: email setup check**
 ```text
-Check the demo form end to end: submit a test request, confirm the row is stored in demo_requests,
-the notification email arrives at hai@flyverax.com with Reply-To set to the requester, the rate limit
-blocks a 6th request within an hour from the same IP, and the honeypot stores nothing. Show me the
-results and fix anything that fails.
+Check the demo form end to end: submit a test request and confirm the notification email arrives at
+hai@flyverax.com from the RESEND_FROM address, with Reply-To set to the requester. Confirm that with
+RESEND_API_KEY missing the visitor sees the error message (not success), that the honeypot sends
+nothing, and that a 6th request within an hour from the same IP is blocked. Make sure there is no
+database, table or stored copy of requests anywhere. Show me the results and fix anything that fails.
 ```
 
 **Prompt 5: notifications are live** (attach `03a-email-notification.png`, `03b-email-open.png` and
