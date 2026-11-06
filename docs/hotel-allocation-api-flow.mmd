@@ -26,8 +26,8 @@ flowchart TD
     PL -->|"no"| P2["Per PNR: resolveRoomSplitPlan<br/>invalid data → PNR FAILED"]
     P2 --> V1[["Hotel vendor: availability search<br/>(deduplicated occupancies)"]]
     V1 -->|"error"| E3["run error saved (hotelAllocationError)<br/>nothing booked"]
-    V1 --> P3["Choose split per PNR, demand per shape,<br/>supply pool to ceil(demand × 1.5) allotment"]
-    P3 --> P4[("hotel_booking_candidates (new plan_id)<br/>per PNR: candidate_order = pool → stars DESC → price<br/>rooms + ordered rate options + allotment snapshots")]
+    V1 --> P3["Search widens until ceil(demand × 1.5) rooms per shape<br/>and, for multi-room PNRs, ceil(PNRs × 1.5) whole sets<br/>(all of a PNR's rooms in one hotel; a hotel can host several);<br/>choose split per PNR, supply pool per shape"]
+    P3 --> P4[("hotel_booking_candidates (new plan_id)<br/>per PNR: hotels below the class minimum dropped;<br/>candidate_order = stars DESC (5 → 4 → … min) → lowest price → nearest ring → pool<br/>rooms + ordered rate options + allotment snapshots")]
     P4 --> B0["Ledger = candidate snapshots − rooms of<br/>SUCCESS / PENDING / MANUAL_CHECK attempts"]
 
     B0 --> S1["Class stages by persisted class_priority:<br/>FIRST → BUSINESS → PREMIUM_ECONOMY → ECONOMY"]
