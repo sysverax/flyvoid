@@ -1,0 +1,3 @@
+[submodule "landing-site"]
+	path = landing-site
+	url = git@github-personal:sysverax/flyverax-demo-launchpad.git
