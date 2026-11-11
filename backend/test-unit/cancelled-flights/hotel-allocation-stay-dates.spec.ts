@@ -3,12 +3,14 @@ import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { createLogger, transports } from "winston";
 import { HotelAllocationService } from "../../src/cancelled-flights/hotel-allocation.service";
 import { FlightStatus } from "../../src/cancelled-flights/entities/enums";
+import { UserType } from "../../src/common/constants/user.constants";
 
 const logger = createLogger({ transports: [new transports.Console({ silent: true })] });
 
 // Saved stay of 3 nights, starting the day after the cancellation.
 const flight = {
   id: 7,
+  airlineId: 3,
   status: FlightStatus.PASSENGERS_BOOKING_CONFIRMED,
   cancellationDate: "2026-11-10",
   checkInDate: "2026-11-11",
@@ -19,6 +21,8 @@ const flight = {
     longitude: "55.3656730",
   },
 };
+
+const airlineUser = { userType: UserType.AIRLINE, airlineId: 3 } as any;
 
 const booking = {
   id: 21,
@@ -95,7 +99,7 @@ describe("HotelAllocationService stay dates", () => {
       const { service, provider } = setup();
 
       await expect(
-        service.getHotelRecommendationsForFlight(flight.id, "req-1", logger),
+        service.getHotelRecommendationsForFlight(flight.id, airlineUser, "req-1", logger),
       ).rejects.toThrow(NotFoundException);
 
       expect(provider.searchNearbyHotelsWithOccupancies).toHaveBeenCalled();
@@ -109,7 +113,7 @@ describe("HotelAllocationService stay dates", () => {
       const { service, provider } = setup({ checkOutDate: "2026-11-11" });
 
       await expect(
-        service.getHotelRecommendationsForFlight(flight.id, "req-1", logger),
+        service.getHotelRecommendationsForFlight(flight.id, airlineUser, "req-1", logger),
       ).rejects.toThrow(BadRequestException);
       expect(provider.searchNearbyHotelsWithOccupancies).not.toHaveBeenCalled();
     });

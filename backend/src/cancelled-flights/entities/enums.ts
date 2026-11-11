@@ -74,4 +74,6 @@ export enum HotelBookingFailureCode {
   NO_FINAL_STATUS = "no_final_status",
   GROUP_BOOKING_RESTRICTED = "group_booking_restricted",
   HOTEL_PAYABLE_TAXES = "hotel_payable_taxes",
+  INSUFFICIENT_WALLET_BALANCE = "insufficient_wallet_balance",
+  WALLET_RESERVE_FAILED = "wallet_reserve_failed",
 }

@@ -110,16 +110,20 @@ export interface StarRule {
   preferred: number;
 }
 
-/** Hotels meeting the class minimum first, then the nearest search ring, then the preferred stars. */
-const byQuality = (stars: StarRule, hotels: AvailabilityHotel[]) => {
+/**
+ * Star ladder: the most stars first (5, then 4, ... down to the class
+ * minimum; hotels below it are not candidates), then the lowest price within
+ * the same stars; the nearest search ring only breaks price ties.
+ */
+const byStarsThenPrice = (hotels: AvailabilityHotel[]) => {
   const radiusOf = new Map(hotels.map((h) => [h.hotelCode, h.radius ?? 0]));
   return (
-    a: { hotelCode: string; stars: number },
-    b: { hotelCode: string; stars: number },
+    a: { hotelCode: string; stars: number; estimatedPrice: number },
+    b: { hotelCode: string; stars: number; estimatedPrice: number },
   ): number =>
-    Number(b.stars >= stars.min) - Number(a.stars >= stars.min) ||
-    radiusOf.get(a.hotelCode)! - radiusOf.get(b.hotelCode)! ||
-    Number(b.stars >= stars.preferred) - Number(a.stars >= stars.preferred);
+    b.stars - a.stars ||
+    a.estimatedPrice - b.estimatedPrice ||
+    radiusOf.get(a.hotelCode)! - radiusOf.get(b.hotelCode)!;
 };
 
 /** Picks the split to book, preferring splits that hotels with at least minStars can cover. */
@@ -219,6 +223,26 @@ function rankRoomSplits(
 
 export const supplyTarget = (demand: number, bufferRatio: number): number =>
   Math.ceil(demand * bufferRatio);
+
+/**
+ * How many whole sets of these rooms (one PNR's split, all in this hotel) the
+ * hotel can host from its single-room rates: for each room type of the split,
+ * free rooms of exactly that type divided by how many the split needs; the
+ * smallest wins.
+ */
+export function hotelSetCapacity(
+  hotel: Pick<AvailabilityHotel, "rates">,
+  rooms: RoomOccupancy[],
+): number {
+  let sets = Number.POSITIVE_INFINITY;
+  for (const need of toRoomNeeds(rooms)) {
+    const free = hotel.rates
+      .filter((rate) => !rate.rooms && shapeKey(rate) === shapeKey(need.shape))
+      .reduce((sum, rate) => sum + Math.max(0, rate.allotment ?? 0), 0);
+    sets = Math.min(sets, Math.floor(free / need.roomsNeeded));
+  }
+  return Number.isFinite(sets) ? sets : 0;
+}
 
 export interface ShapePool {
   shapeKey: string;
@@ -445,6 +469,9 @@ export function buildOrderCandidatePlan(
   const needs = toRoomNeeds(rooms);
   const candidates: PlannedCandidate[] = [];
   for (const hotel of orderHotels) {
+    if (hotel.stars < stars.min) {
+      continue;
+    }
     const rates = orderRatesFor(hotel, rooms).sort(
       (a, b) => a.netPrice - b.netPrice || a.rateKey.localeCompare(b.rateKey),
     );
@@ -476,13 +503,9 @@ export function buildOrderCandidatePlan(
       })),
     });
   }
-  const quality = byQuality(stars, orderHotels);
+  const ladder = byStarsThenPrice(orderHotels);
   return candidates.sort(
-    (a, b) =>
-      quality(a, b) ||
-      b.stars - a.stars ||
-      a.estimatedPrice - b.estimatedPrice ||
-      a.hotelCode.localeCompare(b.hotelCode),
+    (a, b) => ladder(a, b) || a.hotelCode.localeCompare(b.hotelCode),
   );
 }
 
@@ -494,6 +517,9 @@ export function buildCandidatePlan(
 ): PlannedCandidate[] {
   const candidates: PlannedCandidate[] = [];
   for (const hotel of hotels) {
+    if (hotel.stars < stars.min) {
+      continue;
+    }
     const rooms: CandidateRoomPlan[] = needs.map((need) => {
       const pool = pools.get(shapeKey(need.shape));
       const rateOptions: CandidateRateOption[] = hotel.rates
@@ -548,13 +574,11 @@ export function buildCandidatePlan(
       rooms,
     });
   }
-  const quality = byQuality(stars, hotels);
+  const ladder = byStarsThenPrice(hotels);
   return candidates.sort(
     (a, b) =>
-      quality(a, b) ||
+      ladder(a, b) ||
       Number(a.tier === "overflow") - Number(b.tier === "overflow") ||
-      b.stars - a.stars ||
-      a.estimatedPrice - b.estimatedPrice ||
       a.hotelCode.localeCompare(b.hotelCode),
   );
 }

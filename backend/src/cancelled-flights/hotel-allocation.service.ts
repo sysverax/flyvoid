@@ -47,11 +47,14 @@ import {
   HotelProvider,
   HotelRateCheck,
   RoomOccupancy,
+  SUPPLIER_BOOKING_WAIT_MS,
   TaxAtProperty,
 } from "./hotel-providers/hotel-provider.interface";
 import { cancellationOf } from "../hotel-availability/hotel-availability.mapper";
 import { AiService } from "../common/ai/ai.service";
 import { AuthenticatedRequest } from "../auth/interfaces/authenticated-request.interface";
+import { InsufficientWalletBalanceError } from "../finance/repositories/wallet-hold.repository";
+import { UserType } from "../common/constants/user.constants";
 import { config } from "../config/config";
 import { distanceKm } from "../common/utils/geo.util";
 import { HOTEL_STARS_BY_CLASS } from "../common/constants/hotel-stars.constants";
@@ -77,13 +80,23 @@ import {
   orderRatesFor,
   selectCandidateRates,
   shapeKey,
+  PlannedCandidate,
   StarRule,
   supplyTarget,
+  hotelSetCapacity,
   toRoomNeeds,
 } from "./hotel-allocation.planner";
 import { deriveSpecialNotes } from "./booking-notes";
 import { BookHotelRequestDto } from "./dto/book-hotel-request.dto";
 import { daysBetween } from "./stay-dates";
+import { todayIn } from "./stay-dates";
+import {
+  PlanPreviewHotelsRequestDto,
+  PlanPreviewRequestDto,
+  PlanPreviewSearchDto,
+} from "./dto/plan-preview-request.dto";
+import type { ShapePool } from "./hotel-allocation.planner";
+import type { HotelEntity } from "./entities/hotel.entity";
 
 type AllocationStatus =
   | "RECOMMENDED"
@@ -1041,6 +1054,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
 
   async getHotelRecommendationsForFlight(
     flightId: number,
+    user: AuthenticatedRequest["user"],
     requestId: string,
     requestLogger: Logger,
   ) {
@@ -1054,10 +1068,17 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         flightId,
         requestLogger,
       );
-    if (!flight) {
+    // Airline users only see their own airline's flights; platform users any.
+    const allowed =
+      user.userType === UserType.PLATFORM ||
+      (user.userType === UserType.AIRLINE &&
+        !!user.airlineId &&
+        flight?.airlineId === user.airlineId);
+    if (!flight || !allowed) {
       requestLogger.warn(`Cancelled flight '${flightId}' not found`, {
         context: this.context,
         flightId,
+        airlineId: user.airlineId,
       });
       throw new NotFoundException(`Cancelled flight '${flightId}' not found`);
     }
@@ -1695,6 +1716,44 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     );
     timer.unref();
     void this.resumeManualCheckChecks();
+    void this.recoverInterruptedManualBookings();
+    // Repeated: a booking cut off by this restart becomes stale only later.
+    setInterval(
+      () => void this.recoverInterruptedManualBookings(),
+      HotelAllocationService.MANUAL_BOOKING_SWEEP_MS,
+    ).unref();
+  }
+
+  private static readonly MANUAL_BOOKING_SWEEP_MS = 10 * 60 * 1000;
+
+  /**
+   * Manual bookings left PENDING by a restart (no allocation run cleans them
+   * up): unsent ones fail and release their wallet share; sent ones become
+   * MANUAL_CHECK and get the flight's status check scheduled.
+   */
+  private async recoverInterruptedManualBookings(): Promise<void> {
+    const requestId = randomUUID();
+    const requestLogger = winstonInstance.child({ requestId });
+    try {
+      const recovered =
+        await this.cancelledFlightsRepository.recoverInterruptedManualAttempts(
+          config.hotelBooking.staleBookingAttemptMs,
+          requestLogger,
+        );
+      const flightsToCheck = new Set(
+        recovered
+          .filter((attempt) => attempt.sent)
+          .map((attempt) => attempt.cancelledFlightId),
+      );
+      for (const flightId of flightsToCheck) {
+        this.schedulePostRunCheck(flightId, requestId, requestLogger);
+      }
+    } catch (error: any) {
+      requestLogger.error("Could not recover interrupted manual bookings", {
+        context: this.context,
+        error: error?.message,
+      });
+    }
   }
 
   /**
@@ -1789,13 +1848,155 @@ export class HotelAllocationService implements OnApplicationBootstrap {
   }
 
   /**
-   * MANUAL_CHECK bookings left after a run are checked again with the
-   * supplier every postRunCheckIntervalMs, postRunCheckCount times (default:
-   * every 5 min, twice). Still no final status after the last check: marked
-   * FAILED (partial bookings stay MANUAL_CHECK).
+   * MANUAL_CHECK bookings left after a run (HOTEL_BOOKING_STATUS_MODE):
+   * - "status": checked again with the supplier every postRunCheckIntervalMs,
+   *   postRunCheckCount times (default: every 5 min, twice).
+   * - "webhook": settled by the supplier's webhook (no status calls); checked
+   *   once, webhookFinalCheckDelayMs (default 1 h 5 min) after the booking was sent.
+   * Still no final status after the last check: marked FAILED (partial
+   * bookings stay MANUAL_CHECK).
    */
   private static postRunCheckCount(): number {
     return Math.max(1, config.hotelBooking.postRunCheckCount);
+  }
+
+  private static webhookMode(): boolean {
+    return config.hotelBooking.statusMode === "webhook";
+  }
+
+  /** Longest delay setTimeout accepts (about 24.8 days). */
+  private static readonly MAX_TIMER_MS = 2_147_483_647;
+
+  /** How often the live wait looks for a saved booking webhook. */
+  private static readonly WEBHOOK_WAIT_POLL_MS = 2000;
+
+  /**
+   * Webhooks are saved for the live wait only until this long before it ends,
+   * so one saved at the last moment is not missed when the wait gives up.
+   */
+  private static readonly WEBHOOK_HANDOFF_MARGIN_MS = 10_000;
+
+  /**
+   * Webhook mode live wait: watches the order's rooms for the result a booking
+   * webhook saved (any instance may receive it), for SUPPLIER_BOOKING_WAIT_MS.
+   * null when no webhook came.
+   */
+  private async awaitBookingWebhook(
+    attemptId: number,
+    reference: string,
+  ): Promise<"booked" | "failed" | null> {
+    const deadline = Date.now() + SUPPLIER_BOOKING_WAIT_MS;
+    for (;;) {
+      const statuses =
+        await this.cancelledFlightsRepository.findOrderRoomStatuses(
+          attemptId,
+          reference,
+        );
+      if (statuses.some((status) => status === "failed")) return "failed";
+      if (statuses.length > 0 && statuses.every((status) => status === "booked")) {
+        return "booked";
+      }
+      if (Date.now() >= deadline) return null;
+      await new Promise((resolve) =>
+        setTimeout(resolve, HotelAllocationService.WEBHOOK_WAIT_POLL_MS),
+      );
+    }
+  }
+
+  /** Webhook mode: when an open attempt gets its one status check. */
+  private static webhookFinalCheckDueAt(attempt: HotelBookingEntity): number {
+    const sentAt = new Date(
+      attempt.providerRequestSentAt ?? attempt.createdAt,
+    ).getTime();
+    return sentAt + config.hotelBooking.webhookFinalCheckDelayMs;
+  }
+
+  /**
+   * Webhook mode: schedules the flight's next status check. Due times come
+   * from the DB, so a restart reschedules them correctly. futureOnly skips
+   * checks already past due (they just ran); retryInMs re-runs a check that
+   * could not take the flight's run lock.
+   */
+  private async scheduleWebhookStatusCheck(
+    flightId: number,
+    requestId: string,
+    requestLogger: Logger,
+    options: { futureOnly?: boolean; retryInMs?: number } = {},
+  ): Promise<void> {
+    try {
+      let dueAt: number;
+      if (options.retryInMs !== undefined) {
+        dueAt = Date.now() + options.retryInMs;
+      } else {
+        const now = Date.now();
+        const attempts =
+          await this.cancelledFlightsRepository.findManualCheckAttempts(
+            flightId,
+            config.hotelProvider.name,
+          );
+        // Every MANUAL_CHECK attempt: one whose rooms already carry a webhook
+        // result (e.g. saved just before a crash) is settled from them.
+        const due = attempts
+          .map(HotelAllocationService.webhookFinalCheckDueAt)
+          .filter((at) => !options.futureOnly || at > now);
+        if (due.length === 0) return;
+        dueAt = Math.min(...due);
+      }
+      const scheduled = this.nextSupplierCheckAt.get(flightId);
+      if (scheduled !== undefined && scheduled <= dueAt) return;
+      this.nextSupplierCheckAt.set(flightId, dueAt);
+
+      const timer = setTimeout(
+        () => {
+          if (this.nextSupplierCheckAt.get(flightId) === dueAt) {
+            this.nextSupplierCheckAt.delete(flightId);
+          }
+          this.runPostRunCheck(
+            flightId,
+            requestId,
+            requestLogger,
+            true,
+            Date.now(),
+          )
+            .then((result) => {
+              if (result === "busy") {
+                return this.scheduleWebhookStatusCheck(
+                  flightId,
+                  requestId,
+                  requestLogger,
+                  { retryInMs: config.hotelBooking.postRunCheckIntervalMs },
+                );
+              }
+              if (typeof result === "number" && result > 0) {
+                return this.scheduleWebhookStatusCheck(
+                  flightId,
+                  requestId,
+                  requestLogger,
+                  { futureOnly: true },
+                );
+              }
+            })
+            .catch((error: any) =>
+              requestLogger.error("Webhook-mode status check failed", {
+                context: this.context,
+                flightId,
+                error: error?.message,
+              }),
+            );
+        },
+        Math.min(
+          Math.max(0, dueAt - Date.now()),
+          HotelAllocationService.MAX_TIMER_MS,
+        ),
+      );
+      timer.unref();
+    } catch (error: any) {
+      requestLogger.error("Could not schedule webhook-mode status check", {
+        context: this.context,
+        flightId,
+        error: error?.message,
+      });
+    }
   }
 
   private schedulePostRunCheck(
@@ -1804,6 +2005,10 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     requestLogger: Logger,
     check = 0,
   ): void {
+    if (HotelAllocationService.webhookMode()) {
+      void this.scheduleWebhookStatusCheck(flightId, requestId, requestLogger);
+      return;
+    }
     const dueAt = Date.now() + config.hotelBooking.postRunCheckIntervalMs;
     this.nextSupplierCheckAt.set(flightId, dueAt);
     const clearDue = () => {
@@ -1815,7 +2020,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       const last = check === HotelAllocationService.postRunCheckCount() - 1;
       this.runPostRunCheck(flightId, requestId, requestLogger, last)
         .then((unresolved) => {
-          if (unresolved !== null && unresolved > 0 && !last) {
+          if (typeof unresolved === "number" && unresolved > 0 && !last) {
             this.schedulePostRunCheck(
               flightId,
               requestId,
@@ -1841,13 +2046,19 @@ export class HotelAllocationService implements OnApplicationBootstrap {
 
   private readonly nextSupplierCheckAt = new Map<number, number>();
 
-  /** Post-run check under the flight's run lock; null when it could not be claimed. */
+  /**
+   * Post-run check under the flight's run lock. Returns how many attempts are
+   * still open; "busy" when another run holds the lock; null when the flight
+   * cannot be claimed for another reason. dueBy (webhook mode) checks only
+   * attempts whose final check is due by then.
+   */
   private async runPostRunCheck(
     flightId: number,
     requestId: string,
     requestLogger: Logger,
     lastCheck: boolean,
-  ): Promise<number | null> {
+    dueBy?: number,
+  ): Promise<number | "busy" | null> {
     const open = await this.cancelledFlightsRepository.findManualCheckAttempts(
       flightId,
       config.hotelProvider.name,
@@ -1877,7 +2088,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         reason: claim.reason,
         status: claim.status,
       });
-      return null;
+      return claim.reason === "running" ? "busy" : null;
     }
     const heartbeat = setInterval(
       () =>
@@ -1895,6 +2106,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         requestId,
         requestLogger,
         lastCheck,
+        dueBy,
       );
     } finally {
       clearInterval(heartbeat);
@@ -1916,7 +2128,12 @@ export class HotelAllocationService implements OnApplicationBootstrap {
   private async getSupplierCheckState(
     flightId: number,
   ): Promise<{ awaiting: boolean; nextCheckAt: Date | null }> {
-    if (!this.hotelProvider.checkBookingStatus) {
+    // Webhook mode waits hours for a final status; retry runs skip
+    // MANUAL_CHECK PNRs, so the other PNRs need not wait for it.
+    if (
+      !this.hotelProvider.checkBookingStatus ||
+      HotelAllocationService.webhookMode()
+    ) {
       return { awaiting: false, nextCheckAt: null };
     }
     const intervalMs = config.hotelBooking.postRunCheckIntervalMs;
@@ -1960,7 +2177,14 @@ export class HotelAllocationService implements OnApplicationBootstrap {
   ): Promise<void> {
     const { flight, requestLogger } = run;
     try {
-      await this.reconcileManualChecks(flight.id, run.requestId, requestLogger);
+      // Webhook mode checks the status only once, when the final check is due.
+      if (!HotelAllocationService.webhookMode()) {
+        await this.reconcileManualChecks(
+          flight.id,
+          run.requestId,
+          requestLogger,
+        );
+      }
       const rows =
         await this.cancelledFlightsRepository.findAllocationsByFlightId(
           flight.id,
@@ -1998,7 +2222,8 @@ export class HotelAllocationService implements OnApplicationBootstrap {
   /**
    * Checks each MANUAL_CHECK attempt's open supplier orders and settles it
    * when the outcome is known. Partial bookings stay MANUAL_CHECK. On the
-   * last check, an attempt with no final status is marked FAILED. Returns
+   * last check, an attempt with no final status is marked FAILED. dueBy
+   * (webhook mode) skips attempts whose final check is not due yet. Returns
    * how many attempts are still open.
    */
   private async reconcileManualChecks(
@@ -2006,6 +2231,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     requestId: string,
     requestLogger: Logger,
     lastCheck = false,
+    dueBy?: number,
   ): Promise<number> {
     if (!this.hotelProvider.checkBookingStatus) {
       return 0;
@@ -2015,6 +2241,9 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         flightId,
         config.hotelProvider.name,
       );
+    const webhookWait = HotelAllocationService.formatDuration(
+      config.hotelBooking.webhookFinalCheckDelayMs,
+    );
     let unresolved = 0;
     for (const attempt of attempts) {
       const attemptMeta = {
@@ -2024,7 +2253,22 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         bookingId: attempt.bookingId,
         failureCode: attempt.failureCode,
       };
+      if (
+        dueBy !== undefined &&
+        HotelAllocationService.webhookFinalCheckDueAt(attempt) > dueBy
+      ) {
+        unresolved += 1;
+        continue;
+      }
       const orders = toProviderOrders(attempt.rooms);
+      // What the status check returned, for the failure reason.
+      const checkResults: string[] = [];
+      if (dueBy !== undefined) {
+        requestLogger.info(
+          `No booking webhook within ${webhookWait}; checking the booking status with the supplier once`,
+          attemptMeta,
+        );
+      }
       try {
         let failureDetail: string | null = null;
         const openReferences = new Set(
@@ -2043,9 +2287,17 @@ export class HotelAllocationService implements OnApplicationBootstrap {
             confirmedState: confirmed.state,
             code: confirmed.code,
           });
+          checkResults.push(
+            `${confirmed.state}${confirmed.code ? ` (${confirmed.code})` : ""}`,
+          );
           if (confirmed.state === "processing") continue;
+          const code = confirmed.code ?? "failed";
           const failureReason =
-            confirmed.state === "failed" ? (confirmed.code ?? "failed") : null;
+            confirmed.state !== "failed"
+              ? null
+              : dueBy !== undefined
+                ? `${code} (status check after no booking webhook within ${webhookWait})`
+                : code;
           for (const order of orders) {
             if (order.reference !== reference) continue;
             order.status = confirmed.state;
@@ -2070,12 +2322,18 @@ export class HotelAllocationService implements OnApplicationBootstrap {
           ...attemptMeta,
           error: error?.message,
         });
+        checkResults.push(`status check error: ${error?.message ?? error}`);
       }
       // Same outcome rule as settleAttemptFromSupplier.
       const booked = orders.filter((o) => o.status === "booked").length;
       const open = orders.some((o) => o.status === "pending");
       if (open && booked === 0 && lastCheck) {
-        await this.failUnansweredAttempt(attempt, orders, requestLogger);
+        await this.failUnansweredAttempt(
+          attempt,
+          orders,
+          checkResults.join("; ") || "no answer",
+          requestLogger,
+        );
       } else if (
         open ||
         (booked > 0 &&
@@ -2087,10 +2345,23 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     return unresolved;
   }
 
+  /** "1 h 5 min", "12 h", "10 min". */
+  private static formatDuration(ms: number): string {
+    const minutes = Math.round(ms / 60_000);
+    const hours = Math.floor(minutes / 60);
+    const rest = minutes % 60;
+    return (
+      [hours ? `${hours} h` : "", rest ? `${rest} min` : ""]
+        .filter(Boolean)
+        .join(" ") || "0 min"
+    );
+  }
+
   /** Last post-run check got no final status: mark the attempt FAILED. */
   private async failUnansweredAttempt(
     attempt: HotelBookingEntity,
     orders: ProviderOrder[],
+    checkResult: string,
     requestLogger: Logger,
   ): Promise<void> {
     const hotelName =
@@ -2099,14 +2370,18 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       .toISOString()
       .replace("T", " ")
       .slice(0, 16);
-    const waitedMin =
-      (HotelAllocationService.postRunCheckCount() *
-        config.hotelBooking.postRunCheckIntervalMs) /
-      60000;
-    const reason =
-      `Booking at ${hotelName} was sent to the supplier at ${sentAt} UTC, but no ` +
-      `final status came back within ${waitedMin} minutes after the allocation run; ` +
-      `marked as failed (refs: ${[...new Set(orders.map((o) => o.reference))].join(", ") || "none"}).`;
+    const refs =
+      [...new Set(orders.map((o) => o.reference))].join(", ") || "none";
+    const reason = HotelAllocationService.webhookMode()
+      ? `No booking webhook from the supplier within ` +
+        `${HotelAllocationService.formatDuration(config.hotelBooking.webhookFinalCheckDelayMs)} ` +
+        `of sending the booking at ${hotelName} (${sentAt} UTC), and the status check ` +
+        `returned no final status (${checkResult}). Marked as failed; check with the ` +
+        `supplier before rebooking (refs: ${refs}).`
+      : `Booking at ${hotelName} was sent to the supplier at ${sentAt} UTC, but no ` +
+        `final status came back within ` +
+        `${(HotelAllocationService.postRunCheckCount() * config.hotelBooking.postRunCheckIntervalMs) / 60000} ` +
+        `minutes after the allocation run; marked as failed (refs: ${refs}).`;
     const settled = await this.cancelledFlightsRepository.finishBookingAttempt(
       attempt.id,
       attempt.bookingId,
@@ -2180,6 +2455,10 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     requestId: string,
     requestLogger: Logger,
     radius?: number,
+    /** Preview only: use fetched hotel content without saving it. */
+    readOnly = false,
+    /** Preview only: supply buffer instead of HOTEL_SUPPLY_BUFFER_RATIO. */
+    bufferRatio = config.hotelBooking.supplyBufferRatio,
   ): Promise<{
     hotels: AvailabilityHotel[];
     orderHotels: AvailabilityHotel[] | undefined;
@@ -2198,6 +2477,8 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       asOrder: boolean;
       minStars: number;
       needed: number;
+      /** A multiroom split searched room by room: supply is whole sets per hotel. */
+      asSet?: boolean;
     };
     const lists = new Map<string, SearchList>();
     const addList = (
@@ -2205,11 +2486,20 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       asOrder: boolean,
       minStars: number,
       needed: number,
+      asSet = false,
     ) => {
       const key = asOrder
         ? `order:${combinationKey(rooms)}`
-        : shapeKey(rooms[0]);
-      const list = lists.get(key) ?? { rooms, asOrder, minStars, needed: 0 };
+        : asSet
+          ? `set:${combinationKey(rooms)}`
+          : shapeKey(rooms[0]);
+      const list = lists.get(key) ?? {
+        rooms,
+        asOrder,
+        minStars,
+        needed: 0,
+        asSet,
+      };
       list.minStars = Math.max(list.minStars, minStars);
       list.needed += needed;
       lists.set(key, list);
@@ -2221,6 +2511,8 @@ export class HotelAllocationService implements OnApplicationBootstrap {
           addList(split, true, minStars, needed);
         } else {
           for (const room of split) addList([room], false, minStars, needed);
+          // All of a PNR's rooms must be in one hotel: also count whole sets.
+          if (split.length > 1) addList(split, false, minStars, needed, true);
         }
       }
     }
@@ -2252,6 +2544,10 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       const hotels = list.asOrder ? found.orderHotels : found.hotels;
       for (const hotel of hotels.values()) {
         if (hotel.stars < list.minStars) continue;
+        if (list.asSet) {
+          units += hotelSetCapacity(hotel, list.rooms);
+          continue;
+        }
         const rates = list.asOrder
           ? orderRatesFor(hotel, list.rooms)
           : hotel.rates.filter(
@@ -2278,9 +2574,15 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       ring <= lastRing && short.length > 0;
       ring += 10
     ) {
-      const occupancies = short
-        .filter((l) => !l.asOrder)
-        .map((l) => l.rooms[0]);
+      // Every room type of a short list (all rooms of a short set), once each.
+      const occupancies = [
+        ...new Map(
+          short
+            .filter((l) => !l.asOrder)
+            .flatMap((l) => (l.asSet ? l.rooms : [l.rooms[0]]))
+            .map((room) => [shapeKey(room), room] as const),
+        ).values(),
+      ];
       const combinations = short.filter((l) => l.asOrder).map((l) => l.rooms);
       const [single, orders] = await Promise.all([
         occupancies.length
@@ -2316,6 +2618,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
           single,
           requestId,
           requestLogger,
+          readOnly,
         ),
         ring,
       );
@@ -2325,6 +2628,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
           orders,
           requestId,
           requestLogger,
+          readOnly,
         ),
         ring,
       );
@@ -2333,7 +2637,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
           supply(list) <
           Math.max(
             1,
-            supplyTarget(list.needed, config.hotelBooking.supplyBufferRatio),
+            supplyTarget(list.needed, bufferRatio),
           ),
       );
       if (short.length > 0 && ring + 10 <= lastRing) {
@@ -2475,6 +2779,523 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       })),
       requestLogger,
     );
+  }
+
+  /**
+   * Test API 1: one plain geo search around the airport for the rooms in the
+   * body: every hotel the supplier returns, with its distance from the
+   * airport and all rates. No widening, no star filter, no supply buffer.
+   * Read only: nothing is saved, held or booked.
+   */
+  async previewHotels(
+    input: PlanPreviewHotelsRequestDto,
+    requestId: string,
+    requestLogger: Logger,
+  ) {
+    const { iataCode, airport, residency, checkIn, checkOut } =
+      await this.resolvePreviewInput(input);
+    let rooms: RoomOccupancy[] | undefined = input.rooms;
+    if (!rooms) {
+      const split = this.resolveRoomSplitPlan(
+        { id: 0, adults: input.adults, children: input.children } as BookingEntity,
+        requestLogger,
+      );
+      if (!split.plan) {
+        throw new BadRequestException(
+          `Invalid party: ${split.reason ?? "no room split"}`,
+        );
+      }
+      rooms = split.plan.preferred;
+    }
+    const occupancies = [
+      ...new Map(
+        rooms.map(({ adults, children }) => [
+          shapeKey({ adults, children }),
+          { adults, children },
+        ]),
+      ).values(),
+    ];
+    const radius = input.radius ?? config.hotelSearch.defaultRadius;
+    const airportPoint = {
+      latitude: Number(airport.latitude),
+      longitude: Number(airport.longitude),
+    };
+
+    let found: AvailabilityHotel[];
+    try {
+      found = await this.hotelProvider.searchNearbyHotelsWithOccupancies(
+        { iataCode, ...airportPoint },
+        checkIn,
+        checkOut,
+        occupancies,
+        requestId,
+        requestLogger,
+        { residency, radius, includePayAtHotel: true },
+      );
+    } catch (error: any) {
+      if (!(error instanceof NotFoundException)) {
+        throw new ServiceUnavailableException(
+          `Hotel availability search failed: ${error?.message ?? error}`,
+        );
+      }
+      found = [];
+    }
+    // Names, stars and coordinates from stored content (fetched read-only
+    // when missing); the supplier's own values otherwise.
+    const content = found.length
+      ? await this.hotelContentService.ensureHotelContent(
+          found.map((hotel) => hotel.hotelCode),
+          requestId,
+          requestLogger,
+          undefined,
+          true,
+        )
+      : new Map<string, HotelEntity>();
+
+    const hotels = found
+      .map((hotel) => {
+        const stored = content.get(hotel.hotelCode);
+        const latitude =
+          stored?.latitude != null ? Number(stored.latitude) : (hotel.latitude ?? null);
+        const longitude =
+          stored?.longitude != null ? Number(stored.longitude) : (hotel.longitude ?? null);
+        return {
+          hotelCode: hotel.hotelCode,
+          hotelName: stored?.name || hotel.hotelName,
+          stars: stored ? (stored.starRating ?? 0) : hotel.stars,
+          address: stored?.address ?? hotel.address ?? null,
+          active: stored?.isActive !== false,
+          distanceKm:
+            latitude !== null && longitude !== null
+              ? distanceKm(airportPoint, { latitude, longitude })
+              : null,
+          rates: hotel.rates.map((rate) => ({
+            rateKey: rate.rateKey,
+            roomName: rate.roomName,
+            boardName: rate.boardName,
+            adults: rate.adults,
+            children: rate.children,
+            netPrice: rate.netPrice,
+            currency: rate.currency,
+            allotment: rate.allotment,
+            paymentType: rate.paymentType,
+          })),
+        };
+      })
+      .sort(
+        (a, b) =>
+          (a.distanceKm ?? Number.POSITIVE_INFINITY) -
+          (b.distanceKm ?? Number.POSITIVE_INFINITY),
+      );
+    requestLogger.info("Hotel geo search preview", {
+      context: this.context,
+      airport: iataCode,
+      radius,
+      occupancies: occupancies.map(shapeKey),
+      hotels: hotels.length,
+    });
+
+    return {
+      checkInDate: checkIn,
+      checkOutDate: checkOut,
+      departureAirport: iataCode,
+      residency: residency.toUpperCase(),
+      radius,
+      radiusUnit: config.hotelSearch.unit,
+      adults: input.adults,
+      children: input.children,
+      rooms: rooms.map(({ adults, children }) => ({ adults, children })),
+      roomSplitGiven: !!input.rooms,
+      searchedOccupancies: occupancies,
+      totalHotels: hotels.length,
+      hotels,
+    };
+  }
+
+  /** Checks shared by both previews: airport, stay dates and room split. */
+  private async resolvePreviewInput(input: PlanPreviewSearchDto) {
+    const iataCode = input.departureAirport.trim().toUpperCase();
+    const airport =
+      await this.cancelledFlightsRepository.findAirportByIataCode(iataCode);
+    if (!airport) {
+      throw new BadRequestException(`Airport '${iataCode}' not found`);
+    }
+    const { checkInDate: checkIn, checkOutDate: checkOut } = input;
+    if (checkOut <= checkIn) {
+      throw new BadRequestException("checkOutDate must be after checkInDate");
+    }
+    if (daysBetween(checkIn, checkOut) > HotelAllocationService.PREVIEW_MAX_NIGHTS) {
+      throw new BadRequestException(
+        `The stay can be at most ${HotelAllocationService.PREVIEW_MAX_NIGHTS} nights`,
+      );
+    }
+    const today = todayIn(airport.timezone);
+    if (checkIn < today) {
+      throw new BadRequestException(
+        `checkInDate must be today (${today} at ${iataCode}) or later`,
+      );
+    }
+    if (
+      input.rooms &&
+      !this.validateSplit(input.adults, input.children, input.rooms)
+    ) {
+      throw new BadRequestException(
+        `rooms must hold exactly ${input.adults} adult(s) and ${input.children} child(ren), every room with an adult`,
+      );
+    }
+    const residency = (input.residency ?? airport.countryCode).toLowerCase();
+    return { iataCode, airport, residency, checkIn, checkOut };
+  }
+
+  /**
+   * Test API 2: the hotels allocation ranks for this split, and the hotel
+   * each of the `allocation` PNRs would get when they take rooms in turn as
+   * a run does (each PNR's rooms in one hotel). Nothing is saved or booked.
+   */
+  async previewRecommendation(
+    input: PlanPreviewRequestDto,
+    requestId: string,
+    requestLogger: Logger,
+  ) {
+    const { summary, candidates } = await this.previewPlan(
+      input,
+      requestId,
+      requestLogger,
+    );
+    const ranked = candidates.map((candidate, index) => ({
+      rank: index + 1,
+      hotelCode: candidate.hotelCode,
+      hotelName: candidate.hotelName,
+      category: candidate.category,
+      stars: candidate.stars,
+      tier: candidate.tier,
+      estimatedPrice: candidate.estimatedPrice,
+      currency: candidate.currency,
+      rooms: candidate.rooms.map((room) => ({
+        adults: room.adults,
+        children: room.children,
+        roomsNeeded: room.roomsNeeded,
+        bestRate: room.rateOptions[0] ?? null,
+        rateOptions: room.rateOptions.length,
+      })),
+    }));
+
+    // Each PNR takes the first ranked hotel that still has free rooms for its
+    // whole split, the same rule a run uses (assuming every booking succeeds).
+    const ledger = new AllotmentLedger(
+      new Map(
+        candidates.flatMap((candidate) =>
+          candidate.rooms.flatMap((room) =>
+            room.rateOptions.map(
+              (option) => [option.rateKey, option.allotment] as const,
+            ),
+          ),
+        ),
+      ),
+    );
+    const allocations = Array.from({ length: summary.allocation }, (_, i) => {
+      for (const [index, candidate] of candidates.entries()) {
+        const picks = selectCandidateRates(candidate, ledger);
+        if (
+          !picks ||
+          !ledger.tryClaim(
+            picks.map((pick) => ({
+              rateKey: pick.rateKey,
+              rooms: pick.roomsNeeded,
+            })),
+          )
+        ) {
+          continue;
+        }
+        return {
+          pnrNo: i + 1,
+          rank: index + 1,
+          hotelCode: candidate.hotelCode,
+          hotelName: candidate.hotelName,
+          stars: candidate.stars,
+          tier: candidate.tier,
+          price: this.roundCurrency(
+            picks.reduce((sum, pick) => sum + pick.netPrice * pick.roomsNeeded, 0),
+          ),
+          currency: candidate.currency,
+          rooms: picks.map((pick) => ({
+            adults: pick.shape.adults,
+            children: pick.shape.children,
+            roomsNeeded: pick.roomsNeeded,
+            rateKey: pick.rateKey,
+            netPrice: pick.netPrice,
+            inPool: pick.inPool,
+          })),
+        };
+      }
+      return {
+        pnrNo: i + 1,
+        rank: null,
+        hotelCode: null,
+        hotelName: null,
+        reason: "No ranked hotel has free rooms left for this PNR's whole split",
+      };
+    });
+
+    return {
+      ...summary,
+      allAllocated: allocations.every((entry) => entry.hotelCode !== null),
+      allocations,
+      recommended: ranked[0] ?? null,
+      totalCandidates: ranked.length,
+      candidates: ranked,
+    };
+  }
+
+  /**
+   * The allocation plan for `allocation` PNRs that share the body's party and
+   * room split: the same supplier search, supply (ceil(demand × buffer) rooms
+   * per shape and whole sets) and ranking an allocation run uses, with no
+   * flight; minStars and the buffer come from the body. The only database
+   * access is reading the airport and stored hotel content.
+   */
+  private async previewPlan(
+    input: PlanPreviewRequestDto,
+    requestId: string,
+    requestLogger: Logger,
+  ) {
+    const { iataCode, airport, residency, checkIn, checkOut } =
+      await this.resolvePreviewInput(input);
+
+    // No travel class: stars go 5 -> 4 -> ... down to minStars (body, or the
+    // global minimum); supplyBufferRatio from the body, or the configured one.
+    const minStars = input.minStars ?? config.hotelSearch.minRate;
+    const stars: StarRule = { min: minStars, preferred: minStars };
+    const bufferRatio =
+      input.supplyBufferRatio ?? config.hotelBooking.supplyBufferRatio;
+    const allocation = input.allocation ?? 1;
+    // In-memory stand-ins with only what planning reads (the star rule comes
+    // from minStars); nothing here is read from or written to the database.
+    const bookings = Array.from(
+      { length: allocation },
+      (_, i) =>
+        ({
+          id: i + 1,
+          adults: input.adults,
+          children: input.children,
+          residency,
+        }) as unknown as BookingEntity,
+    );
+    const flight = {
+      id: 0,
+      departureAirport: airport,
+    } as unknown as CancelledFlightEntity;
+    const stay = { checkIn, checkOut };
+
+    let plan: Awaited<ReturnType<HotelAllocationService["computePnrPlans"]>>;
+    try {
+      plan = await this.computePnrPlans(
+        flight,
+        stay,
+        bookings,
+        requestId,
+        requestLogger,
+        input.rooms,
+        stars,
+        bufferRatio,
+      );
+    } catch (error: any) {
+      throw new ServiceUnavailableException(
+        `Hotel availability search failed: ${error?.message ?? error}`,
+      );
+    }
+    if (plan.invalid.length > 0) {
+      throw new BadRequestException(`Invalid party: ${plan.invalid[0].reason}`);
+    }
+    const entry = plan.entries[0];
+    const roomsPerPnr = entry.rooms.length;
+    // Sets = one PNR's whole split in one hotel; a hotel can host several.
+    const setHotels = (entry.asOrder ? (plan.orderHotels ?? []) : plan.hotels)
+      .filter((hotel) => hotel.stars >= stars.min)
+      .map((hotel) => ({
+        hotelCode: hotel.hotelCode,
+        hotelName: hotel.hotelName,
+        stars: hotel.stars,
+        sets: entry.asOrder
+          ? orderRatesFor(hotel, entry.rooms).reduce(
+              (sum, rate) =>
+                sum + Math.floor((rate.allotment ?? 0) / entry.rooms.length),
+              0,
+            )
+          : hotelSetCapacity(hotel, entry.rooms),
+      }))
+      .filter((hotel) => hotel.sets > 0)
+      .sort((a, b) => b.stars - a.stars || b.sets - a.sets);
+    const setsAvailable = setHotels.reduce((sum, hotel) => sum + hotel.sets, 0);
+    const setsTarget = Math.max(1, supplyTarget(allocation, bufferRatio));
+    requestLogger.info("Computed hotel plan preview", {
+      context: this.context,
+      airport: iataCode,
+      party: `${input.adults}+${input.children}`,
+      allocation,
+      roomsPerPnr,
+      hotels: plan.hotels.length,
+      candidates: entry.candidates.length,
+    });
+
+    return {
+      summary: {
+        adults: input.adults,
+        children: input.children,
+        allocation,
+        roomsPerPnr,
+        totalRooms: roomsPerPnr * allocation,
+        checkInDate: checkIn,
+        checkOutDate: checkOut,
+        departureAirport: iataCode,
+        residency: residency.toUpperCase(),
+        minStars,
+        roomSplitOptions: entry.plan,
+        chosenRooms: entry.rooms.map(({ adults, children }) => ({
+          adults,
+          children,
+        })),
+        roomSplitGiven: !!input.rooms,
+        bookedAsOneOrder: entry.asOrder,
+        supplyBufferRatio: bufferRatio,
+        supplySets: {
+          setsNeeded: allocation,
+          target: setsTarget,
+          setsAvailable,
+          targetMet: setsAvailable >= setsTarget,
+          hotels: setHotels,
+        },
+        // Multiroom orders are booked as a whole and are not pooled per shape.
+        supplyPool: [...plan.pools.values()].map((pool) => ({
+          shape: { adults: pool.shape.adults, children: pool.shape.children },
+          roomsNeeded: pool.demand,
+          target: pool.target,
+          poolAllotment: pool.poolAllotment,
+          targetMet: pool.poolAllotment >= pool.target,
+          totalAllotment: pool.totalAllotment,
+          hotels: [...pool.hotelCodes],
+          rates: pool.rateKeys.size,
+        })),
+      },
+      candidates: entry.candidates,
+    };
+  }
+
+  private static readonly PREVIEW_MAX_NIGHTS = 30;
+
+  /**
+   * The allocation plan for these PNRs, without saving anything: one supplier
+   * search for all of them, each PNR's room split, the shared supply pools,
+   * and each PNR's ranked candidate hotels (first = the one booked first).
+   * Used by the allocation run and by the plan-preview test endpoints, so
+   * both give the same result for the same availability.
+   */
+  private async computePnrPlans(
+    flight: CancelledFlightEntity,
+    stay: StayDates,
+    bookings: BookingEntity[],
+    requestId: string,
+    requestLogger: Logger,
+    /** Use exactly this room split for every PNR instead of choosing one. */
+    forcedRooms?: RoomOccupancy[],
+    /** Use this star rule instead of each PNR's travel-class rule. */
+    starsOverride?: StarRule,
+    /** Supply buffer instead of HOTEL_SUPPLY_BUFFER_RATIO. */
+    bufferRatio = config.hotelBooking.supplyBufferRatio,
+  ): Promise<{
+    invalid: Array<{ booking: BookingEntity; reason: string }>;
+    hotels: AvailabilityHotel[];
+    orderHotels: AvailabilityHotel[] | undefined;
+    pools: Map<string, ShapePool>;
+    entries: Array<{
+      booking: BookingEntity;
+      stars: StarRule;
+      plan: RoomSplitPlan;
+      rooms: RoomOccupancy[];
+      needs: RoomNeed[];
+      asOrder: boolean;
+      candidates: PlannedCandidate[];
+    }>;
+  }> {
+    const invalid: Array<{ booking: BookingEntity; reason: string }> = [];
+    const plans: Array<{ booking: BookingEntity; plan: RoomSplitPlan }> = [];
+    for (const booking of bookings) {
+      if (forcedRooms) {
+        plans.push({ booking, plan: { preferred: forcedRooms, fallbacks: [] } });
+        continue;
+      }
+      const split = this.resolveRoomSplitPlan(booking, requestLogger);
+      if (!split.plan) {
+        invalid.push({ booking, reason: split.reason ?? "no room split" });
+        continue;
+      }
+      plans.push({ booking, plan: split.plan });
+    }
+    if (plans.length === 0) {
+      return {
+        invalid,
+        hotels: [],
+        orderHotels: undefined,
+        pools: new Map(),
+        entries: [],
+      };
+    }
+
+    const { hotels, orderHotels } = await this.searchSplits(
+      flight,
+      stay,
+      plans.map(({ booking, plan }) => ({
+        plan,
+        minStars: (starsOverride ?? this.starRule(booking.travelClass)).min,
+      })),
+      this.majorityResidency(plans.map(({ booking }) => booking)),
+      requestId,
+      requestLogger,
+      undefined,
+      true,
+      bufferRatio,
+    );
+
+    const splits = plans.map(({ booking, plan }) => {
+      const stars = starsOverride ?? this.starRule(booking.travelClass);
+      const rooms =
+        forcedRooms ?? chooseRoomSplit(plan, hotels, orderHotels, stars.min);
+      return {
+        booking,
+        stars,
+        plan,
+        rooms,
+        needs: toRoomNeeds(rooms),
+        asOrder: !!orderHotels && rooms.length > 1,
+      };
+    });
+    const demand = new Map<string, RoomNeed>();
+    for (const { needs, asOrder } of splits) {
+      if (asOrder) continue;
+      for (const need of needs) {
+        const key = shapeKey(need.shape);
+        const current = demand.get(key);
+        if (current) {
+          current.roomsNeeded += need.roomsNeeded;
+        } else {
+          demand.set(key, { shape: need.shape, roomsNeeded: need.roomsNeeded });
+        }
+      }
+    }
+    const pools = buildSupplyPools(hotels, demand, bufferRatio);
+
+    return {
+      invalid,
+      hotels,
+      orderHotels,
+      pools,
+      entries: splits.map((entry) => ({
+        ...entry,
+        candidates: entry.asOrder
+          ? buildOrderCandidatePlan(orderHotels!, entry.rooms, entry.stars)
+          : buildCandidatePlan(hotels, entry.needs, pools, entry.stars),
+      })),
+    };
   }
 
   private async bookPlannedBookings(
@@ -2814,6 +3635,11 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     party?: { adults: number; children: number };
     /** Called once the attempt is recorded, before any supplier call. */
     onAttemptStarted?: () => void;
+    /**
+     * Manual bookings: reserve the PNR's cost in the airline's wallet before
+     * the supplier is called (allocation runs reserve for all PNRs up front).
+     */
+    reserveWallet?: boolean;
     paymentData?: unknown;
     platformFeePercentage: number;
     requestId: string;
@@ -2859,6 +3685,29 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     }
 
     const orders: ProviderOrder[] = [];
+    // Set once this attempt holds a wallet share (manual bookings).
+    let walletShareHeld = false;
+    const releaseWalletShare = async (reason: string) => {
+      if (!walletShareHeld) return;
+      walletShareHeld = false;
+      try {
+        await this.cancelledFlightsRepository.releaseWalletShare(
+          booking.id,
+          reason,
+          requestLogger,
+        );
+      } catch (error: any) {
+        // The attempt is already settled; the share is released at the end
+        // of the flight's next allocation run or post-run check.
+        requestLogger.error("Could not release the PNR's wallet share", {
+          context: this.context,
+          flightId: flight.id,
+          bookingId: booking.id,
+          attemptId,
+          error: error?.message,
+        });
+      }
+    };
     const fail = async (
       code: HotelBookingFailureCode,
       reason: string,
@@ -2878,6 +3727,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         undefined,
         requestLogger,
       );
+      await releaseWalletShare(`Hotel booking failed: ${reason}`);
       return { kind: "rejected", reason, error };
     };
 
@@ -3009,12 +3859,53 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       };
     });
 
+    if (input.reserveWallet) {
+      // Price from the rate check, the same formula as the run's estimate.
+      const hotelCost = units.reduce(
+        (sum, unit) => sum + Number(unit.check.netPrice),
+        0,
+      );
+      const { totalPrice } = this.calculatePricing(
+        hotelCost,
+        hotelCost,
+        input.platformFeePercentage,
+        0,
+        0,
+      );
+      try {
+        const reserved = await this.cancelledFlightsRepository.reserveWalletForRun(
+          {
+            cancelledFlightId: flight.id,
+            runId: `manual-${attemptId}`,
+            items: [{ bookingId: booking.id, amount: totalPrice }],
+          },
+          requestLogger,
+        );
+        walletShareHeld = reserved.heldPnrs > 0 || reserved.alreadyHeldPnrs > 0;
+      } catch (error: any) {
+        // Nothing has been sent to the supplier.
+        return error instanceof InsufficientWalletBalanceError
+          ? fail(
+              HotelBookingFailureCode.INSUFFICIENT_WALLET_BALANCE,
+              error.message,
+              error,
+            )
+          : fail(
+              HotelBookingFailureCode.WALLET_RESERVE_FAILED,
+              `Could not reserve wallet funds: ${error?.message ?? error}`,
+              error,
+            );
+      }
+    }
+
     const sent = await this.cancelledFlightsRepository.markAttemptRequestSent(
       attemptId,
       booking.id,
       { hotelCode, hotelName, category: units[0].check.category },
     );
     if (!sent) {
+      // Settled elsewhere; releasing only touches a share still HELD.
+      await releaseWalletShare("Booking attempt settled before the supplier request");
       return {
         kind: "blocked",
         reason:
@@ -3080,6 +3971,9 @@ export class HotelAllocationService implements OnApplicationBootstrap {
               }
               orders.push(...unitOrders);
             },
+            awaitBookingWebhook: HotelAllocationService.webhookMode()
+              ? (reference) => this.awaitBookingWebhook(attemptId, reference)
+              : undefined,
           },
           unit.check.bookingKey ?? unit.rateKey,
           input.paymentData,
@@ -3300,8 +4194,10 @@ export class HotelAllocationService implements OnApplicationBootstrap {
   }
 
   /**
-   * Supplier booking status webhook. The payload is not signed, so the status is
-   * always re-checked with the supplier before an open attempt is settled.
+   * Supplier booking status webhook (webhook mode; status mode ignores them).
+   * The reported status is applied as is: saved for the booking's live wait
+   * while it runs, or settled on a MANUAL_CHECK attempt. The signature covers
+   * only the timestamp and token, not the order or status.
    */
   async handleSupplierBookingStatus(input: {
     provider: string;
@@ -3338,8 +4234,13 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       const knownStatus = toProviderOrders(attempt.rooms).find(
         (order) => order.reference === reference,
       )?.status;
+      // A FAILED attempt whose order is still pending was failed for having no
+      // final status in time; a late "completed" means it was booked after all.
       const contradicts =
-        (reportedStatus === "completed" && knownStatus === "failed") ||
+        (reportedStatus === "completed" &&
+          (knownStatus === "failed" ||
+            (attempt.status === HotelBookingAttemptStatus.FAILED &&
+              knownStatus === "pending"))) ||
         (reportedStatus === "failed" && knownStatus === "booked");
       if (contradicts) {
         requestLogger.error(
@@ -3351,9 +4252,67 @@ export class HotelAllocationService implements OnApplicationBootstrap {
           "Booking status webhook for a settled attempt",
           attemptMeta,
         );
+        // A confirmed attempt: a retry after an earlier delivery failed
+        // part-way may have missed these steps; both are safe to repeat.
+        // (Failed attempts are left alone: most were failed by the live wait,
+        // and the PNR may already be on its next attempt.)
+        if (attempt.status === HotelBookingAttemptStatus.SUCCESS) {
+          await this.cancelledFlightsRepository.refreshFlightTotals(
+            attempt.cancelledFlightId,
+            requestLogger,
+          );
+          await this.cancelledFlightsRepository.promoteFlightAfterLateConfirmation(
+            attempt.cancelledFlightId,
+          );
+        }
+      }
+      // A webhook after the final status check failed the booking (or one
+      // contradicting a failure) is not applied, but kept on the failure
+      // message so it is not lost.
+      if (
+        attempt.status === HotelBookingAttemptStatus.FAILED &&
+        (contradicts ||
+          attempt.failureCode === HotelBookingFailureCode.NO_FINAL_STATUS)
+      ) {
+        const receivedAt = new Date().toISOString().replace("T", " ").slice(0, 16);
+        const note =
+          `Late booking webhook at ${receivedAt} UTC (ref ${reference}): supplier reported "${reportedStatus}"` +
+          (reportedStatus === "completed"
+            ? "; the hotel may be booked after all, check with the supplier."
+            : ".");
+        await this.cancelledFlightsRepository.appendLateWebhookNote(
+          attempt.id,
+          attempt.bookingId,
+          note,
+        );
+        requestLogger.warn("Late booking webhook rejected and noted on the failed booking", {
+          ...attemptMeta,
+          note,
+        });
       }
       return "ignored";
     }
+
+    // Webhook mode: the webhook's status is applied as reported, with no
+    // status call.
+    const state =
+      reportedStatus === "completed"
+        ? "booked"
+        : reportedStatus === "failed"
+          ? "failed"
+          : null;
+    if (!state) {
+      requestLogger.warn(
+        "Booking status webhook with an unknown status; ignored",
+        attemptMeta,
+      );
+      return "ignored";
+    }
+
+    const orderRooms = (attempt.rooms ?? []).filter(
+      (room) => room.partnerOrderId === reference,
+    );
+    if (orderRooms.length === 0) return "ignored";
 
     if (
       attempt.status === HotelBookingAttemptStatus.PENDING &&
@@ -3362,47 +4321,42 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         config.hotelBooking.staleBookingAttemptMs,
       ))
     ) {
+      // The booking is in its live wait: save the result for the wait to pick
+      // up. Near the end of the wait, ask for a retry instead; the wait then
+      // saves the attempt as MANUAL_CHECK and the retry settles it.
+      const waitStartedAt = Math.min(
+        ...orderRooms.map((room) => new Date(room.createdAt).getTime()),
+      );
+      const inWait =
+        Date.now() - waitStartedAt <
+        SUPPLIER_BOOKING_WAIT_MS - HotelAllocationService.WEBHOOK_HANDOFF_MARGIN_MS;
+      if (
+        inWait &&
+        (await this.cancelledFlightsRepository.recordWebhookOrderStatus(
+          attempt.id,
+          attempt.bookingId,
+          reference,
+          state,
+        ))
+      ) {
+        requestLogger.info(
+          "Booking status webhook saved for the booking's live wait",
+          { ...attemptMeta, state },
+        );
+        return "processed";
+      }
       requestLogger.info(
-        "Booking status webhook arrived while the booking is still in progress; asking for a retry",
+        "Booking status webhook arrived at the end of the booking's live wait; asking for a retry",
         attemptMeta,
       );
       return "retry";
     }
 
-    if (!this.hotelProvider.checkBookingStatus) {
-      requestLogger.error(
-        "Cannot confirm booking status webhook: the configured hotel provider differs",
-        { ...attemptMeta, configuredProvider: config.hotelProvider.name },
-      );
-      return "retry";
-    }
-
-    const confirmed = await this.hotelProvider.checkBookingStatus(
-      reference,
-      requestId,
-    );
-    requestLogger.info("Confirmed booking status with the supplier", {
-      ...attemptMeta,
-      confirmedState: confirmed.state,
-      code: confirmed.code,
-    });
-    if (confirmed.state === "processing") {
-      return "retry";
-    }
-    if ((confirmed.state === "booked") !== (reportedStatus === "completed")) {
-      requestLogger.warn(
-        "Supplier status differs from the webhook; using the supplier status",
-        { ...attemptMeta, confirmedState: confirmed.state },
-      );
-    }
-
     const orders = toProviderOrders(attempt.rooms);
-    const orderRooms = orders.filter((entry) => entry.reference === reference);
-    if (orderRooms.length === 0) return "ignored";
-    const failureReason =
-      confirmed.state === "failed" ? (confirmed.code ?? "failed") : null;
-    for (const order of orderRooms) {
-      order.status = confirmed.state;
+    const failureReason = state === "failed" ? "failed (booking webhook)" : null;
+    for (const order of orders) {
+      if (order.reference !== reference) continue;
+      order.status = state;
       order.failureReason = failureReason;
     }
 
@@ -4037,6 +4991,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       requestId,
       requestLogger,
       onAttemptStarted: attemptStarted,
+      reserveWallet: true,
     });
 
     const early = await Promise.race([started, outcome]);

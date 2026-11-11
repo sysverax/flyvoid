@@ -1,3 +1,5 @@
 
 # Locally generated confirmation PDF samples (fake data)
 sample-pdfs/
+marketing-mockups/*
+explainer-v1-audio/*
