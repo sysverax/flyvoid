@@ -162,12 +162,11 @@ const PAX = {
   1021: makePassengers(1021, 10, 8),
 };
 
-// Allocation results for 1023 (WA0021): 16 booked, 1 manual check, 1 failed.
+// Allocation results for 1023 (WA0021): 17 booked, 1 failed. No manual check: it confuses landing-page visitors.
 const ALLOC_1023 = PAX[1023].map((p, i) => {
   const price = priceBooking(p, i);
   let bookingStatus = "SUCCESS";
   if (i === 9) bookingStatus = "FAILED";
-  if (i === 2) bookingStatus = "MANUAL_CHECK";
   return { p, i, price, bookingStatus };
 });
 
