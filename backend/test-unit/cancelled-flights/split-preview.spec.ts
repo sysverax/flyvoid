@@ -79,15 +79,34 @@ const body = (extra: object = {}): any => ({
 });
 
 function newService(search: (rooms: any[]) => any) {
+  // Stored hotel details: the coordinates of every hotel the search returned.
+  const found = new Map<string, any>();
+  const content = {
+    ensureHotelContent: jest.fn(async (codes: string[]) =>
+      new Map(
+        codes.map((code) => [
+          code,
+          {
+            address: `${code} Road`,
+            latitude: String(found.get(code).latitude),
+            longitude: String(found.get(code).longitude),
+          },
+        ]),
+      ),
+    ),
+  };
   const service = new HotelAllocationService(
     {} as any,
     {} as any,
     {} as any,
-    {} as any,
+    content as any,
   ) as any;
-  service.searchSplits = jest.fn(async (_f: any, _s: any, demand: any[]) =>
-    search(demand[0].plan.preferred),
-  );
+  service.searchSplits = jest.fn(async (_f: any, _s: any, demand: any[]) => {
+    const result = search(demand[0].plan.preferred);
+    for (const h of [...result.hotels, ...(result.orderHotels ?? [])]) found.set(h.hotelCode, h);
+    return result;
+  });
+  service.content = content;
   return service;
 }
 
@@ -144,8 +163,10 @@ describe("split preview: one search per split at exactly the distance", () => {
       ["NEAR", 2, 1], // below the minimum stars, still listed
       ["FAR", 5, 4],
     ]);
-    expect(split.hotels[0].distanceKm).toBe(1.1);
+    expect(split.hotels[0]).toMatchObject({ distanceKm: 1.1, address: "NEAR Road" });
     expect(split.hotels[0].rates[0]).toMatchObject({ rateKey: "NEAR-21", netPrice: 80 });
+    // Coordinates come from stored hotel details, read without saving.
+    expect(service.content.ensureHotelContent.mock.calls[0][4]).toBe(true);
   });
 
   it("need=recommend takes ceil(allocation x 1.5) sets, most stars first, cheapest within the same stars", async () => {

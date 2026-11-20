@@ -3306,13 +3306,6 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     const stars: StarRule = { min: minStars, preferred: minStars };
     const ratio = config.hotelBooking.supplyBufferRatio;
     const recommend = input.need === SplitPreviewNeed.RECOMMEND;
-    const distanceOf = (hotel: { latitude?: number | null; longitude?: number | null }) =>
-      hotel.latitude != null && hotel.longitude != null
-        ? distanceKm(airportPoint, {
-            latitude: Number(hotel.latitude),
-            longitude: Number(hotel.longitude),
-          })
-        : null;
 
     const splits: object[] = [];
     // One after another: the supplier allows few searches a minute.
@@ -3350,6 +3343,26 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       }
       const asOrder = !!found.orderHotels && rooms.length > 1;
       const hotels = asOrder ? (found.orderHotels ?? []) : found.hotels;
+      // Address and coordinates from stored content (the search has no
+      // coordinates), fetched read-only when missing.
+      const content = hotels.length
+        ? await this.hotelContentService.ensureHotelContent(
+            hotels.map((hotel) => hotel.hotelCode),
+            requestId,
+            requestLogger,
+            undefined,
+            true,
+          )
+        : new Map<string, HotelEntity>();
+      const distanceOf = (hotelCode: string) => {
+        const stored = content.get(hotelCode);
+        return stored?.latitude != null && stored?.longitude != null
+          ? distanceKm(airportPoint, {
+              latitude: Number(stored.latitude),
+              longitude: Number(stored.longitude),
+            })
+          : null;
+      };
       // Whole sets (one allocation's rooms) each hotel can take.
       const setsAt = (hotel: AvailabilityHotel) =>
         asOrder
@@ -3366,8 +3379,8 @@ export class HotelAllocationService implements OnApplicationBootstrap {
             hotelCode: hotel.hotelCode,
             hotelName: hotel.hotelName,
             stars: hotel.stars,
-            address: hotel.address ?? null,
-            distanceKm: distanceOf(hotel),
+            address: content.get(hotel.hotelCode)?.address ?? (hotel.address || null),
+            distanceKm: distanceOf(hotel.hotelCode),
             sets: setsAt(hotel),
             rates: hotel.rates.map((rate) => ({
               rateKey: rate.rateKey,
@@ -3464,7 +3477,6 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         if (!taken) break;
         setsFound += 1;
       }
-      const hotelByCode = new Map(hotels.map((hotel) => [hotel.hotelCode, hotel]));
       splits.push({
         ...base,
         bookedAsOneOrder: asOrder,
@@ -3481,7 +3493,8 @@ export class HotelAllocationService implements OnApplicationBootstrap {
             hotelCode: candidate.hotelCode,
             hotelName: candidate.hotelName,
             stars: candidate.stars,
-            distanceKm: distanceOf(hotelByCode.get(candidate.hotelCode) ?? {}),
+            address: content.get(candidate.hotelCode)?.address ?? null,
+            distanceKm: distanceOf(candidate.hotelCode),
             sets: setPrices.length,
             setPrices,
             totalPrice: this.roundCurrency(
