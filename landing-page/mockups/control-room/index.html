@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock-up: Operations Control Room (hero, How it works, demo form)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&display=swap">
+<style>
+  /* Same tokens as the live site (src/styles.css). */
+  :root {
+    --navy: #0a1f44; --navy-800: #0f2757; --blue: #1766c9; --sky: #38a8f0;
+    --grey-50: #f7f8fa; --grey-100: #f3f4f6; --grey-200: #e5e7eb; --dot: #d1d5db;
+    --text: #1f2937; --muted: #626b78;
+    --gradient-logo: linear-gradient(135deg, #0e2a5c 0%, #1766c9 55%, #29abe8 100%);
+    --shadow-soft: 0 1px 2px rgb(10 31 68 / 0.06), 0 12px 32px -12px rgb(10 31 68 / 0.18);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body { font-family: "Figtree", system-ui, sans-serif; color: var(--text); background: #fff; font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  @media (min-width: 768px) { body { font-size: 18px; } }
+  h1, h2, h3 { color: var(--navy); }
+  a { color: inherit; text-decoration: none; }
+  .container { max-width: 1248px; margin-inline: auto; padding-inline: 20px; }
+  @media (min-width: 768px) { .container { padding-inline: 24px; } }
+  .eyebrow { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--blue); }
+  .h1 { font-size: 36px; line-height: 1.12; font-weight: 800; }
+  .h2 { font-size: 28px; line-height: 1.2; font-weight: 800; }
+  .h3 { font-size: 20px; line-height: 1.3; font-weight: 700; }
+  @media (min-width: 768px) { .h1 { font-size: 56px; line-height: 1.08; } .h2 { font-size: 40px; line-height: 1.15; } }
+  .measure { max-width: 65ch; }
+  .muted { color: var(--muted); }
+  .btn { display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 24px; border-radius: 12px; font-weight: 600; font-size: 16px; }
+  .btn-primary { background: var(--navy); color: #fff; }
+  .btn-secondary { background: #fff; color: var(--navy); border: 1px solid var(--grey-200); }
+
+  /* Direction 1: sections are separated by full-width hairline rules, not colour bands. */
+  .rule { border-top: 1px solid var(--grey-200); }
+  section { padding-block: 72px; }
+  @media (min-width: 1024px) { section { padding-block: 96px; } }
+
+  /* ---------- Header (unchanged from the live site) ---------- */
+  header { position: sticky; top: 0; z-index: 10; background: #fff; border-bottom: 1px solid var(--grey-200); }
+  header .container { display: flex; align-items: center; justify-content: space-between; height: 72px; gap: 16px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 22px; color: var(--navy); }
+  .brand img { width: 34px; height: 34px; }
+  nav.links { display: none; gap: 28px; font-size: 15px; font-weight: 600; }
+  @media (min-width: 900px) { nav.links { display: flex; } }
+
+  /* ---------- Hero: faint ops-console grid behind the screenshot ---------- */
+  .hero { position: relative; overflow: hidden; padding-top: 56px; padding-bottom: 80px; }
+  .hero::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background-image:
+      linear-gradient(to right, rgb(10 31 68 / .055) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(10 31 68 / .055) 1px, transparent 1px),
+      linear-gradient(to right, rgb(10 31 68 / .025) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(10 31 68 / .025) 1px, transparent 1px);
+    background-size: 32px 32px, 32px 32px, 8px 8px, 8px 8px;
+    -webkit-mask-image: radial-gradient(ellipse 55% 75% at 78% 45%, #000 35%, transparent 80%);
+            mask-image: radial-gradient(ellipse 55% 75% at 78% 45%, #000 35%, transparent 80%);
+  }
+  .hero-grid { position: relative; display: grid; gap: 56px; align-items: center; }
+  @media (min-width: 1024px) { .hero-grid { grid-template-columns: 1fr 1fr; } }
+  .underline { position: relative; display: inline-block; }
+  .underline::after { content: ""; position: absolute; left: 0; bottom: -8px; width: 96px; height: 3px; border-radius: 3px; background: var(--gradient-logo); }
+  .hero .lead { margin-top: 32px; font-size: 18px; }
+  @media (min-width: 768px) { .hero .lead { font-size: 20px; } }
+  .ctas { margin-top: 36px; display: flex; flex-wrap: wrap; gap: 12px; }
+  .figures { margin-top: 36px; display: flex; flex-wrap: wrap; gap: 8px 0; font-size: 14px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .figures li { list-style: none; padding-right: 16px; }
+  .figures li + li { padding-left: 16px; border-left: 1px solid var(--grey-200); }
+
+  .frame { border-radius: 14px; overflow: hidden; border: 1px solid var(--grey-200); background: #fff; box-shadow: var(--shadow-soft); }
+  .frame-bar { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 16px; background: var(--grey-100); }
+  .frame-bar span { width: 10px; height: 10px; border-radius: 50%; background: var(--dot); }
+  .frame-bar i { margin-left: 16px; width: 33%; max-width: 240px; height: 20px; border-radius: 999px; background: #fff; }
+  .frame img { display: block; width: 100%; height: auto; }
+
+  /* ---------- How it works: the departure-board strip ---------- */
+  .board { position: relative; margin-top: 56px; display: grid; gap: 40px; list-style: none; }
+  @media (min-width: 1024px) { .board { grid-template-columns: repeat(4, 1fr); gap: 32px; } }
+  .board-line { position: absolute; background: var(--sky); transform-origin: left top; }
+  /* Mobile: vertical line through the tile centres. Desktop: horizontal line through them. */
+  .board-line { left: 27px; top: 38px; bottom: 38px; width: 2px; }
+  @media (min-width: 1024px) { .board-line { left: 28px; right: calc(25% - 28px); top: 37px; bottom: auto; width: auto; height: 2px; } }
+  .step { position: relative; display: grid; grid-template-columns: 56px 1fr; gap: 20px; align-items: start; }
+  @media (min-width: 1024px) { .step { display: block; } }
+  .step h3 { margin-top: 4px; }
+  @media (min-width: 1024px) { .step h3 { margin-top: 24px; } }
+  .step p { margin-top: 8px; color: var(--muted); }
+
+  /* Split-flap tile: two halves of the same numeral; a darker split line through the middle,
+     and small "axle" marks at each side. */
+  /* Background = the blank flap you see before the top half turns into place. */
+  .flap { position: relative; width: 56px; height: 76px; border-radius: 8px; perspective: 360px; z-index: 1;
+          background: linear-gradient(var(--navy-800) 50%, var(--navy) 50%);
+          box-shadow: 0 1px 0 rgb(255 255 255 / .06) inset, 0 8px 18px -10px rgb(10 31 68 / .5); }
+  @media (min-width: 1024px) { .flap { width: 58px; } }
+  .flap .half { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+                font-size: 40px; font-weight: 800; color: #fff; font-variant-numeric: tabular-nums; border-radius: inherit; }
+  .flap .top { background: var(--navy-800); clip-path: inset(0 0 50% 0); transform-origin: 50% 50%; backface-visibility: hidden; }
+  .flap .bottom { background: var(--navy); clip-path: inset(50% 0 0 0); }
+  .flap::after { content: ""; position: absolute; left: 0; right: 0; top: calc(50% - .5px); height: 1px; background: rgb(0 0 0 / .45); z-index: 2; }
+  .flap::before { content: ""; position: absolute; left: -3px; right: -3px; top: calc(50% - 3px); height: 6px; z-index: 3;
+                  background: radial-gradient(circle at 3px 3px, var(--dot) 2px, transparent 2.5px) left / 6px 6px no-repeat,
+                              radial-gradient(circle at 3px 3px, var(--dot) 2px, transparent 2.5px) right / 6px 6px no-repeat; }
+
+  /* Motion (runs once; JS only marks the board, CSS does the rest). */
+  .board[data-board="pending"] .board-line { transform: scaleY(0); }
+  @media (min-width: 1024px) { .board[data-board="pending"] .board-line { transform: scaleX(0); } }
+  .board[data-board="go"] .board-line { transform: none; transition: transform 800ms ease-out; }
+  .board[data-board="pending"] .flap .top { transform: rotateX(90deg); }
+  .board[data-board="go"] .flap .top { animation: flap 200ms ease-in calc(var(--n) * 220ms) both; }
+  @keyframes flap { from { transform: rotateX(90deg); } to { transform: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    .board[data-board] .board-line, .board[data-board] .flap .top { transform: none !important; transition: none !important; animation: none !important; }
+  }
+  .how-shot { margin-top: 64px; }
+
+  /* ---------- Demo: the boarding-pass form card ---------- */
+  .demo { background: var(--grey-50); }
+  .demo-grid { display: grid; gap: 48px; }
+  @media (min-width: 1024px) { .demo-grid { grid-template-columns: 5fr 7fr; } }
+  .checklist { margin-top: 32px; list-style: none; display: grid; gap: 12px; }
+  .checklist li { display: flex; gap: 12px; font-weight: 500; color: var(--navy); }
+  .checklist svg { flex: none; margin-top: 4px; }
+
+  /* The pass: a white card with a perforated stub, and two semicircle notches cut out where the
+     perforation meets the edges (a real cut-out via mask, so the page shows through). */
+  .pass-shadow { filter: drop-shadow(0 1px 1px rgb(10 31 68 / .06)) drop-shadow(0 14px 22px rgb(10 31 68 / .12)); }
+  .pass { --stub: 112px; --notch: 13px; position: relative; display: grid; grid-template-columns: 1fr var(--stub);
+          background: #fff; border-radius: 16px;
+          -webkit-mask: radial-gradient(circle var(--notch) at calc(100% - var(--stub)) 0, #0000 98%, #000) top / 100% 51% no-repeat,
+                        radial-gradient(circle var(--notch) at calc(100% - var(--stub)) 100%, #0000 98%, #000) bottom / 100% 51% no-repeat;
+                  mask: radial-gradient(circle var(--notch) at calc(100% - var(--stub)) 0, #0000 98%, #000) top / 100% 51% no-repeat,
+                        radial-gradient(circle var(--notch) at calc(100% - var(--stub)) 100%, #0000 98%, #000) bottom / 100% 51% no-repeat; }
+  .pass-body { padding: 24px; }
+  @media (min-width: 768px) { .pass-body { padding: 36px; } }
+  .stub { position: relative; display: flex; align-items: center; justify-content: center; }
+  .stub::before { content: ""; position: absolute; left: -1px; top: 22px; bottom: 22px; border-left: 2px dashed var(--grey-200); }
+  .stub img { width: 48px; height: 48px; }
+  @media (max-width: 767px) {
+    /* Mobile: the stub moves to the top; perforation runs across, notches on the side edges. */
+    .pass { --stub: 88px; grid-template-columns: 1fr; grid-template-rows: var(--stub) auto;
+            -webkit-mask: radial-gradient(circle var(--notch) at 0 var(--stub), #0000 98%, #000) left / 51% 100% no-repeat,
+                          radial-gradient(circle var(--notch) at 100% var(--stub), #0000 98%, #000) right / 51% 100% no-repeat;
+                    mask: radial-gradient(circle var(--notch) at 0 var(--stub), #0000 98%, #000) left / 51% 100% no-repeat,
+                          radial-gradient(circle var(--notch) at 100% var(--stub), #0000 98%, #000) right / 51% 100% no-repeat; }
+    .stub { order: -1; }
+    .stub::before { left: 22px; right: 22px; top: auto; bottom: -1px; border-left: 0; border-bottom: 2px dashed var(--grey-200); }
+  }
+
+  /* Form fields: identical to the live site. */
+  form { display: grid; gap: 20px; }
+  label { font-size: 14px; font-weight: 600; color: var(--navy); }
+  .opt { font-weight: 400; color: var(--muted); }
+  .input { margin-top: 8px; display: block; width: 100%; min-height: 48px; border-radius: 10px; border: 1px solid var(--grey-200);
+           background: var(--grey-100); padding: 10px 14px; font: inherit; font-size: 16px; color: var(--text); }
+  textarea.input { resize: vertical; }
+  .two { display: grid; gap: 20px; }
+  @media (min-width: 640px) { .two { grid-template-columns: 1fr 1fr; } }
+  .hint { margin-top: 6px; font-size: 14px; color: var(--muted); }
+  .count { margin-top: 6px; font-size: 14px; color: var(--muted); text-align: right; }
+  .consent { display: flex; gap: 12px; align-items: flex-start; font-size: 15px; line-height: 1.4; }
+  .consent input { margin-top: 3px; width: 20px; height: 20px; accent-color: var(--navy); flex: none; }
+  .consent a { color: var(--blue); font-weight: 600; text-decoration: underline; }
+  .note { font-size: 14px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="container">
+    <a class="brand" href="#"><img src="flyverax-icon.svg" alt="">Flyverax</a>
+    <nav class="links"><a href="#how">How it works</a><a href="#">Features</a><a href="#">Notifications</a><a href="#">Coverage</a><a href="#">FAQ</a></nav>
+    <a class="btn btn-primary" href="#demo">Request a demo</a>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="container hero-grid">
+    <div>
+      <p class="eyebrow">Hotel accommodation for cancelled flights</p>
+      <h1 class="h1" style="margin-top:16px"><span class="underline">Calm in every disruption.</span></h1>
+      <p class="lead measure">When a flight is cancelled, Flyverax finds and books hotel rooms near the airport for your passengers, from a single passenger list. Your team stays in control, and every passenger gets their hotel by SMS and email.</p>
+      <div class="ctas">
+        <a class="btn btn-primary" href="#demo">Request a demo</a>
+        <a class="btn btn-secondary" href="#how">See how it works</a>
+        <a class="btn btn-secondary" href="#">Watch the 45-second overview</a>
+      </div>
+      <ul class="figures">
+        <li>2.6 million+ accommodation options</li>
+        <li>220 countries and territories</li>
+        <li>Live rates, booked in one flow</li>
+      </ul>
+    </div>
+    <div class="frame">
+      <div class="frame-bar"><span></span><span></span><span></span><i></i></div>
+      <img src="02-cancelled-flights.webp" width="1600" height="1000" alt="Flyverax list of cancelled flights with their hotel allocation status">
+    </div>
+  </div>
+</section>
+
+<section id="how" class="rule">
+  <div class="container">
+    <p class="eyebrow">How it works</p>
+    <h2 class="h2" style="margin-top:12px">From cancelled flight to confirmed rooms, in one flow.</h2>
+    <ol class="board" id="board">
+      <span class="board-line" aria-hidden="true"></span>
+      <li class="step" style="--n:0">
+        <div class="flap" aria-hidden="true"><span class="half top">1</span><span class="half bottom">1</span></div>
+        <div><h3 class="h3">Create the cancelled flight.</h3><p>Add the flight and upload your bookings as a CSV file. Rows with problems are kept aside for you to fix, not lost.</p></div>
+      </li>
+      <li class="step" style="--n:1">
+        <div class="flap" aria-hidden="true"><span class="half top">2</span><span class="half bottom">2</span></div>
+        <div><h3 class="h3">Flyverax searches near the airport.</h3><p>Live availability and rates from our hotel partners. If nearby hotels are full, the search widens.</p></div>
+      </li>
+      <li class="step" style="--n:2">
+        <div class="flap" aria-hidden="true"><span class="half top">3</span><span class="half bottom">3</span></div>
+        <div><h3 class="h3">Rooms are matched and booked.</h3><p>Each booking is matched to a room that fits its travel class, party size and needs. Anything that cannot be placed is flagged for your team.</p></div>
+      </li>
+      <li class="step" style="--n:3">
+        <div class="flap" aria-hidden="true"><span class="half top">4</span><span class="half bottom">4</span></div>
+        <div><h3 class="h3">Publish, and everyone is told.</h3><p>Each passenger gets their hotel confirmation by SMS and email, and your finance team gets one invoice for the whole flight.</p></div>
+      </li>
+    </ol>
+    <div class="frame how-shot">
+      <div class="frame-bar"><span></span><span></span><span></span><i></i></div>
+      <img src="05-allocation.webp" width="1600" height="1000" loading="lazy" alt="Flyverax hotel allocation for a cancelled flight, with confirmed bookings and one booking flagged for manual action">
+    </div>
+  </div>
+</section>
+
+<section id="demo" class="demo rule">
+  <div class="container demo-grid">
+    <div>
+      <p class="eyebrow">Request a demo</p>
+      <h2 class="h2" style="margin-top:12px">See Flyverax with your own scenario.</h2>
+      <p class="measure" style="margin-top:20px">Tell us a little about your airline. We will show you the full flow, from cancelled flight to confirmed rooms, and answer your team's questions.</p>
+      <ul class="checklist">
+        <li><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38a8f0" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>A 30-minute walkthrough with our team</li>
+        <li><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38a8f0" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Your questions on data, payments and set-up</li>
+        <li><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38a8f0" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>A proposal based on your volume</li>
+      </ul>
+      <p class="muted" style="margin-top:32px;font-size:14px">Flyverax is built by Sysverax, a product-first technology company building secure, scalable and maintainable software and hardware systems.</p>
+    </div>
+    <div class="pass-shadow">
+      <div class="pass">
+        <div class="pass-body">
+          <form onsubmit="return false">
+            <div><label for="full_name">Full name</label><input class="input" id="full_name" autocomplete="name"></div>
+            <div><label for="work_email">Work email</label><input class="input" id="work_email" type="email" autocomplete="email"></div>
+            <div class="two">
+              <div><label for="airline">Airline</label><input class="input" id="airline"></div>
+              <div><label for="role">Your role</label>
+                <select class="input" id="role"><option value="" selected disabled>Select your role</option><option>Operations / OCC</option><option>Station or airport management</option><option>Customer care</option><option>Finance</option><option>IT</option><option>Management</option><option>Other</option></select></div>
+            </div>
+            <div><label for="hub">Main hub airport <span class="opt">(optional)</span></label><input class="input" id="hub" maxlength="60"><p class="hint">e.g. CDG or Paris Charles de Gaulle</p></div>
+            <div><label for="msg">Message <span class="opt">(optional)</span></label><textarea class="input" id="msg" rows="4" maxlength="1000"></textarea><p class="count">0 / 1000</p></div>
+            <div class="consent"><input type="checkbox" id="consent"><label for="consent" style="font-weight:400;color:var(--text);font-size:15px">I agree that Flyverax may contact me about my request, as described in the <a href="#">Privacy Policy</a>.</label></div>
+            <div><button class="btn btn-primary" type="submit" style="border:0;font:inherit;font-weight:600">Request a demo</button></div>
+            <p class="note">This opens your email app with your request to hai@flyverax.com, ready to send.</p>
+          </form>
+        </div>
+        <div class="stub" aria-hidden="true"><img src="flyverax-icon.svg" alt=""></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  // Mark the board "pending" (line hidden, top flaps edge-on), then "go" once it scrolls into view.
+  (() => {
+    const board = document.getElementById("board");
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    board.dataset.board = "pending";
+    const io = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting) { board.dataset.board = "go"; io.disconnect(); }
+    }, { rootMargin: "0px 0px -80px 0px" });
+    io.observe(board);
+  })();
+</script>
+</body>
+</html>

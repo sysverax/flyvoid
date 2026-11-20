@@ -11,6 +11,7 @@ import { HotelAllocationOptionEntity } from "./entities/hotel-allocation-option.
 import { HotelBookingEntity } from "./entities/hotel-booking.entity";
 import { HotelBookingRoomEntity } from "./entities/hotel-booking-room.entity";
 import { HotelEntity } from "./entities/hotel.entity";
+import { HotelSplitPreviewEntity } from "./entities/hotel-split-preview.entity";
 import { ProviderEntity } from "./entities/provider.entity";
 import { SupplierWebhookTokenEntity } from "./entities/supplier-webhook-token.entity";
 import { HotelSupplierWebhooksController } from "./hotel-supplier-webhooks.controller";
@@ -18,6 +19,7 @@ import { CancelledFlightsController } from "./cancelled-flights.controller";
 import { CancelledFlightsService } from "./cancelled-flights.service";
 import { HotelAllocationService } from "./hotel-allocation.service";
 import { HotelContentService } from "./hotel-content.service";
+import { HotelSplitPreviewService } from "./hotel-split-preview.service";
 import { CancelledFlightsRepository } from "./cancelled-flights.repository";
 import { AiService } from "../common/ai/ai.service";
 import { HOTEL_PROVIDER } from "./hotel-providers/hotel-provider.interface";
@@ -41,6 +43,7 @@ import { PdfService } from "../common/pdf/pdf.service";
       HotelBookingEntity,
       HotelBookingRoomEntity,
       SupplierWebhookTokenEntity,
+      HotelSplitPreviewEntity,
       AirlineEntity,
       AirportEntity,
     ]),
@@ -50,6 +53,7 @@ import { PdfService } from "../common/pdf/pdf.service";
     CancelledFlightsService,
     HotelAllocationService,
     HotelContentService,
+    HotelSplitPreviewService,
     CancelledFlightsRepository,
     AiService,
     ...hotelProviderRegistration,

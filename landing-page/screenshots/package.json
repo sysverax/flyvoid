@@ -1,0 +1,15 @@
+{
+  "name": "flyverax-landing-screenshots",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Captures marketing screenshots of the real Flyverax airline portal rendered with fake fixture data.",
+  "scripts": {
+    "capture": "node capture.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.49.1",
+    "qrcode": "^1.5.4",
+    "tsx": "^4.19.2"
+  }
+}
