@@ -3058,24 +3058,85 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       plan.invalid.map(({ booking, reason }) => [booking.id, reason]),
     );
 
-    const pnrs = ordered.map((booking, index) => {
+    // Room and board of each rate from the search; hotel details (address,
+    // coordinates, contact) from stored content, fetched read-only if missing.
+    const rateByKey = new Map<string, AvailabilityRoomRate>();
+    for (const hotel of [...plan.hotels, ...(plan.orderHotels ?? [])]) {
+      for (const rate of hotel.rates) rateByKey.set(rate.rateKey, rate);
+    }
+    const candidateCodes = [
+      ...new Set(
+        plan.entries.flatMap((entry) =>
+          entry.candidates.map((candidate) => candidate.hotelCode),
+        ),
+      ),
+    ];
+    const content = candidateCodes.length
+      ? await this.hotelContentService.ensureHotelContent(
+          candidateCodes,
+          requestId,
+          requestLogger,
+          undefined,
+          true,
+        )
+      : new Map<string, HotelEntity>();
+    const airportPoint = {
+      latitude: Number(flight.departureAirport.latitude),
+      longitude: Number(flight.departureAirport.longitude),
+    };
+    const rateDetails = (rateKey: string) => {
+      const rate = rateByKey.get(rateKey);
+      return {
+        roomName: rate?.roomName ?? null,
+        boardName: rate?.boardName ?? null,
+        paymentType: rate?.paymentType ?? null,
+        freeCancellationBefore: rate?.freeCancellationBefore ?? null,
+      };
+    };
+
+    // Room split -> its PNRs (in the run's booking order) and its ranked
+    // hotels. Hotels rank stars first, so a higher class's list is the top of
+    // a lower class's list for the same split: the split shows the longest
+    // one, and each PNR may use the hotels with at least its minStars.
+    type SplitGroup = {
+      key: string;
+      entry?: (typeof plan.entries)[number];
+      pnrs: object[];
+      pnrsByHotel: Map<string, string[]>;
+    };
+    const splits: SplitGroup[] = [];
+    let allocated = 0;
+    for (const [index, booking] of ordered.entries()) {
+      const entry = entryByBooking.get(booking.id);
+      const key = entry
+        ? `${entry.asOrder ? "order" : "rooms"}:${combinationKey(entry.rooms)}`
+        : "invalid";
+      let group = splits.find((split) => split.key === key);
+      if (!group) {
+        group = { key, entry, pnrs: [], pnrsByHotel: new Map() };
+        splits.push(group);
+      } else if (
+        entry &&
+        entry.candidates.length > (group.entry?.candidates.length ?? 0)
+      ) {
+        group.entry = entry;
+      }
       const pnr = {
         order: index + 1,
         bookingId: booking.id,
         pnr: booking.pnr,
         travelClass: booking.travelClass,
+        minStars: this.starRule(booking.travelClass).min,
         adults: booking.adults,
         children: booking.children,
       };
-      const entry = entryByBooking.get(booking.id);
       if (!entry) {
-        return {
+        group.pnrs.push({
           ...pnr,
           recommended: null,
           reason: `Invalid passenger data: ${invalidByBooking.get(booking.id) ?? "no room split"}`,
-          totalCandidates: 0,
-          candidates: [],
-        };
+        });
+        continue;
       }
       // The first ranked hotel with free rooms for the whole split, as
       // bookPlannedPnr picks it.
@@ -3098,34 +3159,25 @@ export class HotelAllocationService implements OnApplicationBootstrap {
           hotelCode: candidate.hotelCode,
           hotelName: candidate.hotelName,
           stars: candidate.stars,
-          tier: candidate.tier,
-          price: this.roundCurrency(
-            picks.reduce(
-              (sum, pick) => sum + pick.netPrice * pick.roomsNeeded,
-              0,
-            ),
-          ),
+          price: this.picksPrice(picks, entry.asOrder),
           currency: candidate.currency,
           rooms: picks.map((pick) => ({
             adults: pick.shape.adults,
             children: pick.shape.children,
             roomsNeeded: pick.roomsNeeded,
-            rateKey: pick.rateKey,
+            ...rateDetails(pick.rateKey),
             netPrice: pick.netPrice,
-            inPool: pick.inPool,
+            rateKey: pick.rateKey,
           })),
         };
+        const assigned = group.pnrsByHotel.get(candidate.hotelCode) ?? [];
+        assigned.push(booking.pnr);
+        group.pnrsByHotel.set(candidate.hotelCode, assigned);
+        allocated += 1;
         break;
       }
-      return {
+      group.pnrs.push({
         ...pnr,
-        minStars: entry.stars.min,
-        roomSplitOptions: entry.plan,
-        chosenRooms: entry.rooms.map(({ adults, children }) => ({
-          adults,
-          children,
-        })),
-        bookedAsOneOrder: entry.asOrder,
         recommended,
         ...(recommended
           ? {}
@@ -3135,38 +3187,65 @@ export class HotelAllocationService implements OnApplicationBootstrap {
                   ? "No hotel near the airport has rooms left for this booking's room split"
                   : "No ranked hotel has free rooms left after the PNRs before it",
             }),
-        totalCandidates: entry.candidates.length,
-        candidates: entry.candidates.map((candidate, rank) => ({
+      });
+    }
+
+    const output = splits.map(({ entry, pnrs: splitPnrs, pnrsByHotel }) => ({
+      rooms:
+        entry?.rooms.map(({ adults, children }) => ({ adults, children })) ??
+        null,
+      roomSplitOptions: entry?.plan ?? null,
+      bookedAsOneOrder: entry?.asOrder ?? false,
+      totalPnrs: splitPnrs.length,
+      pnrs: splitPnrs,
+      totalHotels: entry?.candidates.length ?? 0,
+      hotels: (entry?.candidates ?? []).map((candidate, rank) => {
+        const hotel = content.get(candidate.hotelCode);
+        const latitude = hotel?.latitude != null ? Number(hotel.latitude) : null;
+        const longitude = hotel?.longitude != null ? Number(hotel.longitude) : null;
+        return {
           rank: rank + 1,
           hotelCode: candidate.hotelCode,
           hotelName: candidate.hotelName,
           stars: candidate.stars,
-          tier: candidate.tier,
+          address: hotel?.address ?? null,
+          distanceKm:
+            latitude !== null && longitude !== null
+              ? distanceKm(airportPoint, { latitude, longitude })
+              : null,
+          latitude,
+          longitude,
+          phone: hotel?.contact?.phones?.[0]?.phoneNumber ?? null,
+          email: hotel?.contact?.email ?? null,
+          website: hotel?.website ?? null,
+          imageUrl: hotel?.imageUrl ?? null,
           estimatedPrice: candidate.estimatedPrice,
           currency: candidate.currency,
-          rooms: candidate.rooms.map((room) => ({
-            adults: room.adults,
-            children: room.children,
-            roomsNeeded: room.roomsNeeded,
-            bestRate: room.rateOptions[0] ?? null,
-            rateOptions: room.rateOptions.length,
-          })),
-        })),
-      };
-    });
-
-    // Classes in booking order (ordered is sorted by class first).
-    const classes: Array<{ travelClass: string; pnrs: typeof pnrs }> = [];
-    for (const pnr of pnrs) {
-      const last = classes[classes.length - 1];
-      if (last?.travelClass === pnr.travelClass) last.pnrs.push(pnr);
-      else classes.push({ travelClass: pnr.travelClass, pnrs: [pnr] });
-    }
-    const allocated = pnrs.filter((pnr) => pnr.recommended !== null).length;
+          tier: candidate.tier,
+          // PNRs of this split the run would put here.
+          assignedPnrs: pnrsByHotel.get(candidate.hotelCode) ?? [],
+          rooms: candidate.rooms.map((room) => {
+            const best = room.rateOptions[0];
+            return {
+              adults: room.adults,
+              children: room.children,
+              roomsNeeded: room.roomsNeeded,
+              ...(best ? rateDetails(best.rateKey) : {}),
+              netPrice: best?.netPrice ?? null,
+              roomsLeft: room.rateOptions.reduce(
+                (sum, option) => sum + Math.max(0, option.allotment),
+                0,
+              ),
+              rateOptions: room.rateOptions.length,
+            };
+          }),
+        };
+      }),
+    }));
     requestLogger.info("Computed flight allocation preview", {
       context: this.context,
       flightId,
-      pnrs: pnrs.length,
+      pnrs: ordered.length,
       allocated,
       hotels: plan.hotels.length,
     });
@@ -3179,10 +3258,10 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       checkOutDate: stay.checkOut,
       departureAirport: flight.departureAirport.iataCode,
       supplyBufferRatio: config.hotelBooking.supplyBufferRatio,
-      totalPnrs: pnrs.length,
+      totalPnrs: ordered.length,
       allocatedPnrs: allocated,
-      unallocatedPnrs: pnrs.length - allocated,
-      allAllocated: allocated === pnrs.length,
+      unallocatedPnrs: ordered.length - allocated,
+      allAllocated: allocated === ordered.length,
       // Multiroom orders are booked as a whole and are not pooled per shape.
       supplyPool: [...plan.pools.values()].map((pool) => ({
         shape: { adults: pool.shape.adults, children: pool.shape.children },
@@ -3194,7 +3273,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         hotels: [...pool.hotelCodes],
         rates: pool.rateKeys.size,
       })),
-      classes,
+      splits: output,
     };
   }
 
@@ -3377,14 +3456,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
             candidate,
             setPrices: [],
           };
-          entry.setPrices.push(
-            this.roundCurrency(
-              picks.reduce(
-                (sum, pick) => sum + pick.netPrice * pick.roomsNeeded,
-                0,
-              ),
-            ),
-          );
+          entry.setPrices.push(this.picksPrice(picks, asOrder));
           byHotel.set(candidate.hotelCode, entry);
           taken = true;
           break;
@@ -3444,6 +3516,18 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       need: input.need,
       splits,
     };
+  }
+
+  /**
+   * Stay price of the rates picked for one PNR. A multiroom order rate's
+   * price already covers all its rooms, so it counts once.
+   */
+  private picksPrice(picks: SelectedRate[], asOrder: boolean): number {
+    return this.roundCurrency(
+      asOrder
+        ? (picks[0]?.netPrice ?? 0)
+        : picks.reduce((sum, pick) => sum + pick.netPrice * pick.roomsNeeded, 0),
+    );
   }
 
   private static readonly PREVIEW_MAX_NIGHTS = 30;

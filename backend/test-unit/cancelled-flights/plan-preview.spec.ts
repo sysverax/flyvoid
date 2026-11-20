@@ -100,15 +100,43 @@ function setup(
     findFlightWithRelations: jest.fn(async (..._args: any[]) => FLIGHT as any),
     findBookingsByFlightId: jest.fn(async (..._args: any[]) => bookings),
   };
+  // Stored hotel details (read-only lookup); hotel B has none stored.
+  const content = {
+    ensureHotelContent: jest.fn(async (..._args: any[]) =>
+      new Map([
+        [
+          "A",
+          {
+            address: "1 Airport Road",
+            latitude: "25.26",
+            longitude: "55.36",
+            contact: { phones: [{ phoneNumber: "+971 4 000 0000", phoneType: "main" }], email: "stay@hotel-a.example" },
+            website: "https://hotel-a.example",
+            imageUrl: null,
+          },
+        ],
+      ]),
+    ),
+  };
   const service = new HotelAllocationService(
     repository as any,
     {} as any,
     {} as any,
-    {} as any,
+    content as any,
   ) as any;
   service.computePnrPlans = jest.fn(async (_f: any, _s: any, planned: any[]) => ({
     invalid: [],
-    hotels: [],
+    hotels: [
+      {
+        hotelCode: "A",
+        hotelName: "Hotel A",
+        stars: 4,
+        rates: [
+          { rateKey: "A-41", roomName: "Family Suite", boardName: "Breakfast", paymentType: "deposit" },
+          { rateKey: "A-30", roomName: "Triple Room", boardName: "Room only", paymentType: "deposit" },
+        ],
+      },
+    ],
     orderHotels: undefined,
     pools: new Map([
       [
@@ -135,11 +163,13 @@ function setup(
       candidates,
     })),
   }));
-  return { service, repository };
+  return { service, repository, content };
 }
 
 const preview = (service: any, user: object = AIRLINE_USER) =>
   service.previewFlightAllocation(42, user, "req", logger);
+
+const allPnrs = (result: any) => result.splits.flatMap((s: any) => s.pnrs);
 
 describe("flight allocation preview (by cancelled flight id)", () => {
   it("plans all the flight's PNRs in the run's order: higher class first", async () => {
@@ -154,32 +184,75 @@ describe("flight allocation preview (by cancelled flight id)", () => {
     expect(planned.map((b: any) => b.pnr)).toEqual(["FIRST1", "ECO1", "ECO2"]);
   });
 
-  it("groups PNRs by class in booking order, each with its ranked hotels", async () => {
+  it("groups by room split: the split's PNRs in booking order, then its ranked hotels", async () => {
     const { service } = setup();
 
     const result = await preview(service);
 
-    expect(
-      result.classes.map((c: any) => [c.travelClass, c.pnrs.map((p: any) => p.pnr)]),
-    ).toEqual([
-      ["first_class", ["FIRST1"]],
-      ["economy", ["ECO1", "ECO2"]],
-    ]);
-    const first = result.classes[0].pnrs[0];
-    expect(first).toMatchObject({
-      order: 1,
-      bookingId: 2,
-      adults: 7,
-      children: 1,
-      minStars: 3,
-      chosenRooms: SPLIT,
+    expect(result.splits).toHaveLength(1);
+    const [split] = result.splits;
+    expect(split).toMatchObject({
+      rooms: SPLIT,
       bookedAsOneOrder: false,
-      totalCandidates: 2,
+      totalPnrs: 3,
+      totalHotels: 2,
     });
-    expect(first.candidates.map((c: any) => [c.rank, c.hotelCode])).toEqual([
+    expect(split.pnrs.map((p: any) => [p.order, p.pnr, p.travelClass, p.minStars])).toEqual([
+      [1, "FIRST1", "first_class", 5],
+      [2, "ECO1", "economy", 3],
+      [3, "ECO2", "economy", 3],
+    ]);
+    expect(split.pnrs[1]).toMatchObject({ bookingId: 1, adults: 7, children: 1 });
+    expect(split.hotels.map((h: any) => [h.rank, h.hotelCode])).toEqual([
       [1, "A"],
       [2, "B"],
     ]);
+  });
+
+  it("shows each hotel's details: address, distance, contact, rooms, board, price and rooms left", async () => {
+    const { service, content } = setup();
+
+    const result = await preview(service);
+
+    const hotel = result.splits[0].hotels[0];
+    expect(hotel).toMatchObject({
+      rank: 1,
+      hotelCode: "A",
+      hotelName: "Hotel A",
+      stars: 4,
+      address: "1 Airport Road",
+      distanceKm: 1.1,
+      latitude: 25.26,
+      longitude: 55.36,
+      phone: "+971 4 000 0000",
+      email: "stay@hotel-a.example",
+      website: "https://hotel-a.example",
+      estimatedPrice: 300,
+      currency: "USD",
+      assignedPnrs: ["FIRST1", "ECO1"],
+    });
+    expect(hotel.rooms[0]).toEqual({
+      adults: 4,
+      children: 1,
+      roomsNeeded: 1,
+      roomName: "Family Suite",
+      boardName: "Breakfast",
+      paymentType: "deposit",
+      freeCancellationBefore: null,
+      netPrice: 180,
+      roomsLeft: 2,
+      rateOptions: 1,
+    });
+    // Stored details are read without saving, for every ranked hotel.
+    expect(content.ensureHotelContent.mock.calls[0][0]).toEqual(["A", "B"]);
+    expect(content.ensureHotelContent.mock.calls[0][4]).toBe(true);
+    // A hotel with no stored details still lists its ranking data.
+    expect(result.splits[0].hotels[1]).toMatchObject({
+      hotelCode: "B",
+      address: null,
+      distanceKm: null,
+      assignedPnrs: ["ECO2"],
+    });
   });
 
   it("gives each PNR all its rooms in one hotel, moving on when rooms run out", async () => {
@@ -188,16 +261,17 @@ describe("flight allocation preview (by cancelled flight id)", () => {
     const result = await preview(service);
 
     // Hotel A has two 4+1 rooms: the first two PNRs there, the third moves to B.
-    const picks = result.classes
-      .flatMap((c: any) => c.pnrs)
-      .map((p: any) => [p.pnr, p.recommended.hotelCode, p.recommended.rank]);
+    const picks = allPnrs(result).map((p: any) => [p.pnr, p.recommended.hotelCode, p.recommended.rank]);
     expect(picks).toEqual([
       ["FIRST1", "A", 1],
       ["ECO1", "A", 1],
       ["ECO2", "B", 2],
     ]);
-    const first = result.classes[0].pnrs[0].recommended;
-    expect(first.rooms.map((r: any) => r.rateKey)).toEqual(["A-41", "A-30"]);
+    const first = result.splits[0].pnrs[0].recommended;
+    expect(first.rooms.map((r: any) => [r.rateKey, r.roomName])).toEqual([
+      ["A-41", "Family Suite"],
+      ["A-30", "Triple Room"],
+    ]);
     expect(first.price).toBe(300);
     expect(result).toMatchObject({ totalPnrs: 3, allocatedPnrs: 3, allAllocated: true });
   });
@@ -207,7 +281,7 @@ describe("flight allocation preview (by cancelled flight id)", () => {
 
     const result = await preview(service);
 
-    const last = result.classes[1].pnrs[1];
+    const last = result.splits[0].pnrs[2];
     expect(last.recommended).toBeNull();
     expect(last.reason).toContain("No ranked hotel has free rooms left");
     expect(result).toMatchObject({ allocatedPnrs: 2, unallocatedPnrs: 1, allAllocated: false });
@@ -240,7 +314,7 @@ describe("flight allocation preview (by cancelled flight id)", () => {
     ]);
   });
 
-  it("lists a PNR with no room split rule with its reason", async () => {
+  it("lists a PNR with no room split rule in its own group, with its reason", async () => {
     const { service } = setup();
     const original = service.computePnrPlans;
     service.computePnrPlans = jest.fn(async (...args: any[]) => {
@@ -255,7 +329,8 @@ describe("flight allocation preview (by cancelled flight id)", () => {
 
     const result = await preview(service);
 
-    expect(result.classes[0].pnrs[0]).toMatchObject({
+    expect(result.splits[0]).toMatchObject({ rooms: null, totalHotels: 0, hotels: [] });
+    expect(result.splits[0].pnrs[0]).toMatchObject({
       pnr: "FIRST1",
       recommended: null,
       reason: "Invalid passenger data: No room split rule configured",

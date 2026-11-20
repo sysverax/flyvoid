@@ -207,6 +207,34 @@ describe("split preview: one search per split at exactly the distance", () => {
     expect(split.recommendedHotels[0].setPrices).toEqual([190, 190]);
   });
 
+  it("prices a multi-room split booked as one order once per set (order price covers all rooms)", async () => {
+    const rooms = [
+      { adults: 2, children: 0 },
+      { adults: 2, children: 0 },
+    ];
+    const orderRate = { ...rate("ORDER", 2, 0, 404, 4), rooms };
+    const service = newService(() => ({
+      hotels: [],
+      orderHotels: [hotel("ORDER", 5, 25.3, [orderRate])],
+    }));
+
+    const result = await service.computeSplitPreview(
+      body({ splits: [{ rooms, allocation: 1 }] }),
+      STAY,
+      "req",
+      logger,
+    );
+
+    const [split] = result.splits;
+    expect(split).toMatchObject({ bookedAsOneOrder: true, target: 2, setsFound: 2 });
+    expect(split.recommendedHotels[0]).toMatchObject({
+      hotelCode: "ORDER",
+      sets: 2,
+      setPrices: [404, 404],
+      totalPrice: 808,
+    });
+  });
+
   it("treats splits independently: each sees the full stock", async () => {
     const service = newService(() => ({
       hotels: [hotel("ONLY", 4, 25.3, [rate("ONLY", 2, 1, 100, 2)])],

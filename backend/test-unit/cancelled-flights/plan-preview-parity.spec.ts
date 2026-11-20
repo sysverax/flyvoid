@@ -104,11 +104,13 @@ function newService() {
     findFlightWithRelations: jest.fn(async (..._args: any[]) => flight),
     findBookingsByFlightId: jest.fn(async (..._args: any[]): Promise<any[]> => []),
   };
+  // Stored hotel details for the preview's display (none stored here).
+  const content = { ensureHotelContent: jest.fn(async () => new Map()) };
   const service = new HotelAllocationService(
     repository as any,
     {} as any,
     {} as any,
-    {} as any,
+    content as any,
   ) as any;
   service.searchSplits = jest.fn(async () =>
     JSON.parse(JSON.stringify(SEARCH)),
@@ -197,13 +199,19 @@ describe("plan preview vs a real allocation run", () => {
     repository.findBookingsByFlightId.mockResolvedValue(bookings);
     const result = await service.previewFlightAllocation(flight.id, AIRLINE_USER, "req", logger);
 
-    const previewed = result.classes.flatMap((c: any) => c.pnrs);
+    const previewed = result.splits.flatMap((s: any) =>
+      s.pnrs.map((p: any) => ({ ...p, hotels: s.hotels })),
+    );
     expect(previewed.map((p: any) => p.bookingId)).toEqual([1, 3, 2]); // first, business, economy
+    // The split lists the longest ranking; each PNR's real ranking is its
+    // hotels with at least the PNR's minimum stars, in the same order.
     for (const entry of previewed) {
       const saved = plans.find((p: any) => p.bookingId === entry.bookingId);
-      expect(entry.candidates.map((c: any) => c.hotelCode)).toEqual(
-        saved.candidates.map((c: any) => c.hotelCode),
-      );
+      expect(
+        entry.hotels
+          .filter((h: any) => h.stars >= entry.minStars)
+          .map((h: any) => h.hotelCode),
+      ).toEqual(saved.candidates.map((c: any) => c.hotelCode));
     }
   });
 
@@ -243,8 +251,8 @@ describe("plan preview vs a real allocation run", () => {
     const result = await service.previewFlightAllocation(flight.id, AIRLINE_USER, "req", logger);
 
     const recommended = Object.fromEntries(
-      result.classes
-        .flatMap((c: any) => c.pnrs)
+      result.splits
+        .flatMap((s: any) => s.pnrs)
         .map((p: any) => [p.bookingId, p.recommended?.hotelCode]),
     );
     expect(recommended).toEqual(booked);
