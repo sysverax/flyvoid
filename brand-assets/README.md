@@ -18,8 +18,10 @@ same; only the background is removed and the layout changed (horizontal lockups)
 
 | File | Use on | Used by |
 |---|---|---|
-| `flyverax-logo-horizontal-inverse.svg/.png` | Dark/navy backgrounds | Portal sidebars (`frontend/*/public/logo.svg`), PDF header (`LOGO_SVG` in `backend/src/common/pdf/pdf-brand.ts`) |
-| `flyverax-logo-horizontal.svg/.png` | White/light backgrounds | Emails and documents (not used yet) |
+| `flyverax-logo-horizontal-inverse.svg/.png` | Dark/navy backgrounds | Portal sidebars (`frontend/*/public/logo.svg`), PDF header (`LOGO_SVG` in `backend/src/common/pdf/pdf-brand.ts`), landing share image (`landing-site/scripts/brand/`) |
+| `flyverax-logo-horizontal.svg/.png` | White/light backgrounds | Landing site header (`landing-site/src/assets/flyverax-logo-horizontal.svg`); emails later |
+| `flyverax-logo-stacked.svg` | White/light backgrounds (icon above wordmark, as designed) | Landing site footer (`landing-site/src/assets/flyverax-logo-stacked.svg`), `landing-page/assets/flyverax-logo.png` |
+| `flyverax-logo-stacked-inverse.svg` | Dark/navy backgrounds | Not used yet |
 | `flyverax-icon-inverse.svg/.png` | Dark/navy backgrounds | Auth page badges (`frontend/*/public/flyverax-mark.svg`) |
 | `flyverax-icon.svg/.png` | White/light backgrounds | Not used yet |
 | `flyverax-app-icon.svg/.png` | Browser tab / app icon (portal navy `#0F2757`, rounded) | `frontend/*/src/app/icon.svg`, `frontend/*/public/flyverax-icon.svg` |

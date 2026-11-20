@@ -102,7 +102,7 @@ Tone: calm, precise, dependable. Short sentences. Plain English. No hype words (
 3. BRAND AND DESIGN SYSTEM
 =====================================================================
 Logos (attached):
-- flyverax-icon.svg: the Flyverax mark (white arrow-plane on a navy rounded square). Use in the
+- flyverax-icon.svg: the Flyverax mark (white Flyverax mark on a navy rounded square). Use in the
   header next to the word "Flyverax", as the favicon (also generate apple-touch-icon and a 512px PNG),
   and in the social share image.
 - flyverax-logo.png: full logo (mark + FLYVERAX wordmark, gradient). Use it large in the footer
@@ -428,7 +428,7 @@ no warranty for website content; limitation of liability placeholder; governing 
   Save it as public/og-image.png AND add the meta tags on every page: og:image and twitter:image
   = https://flyverax.com/og-image.png, og:image:width 1200, og:image:height 630, og:image:alt
   "Flyverax - Calm in every disruption".
-- Favicon from flyverax-icon.svg, plus apple-touch-icon 180px and a web manifest (theme colour #0A1F44).
+- Favicon from flyverax-icon.svg, plus apple-touch-icon 180px and a web manifest (theme colour #0F2757).
 - JSON-LD: Organization (name Sysverax, url https://sysverax.com) and SoftwareApplication (name
   Flyverax, applicationCategory BusinessApplication, operatingSystem Web, publisher Sysverax).
   NO aggregateRating, NO reviews, NO offers/price.

@@ -79,6 +79,18 @@ ${iconOnly.join("\n")}
 </svg>`;
 }
 
+// Stacked logo (icon above wordmark, as designed), trimmed to the artwork.
+function stacked(iconPaths, wordPaths, top, bottom, extraDefs) {
+  const h = bottom - top;
+  return `
+<svg xmlns="http://www.w3.org/2000/svg" width="${((W * 91) / h).toFixed(1)}" height="91" viewBox="${X0} ${top} ${W.toFixed(3)} ${h.toFixed(3)}" fill="none">
+${iconPaths.concat(wordPaths).join("\n")}
+${extraDefs}
+</svg>`;
+}
+
+out("flyverax-logo-stacked.svg", stacked(priIcon, priWord, 455.235, 1544.09, priDefs));
+out("flyverax-logo-stacked-inverse.svg", stacked(invIcon, invWord, 455.376, 1544.23, ""));
 out("flyverax-logo-horizontal-inverse.svg", lockup(invIcon, 455.376, invWord, ""));
 out("flyverax-logo-horizontal.svg", lockup(priIcon, 455.235, priWord, priDefs));
 out("flyverax-icon-inverse.svg", squareIcon(invIcon, 455.376, ""));
