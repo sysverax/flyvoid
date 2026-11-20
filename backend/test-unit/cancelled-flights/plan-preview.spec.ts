@@ -1,11 +1,11 @@
 import { describe, expect, it, jest } from "@jest/globals";
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { plainToInstance } from "class-transformer";
 import { validate } from "class-validator";
 import { createLogger, transports } from "winston";
 import { HotelAllocationService } from "../../src/cancelled-flights/hotel-allocation.service";
 import { HotelContentService } from "../../src/cancelled-flights/hotel-content.service";
-import { PlanPreviewRequestDto } from "../../src/cancelled-flights/dto/plan-preview-request.dto";
+import { PlanPreviewHotelsRequestDto } from "../../src/cancelled-flights/dto/plan-preview-request.dto";
 import { config } from "../../src/config/config";
 
 const logger = createLogger({
@@ -32,19 +32,6 @@ const SPLIT = [
   { adults: 4, children: 1 },
   { adults: 3, children: 0 },
 ];
-const body = (extra: object = {}) =>
-  ({
-    checkInDate: CHECK_IN,
-    checkOutDate: CHECK_OUT,
-    departureAirport: "dxb",
-    residency: "AE",
-    adults: 7,
-    children: 1,
-    rooms: SPLIT,
-    allocation: 3,
-    ...extra,
-  }) as any;
-
 const option = (
   rateKey: string,
   adults: number,
@@ -78,21 +65,77 @@ const candidate = (code: string, stars: number, bigRoom: number, smallRoom: numb
   ],
 });
 
-function setup(candidates = [candidate("A", 4, 2, 5), candidate("B", 3, 3, 3)]) {
+const booking = (id: number, pnr: string, travelClass: string, extra: object = {}) => ({
+  id,
+  pnr,
+  travelClass,
+  adults: 7,
+  children: 1,
+  childAges: [5],
+  specialNotes: null,
+  residency: "ae",
+  ...extra,
+});
+
+const FLIGHT = {
+  id: 42,
+  airlineId: 3,
+  flightNumber: "FV101",
+  status: "passengers_booking_confirmed",
+  checkInDate: CHECK_IN,
+  checkOutDate: CHECK_OUT,
+  departureAirport: airport,
+};
+const AIRLINE_USER = { userType: "AIRLINE", airlineId: 3 };
+
+function setup(
+  candidates = [candidate("A", 4, 2, 5), candidate("B", 3, 3, 3)],
+  bookings: any[] = [
+    booking(1, "ECO1", "economy"),
+    booking(2, "FIRST1", "first_class"),
+    booking(3, "ECO2", "economy"),
+  ],
+) {
   const repository = {
-    findAirportByIataCode: jest.fn(async (..._args: any[]) => airport as any),
+    findFlightWithRelations: jest.fn(async (..._args: any[]) => FLIGHT as any),
+    findBookingsByFlightId: jest.fn(async (..._args: any[]) => bookings),
+  };
+  // Stored hotel details (read-only lookup); hotel B has none stored.
+  const content = {
+    ensureHotelContent: jest.fn(async (..._args: any[]) =>
+      new Map([
+        [
+          "A",
+          {
+            address: "1 Airport Road",
+            latitude: "25.26",
+            longitude: "55.36",
+            contact: { phones: [{ phoneNumber: "+971 4 000 0000", phoneType: "main" }], email: "stay@hotel-a.example" },
+            website: "https://hotel-a.example",
+            imageUrl: null,
+          },
+        ],
+      ]),
+    ),
   };
   const service = new HotelAllocationService(
     repository as any,
     {} as any,
     {} as any,
-    {} as any,
+    content as any,
   ) as any;
-  service.computePnrPlans = jest.fn(async (_f: any, _s: any, bookings: any[]) => ({
+  service.computePnrPlans = jest.fn(async (_f: any, _s: any, planned: any[]) => ({
     invalid: [],
     hotels: [
-      { hotelCode: "A", hotelName: "Hotel A", category: "4 STARS", stars: 4, radius: 10, rates: [] },
-      { hotelCode: "C", hotelName: "Hotel C", category: "1 STARS", stars: 1, radius: 20, rates: [] },
+      {
+        hotelCode: "A",
+        hotelName: "Hotel A",
+        stars: 4,
+        rates: [
+          { rateKey: "A-41", roomName: "Family Suite", boardName: "Breakfast", paymentType: "deposit" },
+          { rateKey: "A-30", roomName: "Triple Room", boardName: "Room only", paymentType: "deposit" },
+        ],
+      },
     ],
     orderHotels: undefined,
     pools: new Map([
@@ -110,8 +153,8 @@ function setup(candidates = [candidate("A", 4, 2, 5), candidate("B", 3, 3, 3)]) 
         },
       ],
     ]),
-    entries: bookings.map((booking) => ({
-      booking,
+    entries: planned.map((b) => ({
+      booking: b,
       stars: { min: 3, preferred: 3 },
       plan: { preferred: SPLIT, fallbacks: [] },
       rooms: SPLIT,
@@ -120,79 +163,141 @@ function setup(candidates = [candidate("A", 4, 2, 5), candidate("B", 3, 3, 3)]) 
       candidates,
     })),
   }));
-  return { service, repository };
+  return { service, repository, content };
 }
 
-describe("plan preview from the request body", () => {
-  it("plans `allocation` PNRs with the same party and split, without a class star rule", async () => {
+const preview = (service: any, user: object = AIRLINE_USER) =>
+  service.previewFlightAllocation(42, user, "req", logger);
+
+const allPnrs = (result: any) => result.splits.flatMap((s: any) => s.pnrs);
+
+describe("flight allocation preview (by cancelled flight id)", () => {
+  it("plans all the flight's PNRs in the run's order: higher class first", async () => {
     const { service, repository } = setup();
 
-    await service.previewRecommendation(body(), "req", logger);
+    await preview(service);
 
-    expect(repository.findAirportByIataCode).toHaveBeenCalledWith("DXB");
-    const [flight, stay, bookings, , , rooms, stars] =
-      service.computePnrPlans.mock.calls[0];
-    expect(flight.departureAirport).toBe(airport);
+    expect(repository.findFlightWithRelations).toHaveBeenCalledWith(42, logger);
+    const [flight, stay, planned] = service.computePnrPlans.mock.calls[0];
+    expect(flight).toBe(FLIGHT);
     expect(stay).toEqual({ checkIn: CHECK_IN, checkOut: CHECK_OUT });
-    expect(bookings).toHaveLength(3);
-    bookings.forEach((booking: any) =>
-      expect(booking).toMatchObject({ adults: 7, children: 1, residency: "ae" }),
-    );
-    expect(rooms).toEqual(SPLIT);
-    const floor = config.hotelSearch.minRate;
-    expect(stars).toEqual({ min: floor, preferred: floor });
+    expect(planned.map((b: any) => b.pnr)).toEqual(["FIRST1", "ECO1", "ECO2"]);
+  });
+
+  it("groups by room split: the split's PNRs in booking order, then its ranked hotels", async () => {
+    const { service } = setup();
+
+    const result = await preview(service);
+
+    expect(result.splits).toHaveLength(1);
+    const [split] = result.splits;
+    expect(split).toMatchObject({
+      rooms: SPLIT,
+      bookedAsOneOrder: false,
+      totalPnrs: 3,
+      totalHotels: 2,
+    });
+    expect(split.pnrs.map((p: any) => [p.order, p.pnr, p.travelClass, p.minStars])).toEqual([
+      [1, "FIRST1", "first_class", 5],
+      [2, "ECO1", "economy", 3],
+      [3, "ECO2", "economy", 3],
+    ]);
+    expect(split.pnrs[1]).toMatchObject({ bookingId: 1, adults: 7, children: 1 });
+    expect(split.hotels.map((h: any) => [h.rank, h.hotelCode])).toEqual([
+      [1, "A"],
+      [2, "B"],
+    ]);
+  });
+
+  it("shows each hotel's details: address, distance, contact, rooms, board, price and rooms left", async () => {
+    const { service, content } = setup();
+
+    const result = await preview(service);
+
+    const hotel = result.splits[0].hotels[0];
+    expect(hotel).toMatchObject({
+      rank: 1,
+      hotelCode: "A",
+      hotelName: "Hotel A",
+      stars: 4,
+      address: "1 Airport Road",
+      distanceKm: 1.1,
+      latitude: 25.26,
+      longitude: 55.36,
+      phone: "+971 4 000 0000",
+      email: "stay@hotel-a.example",
+      website: "https://hotel-a.example",
+      estimatedPrice: 300,
+      currency: "USD",
+      assignedPnrs: ["FIRST1", "ECO1"],
+    });
+    expect(hotel.rooms[0]).toEqual({
+      adults: 4,
+      children: 1,
+      roomsNeeded: 1,
+      roomName: "Family Suite",
+      boardName: "Breakfast",
+      paymentType: "deposit",
+      freeCancellationBefore: null,
+      netPrice: 180,
+      roomsLeft: 2,
+      rateOptions: 1,
+    });
+    // Stored details are read without saving, for every ranked hotel.
+    expect(content.ensureHotelContent.mock.calls[0][0]).toEqual(["A", "B"]);
+    expect(content.ensureHotelContent.mock.calls[0][4]).toBe(true);
+    // A hotel with no stored details still lists its ranking data.
+    expect(result.splits[0].hotels[1]).toMatchObject({
+      hotelCode: "B",
+      address: null,
+      distanceKm: null,
+      assignedPnrs: ["ECO2"],
+    });
   });
 
   it("gives each PNR all its rooms in one hotel, moving on when rooms run out", async () => {
     const { service } = setup();
 
-    const result = await service.previewRecommendation(body(), "req", logger);
+    const result = await preview(service);
 
-    // Hotel A has two 4+1 rooms: PNRs 1-2 there, PNR 3 moves on to B.
-    expect(
-      result.allocations.map((a: any) => [a.pnrNo, a.hotelCode, a.rank]),
-    ).toEqual([
-      [1, "A", 1],
-      [2, "A", 1],
-      [3, "B", 2],
+    // Hotel A has two 4+1 rooms: the first two PNRs there, the third moves to B.
+    const picks = allPnrs(result).map((p: any) => [p.pnr, p.recommended.hotelCode, p.recommended.rank]);
+    expect(picks).toEqual([
+      ["FIRST1", "A", 1],
+      ["ECO1", "A", 1],
+      ["ECO2", "B", 2],
     ]);
-    expect(result.allocations[0].rooms.map((r: any) => r.rateKey)).toEqual([
-      "A-41",
-      "A-30",
+    const first = result.splits[0].pnrs[0].recommended;
+    expect(first.rooms.map((r: any) => [r.rateKey, r.roomName])).toEqual([
+      ["A-41", "Family Suite"],
+      ["A-30", "Triple Room"],
     ]);
-    expect(result.allocations[0].price).toBe(300);
-    expect(result.allAllocated).toBe(true);
+    expect(first.price).toBe(300);
+    expect(result).toMatchObject({ totalPnrs: 3, allocatedPnrs: 3, allAllocated: true });
   });
 
   it("reports a PNR that no hotel can take", async () => {
     const { service } = setup([candidate("A", 4, 1, 5), candidate("B", 3, 1, 3)]);
 
-    const result = await service.previewRecommendation(body(), "req", logger);
+    const result = await preview(service);
 
-    expect(result.allocations.map((a: any) => a.hotelCode)).toEqual(["A", "B", null]);
-    expect(result.allocations[2].reason).toContain(
-      "No ranked hotel has free rooms left",
-    );
-    expect(result.allAllocated).toBe(false);
+    const last = result.splits[0].pnrs[2];
+    expect(last.recommended).toBeNull();
+    expect(last.reason).toContain("No ranked hotel has free rooms left");
+    expect(result).toMatchObject({ allocatedPnrs: 2, unallocatedPnrs: 1, allAllocated: false });
   });
 
-  it("echoes the demand and shows the 150% supply pool", async () => {
+  it("shows the flight, stay and the supply pool", async () => {
     const { service } = setup();
 
-    const result = await service.previewRecommendation(body(), "req", logger);
+    const result = await preview(service);
 
     expect(result).toMatchObject({
-      adults: 7,
-      children: 1,
-      allocation: 3,
-      roomsPerPnr: 2,
-      totalRooms: 6,
+      cancelledFlightId: 42,
+      flightNumber: "FV101",
       checkInDate: CHECK_IN,
       checkOutDate: CHECK_OUT,
       departureAirport: "DXB",
-      residency: "AE",
-      chosenRooms: SPLIT,
-      roomSplitGiven: true,
       supplyBufferRatio: config.hotelBooking.supplyBufferRatio,
     });
     expect(result.supplyPool).toEqual([
@@ -207,78 +312,84 @@ describe("plan preview from the request body", () => {
         rates: 2,
       },
     ]);
-    expect(result.recommended).toMatchObject({ rank: 1, hotelCode: "A" });
   });
 
-  it("uses minStars and supplyBufferRatio from the body", async () => {
+  it("lists a PNR with no room split rule in its own group, with its reason", async () => {
     const { service } = setup();
-
-    const result = await service.previewRecommendation(
-      body({ minStars: 4, supplyBufferRatio: 2 }),
-      "req",
-      logger,
-    );
-
-    const args = service.computePnrPlans.mock.calls[0];
-    expect(args[6]).toEqual({ min: 4, preferred: 4 });
-    expect(args[7]).toBe(2);
-    expect(result).toMatchObject({ minStars: 4, supplyBufferRatio: 2 });
-  });
-
-  it("defaults minStars and supplyBufferRatio to the configured values", async () => {
-    const { service } = setup();
-
-    const result = await service.previewRecommendation(body(), "req", logger);
-
-    const args = service.computePnrPlans.mock.calls[0];
-    expect(args[7]).toBe(config.hotelBooking.supplyBufferRatio);
-    expect(result.minStars).toBe(config.hotelSearch.minRate);
-  });
-
-  it("shows how many whole PNR sets each hotel can host, against the target", async () => {
-    const { service } = setup();
-    const rates = (big: number, small: number) => [
-      { rateKey: "b", adults: 4, children: 1, allotment: big, netPrice: 1, currency: "USD" },
-      { rateKey: "s", adults: 3, children: 0, allotment: small, netPrice: 1, currency: "USD" },
-    ];
     const original = service.computePnrPlans;
-    service.computePnrPlans = jest.fn(async (...args: any[]) => ({
-      ...(await original(...args)),
-      hotels: [
-        { hotelCode: "A", hotelName: "A", stars: 4, rates: rates(4, 2) }, // 2 sets
-        { hotelCode: "B", hotelName: "B", stars: 5, rates: rates(1, 9) }, // 1 set
-        { hotelCode: "C", hotelName: "C", stars: 4, rates: rates(5, 0) }, // 0 sets
-        { hotelCode: "D", hotelName: "D", stars: 1, rates: rates(9, 9) }, // below minStars
-      ],
-    }));
+    service.computePnrPlans = jest.fn(async (...args: any[]) => {
+      const plan = await original(...args);
+      const [bad, ...rest] = plan.entries;
+      return {
+        ...plan,
+        invalid: [{ booking: bad.booking, reason: "No room split rule configured" }],
+        entries: rest,
+      };
+    });
 
-    const result = await service.previewRecommendation(body({ minStars: 3 }), "req", logger);
+    const result = await preview(service);
 
-    // 3 PNRs x 1.5 -> 5 sets needed; A 2 + B 1 = 3.
-    expect(result.supplySets).toEqual({
-      setsNeeded: 3,
-      target: 5,
-      setsAvailable: 3,
-      targetMet: false,
-      hotels: [
-        { hotelCode: "B", hotelName: "B", stars: 5, sets: 1 },
-        { hotelCode: "A", hotelName: "A", stars: 4, sets: 2 },
-      ],
+    expect(result.splits[0]).toMatchObject({ rooms: null, totalHotels: 0, hotels: [] });
+    expect(result.splits[0].pnrs[0]).toMatchObject({
+      pnr: "FIRST1",
+      recommended: null,
+      reason: "Invalid passenger data: No room split rule configured",
     });
   });
 
-  it("defaults to one PNR and to the split allocation would choose", async () => {
+  it("hides another airline's flight (404) and lets a platform user see any", async () => {
     const { service } = setup();
 
-    await service.previewRecommendation(
-      body({ allocation: undefined, rooms: undefined }),
-      "req",
-      logger,
+    await expect(preview(service, { userType: "AIRLINE", airlineId: 9 })).rejects.toBeInstanceOf(
+      NotFoundException,
     );
+    expect(service.computePnrPlans).not.toHaveBeenCalled();
+    await expect(preview(service, { userType: "PLATFORM" })).resolves.toMatchObject({
+      cancelledFlightId: 42,
+    });
+  });
 
-    const [, , bookings, , , rooms] = service.computePnrPlans.mock.calls[0];
-    expect(bookings).toHaveLength(1);
-    expect(rooms).toBeUndefined();
+  it("rejects a flight with no PNRs before any supplier search", async () => {
+    const { service } = setup(undefined, []);
+
+    await expect(preview(service)).rejects.toBeInstanceOf(BadRequestException);
+    expect(service.computePnrPlans).not.toHaveBeenCalled();
+  });
+});
+
+describe("hotels preview request checks", () => {
+  const body = (extra: object = {}) =>
+    ({
+      checkInDate: CHECK_IN,
+      checkOutDate: CHECK_OUT,
+      departureAirport: "dxb",
+      residency: "AE",
+      adults: 7,
+      children: 1,
+      rooms: SPLIT,
+      ...extra,
+    }) as any;
+  const errorsFor = async (input: object) =>
+    (
+      await validate(plainToInstance(PlanPreviewHotelsRequestDto, input), {
+        whitelist: true,
+        forbidNonWhitelisted: true,
+      })
+    ).flatMap((e: any) => [
+      ...Object.values(e.constraints ?? {}),
+      ...(e.children ?? []).flatMap((c: any) =>
+        (c.children ?? []).flatMap((g: any) => Object.values(g.constraints ?? {})),
+      ),
+    ]);
+
+  it.each([
+    [{ checkInDate: "20/11/2026" }, "checkInDate must be a calendar date in YYYY-MM-DD format"],
+    [{ departureAirport: "DUBAI" }, "departureAirport must be a 3-letter IATA code"],
+    [{ adults: 0 }, "adults must be at least 1"],
+    [{ rooms: [{ adults: 0, children: 1 }] }, "Each room needs at least 1 adult"],
+  ])("rejects %j", async (change, message) => {
+    const errors = await errorsFor({ ...body(), departureAirport: "DXB", ...change });
+    expect(errors.join(" | ")).toContain(message);
   });
 
   it.each([
@@ -292,57 +403,22 @@ describe("plan preview from the request body", () => {
       "rooms must hold exactly 7 adult(s) and 1 child(ren)",
     ],
   ])("rejects %s with 400 before any supplier search", async (_label, input, message) => {
-    const { service, repository } = setup();
-    if (input.departureAirport === "ZZZ") {
-      repository.findAirportByIataCode.mockResolvedValue(null);
-    }
+    const repository = {
+      findAirportByIataCode: jest.fn(async (code: string) => (code === "DXB" ? airport : null)),
+    };
+    const provider = { searchNearbyHotelsWithOccupancies: jest.fn() };
+    const service = new HotelAllocationService(
+      repository as any,
+      provider as any,
+      {} as any,
+      {} as any,
+    ) as any;
 
-    const call = service.previewRecommendation(input, "req", logger);
+    const call = service.previewHotels(input, "req", logger);
 
     await expect(call).rejects.toBeInstanceOf(BadRequestException);
     await expect(call).rejects.toThrow(message);
-    expect(service.computePnrPlans).not.toHaveBeenCalled();
-  });
-});
-
-describe("plan preview request body validation", () => {
-  const errorsFor = async (input: object) =>
-    (
-      await validate(plainToInstance(PlanPreviewRequestDto, input), {
-        whitelist: true,
-        forbidNonWhitelisted: true,
-      })
-    ).flatMap((e: any) => [
-      ...Object.values(e.constraints ?? {}),
-      ...(e.children ?? []).flatMap((c: any) =>
-        (c.children ?? []).flatMap((g: any) => Object.values(g.constraints ?? {})),
-      ),
-    ]);
-
-  it("accepts the full body", async () => {
-    expect(
-      await errorsFor({
-        ...body(),
-        departureAirport: "DXB",
-        minStars: 3,
-        supplyBufferRatio: 1.5,
-      }),
-    ).toEqual([]);
-  });
-
-  it.each([
-    [{ checkInDate: "20/11/2026" }, "checkInDate must be a calendar date in YYYY-MM-DD format"],
-    [{ departureAirport: "DUBAI" }, "departureAirport must be a 3-letter IATA code"],
-    [{ adults: 0 }, "adults must be at least 1"],
-    [{ allocation: 0 }, "allocation must be at least 1"],
-    [{ rooms: [{ adults: 0, children: 1 }] }, "Each room needs at least 1 adult"],
-    [{ travelClass: "economy" }, "property travelClass should not exist"],
-    [{ minStars: 6 }, "minStars can be at most 5"],
-    [{ supplyBufferRatio: 0.5 }, "supplyBufferRatio must be at least 1"],
-    [{ supplyBufferRatio: "1.5" }, "supplyBufferRatio must be a number"],
-  ])("rejects %j", async (change, message) => {
-    const errors = await errorsFor({ ...body(), departureAirport: "DXB", ...change });
-    expect(errors.join(" | ")).toContain(message);
+    expect(provider.searchNearbyHotelsWithOccupancies).not.toHaveBeenCalled();
   });
 });
 
@@ -492,7 +568,6 @@ describe("hotels preview: one plain geo search around the airport", () => {
   });
 
   it("validates the hotels body: radius allowed, planning fields not", async () => {
-    const { PlanPreviewHotelsRequestDto } = require("../../src/cancelled-flights/dto/plan-preview-request.dto");
     const errors = async (input: object) =>
       (await validate(plainToInstance(PlanPreviewHotelsRequestDto, input), { whitelist: true, forbidNonWhitelisted: true }))
         .flatMap((e: any) => Object.values(e.constraints ?? {}));
