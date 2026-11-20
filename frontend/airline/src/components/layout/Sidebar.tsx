@@ -90,8 +90,8 @@ export function Sidebar() {
         <Image
           src="/logo.svg"
           alt="Flyverax logo"
-          width={150}
-          height={37}
+          width={168}
+          height={29}
           className="ml-[14px]"
           priority
         />
