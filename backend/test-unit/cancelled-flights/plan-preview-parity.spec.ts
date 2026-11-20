@@ -26,7 +26,15 @@ const airport = {
   longitude: "55.36",
   timezone: "Asia/Dubai",
 };
-const flight = { id: 42, airlineId: 3, departureAirport: airport } as any;
+const flight = {
+  id: 42,
+  airlineId: 3,
+  flightNumber: "FV101",
+  checkInDate: STAY.checkIn,
+  checkOutDate: STAY.checkOut,
+  departureAirport: airport,
+} as any;
+const AIRLINE_USER = { userType: "AIRLINE", airlineId: 3 };
 
 const familyRate = (hotelCode: string, netPrice: number, allotment: number) => ({
   hotelCode,
@@ -93,7 +101,8 @@ function newService() {
     findFreshPlanBookingIds: jest.fn(async () => new Set<number>()),
     savePnrPlans: jest.fn(async (..._args: any[]) => undefined),
     markPnrFailed: jest.fn(async (..._args: any[]) => true),
-    findAirportByIataCode: jest.fn(async () => airport),
+    findFlightWithRelations: jest.fn(async (..._args: any[]) => flight),
+    findBookingsByFlightId: jest.fn(async (..._args: any[]): Promise<any[]> => []),
   };
   const service = new HotelAllocationService(
     repository as any,
@@ -176,52 +185,26 @@ describe("plan preview vs a real allocation run", () => {
     expect(previewArgs[7]).toBe(true); // preview never writes
   });
 
-  it("the preview API ranks like a run for an economy party (minimum 3 = global floor)", async () => {
-    const bookings = [1, 2, 3].map((id) => pnr(id, TravelClass.ECONOMY));
+  it("the flight preview ranks each PNR's hotels like a run (each class's minimum)", async () => {
+    const bookings = [
+      pnr(1, TravelClass.FIRST_CLASS),
+      pnr(2, TravelClass.ECONOMY),
+      pnr(3, TravelClass.BUSINESS),
+    ];
     const { plans } = await realRunPlan(bookings);
 
-    const { service } = newService();
-    const result = await service.previewRecommendation(
-      {
-        checkInDate: STAY.checkIn,
-        checkOutDate: STAY.checkOut,
-        departureAirport: "DXB",
-        residency: "AE",
-        adults: 2,
-        children: 1,
-        allocation: 3,
-      },
-      "req",
-      logger,
-    );
+    const { service, repository } = newService();
+    repository.findBookingsByFlightId.mockResolvedValue(bookings);
+    const result = await service.previewFlightAllocation(flight.id, AIRLINE_USER, "req", logger);
 
-    expect(result.candidates.map((c: any) => c.hotelCode)).toEqual(
-      plans[0].candidates.map((c: any) => c.hotelCode),
-    );
-  });
-
-  it("the preview API with minStars 4 ranks like a real business run (minimum 4)", async () => {
-    const { plans } = await realRunPlan([pnr(1, TravelClass.BUSINESS)]);
-
-    const { service } = newService();
-    const result = await service.previewRecommendation(
-      {
-        checkInDate: STAY.checkIn,
-        checkOutDate: STAY.checkOut,
-        departureAirport: "DXB",
-        residency: "AE",
-        adults: 2,
-        children: 1,
-        minStars: 4,
-      },
-      "req",
-      logger,
-    );
-
-    expect(result.candidates.map((c: any) => c.hotelCode)).toEqual(
-      plans[0].candidates.map((c: any) => c.hotelCode),
-    );
-    expect(result.candidates.map((c: any) => c.hotelCode)).toEqual(["H5", "H4b", "H4a"]);
+    const previewed = result.classes.flatMap((c: any) => c.pnrs);
+    expect(previewed.map((p: any) => p.bookingId)).toEqual([1, 3, 2]); // first, business, economy
+    for (const entry of previewed) {
+      const saved = plans.find((p: any) => p.bookingId === entry.bookingId);
+      expect(entry.candidates.map((c: any) => c.hotelCode)).toEqual(
+        saved.candidates.map((c: any) => c.hotelCode),
+      );
+    }
   });
 
   it("gives each PNR the same hotel a run books (when every booking succeeds)", async () => {
@@ -255,26 +238,16 @@ describe("plan preview vs a real allocation run", () => {
     }
 
     // Preview side.
-    const { service } = newService();
-    const result = await service.previewRecommendation(
-      {
-        checkInDate: STAY.checkIn,
-        checkOutDate: STAY.checkOut,
-        departureAirport: "DXB",
-        residency: "AE",
-        adults: 2,
-        children: 1,
-        allocation: 3,
-      },
-      "req",
-      logger,
-    );
+    const { service, repository } = newService();
+    repository.findBookingsByFlightId.mockResolvedValue(bookings);
+    const result = await service.previewFlightAllocation(flight.id, AIRLINE_USER, "req", logger);
 
-    expect(result.allocations.map((a: any) => a.hotelCode)).toEqual([
-      booked[1],
-      booked[2],
-      booked[3],
-    ]);
+    const recommended = Object.fromEntries(
+      result.classes
+        .flatMap((c: any) => c.pnrs)
+        .map((p: any) => [p.bookingId, p.recommended?.hotelCode]),
+    );
+    expect(recommended).toEqual(booked);
     // H5 and H4b have one room each: PNRs spread 5* -> cheapest 4* -> next 4*.
     expect([booked[1], booked[2], booked[3]]).toEqual(["H5", "H4b", "H4a"]);
   });
@@ -304,68 +277,40 @@ describe("supply buffer ratio (the 150%)", () => {
   const demand = [
     { plan: { preferred: [{ adults: 2, children: 1 }], fallbacks: [] }, minStars: 3 },
   ];
-  let saved: { defaultRadius: number; maxRadius: number };
+  let saved: { defaultRadius: number; maxRadius: number; ratio: number };
   beforeEach(() => {
     saved = {
       defaultRadius: config.hotelSearch.defaultRadius,
       maxRadius: config.hotelSearch.maxRadius,
+      ratio: config.hotelBooking.supplyBufferRatio,
     };
     Object.assign(config.hotelSearch, { defaultRadius: 10, maxRadius: 30 });
   });
   afterEach(() => {
-    Object.assign(config.hotelSearch, saved);
+    Object.assign(config.hotelSearch, {
+      defaultRadius: saved.defaultRadius,
+      maxRadius: saved.maxRadius,
+    });
+    (config.hotelBooking as any).supplyBufferRatio = saved.ratio;
   });
 
   it("1.5 (150%): 1 room needs 2 in supply, found within 10 km, no widening", async () => {
+    (config.hotelBooking as any).supplyBufferRatio = 1.5;
     const { service, provider } = searchService();
 
-    await service.searchSplits(flight, STAY, demand, "ae", "req", logger, undefined, true, 1.5);
+    await service.searchSplits(flight, STAY, demand, "ae", "req", logger);
 
     expect(provider.searchNearbyHotelsWithOccupancies).toHaveBeenCalledTimes(1);
   });
 
   it("3 (300%): 1 room needs 3 in supply, so the search widens to 20 km", async () => {
+    (config.hotelBooking as any).supplyBufferRatio = 3;
     const { service, provider } = searchService();
 
-    const found = await service.searchSplits(flight, STAY, demand, "ae", "req", logger, undefined, true, 3);
+    const found = await service.searchSplits(flight, STAY, demand, "ae", "req", logger);
 
     expect(provider.searchNearbyHotelsWithOccupancies).toHaveBeenCalledTimes(2);
     expect(found.hotels.map((h: any) => h.hotelCode).sort()).toEqual(["FAR", "NEAR"]);
-  });
-
-  it("a real run (no ratio passed) uses HOTEL_SUPPLY_BUFFER_RATIO", async () => {
-    const savedRatio = config.hotelBooking.supplyBufferRatio;
-    (config.hotelBooking as any).supplyBufferRatio = 3;
-    try {
-      const { service, provider } = searchService();
-      await service.searchSplits(flight, STAY, demand, "ae", "req", logger);
-      expect(provider.searchNearbyHotelsWithOccupancies).toHaveBeenCalledTimes(2);
-    } finally {
-      (config.hotelBooking as any).supplyBufferRatio = savedRatio;
-    }
-  });
-
-  it("the preview passes the body's ratio to both the search and the pool", async () => {
-    const { service } = newService();
-    service.searchSplits = jest.fn(async () => JSON.parse(JSON.stringify(SEARCH)));
-
-    const result = await service.previewRecommendation(
-      {
-        checkInDate: STAY.checkIn,
-        checkOutDate: STAY.checkOut,
-        departureAirport: "DXB",
-        adults: 2,
-        children: 1,
-        allocation: 2,
-        supplyBufferRatio: 2,
-      },
-      "req",
-      logger,
-    );
-
-    expect(service.searchSplits.mock.calls[0][8]).toBe(2);
-    // 2 PNRs x 1 room = 2 rooms; x2 = target 4.
-    expect(result.supplyPool[0]).toMatchObject({ roomsNeeded: 2, target: 4 });
   });
 });
 

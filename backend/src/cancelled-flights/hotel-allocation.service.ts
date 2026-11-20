@@ -92,7 +92,8 @@ import { daysBetween } from "./stay-dates";
 import { todayIn } from "./stay-dates";
 import {
   PlanPreviewHotelsRequestDto,
-  PlanPreviewRequestDto,
+  SplitPreviewNeed,
+  SplitPreviewRequestDto,
   PlanPreviewSearchDto,
 } from "./dto/plan-preview-request.dto";
 import type { ShapePool } from "./hotel-allocation.planner";
@@ -206,6 +207,43 @@ const withAirportDistance = (
     ),
   };
 };
+
+/**
+ * Runs at most `limit` tasks at once. A freed slot goes to the waiting task
+ * with the smallest key (compared element by element).
+ */
+class PrioritySlots {
+  private active = 0;
+  private readonly waiting: Array<{ key: number[]; start: () => void }> = [];
+
+  constructor(private readonly limit: number) {}
+
+  async run<T>(key: number[], task: () => Promise<T>): Promise<T> {
+    if (this.active < this.limit) {
+      this.active += 1;
+    } else {
+      // The releasing task hands its slot over; active stays the same.
+      await new Promise<void>((start) => {
+        this.waiting.push({ key, start });
+        this.waiting.sort((a, b) => PrioritySlots.compare(a.key, b.key));
+      });
+    }
+    try {
+      return await task();
+    } finally {
+      const next = this.waiting.shift();
+      if (next) next.start();
+      else this.active -= 1;
+    }
+  }
+
+  private static compare(a: number[], b: number[]): number {
+    for (let i = 0; i < Math.min(a.length, b.length); i += 1) {
+      if (a[i] !== b[i]) return a[i] - b[i];
+    }
+    return a.length - b.length;
+  }
+}
 
 const room = (adults: number, children = 0): RoomOccupancy => ({
   adults,
@@ -344,7 +382,7 @@ const ROOM_SPLIT_RULES: Record<string, RoomSplitPlan> = {
     fallbacks: [[room(2, 1), room(1, 2), room(1, 2)]],
   },
   "5_1": {
-    preferred: [room(2), room(2), room(1, 1)],
+    preferred: [room(3), room(2, 1)],
     fallbacks: [[room(2), room(2, 1), room(1)]],
   },
   "5_2": {
@@ -472,24 +510,6 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         ? share
         : this.roundCurrency(total - share * (parts - 1)),
     );
-  }
-
-  private async mapWithConcurrency<T, R>(
-    items: T[],
-    limit: number,
-    worker: (item: T, index: number) => Promise<R>,
-  ): Promise<R[]> {
-    const results = new Array<R>(items.length);
-    let next = 0;
-    const runnerCount = Math.max(1, Math.min(limit, items.length));
-    const runners = Array.from({ length: runnerCount }, async () => {
-      while (next < items.length) {
-        const index = next++;
-        results[index] = await worker(items[index], index);
-      }
-    });
-    await Promise.all(runners);
-    return results;
   }
 
   private validateSplit(
@@ -2457,8 +2477,6 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     radius?: number,
     /** Preview only: use fetched hotel content without saving it. */
     readOnly = false,
-    /** Preview only: supply buffer instead of HOTEL_SUPPLY_BUFFER_RATIO. */
-    bufferRatio = config.hotelBooking.supplyBufferRatio,
   ): Promise<{
     hotels: AvailabilityHotel[];
     orderHotels: AvailabilityHotel[] | undefined;
@@ -2637,7 +2655,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
           supply(list) <
           Math.max(
             1,
-            supplyTarget(list.needed, bufferRatio),
+            supplyTarget(list.needed, config.hotelBooking.supplyBufferRatio),
           ),
       );
       if (short.length > 0 && ring + 10 <= lastRing) {
@@ -2912,8 +2930,27 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     };
   }
 
-  /** Checks shared by both previews: airport, stay dates and room split. */
+  /** Checks shared by the body previews: airport, stay dates and room split. */
   private async resolvePreviewInput(input: PlanPreviewSearchDto) {
+    const stay = await this.resolvePreviewStay(input);
+    if (
+      input.rooms &&
+      !this.validateSplit(input.adults, input.children, input.rooms)
+    ) {
+      throw new BadRequestException(
+        `rooms must hold exactly ${input.adults} adult(s) and ${input.children} child(ren), every room with an adult`,
+      );
+    }
+    return stay;
+  }
+
+  /** Airport, stay dates and residency of a body preview (400 when invalid). */
+  async resolvePreviewStay(input: {
+    departureAirport: string;
+    checkInDate: string;
+    checkOutDate: string;
+    residency?: string;
+  }) {
     const iataCode = input.departureAirport.trim().toUpperCase();
     const airport =
       await this.cancelledFlightsRepository.findAirportByIataCode(iataCode);
@@ -2935,66 +2972,115 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         `checkInDate must be today (${today} at ${iataCode}) or later`,
       );
     }
-    if (
-      input.rooms &&
-      !this.validateSplit(input.adults, input.children, input.rooms)
-    ) {
-      throw new BadRequestException(
-        `rooms must hold exactly ${input.adults} adult(s) and ${input.children} child(ren), every room with an adult`,
-      );
-    }
     const residency = (input.residency ?? airport.countryCode).toLowerCase();
     return { iataCode, airport, residency, checkIn, checkOut };
   }
 
   /**
-   * Test API 2: the hotels allocation ranks for this split, and the hotel
-   * each of the `allocation` PNRs would get when they take rooms in turn as
-   * a run does (each PNR's rooms in one hotel). Nothing is saved or booked.
+   * Test API 2: what an allocation run would book for this flight, without
+   * booking. Plans all the flight's PNRs exactly as a run does (one search,
+   * each class's star rule, the shared supply pool, the same ranking), then
+   * walks them in the run's booking order (higher class first, then the
+   * run's PNR order), each taking the first ranked hotel that still has free
+   * rooms for its whole split. Assumes every booking succeeds. Read only:
+   * nothing is saved, held, charged or booked.
    */
-  async previewRecommendation(
-    input: PlanPreviewRequestDto,
+  async previewFlightAllocation(
+    flightId: number,
+    user: AuthenticatedRequest["user"],
     requestId: string,
     requestLogger: Logger,
   ) {
-    const { summary, candidates } = await this.previewPlan(
-      input,
-      requestId,
+    const flight = await this.cancelledFlightsRepository.findFlightWithRelations(
+      flightId,
       requestLogger,
     );
-    const ranked = candidates.map((candidate, index) => ({
-      rank: index + 1,
-      hotelCode: candidate.hotelCode,
-      hotelName: candidate.hotelName,
-      category: candidate.category,
-      stars: candidate.stars,
-      tier: candidate.tier,
-      estimatedPrice: candidate.estimatedPrice,
-      currency: candidate.currency,
-      rooms: candidate.rooms.map((room) => ({
-        adults: room.adults,
-        children: room.children,
-        roomsNeeded: room.roomsNeeded,
-        bestRate: room.rateOptions[0] ?? null,
-        rateOptions: room.rateOptions.length,
-      })),
-    }));
+    // Airline users only see their own airline's flights; platform users any.
+    const allowed =
+      user.userType === UserType.PLATFORM ||
+      (user.userType === UserType.AIRLINE &&
+        !!user.airlineId &&
+        flight?.airlineId === user.airlineId);
+    if (!flight || !allowed) {
+      throw new NotFoundException(`Cancelled flight '${flightId}' not found`);
+    }
+    if (!flight.departureAirport) {
+      throw new NotFoundException(
+        `Departure airport not found for flight '${flightId}'`,
+      );
+    }
+    const stay = this.resolveStayDates(flight, requestLogger);
+    const bookings = await this.cancelledFlightsRepository.findBookingsByFlightId(
+      flightId,
+      requestLogger,
+    );
+    if (bookings.length === 0) {
+      throw new BadRequestException(
+        `No eligible bookings found for flight '${flightId}'`,
+      );
+    }
+    // The run's booking order: higher class first, then its PNR priority.
+    const ordered = [...bookings].sort(compareBookingPriority);
 
-    // Each PNR takes the first ranked hotel that still has free rooms for its
-    // whole split, the same rule a run uses (assuming every booking succeeds).
+    let plan: Awaited<ReturnType<HotelAllocationService["computePnrPlans"]>>;
+    try {
+      plan = await this.computePnrPlans(
+        flight,
+        stay,
+        ordered,
+        requestId,
+        requestLogger,
+      );
+    } catch (error: any) {
+      throw new ServiceUnavailableException(
+        `Hotel availability search failed: ${error?.message ?? error}`,
+      );
+    }
+
+    // One ledger for the whole flight, as a run builds from its saved plan.
     const ledger = new AllotmentLedger(
       new Map(
-        candidates.flatMap((candidate) =>
-          candidate.rooms.flatMap((room) =>
-            room.rateOptions.map(
-              (option) => [option.rateKey, option.allotment] as const,
+        plan.entries.flatMap((entry) =>
+          entry.candidates.flatMap((candidate) =>
+            candidate.rooms.flatMap((room) =>
+              room.rateOptions.map(
+                (option) => [option.rateKey, option.allotment] as const,
+              ),
             ),
           ),
         ),
       ),
     );
-    const allocations = Array.from({ length: summary.allocation }, (_, i) => {
-      for (const [index, candidate] of candidates.entries()) {
+    const entryByBooking = new Map(
+      plan.entries.map((entry) => [entry.booking.id, entry]),
+    );
+    const invalidByBooking = new Map(
+      plan.invalid.map(({ booking, reason }) => [booking.id, reason]),
+    );
+
+    const pnrs = ordered.map((booking, index) => {
+      const pnr = {
+        order: index + 1,
+        bookingId: booking.id,
+        pnr: booking.pnr,
+        travelClass: booking.travelClass,
+        adults: booking.adults,
+        children: booking.children,
+      };
+      const entry = entryByBooking.get(booking.id);
+      if (!entry) {
+        return {
+          ...pnr,
+          recommended: null,
+          reason: `Invalid passenger data: ${invalidByBooking.get(booking.id) ?? "no room split"}`,
+          totalCandidates: 0,
+          candidates: [],
+        };
+      }
+      // The first ranked hotel with free rooms for the whole split, as
+      // bookPlannedPnr picks it.
+      let recommended: object | null = null;
+      for (const [rank, candidate] of entry.candidates.entries()) {
         const picks = selectCandidateRates(candidate, ledger);
         if (
           !picks ||
@@ -3007,15 +3093,17 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         ) {
           continue;
         }
-        return {
-          pnrNo: i + 1,
-          rank: index + 1,
+        recommended = {
+          rank: rank + 1,
           hotelCode: candidate.hotelCode,
           hotelName: candidate.hotelName,
           stars: candidate.stars,
           tier: candidate.tier,
           price: this.roundCurrency(
-            picks.reduce((sum, pick) => sum + pick.netPrice * pick.roomsNeeded, 0),
+            picks.reduce(
+              (sum, pick) => sum + pick.netPrice * pick.roomsNeeded,
+              0,
+            ),
           ),
           currency: candidate.currency,
           rooms: picks.map((pick) => ({
@@ -3027,157 +3115,334 @@ export class HotelAllocationService implements OnApplicationBootstrap {
             inPool: pick.inPool,
           })),
         };
+        break;
       }
       return {
-        pnrNo: i + 1,
-        rank: null,
-        hotelCode: null,
-        hotelName: null,
-        reason: "No ranked hotel has free rooms left for this PNR's whole split",
-      };
-    });
-
-    return {
-      ...summary,
-      allAllocated: allocations.every((entry) => entry.hotelCode !== null),
-      allocations,
-      recommended: ranked[0] ?? null,
-      totalCandidates: ranked.length,
-      candidates: ranked,
-    };
-  }
-
-  /**
-   * The allocation plan for `allocation` PNRs that share the body's party and
-   * room split: the same supplier search, supply (ceil(demand × buffer) rooms
-   * per shape and whole sets) and ranking an allocation run uses, with no
-   * flight; minStars and the buffer come from the body. The only database
-   * access is reading the airport and stored hotel content.
-   */
-  private async previewPlan(
-    input: PlanPreviewRequestDto,
-    requestId: string,
-    requestLogger: Logger,
-  ) {
-    const { iataCode, airport, residency, checkIn, checkOut } =
-      await this.resolvePreviewInput(input);
-
-    // No travel class: stars go 5 -> 4 -> ... down to minStars (body, or the
-    // global minimum); supplyBufferRatio from the body, or the configured one.
-    const minStars = input.minStars ?? config.hotelSearch.minRate;
-    const stars: StarRule = { min: minStars, preferred: minStars };
-    const bufferRatio =
-      input.supplyBufferRatio ?? config.hotelBooking.supplyBufferRatio;
-    const allocation = input.allocation ?? 1;
-    // In-memory stand-ins with only what planning reads (the star rule comes
-    // from minStars); nothing here is read from or written to the database.
-    const bookings = Array.from(
-      { length: allocation },
-      (_, i) =>
-        ({
-          id: i + 1,
-          adults: input.adults,
-          children: input.children,
-          residency,
-        }) as unknown as BookingEntity,
-    );
-    const flight = {
-      id: 0,
-      departureAirport: airport,
-    } as unknown as CancelledFlightEntity;
-    const stay = { checkIn, checkOut };
-
-    let plan: Awaited<ReturnType<HotelAllocationService["computePnrPlans"]>>;
-    try {
-      plan = await this.computePnrPlans(
-        flight,
-        stay,
-        bookings,
-        requestId,
-        requestLogger,
-        input.rooms,
-        stars,
-        bufferRatio,
-      );
-    } catch (error: any) {
-      throw new ServiceUnavailableException(
-        `Hotel availability search failed: ${error?.message ?? error}`,
-      );
-    }
-    if (plan.invalid.length > 0) {
-      throw new BadRequestException(`Invalid party: ${plan.invalid[0].reason}`);
-    }
-    const entry = plan.entries[0];
-    const roomsPerPnr = entry.rooms.length;
-    // Sets = one PNR's whole split in one hotel; a hotel can host several.
-    const setHotels = (entry.asOrder ? (plan.orderHotels ?? []) : plan.hotels)
-      .filter((hotel) => hotel.stars >= stars.min)
-      .map((hotel) => ({
-        hotelCode: hotel.hotelCode,
-        hotelName: hotel.hotelName,
-        stars: hotel.stars,
-        sets: entry.asOrder
-          ? orderRatesFor(hotel, entry.rooms).reduce(
-              (sum, rate) =>
-                sum + Math.floor((rate.allotment ?? 0) / entry.rooms.length),
-              0,
-            )
-          : hotelSetCapacity(hotel, entry.rooms),
-      }))
-      .filter((hotel) => hotel.sets > 0)
-      .sort((a, b) => b.stars - a.stars || b.sets - a.sets);
-    const setsAvailable = setHotels.reduce((sum, hotel) => sum + hotel.sets, 0);
-    const setsTarget = Math.max(1, supplyTarget(allocation, bufferRatio));
-    requestLogger.info("Computed hotel plan preview", {
-      context: this.context,
-      airport: iataCode,
-      party: `${input.adults}+${input.children}`,
-      allocation,
-      roomsPerPnr,
-      hotels: plan.hotels.length,
-      candidates: entry.candidates.length,
-    });
-
-    return {
-      summary: {
-        adults: input.adults,
-        children: input.children,
-        allocation,
-        roomsPerPnr,
-        totalRooms: roomsPerPnr * allocation,
-        checkInDate: checkIn,
-        checkOutDate: checkOut,
-        departureAirport: iataCode,
-        residency: residency.toUpperCase(),
-        minStars,
+        ...pnr,
+        minStars: entry.stars.min,
         roomSplitOptions: entry.plan,
         chosenRooms: entry.rooms.map(({ adults, children }) => ({
           adults,
           children,
         })),
-        roomSplitGiven: !!input.rooms,
         bookedAsOneOrder: entry.asOrder,
-        supplyBufferRatio: bufferRatio,
-        supplySets: {
-          setsNeeded: allocation,
-          target: setsTarget,
-          setsAvailable,
-          targetMet: setsAvailable >= setsTarget,
-          hotels: setHotels,
-        },
-        // Multiroom orders are booked as a whole and are not pooled per shape.
-        supplyPool: [...plan.pools.values()].map((pool) => ({
-          shape: { adults: pool.shape.adults, children: pool.shape.children },
-          roomsNeeded: pool.demand,
-          target: pool.target,
-          poolAllotment: pool.poolAllotment,
-          targetMet: pool.poolAllotment >= pool.target,
-          totalAllotment: pool.totalAllotment,
-          hotels: [...pool.hotelCodes],
-          rates: pool.rateKeys.size,
+        recommended,
+        ...(recommended
+          ? {}
+          : {
+              reason:
+                entry.candidates.length === 0
+                  ? "No hotel near the airport has rooms left for this booking's room split"
+                  : "No ranked hotel has free rooms left after the PNRs before it",
+            }),
+        totalCandidates: entry.candidates.length,
+        candidates: entry.candidates.map((candidate, rank) => ({
+          rank: rank + 1,
+          hotelCode: candidate.hotelCode,
+          hotelName: candidate.hotelName,
+          stars: candidate.stars,
+          tier: candidate.tier,
+          estimatedPrice: candidate.estimatedPrice,
+          currency: candidate.currency,
+          rooms: candidate.rooms.map((room) => ({
+            adults: room.adults,
+            children: room.children,
+            roomsNeeded: room.roomsNeeded,
+            bestRate: room.rateOptions[0] ?? null,
+            rateOptions: room.rateOptions.length,
+          })),
         })),
-      },
-      candidates: entry.candidates,
+      };
+    });
+
+    // Classes in booking order (ordered is sorted by class first).
+    const classes: Array<{ travelClass: string; pnrs: typeof pnrs }> = [];
+    for (const pnr of pnrs) {
+      const last = classes[classes.length - 1];
+      if (last?.travelClass === pnr.travelClass) last.pnrs.push(pnr);
+      else classes.push({ travelClass: pnr.travelClass, pnrs: [pnr] });
+    }
+    const allocated = pnrs.filter((pnr) => pnr.recommended !== null).length;
+    requestLogger.info("Computed flight allocation preview", {
+      context: this.context,
+      flightId,
+      pnrs: pnrs.length,
+      allocated,
+      hotels: plan.hotels.length,
+    });
+
+    return {
+      cancelledFlightId: flight.id,
+      flightNumber: flight.flightNumber,
+      flightStatus: flight.status,
+      checkInDate: stay.checkIn,
+      checkOutDate: stay.checkOut,
+      departureAirport: flight.departureAirport.iataCode,
+      supplyBufferRatio: config.hotelBooking.supplyBufferRatio,
+      totalPnrs: pnrs.length,
+      allocatedPnrs: allocated,
+      unallocatedPnrs: pnrs.length - allocated,
+      allAllocated: allocated === pnrs.length,
+      // Multiroom orders are booked as a whole and are not pooled per shape.
+      supplyPool: [...plan.pools.values()].map((pool) => ({
+        shape: { adults: pool.shape.adults, children: pool.shape.children },
+        roomsNeeded: pool.demand,
+        target: pool.target,
+        poolAllotment: pool.poolAllotment,
+        targetMet: pool.poolAllotment >= pool.target,
+        totalAllotment: pool.totalAllotment,
+        hotels: [...pool.hotelCodes],
+        rates: pool.rateKeys.size,
+      })),
+      classes,
+    };
+  }
+
+  /**
+   * Split preview (test API, run in the background): for each room split, one
+   * supplier search at exactly `distance` (the allocation search, one ring),
+   * then either every hotel found (need = all) or the best hotels for
+   * ceil(allocation × HOTEL_SUPPLY_BUFFER_RATIO) whole sets (need =
+   * recommend): ranked as allocation ranks (most stars first down to
+   * HOTEL_SEARCH_MIN_RATE, cheapest within the same stars), each set being one
+   * allocation's rooms all in one hotel. Splits are independent of each
+   * other. Read only: hotel content is used without saving it.
+   */
+  async computeSplitPreview(
+    input: SplitPreviewRequestDto,
+    stay: Awaited<ReturnType<HotelAllocationService["resolvePreviewStay"]>>,
+    requestId: string,
+    requestLogger: Logger,
+  ) {
+    const { iataCode, airport, residency, checkIn, checkOut } = stay;
+    const flight = {
+      id: 0,
+      departureAirport: airport,
+    } as unknown as CancelledFlightEntity;
+    const airportPoint = {
+      latitude: Number(airport.latitude),
+      longitude: Number(airport.longitude),
+    };
+    const minStars = config.hotelSearch.minRate;
+    const stars: StarRule = { min: minStars, preferred: minStars };
+    const ratio = config.hotelBooking.supplyBufferRatio;
+    const recommend = input.need === SplitPreviewNeed.RECOMMEND;
+    const distanceOf = (hotel: { latitude?: number | null; longitude?: number | null }) =>
+      hotel.latitude != null && hotel.longitude != null
+        ? distanceKm(airportPoint, {
+            latitude: Number(hotel.latitude),
+            longitude: Number(hotel.longitude),
+          })
+        : null;
+
+    const splits: object[] = [];
+    // One after another: the supplier allows few searches a minute.
+    for (const [index, split] of input.splits.entries()) {
+      const rooms = split.rooms.map(({ adults, children }) => ({
+        adults,
+        children,
+      }));
+      const base = {
+        splitNo: index + 1,
+        rooms,
+        allocation: split.allocation,
+      };
+      let found: Awaited<ReturnType<HotelAllocationService["searchSplits"]>>;
+      try {
+        found = await this.searchSplits(
+          flight,
+          { checkIn, checkOut },
+          [{ plan: { preferred: rooms, fallbacks: [] }, minStars }],
+          residency,
+          requestId,
+          requestLogger,
+          input.distance,
+          true,
+        );
+      } catch (error: any) {
+        if (!(error instanceof NotFoundException)) {
+          splits.push({
+            ...base,
+            error: `Hotel availability search failed: ${error?.message ?? error}`,
+          });
+          continue;
+        }
+        found = { hotels: [], orderHotels: [] };
+      }
+      const asOrder = !!found.orderHotels && rooms.length > 1;
+      const hotels = asOrder ? (found.orderHotels ?? []) : found.hotels;
+      // Whole sets (one allocation's rooms) each hotel can take.
+      const setsAt = (hotel: AvailabilityHotel) =>
+        asOrder
+          ? orderRatesFor(hotel, rooms).reduce(
+              (sum, rate) =>
+                sum + Math.floor((rate.allotment ?? 0) / rooms.length),
+              0,
+            )
+          : hotelSetCapacity(hotel, rooms);
+
+      if (!recommend) {
+        const all = hotels
+          .map((hotel) => ({
+            hotelCode: hotel.hotelCode,
+            hotelName: hotel.hotelName,
+            stars: hotel.stars,
+            address: hotel.address ?? null,
+            distanceKm: distanceOf(hotel),
+            sets: setsAt(hotel),
+            rates: hotel.rates.map((rate) => ({
+              rateKey: rate.rateKey,
+              roomName: rate.roomName,
+              boardName: rate.boardName,
+              adults: rate.adults,
+              children: rate.children,
+              ...(rate.rooms ? { rooms: rate.rooms } : {}),
+              netPrice: rate.netPrice,
+              currency: rate.currency,
+              allotment: rate.allotment,
+              paymentType: rate.paymentType,
+            })),
+          }))
+          .sort(
+            (a, b) =>
+              (a.distanceKm ?? Number.POSITIVE_INFINITY) -
+              (b.distanceKm ?? Number.POSITIVE_INFINITY),
+          );
+        splits.push({
+          ...base,
+          bookedAsOneOrder: asOrder,
+          totalHotels: all.length,
+          hotels: all,
+        });
+        continue;
+      }
+
+      let candidates: PlannedCandidate[];
+      if (asOrder) {
+        candidates = buildOrderCandidatePlan(hotels, rooms, stars);
+      } else {
+        const needs = toRoomNeeds(rooms);
+        const demand = new Map<string, RoomNeed>(
+          needs.map((need) => [
+            shapeKey(need.shape),
+            {
+              shape: need.shape,
+              roomsNeeded: need.roomsNeeded * split.allocation,
+            },
+          ]),
+        );
+        candidates = buildCandidatePlan(
+          hotels,
+          needs,
+          buildSupplyPools(hotels, demand, ratio),
+          stars,
+        );
+      }
+      // Sets taken in rank order, each from the first hotel that still has
+      // free rooms for the whole split, as allocation takes them.
+      const ledger = new AllotmentLedger(
+        new Map(
+          candidates.flatMap((candidate) =>
+            candidate.rooms.flatMap((room) =>
+              room.rateOptions.map(
+                (option) => [option.rateKey, option.allotment] as const,
+              ),
+            ),
+          ),
+        ),
+      );
+      const target = Math.max(1, supplyTarget(split.allocation, ratio));
+      const byHotel = new Map<
+        string,
+        { rank: number; candidate: PlannedCandidate; setPrices: number[] }
+      >();
+      let setsFound = 0;
+      for (let set = 0; set < target; set += 1) {
+        let taken = false;
+        for (const [rank, candidate] of candidates.entries()) {
+          const picks = selectCandidateRates(candidate, ledger);
+          if (
+            !picks ||
+            !ledger.tryClaim(
+              picks.map((pick) => ({
+                rateKey: pick.rateKey,
+                rooms: pick.roomsNeeded,
+              })),
+            )
+          ) {
+            continue;
+          }
+          const entry = byHotel.get(candidate.hotelCode) ?? {
+            rank: rank + 1,
+            candidate,
+            setPrices: [],
+          };
+          entry.setPrices.push(
+            this.roundCurrency(
+              picks.reduce(
+                (sum, pick) => sum + pick.netPrice * pick.roomsNeeded,
+                0,
+              ),
+            ),
+          );
+          byHotel.set(candidate.hotelCode, entry);
+          taken = true;
+          break;
+        }
+        if (!taken) break;
+        setsFound += 1;
+      }
+      const hotelByCode = new Map(hotels.map((hotel) => [hotel.hotelCode, hotel]));
+      splits.push({
+        ...base,
+        bookedAsOneOrder: asOrder,
+        minStars,
+        supplyBufferRatio: ratio,
+        setsNeeded: split.allocation,
+        target,
+        setsFound,
+        targetMet: setsFound >= target,
+        totalHotelsFound: hotels.length,
+        recommendedHotels: [...byHotel.values()].map(
+          ({ rank, candidate, setPrices }) => ({
+            rank,
+            hotelCode: candidate.hotelCode,
+            hotelName: candidate.hotelName,
+            stars: candidate.stars,
+            distanceKm: distanceOf(hotelByCode.get(candidate.hotelCode) ?? {}),
+            sets: setPrices.length,
+            setPrices,
+            totalPrice: this.roundCurrency(
+              setPrices.reduce((sum, price) => sum + price, 0),
+            ),
+            currency: candidate.currency,
+            rooms: candidate.rooms.map((room) => ({
+              adults: room.adults,
+              children: room.children,
+              roomsNeeded: room.roomsNeeded,
+              bestRate: room.rateOptions[0] ?? null,
+            })),
+          }),
+        ),
+      });
+    }
+    requestLogger.info("Computed hotel split preview", {
+      context: this.context,
+      airport: iataCode,
+      need: input.need,
+      splits: input.splits.length,
+      distance: input.distance,
+    });
+
+    return {
+      checkInDate: checkIn,
+      checkOutDate: checkOut,
+      departureAirport: iataCode,
+      residency: residency.toUpperCase(),
+      distance: input.distance,
+      distanceUnit: config.hotelSearch.unit,
+      need: input.need,
+      splits,
     };
   }
 
@@ -3196,12 +3461,6 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     bookings: BookingEntity[],
     requestId: string,
     requestLogger: Logger,
-    /** Use exactly this room split for every PNR instead of choosing one. */
-    forcedRooms?: RoomOccupancy[],
-    /** Use this star rule instead of each PNR's travel-class rule. */
-    starsOverride?: StarRule,
-    /** Supply buffer instead of HOTEL_SUPPLY_BUFFER_RATIO. */
-    bufferRatio = config.hotelBooking.supplyBufferRatio,
   ): Promise<{
     invalid: Array<{ booking: BookingEntity; reason: string }>;
     hotels: AvailabilityHotel[];
@@ -3220,10 +3479,6 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     const invalid: Array<{ booking: BookingEntity; reason: string }> = [];
     const plans: Array<{ booking: BookingEntity; plan: RoomSplitPlan }> = [];
     for (const booking of bookings) {
-      if (forcedRooms) {
-        plans.push({ booking, plan: { preferred: forcedRooms, fallbacks: [] } });
-        continue;
-      }
       const split = this.resolveRoomSplitPlan(booking, requestLogger);
       if (!split.plan) {
         invalid.push({ booking, reason: split.reason ?? "no room split" });
@@ -3246,20 +3501,18 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       stay,
       plans.map(({ booking, plan }) => ({
         plan,
-        minStars: (starsOverride ?? this.starRule(booking.travelClass)).min,
+        minStars: this.starRule(booking.travelClass).min,
       })),
       this.majorityResidency(plans.map(({ booking }) => booking)),
       requestId,
       requestLogger,
       undefined,
       true,
-      bufferRatio,
     );
 
     const splits = plans.map(({ booking, plan }) => {
-      const stars = starsOverride ?? this.starRule(booking.travelClass);
-      const rooms =
-        forcedRooms ?? chooseRoomSplit(plan, hotels, orderHotels, stars.min);
+      const stars = this.starRule(booking.travelClass);
+      const rooms = chooseRoomSplit(plan, hotels, orderHotels, stars.min);
       return {
         booking,
         stars,
@@ -3282,7 +3535,11 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         }
       }
     }
-    const pools = buildSupplyPools(hotels, demand, bufferRatio);
+    const pools = buildSupplyPools(
+      hotels,
+      demand,
+      config.hotelBooking.supplyBufferRatio,
+    );
 
     return {
       invalid,
@@ -3366,40 +3623,100 @@ export class HotelAllocationService implements OnApplicationBootstrap {
 
     await this.reserveWalletFunds(run, entries);
 
-    const ranks = [
-      ...new Set(
-        entries.map(
-          (e) => e.row.classPriority ?? classRank(e.booking.travelClass),
-        ),
-      ),
-    ].sort((a, b) => b - a);
-    const concurrency = Math.max(1, config.hotelBooking.concurrencyPerClass);
-    for (const rank of ranks) {
-      const stage = entries.filter(
-        (e) =>
-          (e.row.classPriority ?? classRank(e.booking.travelClass)) === rank,
-      );
-      requestLogger.info("Booking hotels for cabin class stage", {
-        context: this.context,
-        flightId: flight.id,
-        classRank: rank,
-        bookings: stage.length,
-      });
-      await this.mapWithConcurrency(stage, concurrency, async (entry) => {
-        await this.bookPlannedPnr(
-          run,
-          planning,
-          entry.booking,
-          entry.candidates,
-          entry.attempts,
-        );
-        await this.cancelledFlightsRepository.touchFlightAllocationRun(
-          flight.id,
-          run.runId,
-          requestLogger,
-        );
-      });
-    }
+    // PNRs that can claim the same rate form one chain: inside it, a class
+    // waits for the higher classes (a failed higher-class PNR may need the
+    // next best hotel). Chains share no rates, so they run side by side; all
+    // of them together never book more than HOTEL_BOOKING_CONCURRENCY at once.
+    const rankOf = (e: (typeof entries)[number]) =>
+      e.row.classPriority ?? classRank(e.booking.travelClass);
+    const chains = this.chainsBySharedRates(entries);
+    const slots = new PrioritySlots(
+      Math.max(1, config.hotelBooking.concurrencyPerClass),
+    );
+    requestLogger.info("Booking hotels in independent rate chains", {
+      context: this.context,
+      flightId: flight.id,
+      chains: chains.length,
+      bookings: entries.length,
+    });
+    await Promise.all(
+      chains.map(async (chain, chainIndex) => {
+        const ranks = [...new Set(chain.map(rankOf))].sort((a, b) => b - a);
+        for (const rank of ranks) {
+          const stage = chain.filter((e) => rankOf(e) === rank);
+          requestLogger.info("Booking hotels for cabin class stage", {
+            context: this.context,
+            flightId: flight.id,
+            chain: chainIndex,
+            classRank: rank,
+            bookings: stage.length,
+          });
+          await Promise.all(
+            stage.map((entry) =>
+              // Waiting PNRs get a free slot higher class first, then in
+              // processing order.
+              slots.run(
+                [-rank, entry.row.processingOrder ?? Number.MAX_SAFE_INTEGER],
+                async () => {
+                  await this.bookPlannedPnr(
+                    run,
+                    planning,
+                    entry.booking,
+                    entry.candidates,
+                    entry.attempts,
+                  );
+                  await this.cancelledFlightsRepository.touchFlightAllocationRun(
+                    flight.id,
+                    run.runId,
+                    requestLogger,
+                  );
+                },
+              ),
+            ),
+          );
+        }
+      }),
+    );
+  }
+
+  /**
+   * Groups PNRs whose candidates share any rate key (they compete in the
+   * allotment ledger), keeping the input order inside each group.
+   */
+  private chainsBySharedRates<E extends { candidates: HotelCandidate[] }>(
+    entries: E[],
+  ): E[][] {
+    const parent = entries.map((_, index) => index);
+    const find = (index: number): number => {
+      while (parent[index] !== index) {
+        parent[index] = parent[parent[index]];
+        index = parent[index];
+      }
+      return index;
+    };
+    const ownerByRate = new Map<string, number>();
+    entries.forEach((entry, index) => {
+      for (const candidate of entry.candidates) {
+        for (const room of candidate.rooms) {
+          for (const option of room.rateOptions) {
+            const owner = ownerByRate.get(option.rateKey);
+            if (owner === undefined) {
+              ownerByRate.set(option.rateKey, index);
+            } else {
+              parent[find(index)] = find(owner);
+            }
+          }
+        }
+      }
+    });
+    const chains = new Map<number, E[]>();
+    entries.forEach((entry, index) => {
+      const root = find(index);
+      const chain = chains.get(root);
+      if (chain) chain.push(entry);
+      else chains.set(root, [entry]);
+    });
+    return [...chains.values()];
   }
 
   /**
