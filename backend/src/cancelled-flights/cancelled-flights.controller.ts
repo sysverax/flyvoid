@@ -14,6 +14,7 @@ import {
   Query,
   Req,
   Res,
+  ServiceUnavailableException,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -34,6 +35,7 @@ import {
   ApiTags,
   ApiConflictResponse,
   ApiUnauthorizedResponse,
+  ApiServiceUnavailableResponse,
   ApiExcludeEndpoint,
   ApiExtraModels,
   getSchemaPath,
@@ -64,6 +66,7 @@ import {
 import { CancelledFlightsService } from "./cancelled-flights.service";
 import { FLIGHT_PAYMENT_STEP_ENABLED } from "./cancelled-flights.constants";
 import { HotelAllocationService } from "./hotel-allocation.service";
+import { config } from "../config/config";
 import {
   CreateCancelledFlightDto,
   CancelledFlightResponseDto,
@@ -1119,12 +1122,21 @@ export class CancelledFlightsController {
       "/api/v1/cancelled-flights/:id/hotel-allocations",
     ),
   })
+  @ApiServiceUnavailableResponse({
+    description:
+      "Hotel booking is not enabled on this server. ACTUAL_BOOKING_ENABLED must be set to true in environment configuration.",
+  })
   async hotelAllocations(
     @Req() request: AuthenticatedRequest,
     @Param("id", ParseIntPipe) id: number,
     @RequestId() requestId: string,
     @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<HotelAllocationsDto>> {
+    if (!config.hotelBooking.enabled) {
+      throw new ServiceUnavailableException(
+        "Hotel booking is not enabled on this server. Please enable ACTUAL_BOOKING_ENABLED in your environment configuration.",
+      );
+    }
     requestLogger.info(`Starting hotel allocation for cancelled flight ${id}`, {
       context: this.context,
     });
@@ -1751,6 +1763,10 @@ export class CancelledFlightsController {
       "/api/v1/cancelled-flights/:id/bookings/:bookingId/book-hotel",
     ),
   })
+  @ApiServiceUnavailableResponse({
+    description:
+      "Hotel booking is not enabled on this server. ACTUAL_BOOKING_ENABLED must be set to true in environment configuration.",
+  })
   async bookHotel(
     @Req() request: AuthenticatedRequest,
     @Param("id", ParseIntPipe) id: number,
@@ -1759,6 +1775,11 @@ export class CancelledFlightsController {
     @RequestId() requestId: string,
     @RequestLogger() requestLogger: Logger,
   ): Promise<BaseResponseDto<object>> {
+    if (!config.hotelBooking.enabled) {
+      throw new ServiceUnavailableException(
+        "Hotel booking is not enabled on this server. Please enable ACTUAL_BOOKING_ENABLED in your environment configuration.",
+      );
+    }
     const data = await this.hotelAllocationService.bookHotel(
       id,
       bookingId,

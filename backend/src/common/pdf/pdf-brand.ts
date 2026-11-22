@@ -3,7 +3,7 @@ import path from "node:path";
 
 // Shared branding for every generated PDF (invoices, vouchers, ...) so they
 // stay visually consistent with each other and with the frontend's own
-// navy/Figtree/airplane-icon branding (frontend/*/public/logo.svg).
+// navy/Figtree branding and Flyverax logo (frontend/*/public/logo.svg).
 
 export const PDF_BRAND = {
   navy: "#0F2757",
@@ -55,13 +55,28 @@ export const FONT_IMPORT =
 
 export const FONT_FAMILY = "'Figtree', 'Helvetica Neue', Arial, sans-serif";
 
-// Inline Flyverax logo (icon mark + wordmark), white-on-navy.
-// Same artwork as the frontend apps' public/logo.svg.
+// Inline Flyverax logo (icon mark + FLYVERAX wordmark), white-on-navy, transparent
+// background. Generated from brand-assets/web/flyverax-logo-horizontal-inverse.svg,
+// the same file the frontend apps ship as public/logo.svg.
 export const LOGO_SVG = `
-  <svg width="150" height="37" viewBox="0 0 150 37" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect x="0" y="3" width="31" height="31" rx="7.4" fill="white" fill-opacity="0.14"/>
-    <g transform="translate(0,3) scale(0.03875) translate(-112,-112)"><g transform="translate(512.00,512.00) scale(1.1674) translate(126.93,0.00)" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="2.57" stroke-linejoin="round"><path d="M0.00,0.00 L-196.38,-118.00 L-285.70,-118.00 L-89.31,0.00 L-285.70,118.00 L-196.38,118.00Z"/><path d="M-190.00,0.00 L-283.20,-56.00 L-372.51,-56.00 L-279.31,0.00 L-372.51,56.00 L-283.20,56.00Z"/><path d="M-279.3137852148764,-20.7 L104,-20.7 C134,-20.7 150,-12.42 150,0 C150,12.42 134,20.7 104,20.7 L-279.3137852148764,20.7 Z"/></g></g>
-    <text x="40" y="26" font-family="'Figtree', 'Helvetica Neue', Arial, sans-serif" font-size="22" font-weight="700" letter-spacing="0.2" fill="white">Flyverax</text>
+  <svg xmlns="http://www.w3.org/2000/svg" width="150" height="26" viewBox="0 0 4701 818" fill="none">
+  <g transform="translate(-349.004 -455.376)">
+  <path d="M1447.77 455.376L1650 628.984H1530.42L1385.66 507.485L1323.57 455.376H1447.77Z" fill="white"/>
+  <path d="M971.414 855.046L473.156 1273.1H349.008L1323.57 455.376L1385.66 507.485L1033.43 803.011H909.416L971.414 855.046Z" fill-rule="evenodd" clip-rule="evenodd" fill="white"/>
+  <path d="M909.416 803.011H1033.43L971.414 855.046L909.416 803.011Z" fill-rule="evenodd" clip-rule="evenodd" fill="white"/>
+  <path d="M1033.43 803.011L971.414 855.046L1116.27 976.62H1239.62L1033.61 803.011H1033.43Z" fill-rule="evenodd" clip-rule="evenodd" fill="white"/>
+  <path d="M1228.44 1273.1H1104.25L1454.59 976.62L1247.74 803.012H1371.93L1574.17 976.62L1228.44 1273.1Z" fill-rule="evenodd" clip-rule="evenodd" fill="white"/>
+  </g>
+  <g transform="translate(1541.00 273.94) scale(2.42822) translate(-349.004 -1433.1)">
+  <path d="M382.295 1462.85V1477.32H463.512L442.766 1503.86H382.295V1542.46H349.004V1434.86H469.624L448.234 1462.85H382.295Z" fill="white"/>
+  <path d="M590.458 1542.46H495.249V1434.86H528.54V1514.47H611.848L590.458 1542.46Z" fill="white"/>
+  <path d="M681.142 1542.46H647.851V1506.75L582.234 1434.86H624.853L665.059 1479.09L704.301 1434.86H744.99L681.142 1506.75V1542.46Z" fill="white"/>
+  <path d="M941.41 1434.86L872.416 1532.16C866.787 1540.21 859.55 1544.23 851.026 1544.23C842.502 1544.23 835.747 1540.53 829.958 1532.16L762.571 1434.86H802.135L851.83 1508.04L902.49 1434.86H941.41Z" fill="white"/>
+  <path d="M1000.89 1462.85V1476.68H1085.96L1066.66 1500.48H1000.89V1514.47H1092.4L1071.17 1542.46H967.595V1434.86H1092.24L1070.68 1462.85H1000.89Z" fill="white"/>
+  <path d="M1264.11 1474.11C1264.11 1490.83 1254.62 1503.06 1238.21 1509.33L1270.7 1542.46H1226.8L1199.78 1513.83H1151.05V1542.46H1117.92V1486.97H1213.29C1225.51 1486.97 1230.82 1483.43 1230.82 1475.39C1230.82 1466.71 1225.19 1462.85 1213.13 1462.85H1117.92L1140.11 1434.86H1209.91C1243.68 1434.86 1264.11 1449.5 1264.11 1474.11Z" fill="white"/>
+  <path d="M1467.94 1542.46H1342.98L1362.92 1514.47H1409.24L1378.85 1470.57L1327.86 1542.46H1288.94L1357.94 1445.16C1362.6 1438.72 1369.04 1433.1 1379.33 1433.1C1389.3 1433.1 1395.89 1438.4 1400.56 1445.16L1467.94 1542.46Z" fill="white"/>
+  <path d="M1647.43 1434.87L1613.49 1465.9C1609.74 1469.34 1606.58 1472.23 1604 1474.59C1601.43 1476.84 1599.23 1478.77 1597.41 1480.38C1595.59 1481.88 1594.03 1483.17 1592.74 1484.24C1591.56 1485.2 1590.49 1486.06 1589.53 1486.81C1590.49 1487.46 1591.56 1488.26 1592.74 1489.22C1593.92 1490.19 1595.48 1491.58 1597.41 1493.41C1599.34 1495.12 1601.75 1497.32 1604.65 1500C1607.54 1502.68 1611.19 1506.06 1615.58 1510.13L1650 1542.46H1603.04L1566.37 1506.92L1528.57 1542.46H1487.24L1522.3 1510.13C1526.38 1506.38 1529.81 1503.27 1532.6 1500.8C1535.38 1498.23 1537.69 1496.14 1539.51 1494.53C1541.33 1492.92 1542.83 1491.64 1544.01 1490.67C1545.3 1489.71 1546.43 1488.85 1547.39 1488.1C1546.43 1487.35 1545.35 1486.54 1544.17 1485.69C1543 1484.72 1541.49 1483.43 1539.67 1481.83C1537.85 1480.11 1535.54 1478.02 1532.76 1475.55C1529.97 1472.98 1526.48 1469.71 1522.3 1465.74L1489.33 1434.87H1535.49L1569.75 1468.32L1604.32 1434.87H1647.43Z" fill="#239FE7"/>
+  </g>
   </svg>
 `;
 

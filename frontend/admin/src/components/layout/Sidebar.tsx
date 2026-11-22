@@ -67,9 +67,9 @@ export function Sidebar() {
         <Image
           src="/logo.svg"
           alt="Flyverax logo"
-          width={150}
-          height={37}
-          className="absolute -top-1 left-[14px]"
+          width={168}
+          height={29}
+          className="absolute top-0 left-[14px]"
         />
 
         {mobile && (
