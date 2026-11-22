@@ -15,17 +15,18 @@ export class RecommendationJobEntity {
   @PrimaryColumn('uuid')
   id: string;
 
-  @Column()
+  @Column('integer', { name: 'flight_id' })
   flightId: number;
 
   @Column({
     type: 'varchar',
     length: 20,
     default: 'PENDING',
+    name: 'status',
   })
   status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
 
-  @Column({ type: 'jsonb', nullable: true })
+  @Column({ type: 'jsonb', nullable: true, name: 'result' })
   result: {
     success: boolean;
     requestId: string;
@@ -92,18 +93,18 @@ export class RecommendationJobEntity {
     };
   };
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: 'text', nullable: true, name: 'error_message' })
   errorMessage?: string;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
 
-  @Column({ type: 'timestamp without time zone', nullable: true })
+  @Column({ type: 'timestamp without time zone', nullable: true, name: 'completed_at' })
   completedAt?: Date;
 
-  @Column({ type: 'timestamp without time zone' })
+  @Column({ type: 'timestamp without time zone', name: 'expires_at' })
   expiresAt: Date;
 }
