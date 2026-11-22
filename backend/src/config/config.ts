@@ -124,6 +124,7 @@ export const config = {
   },
 
   hotelBooking: {
+    enabled: process.env.ACTUAL_BOOKING_ENABLED === "true",
     supplyBufferRatio: parseFloat(
       process.env.HOTEL_SUPPLY_BUFFER_RATIO ?? "1.5",
     ),
