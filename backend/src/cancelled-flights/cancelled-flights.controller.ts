@@ -103,6 +103,12 @@ import {
 import { HotelSplitPreviewService } from "./hotel-split-preview.service";
 import { GetCancelledFlightsSummaryQueryDto } from "./dto/get-cancelled-flights-summary-query.dto";
 import { CancelledFlightsSummaryResponseDto } from "./dto/cancelled-flights-summary-response.dto";
+import { RecommendationJobService } from "./recommendation-job.service";
+import { RecommendationJobProcessor } from "./recommendation-job.processor";
+import {
+  StartRecommendationJobResponseDto,
+  GetRecommendationJobResponseDto,
+} from "./dto/recommendation-job.dto";
 
 @ApiTags("Cancelled Flights")
 @ApiBearerAuth("access-token")
@@ -132,6 +138,8 @@ export class CancelledFlightsController {
     private readonly service: CancelledFlightsService,
     private readonly hotelAllocationService: HotelAllocationService,
     private readonly hotelSplitPreviewService: HotelSplitPreviewService,
+    private readonly recommendationJobService: RecommendationJobService,
+    private readonly recommendationJobProcessor: RecommendationJobProcessor,
   ) {}
 
   // ── GET /cancelled-flights ───────────────────────────────────────────────
@@ -1557,6 +1565,107 @@ export class CancelledFlightsController {
       requestId,
       "Hotel split preview fetched successfully",
     );
+  }
+
+  // ── POST /cancelled-flights/:id/plan-preview/recommendation/start ───────
+  @Post(":id/plan-preview/recommendation/start")
+  @RequireUserTypes(UserType.PLATFORM, UserType.AIRLINE)
+  @RequireAccessControl({
+    platform: {
+      asset: PlatformAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.VIEW],
+    },
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.VIEW],
+    },
+  })
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary: "Start async hotel allocation recommendation job",
+    description:
+      "For testing allocation with long processing times. Starts an async job that plans all the flight's PNRs exactly as an allocation run does (one supplier search widening until ceil(rooms × HOTEL_SUPPLY_BUFFER_RATIO) rooms per shape and whole sets are found). Returns immediately with a jobId to poll. The result structure is identical to the synchronous GET /plan-preview/recommendation endpoint. Read only: nothing is saved, held, charged or booked. Calls the supplier live (RateHawk: counts against the 10 searches/min shared with allocation).",
+  })
+  @ApiParam({ name: "id", description: "Cancelled flight id" })
+  @ApiCreatedResponse({
+    description: "Job started successfully",
+    type: StartRecommendationJobResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: "Invalid request parameters",
+  })
+  @ApiNotFoundResponse({
+    description: "Flight not found",
+  })
+  async startRecommendationJob(
+    @Req() req: AuthenticatedRequest,
+    @Param("id", ParseIntPipe) flightId: number,
+    @RequestId() requestId: string,
+    @RequestLogger() requestLogger: Logger,
+  ): Promise<StartRecommendationJobResponseDto> {
+    // Create the job
+    const jobId = await this.recommendationJobService.createJob(flightId);
+
+    // Start background processing
+    // Schedule it to run asynchronously without blocking the response
+    setImmediate(() => {
+      this.recommendationJobProcessor
+        .processRecommendation(jobId, flightId, req.user, requestId, requestLogger)
+        .catch((error) => {
+          requestLogger.error(
+            `Error processing recommendation job ${jobId}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          );
+        });
+    });
+
+    return {
+      jobId,
+      status: 'PENDING',
+      message: `Job ${jobId} started. Poll /plan-preview/recommendation/${jobId}`,
+    };
+  }
+
+  // ── GET /cancelled-flights/plan-preview/recommendation/:jobId ───────────
+  @Get("plan-preview/recommendation/:jobId")
+  @RequireUserTypes(UserType.PLATFORM, UserType.AIRLINE)
+  @RequireAccessControl({
+    platform: {
+      asset: PlatformAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.VIEW],
+    },
+    airline: {
+      asset: AirlineAsset.CANCELLED_FLIGHTS,
+      access: [AccessAction.VIEW],
+    },
+  })
+  @ApiOperation({
+    summary: "Poll async recommendation job result",
+    description:
+      "Polls the result of an async recommendation job started by POST /plan-preview/recommendation/start. Returns job status (PENDING, PROCESSING, COMPLETED, FAILED) and the result once completed. The result structure is identical to the synchronous GET /plan-preview/recommendation endpoint. 404 when the job is not found or has expired (after 7 days).",
+  })
+  @ApiParam({
+    name: "jobId",
+    description: "Job ID returned by POST /plan-preview/recommendation/start",
+  })
+  @ApiOkResponse({
+    description: "Job details retrieved",
+    type: GetRecommendationJobResponseDto,
+  })
+  @ApiNotFoundResponse({
+    description: "Job not found or has expired",
+  })
+  async getRecommendationJobResult(
+    @Param("jobId", ParseUUIDPipe) jobId: string,
+  ): Promise<GetRecommendationJobResponseDto> {
+    const job = await this.recommendationJobService.getJob(jobId);
+
+    return {
+      jobId: job.id,
+      status: job.status,
+      completedAt: job.completedAt?.toISOString() || undefined,
+      result: job.result || undefined,
+      errorMessage: job.errorMessage || undefined,
+    };
   }
 
   // ── GET /cancelled-flights/:id/plan-preview/recommendation ──────────────
