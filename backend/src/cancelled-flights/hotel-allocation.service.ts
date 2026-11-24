@@ -48,6 +48,7 @@ import {
   HotelRateCheck,
   RoomOccupancy,
   SUPPLIER_BOOKING_WAIT_MS,
+  SupplierSearchStats,
   TaxAtProperty,
 } from "./hotel-providers/hotel-provider.interface";
 import { cancellationOf } from "../hotel-availability/hotel-availability.mapper";
@@ -115,6 +116,24 @@ interface StayDates {
   checkIn: string;
   checkOut: string;
 }
+
+/** Previews only: what a search found and removed, to explain empty results. */
+interface SearchDiagnostics extends SupplierSearchStats {
+  /** Hotels the supplier search handed back after its own filters. */
+  returned: number;
+  /** Of those, hotels the stored content says are closed or removed. */
+  closedOrRemoved: number;
+}
+
+/** A rate's taxes for preview output: in the price, and payable at the hotel. */
+const taxDetails = (rate?: AvailabilityRoomRate) => ({
+  taxesIncluded: rate?.taxesIncluded ?? [],
+  taxesAtProperty: rate?.taxesAtProperty ?? [],
+});
+
+/** True when any of these rates has a tax the guest pays at the hotel. */
+const chargesTaxAtHotel = (rates: Array<AvailabilityRoomRate | undefined>) =>
+  rates.some((rate) => (rate?.taxesAtProperty ?? []).length > 0);
 
 interface AllocationRunContext {
   flight: CancelledFlightEntity;
@@ -2477,10 +2496,16 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     radius?: number,
     /** Preview only: use fetched hotel content without saving it. */
     readOnly = false,
+    /** Preview only: filled with what the search found and removed. */
+    diagnostics?: SearchDiagnostics,
   ): Promise<{
     hotels: AvailabilityHotel[];
     orderHotels: AvailabilityHotel[] | undefined;
   }> {
+    const searchOptions = {
+      residency,
+      ...(diagnostics ? { stats: diagnostics } : {}),
+    };
     const airport = {
       iataCode: flight.departureAirport.iataCode,
       latitude: Number(flight.departureAirport.latitude),
@@ -2612,7 +2637,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
                 occupancies,
                 requestId,
                 requestLogger,
-                { residency, radius: ring },
+                { ...searchOptions, radius: ring },
               )
               .catch(noHotels)
           : [],
@@ -2625,31 +2650,30 @@ export class HotelAllocationService implements OnApplicationBootstrap {
                 combinations,
                 requestId,
                 requestLogger,
-                { residency, radius: ring },
+                { ...searchOptions, radius: ring },
               )
               .catch(noHotels)
           : [],
       ]);
-      keep(
-        found.hotels,
-        await this.hotelContentService.enrichSearchResults(
-          single,
-          requestId,
-          requestLogger,
-          readOnly,
-        ),
-        ring,
+      const open = await this.hotelContentService.enrichSearchResults(
+        single,
+        requestId,
+        requestLogger,
+        readOnly,
       );
-      keep(
-        found.orderHotels,
-        await this.hotelContentService.enrichSearchResults(
-          orders,
-          requestId,
-          requestLogger,
-          readOnly,
-        ),
-        ring,
+      const openOrders = await this.hotelContentService.enrichSearchResults(
+        orders,
+        requestId,
+        requestLogger,
+        readOnly,
       );
+      if (diagnostics) {
+        diagnostics.returned += single.length + orders.length;
+        diagnostics.closedOrRemoved +=
+          single.length - open.length + (orders.length - openOrders.length);
+      }
+      keep(found.hotels, open, ring);
+      keep(found.orderHotels, openOrders, ring);
       short = short.filter(
         (list) =>
           supply(list) <
@@ -2751,11 +2775,14 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     }
 
     const entries = plans.map(({ booking, plan }) => {
-      const stars = this.starRule(booking.travelClass);
-      const rooms = chooseRoomSplit(plan, hotels, orderHotels, stars.min);
+      const rooms = chooseRoomSplit(
+        plan,
+        hotels,
+        orderHotels,
+        this.starRule(booking.travelClass).min,
+      );
       return {
         booking,
-        stars,
         rooms,
         needs: toRoomNeeds(rooms),
         asOrder: !!orderHotels && rooms.length > 1,
@@ -2784,7 +2811,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       flight.id,
       randomUUID(),
       config.hotelProvider.name,
-      entries.map(({ booking, stars, rooms, needs, asOrder }) => ({
+      entries.map(({ booking, rooms, needs, asOrder }) => ({
         bookingId: booking.id,
         roomPlan: needs.map((need) => ({
           adults: need.shape.adults,
@@ -2792,8 +2819,8 @@ export class HotelAllocationService implements OnApplicationBootstrap {
           roomsNeeded: need.roomsNeeded,
         })),
         candidates: asOrder
-          ? buildOrderCandidatePlan(orderHotels!, rooms, stars)
-          : buildCandidatePlan(hotels, needs, pools, stars),
+          ? buildOrderCandidatePlan(orderHotels!, rooms)
+          : buildCandidatePlan(hotels, needs, pools),
       })),
       requestLogger,
     );
@@ -2887,6 +2914,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
             latitude !== null && longitude !== null
               ? distanceKm(airportPoint, { latitude, longitude })
               : null,
+          taxPayableAtHotel: chargesTaxAtHotel(hotel.rates),
           rates: hotel.rates.map((rate) => ({
             rateKey: rate.rateKey,
             roomName: rate.roomName,
@@ -2897,6 +2925,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
             currency: rate.currency,
             allotment: rate.allotment,
             paymentType: rate.paymentType,
+            ...taxDetails(rate),
           })),
         };
       })
@@ -3091,13 +3120,13 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         boardName: rate?.boardName ?? null,
         paymentType: rate?.paymentType ?? null,
         freeCancellationBefore: rate?.freeCancellationBefore ?? null,
+        ...taxDetails(rate),
       };
     };
 
     // Room split -> its PNRs (in the run's booking order) and its ranked
-    // hotels. Hotels rank stars first, so a higher class's list is the top of
-    // a lower class's list for the same split: the split shows the longest
-    // one, and each PNR may use the hotels with at least its minStars.
+    // hotels, the same for every PNR with that split. A PNR only gets a hotel
+    // below its minStars when no hotel meeting it has rooms left.
     type SplitGroup = {
       key: string;
       entry?: (typeof plan.entries)[number];
@@ -3115,18 +3144,14 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       if (!group) {
         group = { key, entry, pnrs: [], pnrsByHotel: new Map() };
         splits.push(group);
-      } else if (
-        entry &&
-        entry.candidates.length > (group.entry?.candidates.length ?? 0)
-      ) {
-        group.entry = entry;
       }
+      const minStars = this.starRule(booking.travelClass).min;
       const pnr = {
         order: index + 1,
         bookingId: booking.id,
         pnr: booking.pnr,
         travelClass: booking.travelClass,
-        minStars: this.starRule(booking.travelClass).min,
+        minStars,
         adults: booking.adults,
         children: booking.children,
       };
@@ -3159,6 +3184,8 @@ export class HotelAllocationService implements OnApplicationBootstrap {
           hotelCode: candidate.hotelCode,
           hotelName: candidate.hotelName,
           stars: candidate.stars,
+          // No hotel meeting the class minimum had rooms left.
+          belowMinStars: candidate.stars < minStars,
           price: this.picksPrice(picks, entry.asOrder),
           currency: candidate.currency,
           rooms: picks.map((pick) => ({
@@ -3222,6 +3249,11 @@ export class HotelAllocationService implements OnApplicationBootstrap {
           estimatedPrice: candidate.estimatedPrice,
           currency: candidate.currency,
           tier: candidate.tier,
+          taxPayableAtHotel: chargesTaxAtHotel(
+            candidate.rooms.flatMap((room) =>
+              room.rateOptions.map((option) => rateByKey.get(option.rateKey)),
+            ),
+          ),
           // PNRs of this split the run would put here.
           assignedPnrs: pnrsByHotel.get(candidate.hotelCode) ?? [],
           rooms: candidate.rooms.map((room) => {
@@ -3303,7 +3335,6 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       longitude: Number(airport.longitude),
     };
     const minStars = config.hotelSearch.minRate;
-    const stars: StarRule = { min: minStars, preferred: minStars };
     const ratio = config.hotelBooking.supplyBufferRatio;
     const recommend = input.need === SplitPreviewNeed.RECOMMEND;
 
@@ -3319,6 +3350,12 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         rooms,
         allocation: split.allocation,
       };
+      const diagnostics: SearchDiagnostics = {
+        supplierHotels: 0,
+        withTaxAtHotel: 0,
+        returned: 0,
+        closedOrRemoved: 0,
+      };
       let found: Awaited<ReturnType<HotelAllocationService["searchSplits"]>>;
       try {
         found = await this.searchSplits(
@@ -3330,6 +3367,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
           requestLogger,
           input.distance,
           true,
+          diagnostics,
         );
       } catch (error: any) {
         if (!(error instanceof NotFoundException)) {
@@ -3343,6 +3381,45 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       }
       const asOrder = !!found.orderHotels && rooms.length > 1;
       const hotels = asOrder ? (found.orderHotels ?? []) : found.hotels;
+      // What the search found and removed. A supplier that does not report
+      // its own count is taken to have returned what it handed back.
+      const supplierHotels = Math.max(
+        diagnostics.supplierHotels,
+        diagnostics.returned,
+      );
+      const search = {
+        radius: input.distance,
+        supplierHotels,
+        removedNoUsableRate: supplierHotels - diagnostics.returned,
+        removedClosed: diagnostics.closedOrRemoved,
+        hotels: hotels.length,
+        withTaxAtHotel: diagnostics.withTaxAtHotel,
+      };
+      const plural = (count: number, word: string) =>
+        `${count} ${word}${count === 1 ? "" : "s"}`;
+      // Why no hotel came out of the search, in plain words.
+      const searchEmptyReason = () => {
+        if (supplierHotels === 0) {
+          return `The supplier (${config.hotelProvider.name}) geo search returned no hotels within ${input.distance} ${config.hotelSearch.unit} of ${iataCode} for ${rooms.map((r) => `${r.adults}+${r.children}`).join(" & ")} from ${checkIn} to ${checkOut} (residency ${residency.toUpperCase()}). Nothing was removed by our filters.`;
+        }
+        const removed = [
+          search.removedNoUsableRate
+            ? `${plural(search.removedNoUsableRate, "hotel")} had no usable rate (no payment option)`
+            : null,
+          search.removedClosed
+            ? `${plural(search.removedClosed, "hotel")} are closed or removed according to the supplier's hotel content`
+            : null,
+        ].filter(Boolean);
+        return `The supplier returned ${plural(supplierHotels, "hotel")}, but all were removed: ${removed.join("; ")}.`;
+      };
+      const rateByKey = new Map(
+        hotels.flatMap((hotel) =>
+          hotel.rates.map((rate) => [rate.rateKey, rate] as const),
+        ),
+      );
+      const hotelByCode = new Map(
+        hotels.map((hotel) => [hotel.hotelCode, hotel]),
+      );
       // Address and coordinates from stored content (the search has no
       // coordinates), fetched read-only when missing.
       const content = hotels.length
@@ -3382,6 +3459,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
             address: content.get(hotel.hotelCode)?.address ?? (hotel.address || null),
             distanceKm: distanceOf(hotel.hotelCode),
             sets: setsAt(hotel),
+            taxPayableAtHotel: chargesTaxAtHotel(hotel.rates),
             rates: hotel.rates.map((rate) => ({
               rateKey: rate.rateKey,
               roomName: rate.roomName,
@@ -3393,6 +3471,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
               currency: rate.currency,
               allotment: rate.allotment,
               paymentType: rate.paymentType,
+              ...taxDetails(rate),
             })),
           }))
           .sort(
@@ -3403,7 +3482,9 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         splits.push({
           ...base,
           bookedAsOneOrder: asOrder,
+          search,
           totalHotels: all.length,
+          ...(all.length === 0 ? { emptyReason: searchEmptyReason() } : {}),
           hotels: all,
         });
         continue;
@@ -3411,7 +3492,7 @@ export class HotelAllocationService implements OnApplicationBootstrap {
 
       let candidates: PlannedCandidate[];
       if (asOrder) {
-        candidates = buildOrderCandidatePlan(hotels, rooms, stars);
+        candidates = buildOrderCandidatePlan(hotels, rooms);
       } else {
         const needs = toRoomNeeds(rooms);
         const demand = new Map<string, RoomNeed>(
@@ -3427,7 +3508,6 @@ export class HotelAllocationService implements OnApplicationBootstrap {
           hotels,
           needs,
           buildSupplyPools(hotels, demand, ratio),
-          stars,
         );
       }
       // Sets taken in rank order, each from the first hotel that still has
@@ -3477,6 +3557,24 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         if (!taken) break;
         setsFound += 1;
       }
+      // Why no hotel is recommended when the search did find hotels.
+      const recommendEmptyReason = () => {
+        if (hotels.length === 0) return searchEmptyReason();
+        const noFreeRooms = hotels.length - candidates.length;
+        const reasons = [
+          noFreeRooms
+            ? `${plural(noFreeRooms, "hotel")} without free rooms (allotment missing or too low) for every room of the split`
+            : null,
+          candidates.length
+            ? `${plural(candidates.length, "hotel")} without enough free rooms on one rate for a whole set`
+            : null,
+        ].filter(Boolean);
+        const set =
+          rooms.length > 1
+            ? `one allocation (all ${rooms.length} rooms in one hotel)`
+            : "one allocation";
+        return `The search found ${plural(hotels.length, "hotel")}, but none can take ${set}: ${reasons.join("; ")}.`;
+      };
       splits.push({
         ...base,
         bookedAsOneOrder: asOrder,
@@ -3486,7 +3584,9 @@ export class HotelAllocationService implements OnApplicationBootstrap {
         target,
         setsFound,
         targetMet: setsFound >= target,
+        search,
         totalHotelsFound: hotels.length,
+        ...(byHotel.size === 0 ? { emptyReason: recommendEmptyReason() } : {}),
         recommendedHotels: [...byHotel.values()].map(
           ({ rank, candidate, setPrices }) => ({
             rank,
@@ -3501,11 +3601,15 @@ export class HotelAllocationService implements OnApplicationBootstrap {
               setPrices.reduce((sum, price) => sum + price, 0),
             ),
             currency: candidate.currency,
+            taxPayableAtHotel: chargesTaxAtHotel(
+              hotelByCode.get(candidate.hotelCode)?.rates ?? [],
+            ),
             rooms: candidate.rooms.map((room) => ({
               adults: room.adults,
               children: room.children,
               roomsNeeded: room.roomsNeeded,
               bestRate: room.rateOptions[0] ?? null,
+              ...taxDetails(rateByKey.get(room.rateOptions[0]?.rateKey ?? "")),
             })),
           }),
         ),
@@ -3565,7 +3669,6 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     pools: Map<string, ShapePool>;
     entries: Array<{
       booking: BookingEntity;
-      stars: StarRule;
       plan: RoomSplitPlan;
       rooms: RoomOccupancy[];
       needs: RoomNeed[];
@@ -3608,11 +3711,14 @@ export class HotelAllocationService implements OnApplicationBootstrap {
     );
 
     const splits = plans.map(({ booking, plan }) => {
-      const stars = this.starRule(booking.travelClass);
-      const rooms = chooseRoomSplit(plan, hotels, orderHotels, stars.min);
+      const rooms = chooseRoomSplit(
+        plan,
+        hotels,
+        orderHotels,
+        this.starRule(booking.travelClass).min,
+      );
       return {
         booking,
-        stars,
         plan,
         rooms,
         needs: toRoomNeeds(rooms),
@@ -3646,8 +3752,8 @@ export class HotelAllocationService implements OnApplicationBootstrap {
       entries: splits.map((entry) => ({
         ...entry,
         candidates: entry.asOrder
-          ? buildOrderCandidatePlan(orderHotels!, entry.rooms, entry.stars)
-          : buildCandidatePlan(hotels, entry.needs, pools, entry.stars),
+          ? buildOrderCandidatePlan(orderHotels!, entry.rooms)
+          : buildCandidatePlan(hotels, entry.needs, pools),
       })),
     };
   }
@@ -4165,15 +4271,17 @@ export class HotelAllocationService implements OnApplicationBootstrap {
           error,
         );
       }
-      if (check.taxesAtProperty?.length) {
-        const taxes = check.taxesAtProperty
-          .map((tax) => `${tax.name} ${tax.amount} ${tax.currencyCode ?? ""}`)
-          .join(", ");
-        return fail(
-          HotelBookingFailureCode.HOTEL_PAYABLE_TAXES,
-          `Rate has taxes payable at the hotel (${taxes}); passengers must not pay the hotel`,
-        );
-      }
+      // TEMPORARILY DISABLED with the search filter: rates with taxes payable
+      // at the hotel can be booked; the taxes are stored on the booked room.
+      // if (check.taxesAtProperty?.length) {
+      //   const taxes = check.taxesAtProperty
+      //     .map((tax) => `${tax.name} ${tax.amount} ${tax.currencyCode ?? ""}`)
+      //     .join(", ");
+      //   return fail(
+      //     HotelBookingFailureCode.HOTEL_PAYABLE_TAXES,
+      //     `Rate has taxes payable at the hotel (${taxes}); passengers must not pay the hotel`,
+      //   );
+      // }
       const orderRooms = check.rooms ?? [
         { adults: check.adults, children: check.children },
       ];

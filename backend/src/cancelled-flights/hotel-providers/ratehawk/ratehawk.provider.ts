@@ -775,9 +775,14 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
     includePayAtHotel = false,
   ): AvailabilityHotel[] {
     return rawHotels
-      .filter(
-        (hotel: any) => includePayAtHotel || !this.chargesAtProperty(hotel),
-      )
+      // TEMPORARILY DISABLED: hotels whose rates have taxes payable at the
+      // hotel are kept (the taxes stay on each rate as taxesAtProperty).
+      // To drop them again, restore this filter and the two checks that
+      // reject them before booking (prebookRate here, attemptHotelBooking in
+      // hotel-allocation.service.ts).
+      // .filter(
+      //   (hotel: any) => includePayAtHotel || !this.chargesAtProperty(hotel),
+      // )
       .map((hotel: any) => {
         const hid = Number(hotel.hid);
         // Stars and the real name come from our hotels table (Content API), not search.
@@ -1062,6 +1067,12 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
         `Successfully received ${mergedRawHotels.length} merged hotels from RateHawk API`,
         { context: this.context },
       );
+      if (options?.stats) {
+        options.stats.supplierHotels += mergedRawHotels.length;
+        options.stats.withTaxAtHotel += mergedRawHotels.filter((hotel) =>
+          this.chargesAtProperty(hotel),
+        ).length;
+      }
       if (mergedRawHotels.length === 0) {
         throw new NotFoundException(
           `No hotels found near airport ${airport.iataCode} for the requested occupancies`,
@@ -1490,11 +1501,13 @@ export class RatehawkProvider implements HotelProvider, OnModuleInit {
       log,
     );
     const hpHotel = hotelpage?.hotels?.[0];
-    if (this.chargesAtProperty(hpHotel)) {
-      throw new ConflictException(
-        "The hotel charges taxes payable at the property; passengers must not pay the hotel",
-      );
-    }
+    // TEMPORARILY DISABLED with the search filter above: hotels with taxes
+    // payable at the property can be booked.
+    // if (this.chargesAtProperty(hpHotel)) {
+    //   throw new ConflictException(
+    //     "The hotel charges taxes payable at the property; passengers must not pay the hotel",
+    //   );
+    // }
     const bookable = (hpHotel?.rates ?? [])
       .filter(
         (rate: any) =>

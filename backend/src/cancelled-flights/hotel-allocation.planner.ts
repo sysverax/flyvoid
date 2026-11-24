@@ -460,18 +460,17 @@ function selectOrderRate(
   }));
 }
 
-/** Candidates for a PNR booked as one multiroom order; estimatedPrice is the order total. */
+/**
+ * Candidates for a PNR booked as one multiroom order; estimatedPrice is the
+ * order total. Ranked like buildCandidatePlan, below-minimum hotels included.
+ */
 export function buildOrderCandidatePlan(
   orderHotels: AvailabilityHotel[],
   rooms: RoomOccupancy[],
-  stars: StarRule,
 ): PlannedCandidate[] {
   const needs = toRoomNeeds(rooms);
   const candidates: PlannedCandidate[] = [];
   for (const hotel of orderHotels) {
-    if (hotel.stars < stars.min) {
-      continue;
-    }
     const rates = orderRatesFor(hotel, rooms).sort(
       (a, b) => a.netPrice - b.netPrice || a.rateKey.localeCompare(b.rateKey),
     );
@@ -509,17 +508,19 @@ export function buildOrderCandidatePlan(
   );
 }
 
+/**
+ * A PNR's ranked hotels: most stars first, then the lowest price. Hotels below
+ * the class's minimum stars stay in the list: ranked by stars, they come after
+ * every hotel meeting the minimum, so a PNR only gets one when none of those
+ * has rooms left (the search widens to the maximum radius for them first).
+ */
 export function buildCandidatePlan(
   hotels: AvailabilityHotel[],
   needs: RoomNeed[],
   pools: Map<string, ShapePool>,
-  stars: StarRule,
 ): PlannedCandidate[] {
   const candidates: PlannedCandidate[] = [];
   for (const hotel of hotels) {
-    if (hotel.stars < stars.min) {
-      continue;
-    }
     const rooms: CandidateRoomPlan[] = needs.map((need) => {
       const pool = pools.get(shapeKey(need.shape));
       const rateOptions: CandidateRateOption[] = hotel.rates

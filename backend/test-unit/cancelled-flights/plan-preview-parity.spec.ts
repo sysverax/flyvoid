@@ -161,12 +161,14 @@ describe("plan preview vs a real allocation run", () => {
       const saved = plans.find((p: any) => p.bookingId === entry.booking.id);
       expect(entry.candidates).toEqual(saved.candidates);
     }
-    // Star ladder with each class's minimum, cheapest within the same stars.
+    // Star ladder, cheapest within the same stars; hotels below a class's
+    // minimum stay at the end as the last resort, for every class.
     const order = (id: number) =>
       plans.find((p: any) => p.bookingId === id).candidates.map((c: any) => c.hotelCode);
-    expect(order(1)).toEqual(["H5"]); // first: 5 only
-    expect(order(3)).toEqual(["H5", "H4b", "H4a"]); // business: 5 -> 4
-    expect(order(2)).toEqual(["H5", "H4b", "H4a", "H3"]); // economy: 5 -> 4 -> 3
+    const ladder = ["H5", "H4b", "H4a", "H3", "H2"];
+    expect(order(1)).toEqual(ladder); // first: 5, then 4 -> 3 -> 2 if 5 is full
+    expect(order(3)).toEqual(ladder); // business
+    expect(order(2)).toEqual(ladder); // economy
   });
 
   it("searches the same demand as a run (only the read-only flag differs)", async () => {
@@ -187,7 +189,7 @@ describe("plan preview vs a real allocation run", () => {
     expect(previewArgs[7]).toBe(true); // preview never writes
   });
 
-  it("the flight preview ranks each PNR's hotels like a run (each class's minimum)", async () => {
+  it("the flight preview ranks each PNR's hotels like a run", async () => {
     const bookings = [
       pnr(1, TravelClass.FIRST_CLASS),
       pnr(2, TravelClass.ECONOMY),
@@ -203,16 +205,44 @@ describe("plan preview vs a real allocation run", () => {
       s.pnrs.map((p: any) => ({ ...p, hotels: s.hotels })),
     );
     expect(previewed.map((p: any) => p.bookingId)).toEqual([1, 3, 2]); // first, business, economy
-    // The split lists the longest ranking; each PNR's real ranking is its
-    // hotels with at least the PNR's minimum stars, in the same order.
+    // Each PNR's real ranking is its split's hotels, in the same order.
     for (const entry of previewed) {
       const saved = plans.find((p: any) => p.bookingId === entry.bookingId);
-      expect(
-        entry.hotels
-          .filter((h: any) => h.stars >= entry.minStars)
-          .map((h: any) => h.hotelCode),
-      ).toEqual(saved.candidates.map((c: any) => c.hotelCode));
+      expect(entry.hotels.map((h: any) => h.hotelCode)).toEqual(
+        saved.candidates.map((c: any) => c.hotelCode),
+      );
     }
+  });
+
+  it("gives first class the best hotel left below its minimum when no 5-star has rooms", async () => {
+    // Only 4-star and lower: first class (minimum 5) takes the cheapest 4-star.
+    const { service, repository } = newService();
+    service.searchSplits = jest.fn(async () => ({
+      hotels: [hotel("H4a", 4, 10, 200, 1), hotel("H3", 3, 20, 90, 5), hotel("H4b", 4, 20, 150, 1)],
+      orderHotels: undefined,
+    }));
+    repository.findBookingsByFlightId.mockResolvedValue([
+      pnr(1, TravelClass.FIRST_CLASS),
+      pnr(2, TravelClass.BUSINESS),
+      pnr(3, TravelClass.ECONOMY),
+    ]);
+
+    const result = await service.previewFlightAllocation(flight.id, AIRLINE_USER, "req", logger);
+
+    const got = Object.fromEntries(
+      result.splits[0].pnrs.map((p: any) => [
+        p.travelClass,
+        [p.recommended.hotelCode, p.recommended.belowMinStars],
+      ]),
+    );
+    // Class order: first takes the cheapest 4-star (below its 5), business the
+    // other 4-star (meets its 4), economy falls to the 3-star (meets its 3).
+    expect(got).toEqual({
+      first_class: ["H4b", true],
+      business: ["H4a", false],
+      economy: ["H3", false],
+    });
+    expect(result.allAllocated).toBe(true);
   });
 
   it("gives each PNR the same hotel a run books (when every booking succeeds)", async () => {
