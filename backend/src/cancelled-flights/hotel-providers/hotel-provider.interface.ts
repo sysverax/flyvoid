@@ -139,10 +139,21 @@ export interface SupplierSearchOptions {
   /** Search only this radius (in config.hotelSearch.unit) instead of widening from the default. */
   radius?: number;
   /**
-   * Keep hotels whose rates have taxes payable at the hotel. Allocation drops
-   * them (passengers must not pay); the admin availability page shows them.
+   * Keep hotels whose rates have taxes payable at the hotel. Allocation used
+   * to drop them (passengers must not pay); that filter is temporarily
+   * disabled in the RateHawk provider, so they are kept either way.
    */
   includePayAtHotel?: boolean;
+  /** Previews only: the search adds what it found here, to explain empty results. */
+  stats?: SupplierSearchStats;
+}
+
+/** What one supplier search returned, before any of our filters. */
+export interface SupplierSearchStats {
+  /** Hotels the supplier returned. */
+  supplierHotels: number;
+  /** Of those, hotels with a tax payable at the hotel. */
+  withTaxAtHotel: number;
 }
 
 /** Supplier-neutral result of re-validating a rate before booking. */

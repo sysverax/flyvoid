@@ -136,4 +136,19 @@ export class HotelSplitPreviewService {
       expiresAt: preview.expiresAt,
     };
   }
+
+  /** Response message for a read preview: names each split left without hotels, and why. */
+  static messageFor(preview: { status: string; result: unknown }): string {
+    const splits =
+      preview.status === HotelSplitPreviewStatus.COMPLETED
+        ? ((preview.result as { splits?: unknown[] } | null)?.splits ?? [])
+        : [];
+    const empty = (
+      splits as Array<{ splitNo?: number; emptyReason?: string }>
+    ).filter((split) => split.emptyReason);
+    if (empty.length === 0) return "Hotel split preview fetched successfully";
+    return `Hotel split preview fetched; no hotels for ${empty
+      .map((split) => `split ${split.splitNo}: ${split.emptyReason}`)
+      .join(" | ")}`;
+  }
 }

@@ -132,7 +132,14 @@ function setup(
         hotelName: "Hotel A",
         stars: 4,
         rates: [
-          { rateKey: "A-41", roomName: "Family Suite", boardName: "Breakfast", paymentType: "deposit" },
+          {
+            rateKey: "A-41",
+            roomName: "Family Suite",
+            boardName: "Breakfast",
+            paymentType: "deposit",
+            taxesIncluded: [{ name: "Vat", amount: 9, currencyCode: "USD" }],
+            taxesAtProperty: [{ name: "Tourism dirham fee", amount: 4.08, currencyCode: "USD" }],
+          },
           { rateKey: "A-30", roomName: "Triple Room", boardName: "Room only", paymentType: "deposit" },
         ],
       },
@@ -155,7 +162,6 @@ function setup(
     ]),
     entries: planned.map((b) => ({
       booking: b,
-      stars: { min: 3, preferred: 3 },
       plan: { preferred: SPLIT, fallbacks: [] },
       rooms: SPLIT,
       needs: [],
@@ -209,7 +215,7 @@ describe("flight allocation preview (by cancelled flight id)", () => {
     ]);
   });
 
-  it("shows each hotel's details: address, distance, contact, rooms, board, price and rooms left", async () => {
+  it("shows each hotel's details: address, distance, contact, rooms, board, taxes, price and rooms left", async () => {
     const { service, content } = setup();
 
     const result = await preview(service);
@@ -229,6 +235,7 @@ describe("flight allocation preview (by cancelled flight id)", () => {
       website: "https://hotel-a.example",
       estimatedPrice: 300,
       currency: "USD",
+      taxPayableAtHotel: true,
       assignedPnrs: ["FIRST1", "ECO1"],
     });
     expect(hotel.rooms[0]).toEqual({
@@ -239,10 +246,16 @@ describe("flight allocation preview (by cancelled flight id)", () => {
       boardName: "Breakfast",
       paymentType: "deposit",
       freeCancellationBefore: null,
+      taxesIncluded: [{ name: "Vat", amount: 9, currencyCode: "USD" }],
+      taxesAtProperty: [{ name: "Tourism dirham fee", amount: 4.08, currencyCode: "USD" }],
       netPrice: 180,
       roomsLeft: 2,
       rateOptions: 1,
     });
+    // The PNR's recommended room carries the same tax details.
+    expect(result.splits[0].pnrs[0].recommended.rooms[0].taxesAtProperty).toEqual([
+      { name: "Tourism dirham fee", amount: 4.08, currencyCode: "USD" },
+    ]);
     // Stored details are read without saving, for every ranked hotel.
     expect(content.ensureHotelContent.mock.calls[0][0]).toEqual(["A", "B"]);
     expect(content.ensureHotelContent.mock.calls[0][4]).toBe(true);
@@ -251,6 +264,7 @@ describe("flight allocation preview (by cancelled flight id)", () => {
       hotelCode: "B",
       address: null,
       distanceKm: null,
+      taxPayableAtHotel: false,
       assignedPnrs: ["ECO2"],
     });
   });
@@ -554,6 +568,27 @@ describe("hotels preview: one plain geo search around the airport", () => {
     expect(options.radius).toBe(config.hotelSearch.defaultRadius);
     expect(result).toMatchObject({ roomSplitGiven: false, totalHotels: 0, hotels: [] });
     expect(result.rooms.length).toBeGreaterThan(0);
+  });
+
+  it("shows each rate's taxes and flags hotels with a tax payable at the hotel", async () => {
+    const taxed = supplierHotel("TAXED", 5) as any;
+    taxed.rates[0] = {
+      ...taxed.rates[0],
+      taxesIncluded: [{ name: "Vat", amount: 5, currencyCode: "USD" }],
+      taxesAtProperty: [{ name: "Tourism dirham fee", amount: 4.08, currencyCode: "USD" }],
+    };
+    const { service } = geoSetup([taxed, supplierHotel("FREE", 4)]);
+
+    const result = await service.previewHotels(geoBody(), "req", logger);
+
+    const byCode = Object.fromEntries(result.hotels.map((h: any) => [h.hotelCode, h]));
+    expect(byCode.TAXED.taxPayableAtHotel).toBe(true);
+    expect(byCode.TAXED.rates[0]).toMatchObject({
+      taxesIncluded: [{ name: "Vat", amount: 5, currencyCode: "USD" }],
+      taxesAtProperty: [{ name: "Tourism dirham fee", amount: 4.08, currencyCode: "USD" }],
+    });
+    expect(byCode.FREE.taxPayableAtHotel).toBe(false);
+    expect(byCode.FREE.rates[0]).toMatchObject({ taxesIncluded: [], taxesAtProperty: [] });
   });
 
   it("returns an empty list when the supplier finds nothing", async () => {
