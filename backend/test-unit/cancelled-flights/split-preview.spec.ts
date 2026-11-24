@@ -1,4 +1,4 @@
-import { describe, expect, it, jest } from "@jest/globals";
+import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { plainToInstance } from "class-transformer";
 import { validate } from "class-validator";
@@ -78,7 +78,12 @@ const body = (extra: object = {}): any => ({
   ...extra,
 });
 
-function newService(search: (rooms: any[]) => any) {
+/**
+ * `search` plays the supplier search for one split. It can fill in the
+ * diagnostics (what the supplier returned and what was removed); otherwise the
+ * hotels it returns count as returned by the supplier, none removed.
+ */
+function newService(search: (rooms: any[], diagnostics: any) => any) {
   // Stored hotel details: the coordinates of every hotel the search returned.
   const found = new Map<string, any>();
   const content = {
@@ -101,11 +106,15 @@ function newService(search: (rooms: any[]) => any) {
     {} as any,
     content as any,
   ) as any;
-  service.searchSplits = jest.fn(async (_f: any, _s: any, demand: any[]) => {
-    const result = search(demand[0].plan.preferred);
-    for (const h of [...result.hotels, ...(result.orderHotels ?? [])]) found.set(h.hotelCode, h);
-    return result;
-  });
+  service.searchSplits = jest.fn(
+    async (_f: any, _s: any, demand: any[], _r: any, _id: any, _l: any, _radius: any, _ro: any, diagnostics: any) => {
+      const result = search(demand[0].plan.preferred, diagnostics);
+      const returned = [...result.hotels, ...(result.orderHotels ?? [])];
+      for (const h of returned) found.set(h.hotelCode, h);
+      if (diagnostics && diagnostics.returned === 0) diagnostics.returned = returned.length;
+      return result;
+    },
+  );
   service.content = content;
   return service;
 }
@@ -466,5 +475,216 @@ describe("split preview jobs (POST starts, GET reads)", () => {
 
     expect(result.status).toBe("FAILED");
     expect(result.error).toContain("stopped before it finished");
+  });
+});
+
+describe("split preview explains a split with no hotels", () => {
+  const allBody = (extra: object = {}) => body({ need: SplitPreviewNeed.ALL, ...extra });
+  let savedMinRate: number;
+  beforeEach(() => {
+    savedMinRate = config.hotelSearch.minRate;
+    (config.hotelSearch as any).minRate = 3;
+  });
+  afterEach(() => {
+    (config.hotelSearch as any).minRate = savedMinRate;
+  });
+
+  it("says the supplier's geo search returned nothing when it did", async () => {
+    const service = newService(() => {
+      throw new NotFoundException("No hotels found");
+    });
+
+    const result = await service.computeSplitPreview(allBody(), STAY, "req", logger);
+
+    const [split] = result.splits;
+    expect(split).toMatchObject({
+      totalHotels: 0,
+      hotels: [],
+      search: { radius: 20, supplierHotels: 0, removedNoUsableRate: 0, removedClosed: 0, hotels: 0 },
+    });
+    expect(split.emptyReason).toContain("geo search returned no hotels within 20 km of DXB for 2+1");
+    expect(split.emptyReason).toContain("Nothing was removed by our filters");
+  });
+
+  it("says how many hotels the supplier returned and why each was removed", async () => {
+    const service = newService((_rooms, diagnostics) => {
+      diagnostics.supplierHotels = 5;
+      diagnostics.returned = 3; // the other 2 had no usable rate
+      diagnostics.closedOrRemoved = 3;
+      throw new NotFoundException("No hotels found");
+    });
+
+    const result = await service.computeSplitPreview(allBody(), STAY, "req", logger);
+
+    const [split] = result.splits;
+    expect(split.search).toMatchObject({ supplierHotels: 5, removedNoUsableRate: 2, removedClosed: 3, hotels: 0 });
+    expect(split.emptyReason).toBe(
+      "The supplier returned 5 hotels, but all were removed: 2 hotels had no usable rate (no payment option); 3 hotels are closed or removed according to the supplier's hotel content.",
+    );
+  });
+
+  it("recommend: explains why hotels were found but none can take an allocation", async () => {
+    const service = newService(() => ({
+      hotels: [
+        hotel("FULL", 4, 25.3, [rate("FULL", 2, 1, 90, 0)]), // no rooms left
+        hotel("UNKNOWN", 5, 25.3, [{ ...rate("UNKNOWN", 2, 1, 90, 0), allotment: null }]), // rooms left not given
+      ],
+      orderHotels: undefined,
+    }));
+
+    const result = await service.computeSplitPreview(body(), STAY, "req", logger);
+
+    const [split] = result.splits;
+    expect(split).toMatchObject({ setsFound: 0, recommendedHotels: [], totalHotelsFound: 2 });
+    expect(split.emptyReason).toBe(
+      "The search found 2 hotels, but none can take one allocation: 2 hotels without free rooms (allotment missing or too low) for every room of the split.",
+    );
+  });
+
+  it("recommend: falls back to hotels below the minimum stars instead of leaving the split empty", async () => {
+    const service = newService(() => ({
+      hotels: [hotel("LOW", 2, 25.3, [rate("LOW", 2, 1, 50, 9)])],
+      orderHotels: undefined,
+    }));
+
+    const result = await service.computeSplitPreview(body(), STAY, "req", logger);
+
+    const [split] = result.splits;
+    expect(split.emptyReason).toBeUndefined();
+    expect(split.recommendedHotels.map((h: any) => [h.hotelCode, h.stars])).toEqual([["LOW", 2]]);
+  });
+
+  it("gives no reason when a split has hotels, but always shows the search counts", async () => {
+    const service = newService(() => ({
+      hotels: [hotel("A", 4, 25.3, [rate("A", 2, 1, 100, 3)])],
+      orderHotels: undefined,
+    }));
+
+    const result = await service.computeSplitPreview(allBody(), STAY, "req", logger);
+
+    const [split] = result.splits;
+    expect(split.emptyReason).toBeUndefined();
+    expect(split.search).toMatchObject({ supplierHotels: 1, removedNoUsableRate: 0, removedClosed: 0, hotels: 1 });
+  });
+});
+
+describe("split preview shows each hotel's taxes", () => {
+  const taxedRate = (code: string) => ({
+    ...rate(code, 2, 1, 100, 4),
+    taxesIncluded: [{ name: "Vat", amount: 5, currencyCode: "USD" }],
+    taxesAtProperty: [{ name: "Tourism dirham fee", amount: 4.08, currencyCode: "USD" }],
+  });
+
+  it("need = all: every rate's taxes, and a flag on hotels with a tax payable at the hotel", async () => {
+    const service = newService(() => ({
+      hotels: [
+        hotel("TAXED", 5, 25.3, [taxedRate("TAXED")]),
+        hotel("FREE", 4, 25.4, [rate("FREE", 2, 1, 90, 2)]),
+      ],
+      orderHotels: undefined,
+    }));
+
+    const result = await service.computeSplitPreview(body({ need: SplitPreviewNeed.ALL }), STAY, "req", logger);
+
+    const byCode = Object.fromEntries(result.splits[0].hotels.map((h: any) => [h.hotelCode, h]));
+    expect(byCode.TAXED.taxPayableAtHotel).toBe(true);
+    expect(byCode.TAXED.rates[0]).toMatchObject({
+      taxesIncluded: [{ name: "Vat", amount: 5, currencyCode: "USD" }],
+      taxesAtProperty: [{ name: "Tourism dirham fee", amount: 4.08, currencyCode: "USD" }],
+    });
+    expect(byCode.FREE.taxPayableAtHotel).toBe(false);
+    expect(byCode.FREE.rates[0]).toMatchObject({ taxesIncluded: [], taxesAtProperty: [] });
+  });
+
+  it("need = recommend: the recommended hotel's flag and its rooms' taxes", async () => {
+    const service = newService(() => ({
+      hotels: [hotel("TAXED", 5, 25.3, [taxedRate("TAXED")])],
+      orderHotels: undefined,
+    }));
+
+    const result = await service.computeSplitPreview(body(), STAY, "req", logger);
+
+    const [recommended] = result.splits[0].recommendedHotels;
+    expect(recommended).toMatchObject({ hotelCode: "TAXED", taxPayableAtHotel: true });
+    expect(recommended.rooms[0].taxesAtProperty).toEqual([
+      { name: "Tourism dirham fee", amount: 4.08, currencyCode: "USD" },
+    ]);
+  });
+});
+
+describe("split preview read message", () => {
+  it("names each split left without hotels, and why", () => {
+    const message = HotelSplitPreviewService.messageFor({
+      status: "COMPLETED",
+      result: {
+        splits: [
+          { splitNo: 1, hotels: [{ hotelCode: "A" }] },
+          { splitNo: 2, emptyReason: "The supplier (ratehawk) geo search returned no hotels." },
+        ],
+      },
+    });
+
+    expect(message).toBe(
+      "Hotel split preview fetched; no hotels for split 2: The supplier (ratehawk) geo search returned no hotels.",
+    );
+  });
+
+  it("keeps the usual message when every split has hotels, and while running", () => {
+    expect(
+      HotelSplitPreviewService.messageFor({ status: "COMPLETED", result: { splits: [{ splitNo: 1 }] } }),
+    ).toBe("Hotel split preview fetched successfully");
+    expect(HotelSplitPreviewService.messageFor({ status: "RUNNING", result: null })).toBe(
+      "Hotel split preview fetched successfully",
+    );
+  });
+});
+
+describe("allocation search counts what it found, only when a preview asks", () => {
+  const demand = [{ plan: { preferred: [{ adults: 2, children: 1 }], fallbacks: [] }, minStars: 3 }];
+  const flight = { id: 0, departureAirport: airport } as any;
+  const stay = { checkIn: CHECK_IN, checkOut: CHECK_OUT };
+  function searchService() {
+    const provider = {
+      searchNearbyHotelsWithOccupancies: jest.fn(async (...args: any[]) => {
+        const options = args[6];
+        if (options.stats) {
+          options.stats.supplierHotels += 3; // one more was dropped by the supplier search
+          options.stats.withTaxAtHotel += 1;
+        }
+        return [
+          hotel("OPEN", 4, 25.3, [rate("OPEN", 2, 1, 100, 2)]),
+          hotel("SHUT", 4, 25.3, [rate("SHUT", 2, 1, 100, 2)]),
+        ];
+      }),
+    };
+    // The stored content says SHUT is closed.
+    const content = {
+      enrichSearchResults: jest.fn(async (hotels: any[]) => hotels.filter((h) => h.hotelCode !== "SHUT")),
+    };
+    const service = new HotelAllocationService({} as any, provider as any, {} as any, content as any) as any;
+    return { service, provider };
+  }
+
+  it("a real allocation search passes the supplier exactly the same options as before", async () => {
+    const { service, provider } = searchService();
+
+    await service.searchSplits(flight, stay, demand, "ae", "req", logger, 20);
+
+    expect(provider.searchNearbyHotelsWithOccupancies.mock.calls[0][6]).toEqual({ residency: "ae", radius: 20 });
+  });
+
+  it("a preview gets what the supplier returned and what was removed as closed", async () => {
+    const { service, provider } = searchService();
+    const diagnostics = { supplierHotels: 0, withTaxAtHotel: 0, returned: 0, closedOrRemoved: 0 };
+
+    const found = await service.searchSplits(flight, stay, demand, "ae", "req", logger, 20, true, diagnostics);
+
+    expect(provider.searchNearbyHotelsWithOccupancies.mock.calls[0][6]).toMatchObject({
+      residency: "ae",
+      radius: 20,
+      stats: diagnostics,
+    });
+    expect(diagnostics).toEqual({ supplierHotels: 3, withTaxAtHotel: 1, returned: 2, closedOrRemoved: 1 });
+    expect(found.hotels.map((h: any) => h.hotelCode)).toEqual(["OPEN"]);
   });
 });

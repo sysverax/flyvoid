@@ -1514,7 +1514,7 @@ export class CancelledFlightsController {
   @ApiOperation({
     summary: "Test: start a hotel search per room split (runs in the background)",
     description:
-      "For testing; no flight needed. Body: stay dates, airport, residency, `distance`, `need` and `splits` (each: the rooms of one allocation and how many allocations need it). Checks the body (400 for an unknown airport or bad dates), then returns 202 with a `requestId` at once and searches in the background: one supplier search per split at exactly `distance` (no widening; splits are independent of each other). need=all: every hotel found for each split, nearest first, with its distance, rates and how many whole sets (one allocation's rooms all in one hotel) it can take. need=recommend: only the best hotels for ceil(allocation × HOTEL_SUPPLY_BUFFER_RATIO) whole sets, ranked as allocation ranks (most stars first down to HOTEL_SEARCH_MIN_RATE, cheapest within the same stars). Read the result with GET /cancelled-flights/plan-preview/splits/{requestId}; it is kept for 5 days. Nothing is booked or held; only the preview row is stored. Calls the supplier live (RateHawk: one search per split, counting against the 10 searches/min shared with allocation).",
+      "For testing; no flight needed. Body: stay dates, airport, residency, `distance`, `need` and `splits` (each: the rooms of one allocation and how many allocations need it). Checks the body (400 for an unknown airport or bad dates), then returns 202 with a `requestId` at once and searches in the background: one supplier search per split at exactly `distance` (no widening; splits are independent of each other). need=all: every hotel found for each split, nearest first, with its distance, rates and how many whole sets (one allocation's rooms all in one hotel) it can take. need=recommend: only the best hotels for ceil(allocation × HOTEL_SUPPLY_BUFFER_RATIO) whole sets, ranked as allocation ranks (most stars first, cheapest within the same stars; hotels below HOTEL_SEARCH_MIN_RATE only when no better hotel has rooms). An empty split carries `emptyReason`, and the response message names it. Hotels and rates carry their taxes (`taxesIncluded`, `taxesAtProperty`, `taxPayableAtHotel`). Read the result with GET /cancelled-flights/plan-preview/splits/{requestId}; it is kept for 5 days. Nothing is booked or held; only the preview row is stored. Calls the supplier live (RateHawk: one search per split, counting against the 10 searches/min shared with allocation).",
   })
   async startSplitPreview(
     @Req() req: AuthenticatedRequest,
@@ -1563,7 +1563,7 @@ export class CancelledFlightsController {
     return BaseResponseDto.success(
       data,
       requestId,
-      "Hotel split preview fetched successfully",
+      HotelSplitPreviewService.messageFor(data),
     );
   }
 
@@ -1684,7 +1684,7 @@ export class CancelledFlightsController {
   @ApiOperation({
     summary: "Test: what an allocation run would book for this flight (no booking)",
     description:
-      "For testing allocation; no body. Plans all the flight's PNRs exactly as an allocation run does (one supplier search widening until ceil(rooms × HOTEL_SUPPLY_BUFFER_RATIO) rooms per shape and whole sets are found, each class's star minimum, the shared supply pool, the same ranking: most stars first down to the class minimum, then the lowest price within the same stars). Returns the classes in booking order (first → economy), each with its PNRs in the run's order; per PNR the room split, the ranked hotels, and `recommended`: the hotel the run would book, i.e. the first ranked hotel still having free rooms for the whole split after the PNRs before it. Assumes every booking succeeds. Read only: nothing is saved, held, charged or booked. Calls the supplier live (RateHawk: counts against the 10 searches/min shared with allocation). 404 when the flight is not the airline's.",
+      "For testing allocation; no body. Plans all the flight's PNRs exactly as an allocation run does (one supplier search widening until ceil(rooms × HOTEL_SUPPLY_BUFFER_RATIO) rooms per shape and whole sets are found, each class's star minimum, the shared supply pool, the same ranking: most stars first, then the lowest price within the same stars; hotels below a class's minimum come last and are used only when no hotel meeting it has rooms). Returns one entry per room split: its PNRs in the run's booking order (first class first), each with `recommended`: the hotel the run would book, i.e. the first ranked hotel still having free rooms for the whole split after the PNRs before it (`belowMinStars` when it is under the class minimum); then the split's ranked hotels with details and taxes. Assumes every booking succeeds. Read only: nothing is saved, held, charged or booked. Calls the supplier live (RateHawk: counts against the 10 searches/min shared with allocation). 404 when the flight is not the airline's.",
   })
   @ApiParam({ name: "id", description: "Cancelled flight id" })
   async previewRecommendation(
